@@ -188,6 +188,8 @@ void App::handleEvent(const SDL_Event& event) {
       latchKey(event.key.scancode);
       if (event.key.key == SDLK_F3) {
         paused_ = !paused_;
+        // Nothing pressed during a pause carries into play.
+        latched_ = InputState{};
       } else if (event.key.key == SDLK_F4) {
         toggleFullscreen();
       }
@@ -230,6 +232,9 @@ constexpr SDL_Scancode kControlKeys[] = {
 }  // namespace
 
 void App::latchKey(SDL_Scancode scancode) {
+  if (paused_) {
+    return;
+  }
   if (bool InputState::* const control = controlFor(scancode)) {
     latched_.*control = true;
   }
