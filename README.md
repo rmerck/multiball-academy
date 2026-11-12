@@ -191,6 +191,10 @@ The game only opens files inside the `assets` directory next to the executable. 
 
 Assets are exported with all metadata off. `tools/check_assets.py` (run by `ctest`) fails the build if a PNG carries EXIF, text, timestamp, profile or thumbnail chunks.
 
+## How this was made
+
+This is a learning project. It was built with Claude, Anthropic's AI coding assistant: I set the requirements, priorities and workflow, and Claude wrote the code, tests and art scripts through reviewed pull requests. Treat it as an experiment in AI-assisted development, not as hand-written reference code.
+
 ## License
 
 MIT. See `LICENSE`.
