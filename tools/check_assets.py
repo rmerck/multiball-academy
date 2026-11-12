@@ -71,12 +71,21 @@ def main() -> int:
         print(__doc__, file=sys.stderr)
         return 2
     root = Path(sys.argv[1])
+    if not root.is_dir():
+        print("FAIL: %s is not a directory" % root)
+        return 1
     # Hidden files (such as .DS_Store) are not tracked and cannot be loaded:
     # the game rejects any name component starting with a dot.
     files = sorted(f for f in root.rglob("*") if not f.name.startswith("."))
     pngs = [f for f in files if f.is_file() and f.suffix == ".png"]
     others = [f for f in files if f.is_file() and f.suffix != ".png"]
     failed = False
+    # The game refuses links, so one here would pass this check and then
+    # stop the game at startup.
+    for f in files:
+        if f.is_symlink():
+            print("FAIL %s: is a symbolic link" % f.relative_to(root))
+            failed = True
     for f in others:
         print("FAIL %s: only .png files belong in assets" % f.relative_to(root))
         failed = True

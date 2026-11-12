@@ -16,9 +16,13 @@ from pathlib import Path
 
 def run(exe: Path):
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
-    # The short timeout turns a hang into a failure.
-    result = subprocess.run([str(exe), "--frames", "40"], env=env, capture_output=True,
-                            text=True, timeout=20)
+    # The short timeout turns a hang into a failure. Output is decoded
+    # leniently: a crash may print anything.
+    try:
+        result = subprocess.run([str(exe), "--frames", "40"], env=env, capture_output=True,
+                                text=True, errors="replace", timeout=20)
+    except subprocess.TimeoutExpired:
+        return None, "no exit within 20 seconds"
     return result.returncode, result.stdout + result.stderr
 
 
@@ -29,6 +33,9 @@ def main() -> int:
     source_exe = Path(sys.argv[1]).resolve()
     scratch = Path(sys.argv[2]).resolve()
     source_assets = source_exe.parent / "assets"
+    if not source_exe.is_file() or not source_assets.is_dir():
+        print("FAIL: %s or the assets directory next to it is missing" % source_exe)
+        return 1
 
     # Only ever remove a directory this script created.
     marker = scratch / ".asset_integrity_scratch"
@@ -56,10 +63,10 @@ def main() -> int:
         code, output = run(exe)
         if want_ok:
             if code != 0:
-                failures.append("%s: expected a clean run, got exit %d\n%s" % (label, code, output))
+                failures.append("%s: expected a clean run, got exit %s\n%s" % (label, code, output))
         else:
             if code != 1:
-                failures.append("%s: expected exit 1, got %d\n%s" % (label, code, output))
+                failures.append("%s: expected exit 1, got %s\n%s" % (label, code, output))
             elif "Asset " not in output:
                 failures.append("%s: refused without an asset error message\n%s" % (label, output))
             if "Sanitizer" in output or "runtime error" in output:
