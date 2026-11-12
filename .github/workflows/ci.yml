@@ -129,7 +129,12 @@ jobs:
           # Optimised, as it would be handed out: other warnings appear at
           # this level, and the hardening is checked on the result.
           - {cc: gcc, cxx: g++, build: Release, sanitize: "OFF"}
-    name: linux (${{ matrix.cxx }}, ${{ matrix.build }})
+          # The closest stand-in for the macOS standard library: libc++ with
+          # its hardening on. It catches a missing include before macOS does.
+          # Only the game's C++ takes the flag; SDL and Box2D are C.
+          - {cc: clang, cxx: clang++, build: RelWithDebInfo, sanitize: "ON", stdlib: libc++}
+    # The first three names are required checks: do not change them.
+    name: linux (${{ matrix.cxx }}, ${{ matrix.stdlib || matrix.build }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -142,7 +147,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/_deps
-          key: deps-${{ steps.image.outputs.id }}-${{ runner.arch }}-${{ matrix.cxx }}-${{ matrix.build }}-san${{ matrix.sanitize }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+          key: deps-${{ steps.image.outputs.id }}-${{ runner.arch }}-${{ matrix.cxx }}-${{ matrix.stdlib || 'libstdc++' }}-${{ matrix.build }}-san${{ matrix.sanitize }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
       - name: Install build headers
         run: |
           sudo apt-get update
@@ -150,10 +155,15 @@ jobs:
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev \
             libgl1-mesa-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
+      - name: Install libc++
+        if: matrix.stdlib == 'libc++'
+        run: sudo apt-get install -y --no-install-recommends libc++-18-dev libc++abi-18-dev
       - name: Configure
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
+          # Empty for the other jobs, which changes nothing.
+          CXXFLAGS: ${{ matrix.stdlib && format('-stdlib={0}', matrix.stdlib) || '' }}
           BUILD_TYPE: ${{ matrix.build }}
           SANITIZE: ${{ matrix.sanitize }}
         run: >
