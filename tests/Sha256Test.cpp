@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -60,13 +61,15 @@ void testSha256() {
       for (std::size_t i = 0; i < length; ++i) {
         data[i] = static_cast<std::uint8_t>((i * 131U + 7U) & 0xFFU);
       }
-      const pinball::Sha256Digest whole = pinball::sha256(data.data(), data.size());
+      const pinball::Sha256Digest whole = pinball::sha256(data);
+      // The pointer form is the same hash.
+      CHECK(pinball::sha256(data.data(), data.size()) == whole);
       pinball::Sha256 pieces;
       std::size_t offset = 0;
       std::size_t chunk = 1;
       while (offset < length) {
         const std::size_t take = chunk < length - offset ? chunk : length - offset;
-        pieces.update(data.data() + offset, take);
+        pieces.update(std::span(data).subspan(offset, take));
         offset += take;
         chunk = chunk * 2 + 1;
       }
@@ -77,6 +80,7 @@ void testSha256() {
   {  // Null data with zero size is the empty message.
     pinball::Sha256 hasher;
     hasher.update(nullptr, 0);
+    hasher.update({});
     CHECK(hex(hasher.finish()) ==
           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
   }
@@ -101,5 +105,19 @@ void testSha256() {
     CHECK(pinball::findAsset(table, 1, "") == nullptr);
     CHECK(pinball::findAsset(table, 0, "sprites/x.png") == nullptr);
     CHECK(pinball::findAsset(nullptr, 1, "sprites/x.png") == nullptr);
+
+    // The span forms agree with the pointer forms.
+    const std::span<const std::uint8_t> view(bytes, content.size());
+    CHECK(pinball::checkAsset(entry, view) == pinball::AssetCheck::Ok);
+    CHECK(pinball::checkAsset(entry, view.first(view.size() - 1)) ==
+          pinball::AssetCheck::WrongSize);
+    CHECK(pinball::checkAsset(entry, nullptr, 0) == pinball::AssetCheck::WrongSize);
+    CHECK(pinball::checkAsset(entry, nullptr, content.size()) == pinball::AssetCheck::WrongSize);
+    const pinball::AssetEntry empty{"sprites/e.png", 0, pinball::sha256({})};
+    CHECK(pinball::checkAsset(empty, nullptr, 0) == pinball::AssetCheck::Ok);
+    CHECK(pinball::checkAsset(empty, nullptr, 5) == pinball::AssetCheck::WrongSize);
+    CHECK(pinball::findAsset(table, "sprites/x.png") == &table[0]);
+    CHECK(pinball::findAsset(table, "sprites/y.png") == nullptr);
+    CHECK(pinball::findAsset({}, "sprites/x.png") == nullptr);
   }
 }

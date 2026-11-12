@@ -1,5 +1,8 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <span>
 
 #include "Check.hpp"
 #include "Suites.hpp"
@@ -24,7 +27,7 @@ void testPngHeader() {
 
   {
     const auto d = header(96, 64);
-    const auto size = parsePngHeader(d.data(), d.size());
+    const auto size = parsePngHeader(d);
     CHECK(size.has_value());
     CHECK(size && size->width == 96 && size->height == 64);
   }
@@ -44,6 +47,12 @@ void testPngHeader() {
     CHECK(!parsePngHeader(nullptr, 24));
     CHECK(!parsePngHeader(d.data(), 23));
     CHECK(!parsePngHeader(d.data(), 0));
+    CHECK(!parsePngHeader(std::span(d).first(23)));
+    CHECK(!parsePngHeader(std::span<const std::uint8_t>{}));
+    // Bytes after the header are not looked at.
+    std::array<unsigned char, 64> longer{};
+    std::ranges::copy(d, longer.begin());
+    CHECK(parsePngHeader(longer).has_value());
     for (std::size_t i = 0; i < 16; ++i) {
       auto bad = d;
       bad[i] = static_cast<unsigned char>(bad[i] ^ 0x01U);
