@@ -79,6 +79,9 @@ class App {
   Game game_;
   // Best games on this machine, loaded at start and saved when a game ends.
   HighScores highScores_;
+  // Event type the system menu's About item sends, or 0 if none could be
+  // registered.
+  Uint32 aboutEvent_ = 0;
   bool wasGameOver_ = false;
   bool newHighScore_ = false;
   InputState input_;
