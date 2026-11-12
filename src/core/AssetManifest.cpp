@@ -5,7 +5,7 @@
 namespace pinball {
 
 AssetCheck checkAsset(const AssetEntry& entry, std::span<const std::uint8_t> data) noexcept {
-  if (static_cast<std::uint64_t>(data.size()) != entry.size) {
+  if (data.size() != entry.size) {
     return AssetCheck::WrongSize;
   }
   const Sha256Digest actual = sha256(data);
