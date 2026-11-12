@@ -3,6 +3,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <utility>
 
 #include "core/Music.hpp"
 
@@ -32,14 +34,14 @@ enum class Sound : std::uint8_t {
   Nudge,
 };
 inline constexpr std::size_t kSoundCount = 20;
-static_assert(static_cast<std::size_t>(Sound::Nudge) + 1 == kSoundCount,
+static_assert(std::to_underlying(Sound::Nudge) + 1 == kSoundCount,
               "kSoundCount must follow the last Sound enumerator");
 static_assert(kSoundCount <= 32, "SoundSet holds one bit per sound");
 
 // A set of sounds, one bit each. A sound plays at most once per step.
 using SoundSet = std::uint32_t;
 constexpr SoundSet soundBit(Sound sound) noexcept {
-  return SoundSet{1} << static_cast<unsigned>(sound);
+  return SoundSet{1} << std::to_underlying(sound);
 }
 
 // Synthesises every sound from oscillators and noise, so the game ships no
@@ -59,30 +61,38 @@ class SoundMixer {
   // what it was playing dies away over a few milliseconds instead of cutting.
   void trigger(SoundSet sounds) noexcept;
 
-  // Writes frames mono samples in [-1, 1] to out. out may be null only when
-  // frames is 0.
-  void render(float* out, std::size_t frames) noexcept;
+  // Fills out with mono samples in [-1, 1].
+  void render(std::span<float> out) noexcept;
+  // The same for a pointer and a count. A null out does nothing.
+  void render(float* out, std::size_t frames) noexcept {
+    if (out != nullptr) {
+      render(std::span<float>(out, frames));
+    }
+  }
 
   // Number of voices currently sounding.
-  std::size_t activeVoices() const noexcept;
+  [[nodiscard]] std::size_t activeVoices() const noexcept;
 
   // The background tune, mixed under the effects. Off until asked for; it
   // fades in and out, and resumes where it stopped.
   void setMusicPlaying(bool playing) noexcept { music_.setPlaying(playing); }
-  bool musicPlaying() const noexcept { return music_.playing(); }
+  [[nodiscard]] bool musicPlaying() const noexcept { return music_.playing(); }
   // True while anything at all is sounding: a voice, or the tune.
-  bool busy() const noexcept { return music_.audible() || activeVoices() > 0; }
+  [[nodiscard]] bool busy() const noexcept { return music_.audible() || activeVoices() > 0; }
 
   void setMuted(bool muted) noexcept { muted_ = muted; }
-  bool muted() const noexcept { return muted_; }
+  [[nodiscard]] bool muted() const noexcept { return muted_; }
 
  private:
-  enum class Wave : std::uint8_t { Sine, Square, Triangle, Noise };
+  // Noise is white. SweptNoise is noise with a pitch: random levels joined by
+  // straight lines, a new level every cycle, so it darkens or brightens as
+  // its pitch glides.
+  enum class Wave : std::uint8_t { Sine, Square, Triangle, Noise, SweptNoise };
   struct Voice {
     bool active = false;
     Wave wave = Wave::Sine;
     // Pitch in cycles per sample: startStep at the first sample, gliding by
-    // stepGlide in all over the length. Noise has no pitch.
+    // stepGlide in all over the length. White noise has no pitch.
     float startStep = 0.0F;
     float stepGlide = 0.0F;
     float gain = 0.0F;
@@ -92,6 +102,8 @@ class SoundMixer {
     float perLength = 0.0F;      // 1 / length.
     float phase = 0.0F;          // Cycles, 0 to 1.
     float last = 0.0F;           // The latest sample this voice added to the mix.
+    float held = 0.0F;           // SweptNoise: the level this cycle leaves,
+    float target = 0.0F;         // and the level it reaches.
     std::uint32_t batch = 0;     // Which startSound call began it.
   };
 
@@ -100,6 +112,9 @@ class SoundMixer {
   void startSound(Sound sound) noexcept;
   // White noise has no pitch, so it takes none.
   void startNoise(float seconds, float gain) noexcept;
+  // Noise whose brightness glides: a new random level startHz times a
+  // second at first, endHz at the end.
+  void startSweptNoise(float startHz, float endHz, float seconds, float gain) noexcept;
 
   std::array<Voice, kVoices> voices_{};
   Music music_;
