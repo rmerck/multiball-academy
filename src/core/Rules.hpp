@@ -122,6 +122,8 @@ class Rules {
   bool bonusLaneLit_ = false;
 
   std::uint32_t ballSaveSteps_ = 0;
+  // The save is offered once per ball, not after every saved ball.
+  bool ballSaveUsed_ = false;
   std::uint32_t rampReflexSteps_ = 0;
   std::uint32_t hyperspaceReflexSteps_ = 0;
   std::uint32_t messageSteps_ = 0;

@@ -107,6 +107,7 @@ class Game {
   // The hole holding the ball, and for how many steps so far.
   std::size_t heldBy_ = 0;
   std::uint32_t heldSteps_ = 0;
+  bool wasHeld_ = false;
   // Ball search state.
   Vec2 searchAnchor_{};
   std::uint32_t stillSteps_ = 0;
