@@ -1,5 +1,9 @@
 #include "platform/SafeFile.hpp"
 
+#include <chrono>
+#include <filesystem>
+#include <system_error>
+
 #if defined(__unix__) || defined(__APPLE__)
 #define PINBALL_POSIX_FILES 1
 #include <fcntl.h>
@@ -18,6 +22,61 @@
 #endif
 
 namespace pinball {
+
+namespace {
+
+// What replaceFile puts between the target's name and the six characters
+// that make its temporary file unique. removeStaleTemporaries looks for the
+// same mark, so the two cannot drift apart.
+constexpr std::string_view kTemporaryMark = ".tmp-";
+constexpr std::size_t kTemporarySuffixLength = 6;
+
+// True if name is prefix followed by exactly the unique suffix. The suffix
+// is letters and digits on every system's mkstemp.
+bool isTemporaryName(std::string_view name, std::string_view prefix) noexcept {
+  if (name.size() != prefix.size() + kTemporarySuffixLength ||
+      name.substr(0, prefix.size()) != prefix) {
+    return false;
+  }
+  for (const char c : name.substr(prefix.size())) {
+    if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
+std::size_t removeStaleTemporaries(const std::string& path, long long minAgeSeconds) {
+  namespace fs = std::filesystem;
+  const fs::path target(path);
+  const std::string prefix = target.filename().string() + std::string(kTemporaryMark);
+  const fs::path directory = target.has_parent_path() ? target.parent_path() : fs::path(".");
+  const auto now = fs::file_time_type::clock::now();
+  std::size_t removed = 0;
+  std::error_code error;
+  for (fs::directory_iterator it(directory, error), end; !error && it != end;
+       it.increment(error)) {
+    if (!isTemporaryName(it->path().filename().string(), prefix)) {
+      continue;
+    }
+    // A problem with one entry must not end the sweep, so it has its own
+    // error. Links and directories are never touched.
+    std::error_code entryError;
+    if (fs::symlink_status(it->path(), entryError).type() != fs::file_type::regular) {
+      continue;
+    }
+    const fs::file_time_type written = fs::last_write_time(it->path(), entryError);
+    if (entryError || now - written < std::chrono::seconds(minAgeSeconds)) {
+      continue;
+    }
+    if (fs::remove(it->path(), entryError)) {
+      ++removed;
+    }
+  }
+  return removed;
+}
 
 #if defined(PINBALL_POSIX_FILES)
 
@@ -158,7 +217,7 @@ bool replaceFile(const std::string& path, std::string_view text) {
   // A fresh, uniquely named file beside the target, created exclusively and
   // for its owner only. Nothing already at any name is opened, and two
   // programs saving at once cannot disturb each other's file.
-  std::string temporary = path + ".XXXXXX";
+  std::string temporary = path + std::string(kTemporaryMark) + "XXXXXX";
   Descriptor file(::mkostemp(temporary.data(), O_CLOEXEC));
   if (!file.ok()) {
     return false;

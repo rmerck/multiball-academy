@@ -35,10 +35,13 @@ class AssetLoader {
 
   // Checks every asset in the manifest. Returns false, after logging each
   // problem, if any is missing or does not match. Call before starting.
-  bool verifyAll() const;
+  // On success the verified bytes are kept for loadTexture, so no file is
+  // read or hashed a second time; they are freed with the loader.
+  bool verifyAll();
 
   // Loads a verified PNG as a texture with linear filtering. Returns nullptr
-  // and logs on any failure.
+  // and logs on any failure. Works without verifyAll: the file is then read
+  // and verified here.
   TexturePtr loadTexture(SDL_Renderer* renderer, std::string_view name) const;
 
  private:
@@ -49,6 +52,9 @@ class AssetLoader {
   bool readVerified(const AssetEntry& entry, std::vector<std::uint8_t>& bytes) const;
 
   std::string root_;  // Ends with a path separator, or empty if unusable.
+  // Verified content of each manifest entry, in manifest order. Empty until
+  // verifyAll has succeeded.
+  std::vector<std::vector<std::uint8_t>> verified_;
 };
 
 }  // namespace pinball

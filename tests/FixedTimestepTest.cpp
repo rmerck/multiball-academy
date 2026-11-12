@@ -4,6 +4,7 @@
 #include "Check.hpp"
 #include "Suites.hpp"
 #include "core/FixedTimestep.hpp"
+#include "core/LoopPolicy.hpp"
 
 void testFixedTimestep() {
   using pinball::FixedTimestep;
@@ -85,5 +86,53 @@ void testFixedTimestep() {
     }
     const double expected = elapsed / step;
     CHECK(std::fabs(static_cast<double>(total) - expected) <= 2.0);
+  }
+
+  // The main loop's pause clock and idle decision (core/LoopPolicy.hpp).
+  {  // Running frames pass through unchanged, the very first one included.
+    pinball::PauseClock clock;
+    CHECK(clock.simulated(0.016, false) == 0.016);
+    CHECK(clock.simulated(0.008, false) == 0.008);
+  }
+  {  // A halt gives nothing, however long, and neither does the frame that ends it.
+    pinball::PauseClock clock;
+    CHECK(clock.simulated(0.016, false) == 0.016);
+    CHECK(clock.simulated(0.016, true) == 0.0);
+    CHECK(clock.simulated(30.0, true) == 0.0);
+    CHECK(clock.simulated(30.0, false) == 0.0);  // Its interval is the wait.
+    CHECK(clock.simulated(0.016, false) == 0.016);
+  }
+  {  // Starting halted, and halting again on the frame after a resume.
+    pinball::PauseClock clock;
+    CHECK(clock.simulated(5.0, true) == 0.0);
+    CHECK(clock.simulated(5.0, false) == 0.0);
+    CHECK(clock.simulated(0.1, true) == 0.0);
+    CHECK(clock.simulated(0.1, false) == 0.0);
+    CHECK(clock.simulated(0.1, false) == 0.1);
+  }
+  {  // A long pause never turns into simulation steps.
+    pinball::PauseClock clock;
+    FixedTimestep ts(step, 8);
+    CHECK(ts.advance(clock.simulated(1.0 / 60.0, false)) == 2);
+    for (int i = 0; i < 100; ++i) {
+      CHECK(clock.simulated(0.1, true) == 0.0);
+    }
+    CHECK(ts.advance(clock.simulated(10.0, false)) == 0);
+    CHECK(ts.advance(clock.simulated(1.0 / 60.0, false)) == 2);
+  }
+  {  // The halted loop sleeps only when nothing needs it awake.
+    using pinball::kMaxHaltedBusyFrames;
+    using pinball::sleepsWhileHalted;
+    CHECK(sleepsWhileHalted(true, false, false, 1));
+    // Never while the game runs, whatever else holds.
+    CHECK(!sleepsWhileHalted(false, false, false, 0));
+    CHECK(!sleepsWhileHalted(false, false, true, kMaxHaltedBusyFrames + 1));
+    // Never in a timed run: its frames must keep counting.
+    CHECK(!sleepsWhileHalted(true, true, false, 1));
+    CHECK(!sleepsWhileHalted(true, true, false, kMaxHaltedBusyFrames + 1));
+    // A sound's tail keeps it awake, but not for ever.
+    CHECK(!sleepsWhileHalted(true, false, true, 1));
+    CHECK(!sleepsWhileHalted(true, false, true, kMaxHaltedBusyFrames));
+    CHECK(sleepsWhileHalted(true, false, true, kMaxHaltedBusyFrames + 1));
   }
 }

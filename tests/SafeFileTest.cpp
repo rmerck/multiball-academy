@@ -1,5 +1,6 @@
 // Tests for platform/SafeFile against a scratch directory given on the
 // command line. The directory must not exist yet; it is created and removed.
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -136,6 +137,53 @@ int main(int argc, char* argv[]) {
   CHECK(!fs::is_symlink(target) && slurp(target) == "four\n");
   CHECK(slurp(victim) == "untouched");
 #endif
+
+  // Sweeping up after an interrupted save removes only old temporaries of
+  // that one target. (Suffixes here are the six characters mkstemp adds.)
+  {
+    const auto old = fs::file_time_type::clock::now() - std::chrono::minutes(5);
+    const auto age = [&](const fs::path& path) { fs::last_write_time(path, old, error); };
+    const std::string base = target.string();
+    const fs::path stale = base + ".tmp-Ab3dE9";
+    const fs::path fresh = base + ".tmp-Zz0000";
+    const fs::path backup = base + ".backup";       // A user's file: six characters too.
+    const fs::path oldStyle = base + ".Ab3dE9";     // Not the temporary name.
+    const fs::path shortName = base + ".tmp-Ab3dE";
+    const fs::path longName = base + ".tmp-Ab3dE9x";
+    const fs::path oddName = base + ".tmp-Ab3d.9";
+    const fs::path other = dir / "other.txt.tmp-Ab3dE9";  // Another target's.
+    const fs::path folder = base + ".tmp-Folder";
+    for (const fs::path& path : {stale, fresh, backup, oldStyle, shortName, longName, oddName,
+                                 other}) {
+      spit(path, "x");
+    }
+    fs::create_directory(folder, error);
+    for (const fs::path& path : {stale, backup, oldStyle, shortName, longName, oddName, other,
+                                 folder}) {
+      age(path);
+    }
+#if defined(PINBALL_POSIX_TESTS)
+    // A link wearing the temporary name is left alone, and so is its target.
+    const fs::path linked = base + ".tmp-L1nk3d";
+    fs::create_symlink(stale, linked);
+#endif
+    CHECK(pinball::removeStaleTemporaries(base) == 1);
+    CHECK(!fs::exists(stale));
+    for (const fs::path& path : {fresh, backup, oldStyle, shortName, longName, oddName, other,
+                                 folder}) {
+      CHECK(fs::exists(path));
+    }
+#if defined(PINBALL_POSIX_TESTS)
+    CHECK(fs::is_symlink(linked));
+#endif
+    CHECK(fs::exists(target));  // The target itself is kept.
+    // Nothing left to do a second time; with no age limit the fresh one goes.
+    CHECK(pinball::removeStaleTemporaries(base) == 0);
+    CHECK(pinball::removeStaleTemporaries(base, 0) == 1);
+    CHECK(!fs::exists(fresh) && fs::exists(backup));
+    // A directory that is not there is not an error.
+    CHECK(pinball::removeStaleTemporaries((dir / "absent" / "x.txt").string()) == 0);
+  }
 
   fs::remove_all(dir, error);
   if (failures != 0) {
