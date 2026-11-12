@@ -116,7 +116,9 @@ App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, 
       table_(std::move(table)),
       vsync_(vsync),
       audio_(AudioOutput::open()),
-      highScores_(loadHighScores()),
+      // A timed automated run leaves the player's score file alone: it is
+      // neither read (which can also set a bad file aside) nor written.
+      highScores_(options.frameLimit ? HighScores{} : loadHighScores()),
       aboutEvent_(SDL_RegisterEvents(1)) {
   const bool routed = routeAboutMenu(aboutEvent_);
   SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "About menu item routed to the game: %s",
@@ -418,17 +420,15 @@ void App::commitInitials() {
 void App::recordFinishedGame() {
   const bool over = game_.gameOver();
   if (over && !wasGameOver_) {
-    // The game has just ended: enter it in the table and save if it made it.
+    // The game has just ended: enter it in the table if it made it.
     const HighScore entry{game_.rules().score(),
                           static_cast<std::uint8_t>(game_.rules().missions().rank())};
     if (!highScores_.qualifies(entry.score)) {
       newHighScore_ = false;
     } else if (options_.frameLimit) {
-      // A timed automated run has no one to type: record it without initials.
+      // A timed automated run has no one to type: enter it without initials,
+      // for this run only. Nothing is saved.
       newHighScore_ = highScores_.submit(entry) < HighScores::kCapacity;
-      if (newHighScore_) {
-        saveHighScores(highScores_);
-      }
     } else {
       // Ask for initials. The entry is made when they are confirmed.
       pending_ = entry;
