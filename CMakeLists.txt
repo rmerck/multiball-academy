@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.26)
 project(SpaceCadetPinball VERSION 0.1.0 LANGUAGES CXX)
 
+if(CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
+  message(FATAL_ERROR "In-source builds are not supported. Use: cmake -S . -B build")
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -38,14 +42,17 @@ add_executable(pinball
 target_link_libraries(pinball PRIVATE pinball_core SDL3::SDL3)
 
 # The game loads assets from an "assets" directory next to the executable.
-# Mirrored on every build (not only on relink), so edited and deleted assets
-# never go stale in the build tree.
-add_custom_target(pinball_assets ALL
-  COMMAND ${CMAKE_COMMAND} -E rm -rf $<TARGET_FILE_DIR:pinball>/assets
-  COMMAND ${CMAKE_COMMAND} -E copy_directory
+# Copied by a target that runs on every build (not only on relink), so an
+# edited asset is never stale. Nothing is ever deleted: a removed asset leaves
+# an unused file behind in the build tree, which is harmless.
+add_custom_target(pinball_assets
+  COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
           ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:pinball>/assets
-  COMMENT "Mirroring assets"
+  COMMENT "Copying assets"
   VERBATIM)
+# $<TARGET_FILE_DIR> adds no dependency, so this is not circular. It makes
+# building just the pinball target bring its assets along.
+add_dependencies(pinball pinball_assets)
 
 include(CTest)
 if(BUILD_TESTING)
