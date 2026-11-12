@@ -82,6 +82,116 @@ void testMissions() {
     CHECK(rules.missions().phase() == MissionControl::Phase::Selected);
   }
 
+  {  // The special mission stays selected until the ramp accepts it: the
+     // three lights stay on, and further mission-target hits, drains and
+     // waits change nothing. It is then played as the special.
+    Rules rules(kStep);
+    rules.onBallInPlay();
+    for (std::size_t i = 0; i < 3; ++i) {
+      rules.onTarget(missionTarget(i));
+    }
+    const pinball::Mission* special = &pinball::missionAt(0, pinball::kSpecialMission);
+    CHECK(rules.missions().mission() == special);
+    for (std::size_t round = 0; round < 2; ++round) {
+      for (std::size_t i = 0; i < 3; ++i) {
+        const std::uint64_t before = rules.score();
+        rules.onTarget(missionTarget((i + 1) % 3));
+        CHECK(rules.score() == before + points::kTarget);  // No bank award.
+        CHECK(rules.missions().phase() == MissionControl::Phase::Selected);
+        CHECK(rules.missions().mission() == special);
+        for (std::size_t lit = 0; lit < 3; ++lit) {
+          CHECK(rules.targetLit(missionTarget(lit)));
+        }
+      }
+      // Across a lost ball too.
+      for (int i = 0; i < 1200; ++i) {
+        rules.tick();
+      }
+      rules.onDrain();
+      rules.onBallInPlay();
+    }
+    CHECK(rules.missions().mission() == special);
+    rules.onHole(hole(table::HoleType::Ramp));
+    CHECK(rules.missions().phase() == MissionControl::Phase::Active);
+    CHECK(rules.missions().mission() == special);
+    for (std::size_t i = 0; i < 3; ++i) {
+      CHECK(!rules.targetLit(missionTarget(i)));
+    }
+    while (rules.missions().phase() == MissionControl::Phase::Active) {
+      rules.onTarget(missionTarget(0));
+    }
+    CHECK(rules.missions().completedMissions() == 1);
+    CHECK(rules.missions().progress() == 9);
+  }
+
+  {  // Fuel that runs out behind the tilt message is reported when the tilt
+     // ends, with the drain, and only once.
+    for (int extraBall = 0; extraBall < 2; ++extraBall) {
+      Rules rules(kStep);
+      rules.onBallInPlay();
+      if (extraBall == 1) {
+        // Four medal banks: two commendations, then an extra ball.
+        for (int bank = 0; bank < 3; ++bank) {
+          for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
+            if (table::kTargets[i].bank == table::TargetBank::Medal) {
+              rules.onTarget(i);
+            }
+          }
+        }
+        CHECK(rules.extraBalls() == 1);
+      }
+      rules.onTarget(missionTarget(0));
+      rules.onHole(hole(table::HoleType::Ramp));
+      CHECK(rules.missions().phase() == MissionControl::Phase::Active);
+      rules.onNudge();
+      rules.onNudge();
+      rules.onNudge();
+      CHECK(rules.tilted());
+      for (int i = 0; i < static_cast<int>(MissionControl::kFuelSeconds / kStep) + 2; ++i) {
+        rules.tick();
+      }
+      CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
+      CHECK(rules.message() == std::string_view("TILT"));
+      rules.onDrain();
+      CHECK(rules.message() == std::string_view(extraBall == 1 ? "SHOOT AGAIN  MISSION ABORTED"
+                                                               : "NEXT BALL  MISSION ABORTED"));
+      rules.onBallInPlay();
+      for (int i = 0; i < 1200; ++i) {
+        rules.tick();
+      }
+      rules.onDrain();
+      CHECK(rules.message() == std::string_view("NEXT BALL"));
+    }
+    // Seen at the time, it is not repeated at the drain.
+    Rules rules(kStep);
+    rules.onBallInPlay();
+    rules.onTarget(missionTarget(0));
+    rules.onHole(hole(table::HoleType::Ramp));
+    for (int i = 0; i < static_cast<int>(MissionControl::kFuelSeconds / kStep) + 2; ++i) {
+      rules.tick();
+    }
+    CHECK(rules.message() == std::string_view("OUT OF FUEL  MISSION ABORTED"));
+    rules.onNudge();
+    rules.onNudge();
+    rules.onNudge();
+    CHECK(rules.tilted());
+    rules.onDrain();
+    CHECK(rules.message() == std::string_view("NEXT BALL"));
+    // The fail-safe return ends a tilt as well and carries the news.
+    Rules returned(kStep);
+    returned.onBallInPlay();
+    returned.onTarget(missionTarget(0));
+    returned.onHole(hole(table::HoleType::Ramp));
+    returned.onNudge();
+    returned.onNudge();
+    returned.onNudge();
+    for (int i = 0; i < static_cast<int>(MissionControl::kFuelSeconds / kStep) + 2; ++i) {
+      returned.tick();
+    }
+    returned.onBallReturned();
+    CHECK(returned.message() == std::string_view("RE-DEPLOY  MISSION ABORTED"));
+  }
+
   {  // The mission bank cannot be loaded during a mission. Accepting one
      // puts its lights out and they stay out until the mission is over, so
      // the next special mission needs all three targets again.
@@ -224,6 +334,21 @@ void testMissions() {
     CHECK(control.completedMissions() == 1);
   }
 
+  {  // A selected special mission is not traded down by a single target.
+    MissionControl control(kStep);
+    CHECK(control.onMissionTarget(2, true).selected);
+    CHECK(!control.onMissionTarget(1, false).selected);
+    CHECK(control.phase() == MissionControl::Phase::Selected);
+    CHECK(control.missionIndex() == pinball::kSpecialMission);
+    CHECK(control.onMissionTarget(1, true).selected);
+    CHECK(control.missionIndex() == pinball::kSpecialMission);
+    // An ordinary selection can still be changed, up to the special too.
+    MissionControl other(kStep);
+    other.onMissionTarget(0, false);
+    CHECK(other.onMissionTarget(2, false).selected);
+    CHECK(other.missionIndex() == 2);
+  }
+
   {  // The special mission, and a two-stage mission.
     MissionControl control(kStep);
     CHECK(control.onMissionTarget(1, true).selected);
@@ -357,7 +482,7 @@ void testMissions() {
       rules.onTarget(missionTarget(t));
     }
     CHECK(rules.missions().mission() == &pinball::missionAt(0, pinball::kSpecialMission));
-    CHECK(!rules.targetLit(missionTarget(0)));
+    CHECK(rules.targetLit(missionTarget(0)));
 
     // A new game returns to Cadet with nothing selected.
     rules.startGame();

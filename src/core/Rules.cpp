@@ -2,12 +2,55 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <utility>
 
 namespace pinball {
 
 namespace {
 
 constexpr std::size_t kFirstReEntryRollover = 0;
+constexpr std::size_t kReEntryLaneCount = 3;
+
+// The rules index the table by position. These fail to compile if the table
+// is reordered in a way the rules would get wrong.
+
+// The re-entry rollovers are the first three, left to right, and there are
+// no others: lane light i belongs to rollover kFirstReEntryRollover + i.
+constexpr bool reEntryRolloversLeadTheTable() noexcept {
+  for (std::size_t i = 0; i < table::kRollovers.size(); ++i) {
+    const bool inRun = i >= kFirstReEntryRollover && i < kFirstReEntryRollover + kReEntryLaneCount;
+    if ((table::kRollovers[i].group == table::RolloverGroup::ReEntry) != inRun) {
+      return false;
+    }
+    if (inRun && i > kFirstReEntryRollover &&
+        table::kRollovers[i].zone.center.x <= table::kRollovers[i - 1].zone.center.x) {
+      return false;
+    }
+  }
+  return table::kRollovers.size() >= kFirstReEntryRollover + kReEntryLaneCount;
+}
+static_assert(reEntryRolloversLeadTheTable());
+
+// The mission bank has one target per choice, listed top to bottom: a
+// target's place in its bank is the mission it selects.
+constexpr bool missionTargetsRunTopToBottom() noexcept {
+  std::size_t count = 0;
+  float previousY = 0.0F;
+  for (const table::Target& target : table::kTargets) {
+    if (target.bank != table::TargetBank::Mission) {
+      continue;
+    }
+    const float y = (target.shape.a.y + target.shape.b.y) * 0.5F;
+    if (count > 0 && y <= previousY) {
+      return false;
+    }
+    previousY = y;
+    ++count;
+  }
+  return count == kSpecialMission;
+}
+static_assert(missionTargetsRunTopToBottom());
 
 }  // namespace
 
@@ -41,6 +84,7 @@ void Rules::startGame() noexcept {
   sounds_ = 0;
   ballInPlay_ = false;
   missionMessageThisStep_ = false;
+  abortUnannounced_ = false;
   resetBall();
   say("PULL THE PLUNGER TO LAUNCH");
 }
@@ -119,6 +163,9 @@ void Rules::handleMission(const MissionControl::Outcome& outcome) noexcept {
       cue(Sound::Promotion);
     }
   } else if (outcome.aborted) {
+    // A tilted display says TILT and nothing else, so the news waits for
+    // the message that ends the tilt.
+    abortUnannounced_ = tilted_;
     sayMission("OUT OF FUEL  MISSION ABORTED");
     cue(Sound::TiltWarning);
   } else if (outcome.stageCompleted) {
@@ -209,7 +256,10 @@ void Rules::onTarget(std::size_t index) noexcept {
     handleMission(missions_.onMissionTarget(positionInBank, bankComplete));
   }
 
-  if (!bankComplete) {
+  // The mission bank pays nothing for being lit. Its three lights are the
+  // special mission's selection and stay on until the ramp accepts it, so
+  // that one more hit cannot swap the special for an ordinary mission.
+  if (!bankComplete || bank == table::TargetBank::Mission) {
     return;
   }
   // The whole bank is lit: pay it out and reset it.
@@ -218,9 +268,7 @@ void Rules::onTarget(std::size_t index) noexcept {
 }
 
 void Rules::completeBank(table::TargetBank bank) noexcept {
-  if (bank != table::TargetBank::Mission) {
-    cue(Sound::BankComplete);
-  }
+  cue(Sound::BankComplete);
   switch (bank) {
     case table::TargetBank::Booster:
       award(points::kBoosterBank);
@@ -260,7 +308,7 @@ void Rules::completeBank(table::TargetBank bank) noexcept {
       }
       break;
     case table::TargetBank::Mission:
-      // Selection is handled where the target is hit.
+      // Selection is handled where the target is hit; never paid out here.
       break;
   }
 }
@@ -390,7 +438,7 @@ void Rules::onBallReturned() noexcept {
   missionMessageThisStep_ = false;
   tilted_ = false;
   tiltHeat_ = 0.0;
-  say("RE-DEPLOY");
+  say(std::exchange(abortUnannounced_, false) ? "RE-DEPLOY  MISSION ABORTED" : "RE-DEPLOY");
 }
 
 Rules::DrainResult Rules::onDrain() noexcept {
@@ -405,6 +453,9 @@ Rules::DrainResult Rules::onDrain() noexcept {
   const bool wasTilted = tilted_;
   tilted_ = false;
   tiltHeat_ = 0.0;
+  // A mission that ran dry behind the tilt message is reported with the
+  // drain, or the player would only find it gone.
+  const bool abortNews = std::exchange(abortUnannounced_, false);
   if (ballSaveSteps_ > 0 && !wasTilted) {
     ballSaveSteps_ = 0;
     ballSaveUsed_ = true;
@@ -423,7 +474,7 @@ Rules::DrainResult Rules::onDrain() noexcept {
   if (extraBalls_ > 0) {
     --extraBalls_;
     cue(Sound::Drain);
-    say("SHOOT AGAIN");
+    say(abortNews ? "SHOOT AGAIN  MISSION ABORTED" : "SHOOT AGAIN");
     return DrainResult::ShootAgain;
   }
   if (ball_ >= kBallsPerGame) {
@@ -434,7 +485,7 @@ Rules::DrainResult Rules::onDrain() noexcept {
   }
   ++ball_;
   cue(Sound::Drain);
-  say("NEXT BALL");
+  say(abortNews ? "NEXT BALL  MISSION ABORTED" : "NEXT BALL");
   return DrainResult::NextBall;
 }
 

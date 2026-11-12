@@ -120,6 +120,8 @@ class Game {
   void serveBall();
   void snapshotForDrawing();
   void handleEvents();
+  // Tells the rules, once, that the served ball is in play.
+  void enterPlay();
   void startNewGame();
   void handleNudges(const InputState& input);
   void handleDrain();
