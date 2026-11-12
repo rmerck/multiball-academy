@@ -36,12 +36,19 @@ void drawAbout(SDL_Renderer* r, const HighScores& scores) {
   const SDL_FRect whole{0.0F, 0.0F, static_cast<float>(kCanvasWidth),
                         static_cast<float>(kCanvasHeight)};
   SDL_RenderFillRect(r, &whole);
+  // Only the dimming needs blending; the dialog's own fills are opaque.
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
   // The dialog: a bordered box in the middle of the canvas.
   const SDL_FRect box{190.0F, 90.0F, 900.0F, 780.0F};
   drawNeonFrame(r, box);
 
   const float middle = box.x + box.w * 0.5F;
+  // Ornaments in the table's style: zigzags down the margins and a small
+  // sunset over a grid between the scores and the closing note.
+  drawNeonZigzag(r, box.x + 46.0F, box.y + 120.0F, box.y + box.h - 120.0F, kPink);
+  drawNeonZigzag(r, box.x + box.w - 46.0F, box.y + 120.0F, box.y + box.h - 120.0F, kCyan);
+  drawNeonSunset(r, {middle - 300.0F, box.y + box.h - 258.0F, 600.0F, 118.0F});
   float y = box.y + 36.0F;
 
   drawNeonText(r, "SPACE CADET PINBALL", middle, y, 6.0F, kAmber, kPink, {120, 30, 200, 255},

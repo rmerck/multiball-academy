@@ -34,9 +34,13 @@ void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_
   const SDL_FRect whole{0.0F, 0.0F, static_cast<float>(kCanvasWidth),
                         static_cast<float>(kCanvasHeight)};
   SDL_RenderFillRect(r, &whole);
+  // Only the dimming needs blending; the dialog's own fills are opaque.
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
   const SDL_FRect box{290.0F, 250.0F, 700.0F, 460.0F};
   drawNeonFrame(r, box);
+  drawNeonZigzag(r, box.x + 40.0F, box.y + 110.0F, box.y + box.h - 110.0F, kPink);
+  drawNeonZigzag(r, box.x + box.w - 40.0F, box.y + 110.0F, box.y + box.h - 110.0F, kCyan);
 
   const float middle = box.x + box.w * 0.5F;
   drawNeonText(r, "NEW HIGH SCORE", middle, box.y + 36.0F, 5.0F, kAmber, kPink,
@@ -62,6 +66,7 @@ void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_
     }
     if (current && cursorLit) {
       const SDL_FRect marker{centre - 40.0F, lettersTop + 7.0F * kLetterSize + 12.0F, 80.0F, 8.0F};
+      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
       SDL_SetRenderDrawColor(r, kAmber.r, kAmber.g, kAmber.b, 255);
       SDL_RenderFillRect(r, &marker);
     }

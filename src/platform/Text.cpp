@@ -1,6 +1,7 @@
 #include "platform/Text.hpp"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 
 #include "platform/Font5x7.hpp"
@@ -197,6 +198,113 @@ void drawNeonRule(SDL_Renderer* renderer, float centerX, float y, float halfWidt
     y += 4.0F;
     half *= 0.72F;
   }
+}
+
+void drawNeonSunset(SDL_Renderer* renderer, const SDL_FRect& area) {
+  if (renderer == nullptr || !(area.w > 0.0F) || !(area.h > 0.0F)) {
+    return;
+  }
+  const SDL_Rect clip{static_cast<int>(std::lround(area.x)), static_cast<int>(std::lround(area.y)),
+                      static_cast<int>(std::lround(area.w)), static_cast<int>(std::lround(area.h))};
+  SDL_SetRenderClipRect(renderer, &clip);
+  // Every fill here is opaque.
+  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+  const float horizon = area.y + area.h * 0.62F;
+  const float centre = area.x + area.w * 0.5F;
+  const float bottom = area.y + area.h;
+  const float skyHeight = horizon - area.y;
+
+  // Sky: indigo shading to magenta at the horizon.
+  constexpr int kSkyBands = 16;
+  for (int i = 0; i < kSkyBands; ++i) {
+    const float t = static_cast<float>(i) / static_cast<float>(kSkyBands - 1);
+    SDL_SetRenderDrawColor(renderer, blend(14, 150, t * t), blend(4, 18, t), blend(44, 128, t),
+                           255);
+    fillRect(renderer, area.x, area.y + skyHeight * static_cast<float>(i) / kSkyBands, area.w,
+             skyHeight / kSkyBands + 1.0F);
+  }
+  // A few fixed stars, as fractions of the sky.
+  constexpr std::array<std::array<float, 2>, 16> kStars{{{0.04F, 0.20F}, {0.09F, 0.55F},
+      {0.15F, 0.12F}, {0.21F, 0.42F}, {0.27F, 0.24F}, {0.33F, 0.08F}, {0.38F, 0.36F},
+      {0.63F, 0.10F}, {0.68F, 0.40F}, {0.73F, 0.22F}, {0.79F, 0.50F}, {0.84F, 0.14F},
+      {0.89F, 0.34F}, {0.94F, 0.58F}, {0.97F, 0.18F}, {0.57F, 0.26F}}};
+  SDL_SetRenderDrawColor(renderer, 255, 240, 255, 255);
+  for (const std::array<float, 2>& star : kStars) {
+    fillRect(renderer, area.x + area.w * star[0], area.y + skyHeight * star[1], 2.0F, 2.0F);
+  }
+
+  // The sun, in rows: laser yellow at the crown, hot pink at the horizon,
+  // cut by slats that widen as it sinks.
+  const float radius = skyHeight * 0.88F;
+  float slatTop = horizon - radius * 0.52F;
+  float slatGap = 2.0F;
+  for (float y = horizon - radius; y < horizon; y += 1.0F) {
+    while (y >= slatTop + slatGap) {
+      slatTop += slatGap + 8.0F;
+      slatGap += 1.5F;
+    }
+    if (y >= slatTop) {
+      continue;
+    }
+    const float dy = horizon - y;
+    const float half = std::sqrt(radius * radius - dy * dy);
+    const float t = (y - (horizon - radius)) / radius;
+    SDL_SetRenderDrawColor(renderer, 255, blend(225, 60, t), blend(70, 170, t), 255);
+    fillRect(renderer, centre - half, y, half * 2.0F, 1.0F);
+  }
+
+  // A dark skyline along the horizon, lowest in front of the sun.
+  constexpr std::array<Uint8, 30> kSkyline{16, 10, 21, 14, 9,  18, 12, 7, 15, 11, 5,  8, 6, 4, 5,
+                                           4,  6,  5,  9,  12, 8,  17, 11, 7, 20, 9,  16, 10, 22, 12};
+  const float lot = area.w / static_cast<float>(kSkyline.size());
+  for (std::size_t i = 0; i < kSkyline.size(); ++i) {
+    const float height = static_cast<float>(kSkyline[i]);
+    const float left = area.x + lot * static_cast<float>(i);
+    SDL_SetRenderDrawColor(renderer, 10, 2, 26, 255);
+    fillRect(renderer, left, horizon - height, lot + 0.5F, height);
+    if (i % 3 == 0 && height > 8.0F) {
+      SDL_SetRenderDrawColor(renderer, 255, 225, 70, 255);
+      fillRect(renderer, left + 4.0F, horizon - height + 4.0F, 2.0F, 2.0F);
+      fillRect(renderer, left + 10.0F, horizon - height + 9.0F, 2.0F, 2.0F);
+    }
+  }
+
+  // The floor: a grid running to the horizon, magenta far away, cyan close.
+  SDL_SetRenderDrawColor(renderer, 14, 3, 38, 255);
+  fillRect(renderer, area.x, horizon, area.w, bottom - horizon);
+  SDL_SetRenderDrawColor(renderer, 190, 50, 210, 255);
+  for (int i = -14; i <= 14; ++i) {
+    const float fi = static_cast<float>(i);
+    SDL_RenderLine(renderer, centre + fi * 5.0F, horizon, centre + fi * area.w / 9.0F, bottom);
+  }
+  constexpr int kRows = 7;
+  for (int k = 1; k <= kRows; ++k) {
+    const float t = static_cast<float>(k) / static_cast<float>(kRows);
+    SDL_SetRenderDrawColor(renderer, blend(255, 70, t), blend(60, 235, t), blend(220, 255, t), 255);
+    fillRect(renderer, area.x, horizon + (bottom - horizon) * t * t - 1.0F, area.w,
+             1.0F + t);
+  }
+  SDL_SetRenderDrawColor(renderer, 215, 248, 255, 255);
+  fillRect(renderer, area.x, horizon - 1.0F, area.w, 2.0F);
+  SDL_SetRenderClipRect(renderer, nullptr);
+}
+
+void drawNeonZigzag(SDL_Renderer* renderer, float x, float top, float bottom, SDL_Color color) {
+  if (renderer == nullptr) {
+    return;
+  }
+  SDL_SetRenderDrawBlendMode(renderer, color.a == SDL_ALPHA_OPAQUE ? SDL_BLENDMODE_NONE
+                                                                   : SDL_BLENDMODE_BLEND);
+  SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+  constexpr float kDot = 3.0F;
+  int step = 0;
+  for (float y = top; y + kDot <= bottom; y += kDot) {
+    const int phase = step % 8;
+    const int offset = phase < 4 ? phase : 8 - phase;  // 0 1 2 3 4 3 2 1
+    fillRect(renderer, x + static_cast<float>(offset - 2) * kDot - kDot * 0.5F, y, kDot, kDot);
+    ++step;
+  }
+  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
 
 }  // namespace pinball
