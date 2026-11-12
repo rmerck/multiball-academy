@@ -76,9 +76,10 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 ## Layout
 
 - `src/core` game state and rules as a static library with no SDL dependency, unit tested without a display.
-- `src/platform` SDL window, input and rendering. Feeds input to `core` and draws its state.
+- `src/platform` SDL window, input, asset loading and rendering, as a static library shared by the game and the snapshot tool. `TableRenderer` draws the game; `App` owns the window and the loop.
 - `assets` PNG art, copied next to the executable at build time. Sprites are authored at 4x.
 - `tools/gimp` GIMP 3 Python scripts that generate every asset, so art is reproducible.
+- `tools/snapshot` development tool that plays the game headless with scripted input and writes one rendered frame to a PNG, with no window. `ctest` uses it as a rendering smoke test.
 - `tests` unit tests and headless smoke tests, run by `ctest`.
 - `cmake` shared build settings.
 
