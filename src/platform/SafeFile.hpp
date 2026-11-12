@@ -17,8 +17,8 @@ enum class ReadResult {
 };
 
 // Reads a whole regular file of at most maxBytes into out. out is empty
-// unless the result is Ok. A file that changes size while being read is an
-// Error. Never buffers more than one byte beyond the file's size.
+// unless the result is Ok. A file that changes size while being read is
+// refused. Never buffers more than one byte beyond the file's size.
 //
 // On POSIX systems the file is opened once and every check is made on that
 // open handle, so what is checked is what is read. A symbolic link as the
