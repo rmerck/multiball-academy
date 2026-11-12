@@ -28,4 +28,18 @@ inline constexpr Rect kHighScoreWell{kLeft + kInset, 800.0F, kWellWidth, 70.0F};
 inline constexpr Rect kWells[] = {kScoreWell, kStatusWell,  kRankWell,
                                   kMissionWell, kMessageWell, kHighScoreWell};
 
+// Every window lies inside the panel, and they run down it without touching.
+constexpr bool wellsAreLaidOut() noexcept {
+  float floor = 0.0F;
+  for (const Rect& well : kWells) {
+    if (well.w <= 0.0F || well.h <= 0.0F || well.x < kLeft || well.x + well.w > kLeft + kWidth ||
+        well.y < floor || well.y + well.h > kHeight) {
+      return false;
+    }
+    floor = well.y + well.h;
+  }
+  return true;
+}
+static_assert(wellsAreLaidOut());
+
 }  // namespace pinball::panel

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -34,6 +35,9 @@ inline constexpr std::uint64_t kMultiplierBank = 5000;
 inline constexpr std::uint64_t kJackpot = 500000;
 inline constexpr std::uint64_t kBonusPerHit = 250;
 inline constexpr std::uint64_t kMaxScore = 999'999'999'999ULL;
+// Awards that climb in steps never step down.
+static_assert(std::ranges::is_sorted(kAttackBumper) && std::ranges::is_sorted(kHyperspace) &&
+              std::ranges::is_sorted(kMedalBank));
 }  // namespace points
 
 // The rules of the game: scoring, lights, balls and awards. It knows nothing
@@ -54,6 +58,8 @@ class Rules {
   // about a second tilt, while occasional nudges never do.
   static constexpr double kTiltLimit = 2.5;
   static constexpr double kTiltCoolSeconds = 2.5;
+
+  static_assert(kFieldMultipliers.front() == 1 && std::ranges::is_sorted(kFieldMultipliers));
 
   enum class DrainResult : std::uint8_t { BallSaved, ShootAgain, NextBall, GameOver };
 

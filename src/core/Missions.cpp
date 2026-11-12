@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace pinball {
 
@@ -93,10 +94,46 @@ constexpr std::array<std::array<Mission, kMissionsPerRank>, kRankCount> kMission
     }},
 }};
 
+// The table is checked when it is compiled: a mission that could not be
+// played, paid nothing or did not fit the display never reaches a player.
+constexpr std::size_t kMaxMissionNameLength = 22;  // Names are kept this short for the display.
+
+constexpr bool stageIsValid(const MissionStage& stage) noexcept {
+  return std::to_underlying(stage.goal) < kGoalCount;
+}
+
+constexpr bool missionIsValid(const Mission& m) noexcept {
+  return !m.name.empty() && m.name.size() <= kMaxMissionNameLength && m.stages[0].count > 0 &&
+         std::ranges::all_of(m.stages, stageIsValid) && m.award > 0 && m.progress > 0 &&
+         m.progress <= kProgressPerRank;
+}
+
+constexpr bool missionTableIsValid() noexcept {
+  std::uint64_t previousNormal = 0;
+  for (const auto& rank : kMissions) {
+    if (!std::ranges::all_of(rank, missionIsValid)) {
+      return false;
+    }
+    // Awards never fall as rank rises, and the special pays more.
+    if (rank[0].award < previousNormal || rank[kSpecialMission].award <= rank[0].award) {
+      return false;
+    }
+    previousNormal = rank[0].award;
+  }
+  return true;
+}
+
+constexpr auto isNotEmpty = [](std::string_view text) { return !text.empty(); };
+
+static_assert(missionTableIsValid());
+static_assert(std::ranges::all_of(kRankNames, isNotEmpty));
+static_assert(std::ranges::all_of(kGoalTexts, isNotEmpty));
+static_assert(kNormalProgress < kSpecialProgress && kSpecialProgress <= kProgressPerRank);
+
 }  // namespace
 
 std::string_view goalText(Goal goal) noexcept {
-  const auto index = static_cast<std::size_t>(goal);
+  const std::size_t index = std::to_underlying(goal);
   return index < kGoalTexts.size() ? kGoalTexts[index] : std::string_view{};
 }
 
