@@ -128,15 +128,23 @@ bool App::needsManualPacing() const {
   return (SDL_GetWindowFlags(window_.get()) & hidden) != 0;
 }
 
+namespace {
+// How long a halted loop sleeps between redraws.
+constexpr Sint32 kHaltedWaitMs = 100;
+}  // namespace
+
 int App::run() {
   std::uint64_t previous = SDL_GetTicksNS();
   std::uint32_t frames = 0;
+  bool wasHalted = false;
 
   while (running_) {
     SDL_Event event;
-    // While nothing is moving, sleep until something happens instead of
-    // redrawing a still picture at full rate.
-    if (halted() && !options_.frameLimit && SDL_WaitEventTimeout(&event, 100)) {
+    // While nothing is moving or sounding, sleep until something happens
+    // instead of redrawing a still picture at full rate. A sound still
+    // ringing keeps the loop at frame rate so its tail plays without gaps.
+    if (halted() && !options_.frameLimit && mixer_.activeVoices() == 0 &&
+        SDL_WaitEventTimeout(&event, kHaltedWaitMs)) {
       handleEvent(event);
     }
     while (SDL_PollEvent(&event)) {
@@ -149,26 +157,34 @@ int App::run() {
 
     readInput();
 
-    // While paused the clock keeps moving but nothing accumulates, so there is
-    // no burst of catch-up steps on resume.
-    if (!halted()) {
-      const int steps = timestep_.advance(frameSeconds);
+    // While halted the clock keeps moving but nothing accumulates. The first
+    // frame after a halt adds no time either: its interval covers the wait,
+    // and would otherwise arrive as a burst of catch-up steps.
+    const bool isHalted = halted();
+    if (!isHalted) {
+      const int steps = timestep_.advance(wasHalted ? 0.0 : frameSeconds);
+      // Sounds from every step of the frame start together, once each.
+      SoundSet sounds = 0;
       for (int i = 0; i < steps; ++i) {
         game_.step(input_);
-        mixer_.trigger(game_.sounds());
+        sounds |= game_.sounds();
+        // Checked per step, so a game that ends and restarts within one
+        // frame is still recorded.
+        recordFinishedGame();
       }
+      mixer_.trigger(sounds);
       if (steps > 0) {
         // The simulation has seen every latched press at least once.
         latched_ = InputState{};
       }
-      recordFinishedGame();
     }
+    wasHalted = isHalted;
 
-    // The accumulator is frozen while paused, so alpha is stable and nothing snaps.
     if (audio_) {
       audio_->pump(mixer_);
     }
 
+    // The accumulator is frozen while halted, so alpha is stable and nothing snaps.
     render(timestep_.alpha());
 
     // Presenting normally blocks until vblank. When it will not (no vsync,
@@ -202,15 +218,18 @@ void App::handleEvent(const SDL_Event& event) {
       break;
     case SDL_EVENT_WINDOW_FOCUS_LOST:
     case SDL_EVENT_WINDOW_MINIMIZED:
-      // Do not let the ball drain while the player is elsewhere.
-      autoPaused_ = true;
-      latched_ = InputState{};
-      break;
     case SDL_EVENT_WINDOW_FOCUS_GAINED:
-    case SDL_EVENT_WINDOW_RESTORED:
-      autoPaused_ = false;
+    case SDL_EVENT_WINDOW_RESTORED: {
+      // Do not let the ball drain while the player is elsewhere. The window's
+      // own state decides, not the event, so a restore without focus stays
+      // paused. Timed automated runs have no player and never auto-pause.
+      const SDL_WindowFlags flags = SDL_GetWindowFlags(window_.get());
+      const bool away = (flags & SDL_WINDOW_INPUT_FOCUS) == 0 ||
+                        (flags & SDL_WINDOW_MINIMIZED) != 0;
+      autoPaused_ = away && !options_.frameLimit;
       latched_ = InputState{};
       break;
+    }
     case SDL_EVENT_KEY_DOWN:
       if (event.key.repeat) {
         break;
@@ -219,13 +238,16 @@ void App::handleEvent(const SDL_Event& event) {
       if (event.key.key == SDLK_F1) {
         aboutOpen_ = !aboutOpen_;
         latched_ = InputState{};
+      } else if (event.key.key == SDLK_ESCAPE && aboutOpen_) {
+        aboutOpen_ = false;
+        latched_ = InputState{};
       } else if (event.key.key == SDLK_F3) {
         paused_ = !paused_;
         // Nothing pressed during a pause carries into play.
         latched_ = InputState{};
       } else if (event.key.key == SDLK_F4) {
         toggleFullscreen();
-      } else if (event.key.key == SDLK_M) {
+      } else if (event.key.scancode == SDL_SCANCODE_M) {
         mixer_.setMuted(!mixer_.muted());
       }
       break;

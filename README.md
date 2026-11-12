@@ -38,7 +38,7 @@ Options:
 
 ## Controls
 
-Keys are read by physical position (scancode), so they sit where Z and / are on a US keyboard whatever the layout.
+Keys are read by physical position (scancode), so they sit where Z and / are on a US keyboard whatever the layout. The function keys and Escape are matched by name. Escape or F1 closes the About screen.
 
 | Key | Action | State |
 |---|---|---|
