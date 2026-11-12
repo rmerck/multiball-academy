@@ -19,21 +19,29 @@ include(cmake/Hardening.cmake)
 # 3.4 is the first release with the built-in PNG loader used for assets.
 find_package(SDL3 3.4 REQUIRED CONFIG)
 
-# Platform-independent logic. No SDL dependency so it is unit-testable headless.
-add_library(pinball_core INTERFACE)
-target_include_directories(pinball_core INTERFACE src)
-pinball_apply_hardening(pinball_core INTERFACE)
+# Platform-independent game logic. No SDL dependency so it is unit-testable headless.
+add_library(pinball_core STATIC
+  src/core/Args.cpp
+  src/core/Game.cpp
+)
+target_include_directories(pinball_core PUBLIC src)
+# PUBLIC so the same warnings, hardening and sanitizer flags reach every consumer.
+pinball_apply_hardening(pinball_core PUBLIC)
 
 add_executable(pinball
   src/main.cpp
   src/platform/App.cpp
 )
 target_link_libraries(pinball PRIVATE pinball_core SDL3::SDL3)
-pinball_apply_hardening(pinball PRIVATE)
 
 include(CTest)
 if(BUILD_TESTING)
-  add_executable(core_tests tests/FixedTimestepTest.cpp)
+  add_executable(core_tests
+    tests/main.cpp
+    tests/ArgsTest.cpp
+    tests/FixedTimestepTest.cpp
+    tests/GameTest.cpp
+  )
   target_link_libraries(core_tests PRIVATE pinball_core)
   add_test(NAME core_tests COMMAND core_tests)
 
@@ -45,22 +53,22 @@ if(BUILD_TESTING)
   set_tests_properties(smoke_headless PROPERTIES
     ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 30)
 
-  # Bad arguments must be rejected by the parser, shown by the usage text.
-  # A crash or an SDL failure would not print it.
+  # Bad arguments must be rejected cleanly: exit code 1, usage text, and no
+  # sanitizer report. Checked by a script because CTest's WILL_FAIL and
+  # PASS_REGULAR_EXPRESSION cannot assert all three together.
   set(bad_args_cases
-    "negative|--frames|-5"
-    "zero|--frames|0"
-    "too_large|--frames|1000001"
-    "trailing_junk|--frames|5x"
-    "missing_value|--frames"
-    "unknown_flag|--bogus")
+    "negative:--frames|-5"
+    "zero:--frames|0"
+    "too_large:--frames|1000001"
+    "trailing_junk:--frames|5x"
+    "missing_value:--frames"
+    "unknown_flag:--bogus")
   foreach(case IN LISTS bad_args_cases)
-    string(REPLACE "|" ";" parts "${case}")
-    list(POP_FRONT parts name)
-    add_test(NAME rejects_${name} COMMAND pinball ${parts})
-    set_tests_properties(rejects_${name} PROPERTIES
-      ENVIRONMENT "${PINBALL_HEADLESS_ENV}"
-      PASS_REGULAR_EXPRESSION "Usage: pinball"
-      TIMEOUT 30)
+    string(REGEX MATCH "^[^:]+" name "${case}")
+    string(REGEX REPLACE "^[^:]+:" "" args "${case}")
+    add_test(NAME rejects_${name}
+      COMMAND ${CMAKE_COMMAND} -DPINBALL=$<TARGET_FILE:pinball> -DARGS=${args}
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/ExpectUsageError.cmake)
+    set_tests_properties(rejects_${name} PROPERTIES TIMEOUT 30)
   endforeach()
 endif()

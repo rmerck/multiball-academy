@@ -58,8 +58,8 @@ Options:
 
 ## Layout
 
-- `src/core` platform-independent logic, unit tested without a display.
-- `src/platform` SDL window, input and rendering.
+- `src/core` game state and rules as a static library with no SDL dependency, unit tested without a display.
+- `src/platform` SDL window, input and rendering. Feeds input to `core` and draws its state.
 - `tests` unit tests and headless smoke tests, run by `ctest`.
 - `cmake` shared build settings.
 

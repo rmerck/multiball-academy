@@ -1,26 +1,11 @@
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <limits>
 
+#include "Check.hpp"
+#include "Suites.hpp"
 #include "core/FixedTimestep.hpp"
 
-namespace {
-
-int failures = 0;
-
-void check(bool condition, const char* expr, int line) {
-  if (!condition) {
-    std::fprintf(stderr, "FAIL line %d: %s\n", line, expr);
-    ++failures;
-  }
-}
-
-#define CHECK(expr) check((expr), #expr, __LINE__)
-
-}  // namespace
-
-int main() {
+void testFixedTimestep() {
   using pinball::FixedTimestep;
   const double step = 1.0 / 120.0;
 
@@ -101,10 +86,4 @@ int main() {
     const double expected = elapsed / step;
     CHECK(std::fabs(static_cast<double>(total) - expected) <= 2.0);
   }
-
-  if (failures == 0) {
-    std::puts("core_tests: all passed");
-    return EXIT_SUCCESS;
-  }
-  return EXIT_FAILURE;
 }

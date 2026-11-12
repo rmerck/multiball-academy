@@ -7,6 +7,8 @@
 #include <optional>
 
 #include "core/FixedTimestep.hpp"
+#include "core/Game.hpp"
+#include "core/Input.hpp"
 
 namespace pinball {
 
@@ -43,7 +45,6 @@ class App {
   App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, bool vsync);
 
   void handleEvent(const SDL_Event& event);
-  void update(double dt);
   void render(double alpha);
   void toggleFullscreen();
   // True when presenting will not block, so the loop must sleep on its own.
@@ -53,12 +54,12 @@ class App {
   // Members are destroyed in reverse order: renderer first, then window.
   std::unique_ptr<SDL_Window, WindowDeleter> window_;
   std::unique_ptr<SDL_Renderer, RendererDeleter> renderer_;
-  FixedTimestep timestep_{1.0 / 120.0, 8};
+  FixedTimestep timestep_{Game::kStepSeconds, 8};
   bool vsync_ = false;
   bool running_ = true;
   bool paused_ = false;
-  double simTime_ = 0.0;
-  std::uint64_t stepsRun_ = 0;
+  Game game_;
+  InputState input_;
 };
 
 }  // namespace pinball
