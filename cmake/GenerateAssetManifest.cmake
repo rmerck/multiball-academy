@@ -15,7 +15,7 @@ foreach(name IN LISTS files)
   # loader's size limit), so a bad asset fails the build, not the first run.
   string(LENGTH "${name}" name_length)
   if(NOT name MATCHES "^[a-z0-9_-][a-z0-9_.-]*(/[a-z0-9_-][a-z0-9_.-]*)*[.]png$"
-     OR name MATCHES "[.]/" OR name_length GREATER 128)
+     OR name MATCHES "[.]/" OR name MATCHES "[.][.]" OR name_length GREATER 128)
     message(FATAL_ERROR "Asset name is not allowed: ${name}")
   endif()
   if(name MATCHES "(^|/)(con|prn|aux|nul|com[0-9]|lpt[0-9])([.]|$)")

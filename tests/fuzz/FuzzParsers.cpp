@@ -3,9 +3,13 @@
 // promises about anything it accepts.
 //
 // Build with clang: -DPINBALL_FUZZ=ON -DPINBALL_SANITIZE=ON, then run
-// build/pinball_fuzz -max_total_time=60
+// build/pinball_fuzz -max_total_time=60 -dict=tests/fuzz/parsers.dict <new dir> tests/fuzz/corpus
+//
+// Seeds in tests/fuzz/corpus start with '0', '1', '2' or '3', which select
+// the score, PNG, asset name and argument parsers in that order.
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <string_view>
@@ -18,11 +22,14 @@
 
 namespace {
 
-void require(bool ok) {
+// Says which promise was broken before stopping, so a crash report names it.
+void requireAt(bool ok, const char* what, int line) {
   if (!ok) {
+    std::fprintf(stderr, "invariant broken at line %d: %s\n", line, what);
     std::abort();
   }
 }
+#define require(expr) requireAt((expr), #expr, __LINE__)
 
 void fuzzHighScores(std::string_view text) {
   pinball::HighScores scores;
@@ -53,8 +60,8 @@ void fuzzAssetName(std::string_view name) {
     return;
   }
   require(!name.empty() && name.size() <= 128);
-  // Every part between slashes is a real name: not empty, not "." or "..",
-  // not hidden. (Two dots inside a name, as in "a..png", are harmless.)
+  require(name.find("..") == std::string_view::npos);
+  // Every part between slashes is a real name: not empty and not hidden.
   std::size_t start = 0;
   while (start <= name.size()) {
     std::size_t end = name.find('/', start);

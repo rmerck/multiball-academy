@@ -12,6 +12,9 @@ void testAssetName() {
   CHECK(isSafeAssetName("a.png"));
 
   CHECK(!isSafeAssetName(""));
+  CHECK(!isSafeAssetName("a..png"));
+  CHECK(!isSafeAssetName("sprites/a..b.png"));
+  CHECK(isSafeAssetName("sprites/a.b.png"));
   CHECK(!isSafeAssetName(".png"));
   CHECK(!isSafeAssetName("ball"));
   CHECK(!isSafeAssetName("ball.bmp"));

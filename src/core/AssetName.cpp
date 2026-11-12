@@ -49,6 +49,10 @@ bool isSafeAssetName(std::string_view name) noexcept {
       if (component.empty() || component.front() == '.' || component.back() == '.') {
         return false;
       }
+      // Two dots in a row are never needed and are refused wherever they sit.
+      if (component.find("..") != std::string_view::npos) {
+        return false;
+      }
       // Portability: refuse names Windows aliases to devices.
       if (isReservedStem(component.substr(0, component.find('.')))) {
         return false;

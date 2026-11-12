@@ -42,6 +42,9 @@ void SoundMixer::start(Wave wave, float startHz, float endHz, float seconds, flo
       leastLeft = left;
     }
   }
+  if (chosen == nullptr) {
+    return;  // Cannot happen: the pool is never empty.
+  }
   const float rate = static_cast<float>(kSampleRate);
   Voice& v = *chosen;
   v.active = true;

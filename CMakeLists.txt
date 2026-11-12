@@ -36,6 +36,9 @@ if(PINBALL_FUZZ)
   if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     message(FATAL_ERROR "PINBALL_FUZZ needs clang with libFuzzer (not Apple clang)")
   endif()
+  if(NOT PINBALL_SANITIZE)
+    message(WARNING "PINBALL_FUZZ without PINBALL_SANITIZE finds far less: add -DPINBALL_SANITIZE=ON")
+  endif()
   add_library(pinball_fuzz_core STATIC
     src/core/Args.cpp
     src/core/AssetName.cpp
@@ -106,21 +109,27 @@ add_executable(pinball src/main.cpp)
 target_link_libraries(pinball PRIVATE pinball_platform)
 # A Release game carries no debug map, so it names no directory of the
 # machine that built it.
-if(NOT MSVC)
+if(APPLE)
   target_link_options(pinball PRIVATE $<$<CONFIG:Release>:-Wl,-S>)
+elseif(NOT MSVC)
+  # And no symbol names either.
+  target_link_options(pinball PRIVATE $<$<CONFIG:Release>:-Wl,-s>)
 endif()
 
 # macOS hardened runtime: the system then ignores DYLD_INSERT_LIBRARIES and
 # refuses to load any library that is not Apple's. That needs the game to be
 # self-contained, so it is tied to the statically linked pinned dependencies.
-# The signature is ad hoc: it turns the protections on but does not identify
+# Applied to Release builds. The signature is ad hoc: it turns the protections on but does not identify
 # a publisher, which takes a Developer ID certificate and notarisation.
 if(APPLE AND PINBALL_FETCH_DEPS AND NOT PINBALL_SANITIZE)
   option(PINBALL_HARDENED_RUNTIME "Ad hoc sign the game with the hardened runtime" ON)
   if(PINBALL_HARDENED_RUNTIME)
+    # Release only: a debugger cannot attach to a hardened process, so the
+    # configurations meant for debugging are left alone.
     add_custom_command(TARGET pinball POST_BUILD
-      COMMAND codesign --force --sign - --options runtime $<TARGET_FILE:pinball>
-      COMMENT "Signing with the hardened runtime"
+      COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,env,true>
+              codesign --force --sign - --options runtime $<TARGET_FILE:pinball>
+      COMMENT "Signing with the hardened runtime (Release only)"
       VERBATIM)
   endif()
 endif()

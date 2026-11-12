@@ -37,7 +37,7 @@ Options:
 
 - `-DPINBALL_SANITIZE=ON` builds with AddressSanitizer and UBSan.
 - `-DPINBALL_WERROR=ON` treats warnings as errors. CI uses this.
-- `-DPINBALL_FETCH_DEPS=ON` needs no Homebrew libraries: it downloads SDL3 3.4.0 and Box2D 3.2.0 at fixed, hash-checked revisions, builds them and links them statically. CI uses this. On macOS it also signs the game ad hoc with the hardened runtime.
+- `-DPINBALL_FETCH_DEPS=ON` needs no Homebrew libraries: it downloads SDL3 3.4.20 (release archive, checked by SHA-256) and Box2D 3.2.0 (fixed by commit), builds them with the same protective compiler flags as the game, and links them statically. CI uses this. On macOS a Release build is also signed ad hoc with the hardened runtime. `tools/check_pins.sh` reports when either has a newer release; a weekly workflow runs it.
 - `-DPINBALL_FUZZ=ON` (clang with libFuzzer, not Apple clang) builds only `pinball_fuzz`, which fuzzes the score file, PNG header, asset name and argument parsers.
 
 A build to give to someone else:
@@ -47,9 +47,11 @@ cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DPINBALL_FETCH_DEPS=ON
 cmake --build build-release --parallel
 ```
 
-That binary is optimised, loads only system libraries, carries no path from the build machine, and runs under the hardened runtime. It is not signed by an identified developer or notarised, so macOS Gatekeeper will still warn about it on another machine.
+On macOS that binary is optimised, links only system libraries, carries no path from the build machine, and runs under the hardened runtime, so the system ignores injected libraries. It is not signed by an identified developer or notarised, so macOS Gatekeeper will still warn about it on another machine.
 
-Linux builds and passes the tests in CI with GCC and clang. Windows is untested.
+On Linux the same build is a position-independent executable with full RELRO, stack protection, fortified library calls and control-flow protection. SDL still opens the system's display and audio libraries at run time, as every SDL program does.
+
+Linux builds and passes the tests in CI with GCC and clang, with sanitizers and as an optimised Release build. Windows is untested.
 
 ## Controls
 

@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request replaces the older run; runs on main finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Every job builds SDL3 and Box2D from pinned, hash-checked sources
 # (cmake/PinnedDeps.cmake), not from whatever a package manager has today.
@@ -23,7 +24,7 @@ jobs:
       matrix:
         sanitize: ["OFF", "ON"]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Configure
@@ -44,7 +45,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Configure
@@ -59,6 +60,7 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: No build paths in the binary
         run: |
+          test -x build/pinball
           if strings -a build/pinball | grep -E '/Users/|/home/|/private/var/'; then
             echo "build paths found in the binary"; exit 1
           fi
@@ -79,9 +81,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        compiler: [g++, clang++]
+        include:
+          - {cc: gcc, cxx: g++, build: RelWithDebInfo, sanitize: "ON"}
+          - {cc: clang, cxx: clang++, build: RelWithDebInfo, sanitize: "ON"}
+          # Optimised, as it would be handed out: other warnings appear at
+          # this level, and the hardening is checked on the result.
+          - {cc: gcc, cxx: g++, build: Release, sanitize: "OFF"}
+    name: linux (${{ matrix.cxx }}, ${{ matrix.build }})
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install build headers
@@ -93,23 +101,40 @@ jobs:
             libgl1-mesa-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
       - name: Configure
         env:
-          CXX: ${{ matrix.compiler }}
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+          BUILD_TYPE: ${{ matrix.build }}
+          SANITIZE: ${{ matrix.sanitize }}
         run: >
           cmake -S . -B build
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
           -DPINBALL_FETCH_DEPS=ON
           -DPINBALL_WERROR=ON
-          -DPINBALL_SANITIZE=ON
+          -DPINBALL_SANITIZE="$SANITIZE"
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Hardening is present in the Release binary
+        if: matrix.build == 'Release'
+        run: |
+          test -x build/pinball
+          readelf -h build/pinball | grep -E 'Type:\s+DYN'
+          readelf -d build/pinball | grep -E 'BIND_NOW'
+          readelf -lW build/pinball | grep -E 'GNU_RELRO'
+          readelf -lW build/pinball | grep -E 'GNU_STACK\s.*RW\s' 
+          readelf -s --dyn-syms build/pinball | grep -E '__stack_chk_fail'
+          readelf -s --dyn-syms build/pinball | grep -E '__[a-z]+_chk'
+          readelf -n build/pinball | grep -E 'IBT, SHSTK'
+          if strings -a build/pinball | grep -E '/home/|/Users/'; then
+            echo "build paths found in the binary"; exit 1
+          fi
 
   fuzz:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Configure
@@ -125,4 +150,7 @@ jobs:
       - name: Build
         run: cmake --build build --parallel --target pinball_fuzz
       - name: Fuzz the parsers
-        run: ./build/pinball_fuzz -max_total_time=120 -max_len=1024 -print_final_stats=1
+        run: |
+          mkdir found
+          ./build/pinball_fuzz -max_total_time=120 -max_len=1024 -print_final_stats=1 \
+            -dict=tests/fuzz/parsers.dict found tests/fuzz/corpus
