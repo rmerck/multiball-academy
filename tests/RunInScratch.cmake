@@ -5,7 +5,7 @@ if(NOT DEFINED TEST OR NOT DEFINED SCRATCH)
 endif()
 # Only ever remove a directory an earlier run of this test left behind.
 if(EXISTS "${SCRATCH}")
-  if(NOT SCRATCH MATCHES "/safefile_scratch$")
+  if(NOT SCRATCH MATCHES "/safefile(_fallback)?_scratch$")
     message(FATAL_ERROR "refusing to remove ${SCRATCH}")
   endif()
   file(REMOVE_RECURSE "${SCRATCH}")

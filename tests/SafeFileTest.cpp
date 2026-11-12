@@ -22,6 +22,15 @@
 #define PINBALL_POSIX_TESTS 1
 #endif
 
+// True where renameNoReplace has only link() and unlink() to work with: on a
+// POSIX system without the single call, or when a build leaves that call out
+// on purpose (the safe_files_fallback test), so that the path other systems
+// depend on is run here too.
+#if defined(PINBALL_POSIX_TESTS) && \
+    (defined(PINBALL_NO_ATOMIC_NOREPLACE) || !(defined(__linux__) || defined(__APPLE__)))
+#define PINBALL_LINK_FALLBACK 1
+#endif
+
 #if defined(__linux__)
 #include <sys/syscall.h>
 
@@ -248,6 +257,28 @@ int main(int argc, char* argv[]) {
     CHECK(pinball::renameNoReplace((sub / "absent").string(), (sub / "new").string()) ==
           MoveResult::Error);
     CHECK(!fs::exists(sub / "new"));
+    // A directory. The single system call moves it; the link() fallback
+    // cannot, and must say so with the directory and its contents in place
+    // and nothing made at the new name. A taken name is refused either way.
+    {
+      const fs::path folder = sub / "folder";
+      const fs::path moved = sub / "folder2";
+      fs::create_directory(folder, error);
+      spit(folder / "inside.txt", "inside");
+      CHECK(pinball::renameNoReplace(folder.string(), to) == MoveResult::Exists);
+      CHECK(slurp(folder / "inside.txt") == "inside" && slurp(to) == "moved");
+#if defined(PINBALL_LINK_FALLBACK)
+      CHECK(pinball::renameNoReplace(folder.string(), moved.string()) == MoveResult::Error);
+      CHECK(slurp(folder / "inside.txt") == "inside" && !fs::exists(moved));
+      CHECK(pinball::setAside(folder.string()).empty());
+      CHECK(fs::is_directory(folder) && !fs::exists(folder.string() + ".bad"));
+#else
+      CHECK(pinball::renameNoReplace(folder.string(), moved.string()) == MoveResult::Moved);
+      CHECK(!fs::exists(folder) && slurp(moved / "inside.txt") == "inside");
+      CHECK(pinball::setAside(moved.string()) == moved.string() + ".bad");
+      CHECK(slurp(fs::path(moved.string() + ".bad") / "inside.txt") == "inside");
+#endif
+    }
 #if defined(PINBALL_POSIX_TESTS)
     // A link that points nowhere still holds its name: not replaced, and
     // nothing appears where it points.
@@ -358,6 +389,10 @@ int main(int argc, char* argv[]) {
     std::fprintf(stderr, "safefile_tests: %d failure(s)\n", failures);
     return EXIT_FAILURE;
   }
+#if defined(PINBALL_NO_ATOMIC_NOREPLACE)
+  std::puts("safefile_tests (link fallback): all passed");
+#else
   std::puts("safefile_tests: all passed");
+#endif
   return EXIT_SUCCESS;
 }

@@ -73,7 +73,7 @@ On Linux the same build is a position-independent executable with full RELRO, st
 
 ### Tests and CI
 
-`ctest` runs 16 tests: the core unit tests (`core_tests`, no display needed), the file handling tests, two asset checks, three offscreen render checks, a check that the snapshot tool replaces a symbolic link at its output name instead of writing through it, the layout dump check, a headless run of the real game, and six rejected command lines. They need no display or audio device, and scratch files stay in the build directory. A timed run (`--frames`) never opens the high score file, and on Linux the tests also point the per-user preferences directory into the build tree.
+`ctest` runs 17 tests: the core unit tests (`core_tests`, no display needed), the file handling tests, the same file handling tests built without the system's single-call move-without-replace so that the `link()` fallback other systems use is run everywhere (`safe_files_fallback`), two asset checks, three offscreen render checks, a check that the snapshot tool replaces a symbolic link at its output name instead of writing through it, the layout dump check, a headless run of the real game, and six rejected command lines. They need no display or audio device, and scratch files stay in the build directory. A timed run (`--frames`) never opens the high score file, and on Linux the tests also point the per-user preferences directory into the build tree.
 
 Every pull request must pass seven CI jobs, all with warnings as errors. The first six build SDL3 and Box2D from the pinned sources, which are fetched and verified on every run. Only SDL's compiled objects are cached between runs, never source code, and only runs on `main` write the cache.
 
@@ -144,13 +144,13 @@ Each nudge adds tilt heat, which cools over 2.5 seconds. Two quick nudges show a
 
 ### Missions and ranks
 
-1. Hit a mission target on the left wall to select a mission: top, middle or bottom picks one of the rank's three missions. Lighting all three selects the rank's special mission, and it stays selected: the three lights stay on until the ramp accepts it, and further hits on the mission targets do not swap it for an ordinary mission. The mission targets are ignored while a mission is active, and the hit that completes a mission does not select the next one.
+1. Hit a mission target on the left wall to select a mission: top, middle or bottom picks one of the rank's three missions. Lighting all three selects the rank's special mission, and it stays selected: the three lights stay on until the ramp accepts it, and further hits on the mission targets do not swap it for an ordinary mission. The selection is announced, with its sound, only when it changes: hitting the target of the mission already selected says nothing. The mission targets are ignored while a mission is active, and the hit that completes a mission does not select the next one.
 2. Shoot the launch ramp to accept it. The fuel gauge fills and the mission targets' lights go out: until the mission ends they score without lighting, so the special mission always needs all three hit afresh. The ramp is a timed shot: a firm one off the right flipper, or a falling ball caught late by the left one.
 3. Do what the display asks. Some missions have two stages.
 4. Fuel lasts 90 seconds and burns only while a ball is in play. The ramp refuels. If it runs out the mission is aborted. On a tilted table the display keeps saying TILT, so the abort is reported with the message that follows the drain.
 5. Completing a mission pays its award (500,000 at Cadet up to 10,000,000 for the last special mission), plus the jackpot if lit, and fills the rank gauge: 6 of 18 for a normal mission, 9 for a special. A full gauge is a promotion.
 
-Ranks: Cadet, Ensign, Lieutenant, Captain, Lt Commander, Commander, Commodore, Admiral, Fleet Admiral. Each rank has its own four missions with larger counts and awards. Missions carry over from ball to ball. The mission table is in `src/core/Missions.cpp`.
+Ranks: Cadet, Ensign, Lieutenant, Captain, Lt Commander, Commander, Commodore, Admiral, Fleet Admiral. Each rank has its own four missions with larger counts and awards. Missions carry over from ball to ball. At game over the mission lights go out: a selection still waiting for the ramp, or a mission still running, is dropped, and the rank stays on show until the next game. The mission table is in `src/core/Missions.cpp`.
 
 The mission structure follows the original (select with the mission targets, accept on the ramp, fuel, rank lights). The individual missions, their counts and awards are this project's own.
 
@@ -242,7 +242,7 @@ Regeneration is reproducible: two-colour gradients are drawn without dithering (
 
 Two GIMP behaviours the helpers in `tools/gimp/common.py` work around: a selection fill ignores the alpha of the foreground colour (`fill_selection` applies it as the fill opacity), and a two-colour gradient ignores alpha altogether (`alpha_gradient` fades to transparent instead).
 
-To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png` plays 1200 steps (ten seconds) and writes the frame to the current directory, as a new file readable by its owner; a link with that name is replaced, not followed. A third argument, `about` or `initials`, draws that screen instead.
+To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png` plays 1200 steps (ten seconds) and writes the frame to the current directory, as a new file with ordinary permissions (0644 less the umask, unlike the owner-only score file); a link with that name is replaced, not followed. A third argument, `about` or `initials`, draws that screen instead.
 
 ### Integrity
 
