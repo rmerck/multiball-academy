@@ -78,7 +78,9 @@ inline constexpr Capsule kLeftGuideLower{{90.0F, 743.2F}, {247.0F, 844.8F}, kWal
 // Hangs from the top of the arch, left of centre. A launched ball riding the
 // arch strikes it and drops into the top of the field instead of orbiting
 // all the way round to the left wall.
-inline constexpr Capsule kArchDeflector{{250.0F, 58.0F}, {258.0F, 98.0F}, kWallRadius};
+// Placed so that its tip stays more than a ball's width from the nearest
+// lane post; closer, the two made a pocket.
+inline constexpr Capsule kArchDeflector{{228.0F, 66.0F}, {238.0F, 104.0F}, kWallRadius};
 
 // Posts separating the three re-entry lanes at the top of the field.
 inline constexpr float kLanePitch = 55.5F;
@@ -286,7 +288,8 @@ inline constexpr std::array<Hole, 6> kHoles{{
     {kWormholeB, HoleType::Wormhole, kWormholeC, {-120.0F, 300.0F}},
     {kWormholeC, HoleType::Wormhole, kWormholeA, {120.0F, 300.0F}},
     {kBlackHole, HoleType::BlackHole, kBlackHole, {-220.0F, 420.0F}},
-    {kHyperspace, HoleType::Hyperspace, kHyperspace, {-380.0F, 260.0F}},
+    // Lobbed across the table to land on the middle of the left flipper.
+    {kHyperspace, HoleType::Hyperspace, kHyperspace, {-420.0F, 100.0F}},
     {kRampEntry, HoleType::Ramp, kRampExit, {90.0F, 260.0F}},
 }};
 

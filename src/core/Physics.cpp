@@ -474,6 +474,7 @@ void PhysicsWorld::checkZones() {
     // Take the ball off the table. Disabling the body removes it from
     // collision until it is released.
     ballHeld_ = true;
+    heldHole_ = i;
     b2Body_SetLinearVelocity(ball_, {0.0F, 0.0F});
     b2Body_SetAngularVelocity(ball_, 0.0F);
     b2Body_Disable(ball_);

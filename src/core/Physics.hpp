@@ -92,6 +92,8 @@ class PhysicsWorld {
 
   // True while a hole is holding the ball off the playfield.
   bool ballHeld() const noexcept { return ballHeld_; }
+  // Index of the hole holding the ball. Meaningful only while ballHeld().
+  std::size_t heldHole() const noexcept { return heldHole_; }
   // Returns a held ball to play at position with velocity. The hole it was
   // in, and the hole at the exit, ignore it until it has moved clear.
   void releaseBall(Vec2 position, Vec2 velocity);
@@ -147,6 +149,7 @@ class PhysicsWorld {
   std::array<bool, table::kBumpers.size()> touchingBumper_{};
 
   bool ballHeld_ = false;
+  std::size_t heldHole_ = 0;
   // Rollovers the ball is currently on, so each pass reports once.
   std::array<bool, table::kRollovers.size()> onRollover_{};
   // Holes that will take the ball. A hole disarms when it returns a ball.
