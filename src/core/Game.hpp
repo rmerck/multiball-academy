@@ -35,9 +35,6 @@ class Game {
   // Number of balls lost down the drain so far.
   std::uint32_t drainCount() const noexcept { return drainCount_; }
 
-  // Test access to the simulation.
-  PhysicsWorld& physics() noexcept { return physics_; }
-
  private:
   void serveBall();
 

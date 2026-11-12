@@ -76,6 +76,8 @@ std::unique_ptr<App> App::create(const AppOptions& options) {
   SDL_SetWindowMinimumSize(window.get(), kLogicalWidth / 4, kLogicalHeight / 4);
 
   // A missing or damaged asset is fatal: fail at startup, not mid-game.
+  // (The Game inside App can throw if the physics world cannot be created;
+  // main reports that.)
   const AssetLoader assets = AssetLoader::fromExecutableLocation();
   Textures textures;
   textures.ball = assets.loadTexture(renderer.get(), "sprites/ball.png");

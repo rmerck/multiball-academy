@@ -13,15 +13,19 @@ class PhysicsWorld {
   static constexpr float kPixelsPerMeter = 100.0F;
   // In-plane gravity of the inclined table, in m/s^2.
   static constexpr float kGravity = 9.5F;
-  // Hard cap on ball speed in m/s. Keeps continuous collision reliable.
-  static constexpr float kMaxBallSpeed = 40.0F;
+  // Hard cap on ball speed in m/s. Keeps continuous collision reliable: at
+  // 120 Hz this is 25 px per step, about one ball diameter.
+  static constexpr float kMaxBallSpeed = 30.0F;
+  // Longest step accepted, in seconds. Larger values make the solver diverge.
+  static constexpr float kMaxStepSeconds = 0.1F;
 
+  // Throws std::runtime_error if the Box2D world cannot be created.
   PhysicsWorld();
   ~PhysicsWorld();
   PhysicsWorld(const PhysicsWorld&) = delete;
   PhysicsWorld& operator=(const PhysicsWorld&) = delete;
 
-  // Advances by one fixed step of stepSeconds.
+  // Advances by one fixed step. Ignored unless 0 < stepSeconds <= kMaxStepSeconds.
   void step(float stepSeconds);
 
   Vec2 ballPosition() const;
