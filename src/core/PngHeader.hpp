@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 
 namespace pinball {
 
@@ -17,6 +18,11 @@ inline constexpr std::size_t kPngHeaderBytes = 24;
 // Reads the image size from the first bytes of a PNG file without decoding
 // it: the 8-byte signature followed by an IHDR chunk. Returns nullopt if the
 // data is too short, is not a PNG, or declares a zero dimension.
-std::optional<PngSize> parsePngHeader(const unsigned char* data, std::size_t size) noexcept;
+[[nodiscard]] std::optional<PngSize> parsePngHeader(std::span<const std::uint8_t> data) noexcept;
+// The same for a pointer and a length. Null data is too short.
+[[nodiscard]] inline std::optional<PngSize> parsePngHeader(const unsigned char* data,
+                                                           std::size_t size) noexcept {
+  return data != nullptr ? parsePngHeader(std::span<const std::uint8_t>(data, size)) : std::nullopt;
+}
 
 }  // namespace pinball

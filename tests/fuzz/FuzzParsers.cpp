@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -60,7 +61,7 @@ void fuzzAssetName(std::string_view name) {
     return;
   }
   require(!name.empty() && name.size() <= 128);
-  require(name.find("..") == std::string_view::npos);
+  require(!name.contains(".."));
   // Every part between slashes is a real name: not empty and not hidden.
   std::size_t start = 0;
   while (start <= name.size()) {
@@ -72,9 +73,9 @@ void fuzzAssetName(std::string_view name) {
     require(!part.empty() && part.front() != '.' && part.back() != '.');
     start = end + 1;
   }
-  require(name.find('\\') == std::string_view::npos);
-  require(name.find('\0') == std::string_view::npos);
-  require(name.find(':') == std::string_view::npos);
+  require(!name.contains('\\'));
+  require(!name.contains('\0'));
+  require(!name.contains(':'));
 }
 
 }  // namespace
@@ -94,7 +95,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
       break;
     case 1: {
       const auto png = pinball::parsePngHeader(
-          reinterpret_cast<const unsigned char*>(text.data()), text.size());
+          std::span(reinterpret_cast<const std::uint8_t*>(text.data()), text.size()));
       require(!png || (text.size() >= pinball::kPngHeaderBytes && png->width > 0 &&
                        png->height > 0));
       break;

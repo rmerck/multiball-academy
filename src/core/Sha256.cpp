@@ -1,6 +1,8 @@
 #include "core/Sha256.hpp"
 
 #include <algorithm>
+#include <bit>
+#include <cstddef>
 #include <cstring>
 
 namespace pinball {
@@ -19,17 +21,14 @@ constexpr std::array<std::uint32_t, 64> kRoundConstants{
     0x748f82eeU, 0x78a5636fU, 0x84c87814U, 0x8cc70208U, 0x90befffaU, 0xa4506cebU, 0xbef9a3f7U,
     0xc67178f2U};
 
-constexpr std::uint32_t rotr(std::uint32_t x, unsigned n) noexcept {
-  return (x >> n) | (x << (32U - n));
-}
-
 }  // namespace
 
 Sha256::Sha256() noexcept
     : state_{0x6a09e667U, 0xbb67ae85U, 0x3c6ef372U, 0xa54ff53aU,
              0x510e527fU, 0x9b05688cU, 0x1f83d9abU, 0x5be0cd19U} {}
 
-void Sha256::compress(const std::uint8_t* block) noexcept {
+void Sha256::compress(std::span<const std::uint8_t, 64> block) noexcept {
+  using std::rotr;
   std::array<std::uint32_t, 64> w{};
   for (std::size_t i = 0; i < 16; ++i) {
     w[i] = (static_cast<std::uint32_t>(block[i * 4]) << 24U) |
@@ -77,19 +76,16 @@ void Sha256::compress(const std::uint8_t* block) noexcept {
   state_[7] += h;
 }
 
-void Sha256::update(const std::uint8_t* data, std::size_t size) noexcept {
-  if (data == nullptr || size == 0) {
-    return;
-  }
-  totalBytes_ += size;
-  while (size > 0) {
-    const std::size_t take = std::min(size, buffer_.size() - buffered_);
-    std::memcpy(buffer_.data() + buffered_, data, take);
+void Sha256::update(std::span<const std::uint8_t> data) noexcept {
+  totalBytes_ += data.size();
+  while (!data.empty()) {
+    const std::size_t take = std::min(data.size(), buffer_.size() - buffered_);
+    // memcpy, not ranges::copy: GCC at -O2 turns the latter into a byte loop.
+    std::memcpy(buffer_.data() + buffered_, data.data(), take);
     buffered_ += take;
-    data += take;
-    size -= take;
+    data = data.subspan(take);
     if (buffered_ == buffer_.size()) {
-      compress(buffer_.data());
+      compress(buffer_);
       buffered_ = 0;
     }
   }
@@ -102,17 +98,15 @@ Sha256Digest Sha256::finish() noexcept {
   // big-endian, filling the final block exactly.
   buffer_[buffered_++] = 0x80U;
   if (buffered_ > 56) {
-    std::fill(buffer_.begin() + static_cast<std::ptrdiff_t>(buffered_), buffer_.end(),
-              std::uint8_t{0});
-    compress(buffer_.data());
+    std::ranges::fill(std::span(buffer_).subspan(buffered_), std::uint8_t{0});
+    compress(buffer_);
     buffered_ = 0;
   }
-  std::fill(buffer_.begin() + static_cast<std::ptrdiff_t>(buffered_), buffer_.begin() + 56,
-            std::uint8_t{0});
+  std::ranges::fill(std::span(buffer_).first(56).subspan(buffered_), std::uint8_t{0});
   for (std::size_t i = 0; i < 8; ++i) {
     buffer_[56 + i] = static_cast<std::uint8_t>((totalBits >> (56U - 8U * i)) & 0xFFU);
   }
-  compress(buffer_.data());
+  compress(buffer_);
 
   Sha256Digest digest{};
   for (std::size_t i = 0; i < 8; ++i) {
@@ -124,9 +118,9 @@ Sha256Digest Sha256::finish() noexcept {
   return digest;
 }
 
-Sha256Digest sha256(const std::uint8_t* data, std::size_t size) noexcept {
+Sha256Digest sha256(std::span<const std::uint8_t> data) noexcept {
   Sha256 hasher;
-  hasher.update(data, size);
+  hasher.update(data);
   return hasher.finish();
 }
 

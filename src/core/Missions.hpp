@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
+#include <utility>
 
 namespace pinball {
 
@@ -30,7 +31,9 @@ inline constexpr std::size_t kGoalCount = 15;
 // One table event can satisfy several goals at once (an attack bumper is
 // also "any bumper"), so events are reported as a set of goals.
 using GoalSet = std::uint32_t;
-constexpr GoalSet goalBit(Goal goal) noexcept { return GoalSet{1} << static_cast<unsigned>(goal); }
+constexpr GoalSet goalBit(Goal goal) noexcept { return GoalSet{1} << std::to_underlying(goal); }
+static_assert(std::to_underlying(Goal::Slingshots) + 1U == kGoalCount, "one count per goal");
+static_assert(kGoalCount <= 32, "one bit per goal in a GoalSet");
 
 // Short instruction for the display, such as "HIT ATTACK BUMPERS".
 std::string_view goalText(Goal goal) noexcept;
