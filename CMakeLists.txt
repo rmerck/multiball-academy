@@ -19,21 +19,29 @@ include(cmake/Hardening.cmake)
 # 3.4 is the first release with the built-in PNG loader used for assets.
 find_package(SDL3 3.4 REQUIRED CONFIG)
 
-# Platform-independent logic. No SDL dependency so it is unit-testable headless.
-add_library(pinball_core INTERFACE)
-target_include_directories(pinball_core INTERFACE src)
-pinball_apply_hardening(pinball_core INTERFACE)
+# Platform-independent game logic. No SDL dependency so it is unit-testable headless.
+add_library(pinball_core STATIC
+  src/core/Args.cpp
+  src/core/Game.cpp
+)
+target_include_directories(pinball_core PUBLIC src)
+# PUBLIC so the same warnings, hardening and sanitizer flags reach every consumer.
+pinball_apply_hardening(pinball_core PUBLIC)
 
 add_executable(pinball
   src/main.cpp
   src/platform/App.cpp
 )
 target_link_libraries(pinball PRIVATE pinball_core SDL3::SDL3)
-pinball_apply_hardening(pinball PRIVATE)
 
 include(CTest)
 if(BUILD_TESTING)
-  add_executable(core_tests tests/FixedTimestepTest.cpp)
+  add_executable(core_tests
+    tests/main.cpp
+    tests/ArgsTest.cpp
+    tests/FixedTimestepTest.cpp
+    tests/GameTest.cpp
+  )
   target_link_libraries(core_tests PRIVATE pinball_core)
   add_test(NAME core_tests COMMAND core_tests)
 

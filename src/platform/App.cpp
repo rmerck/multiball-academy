@@ -112,7 +112,7 @@ int App::run() {
     if (!paused_) {
       const int steps = timestep_.advance(frameSeconds);
       for (int i = 0; i < steps; ++i) {
-        update(timestep_.step());
+        game_.update(timestep_.step(), input_);
       }
     }
 
@@ -135,7 +135,7 @@ int App::run() {
   }
 
   // Self-check for automated runs: a long enough run must have simulated.
-  if (options_.frameLimit && *options_.frameLimit >= 30 && stepsRun_ == 0) {
+  if (options_.frameLimit && *options_.frameLimit >= 30 && game_.stepCount() == 0) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "No simulation steps ran in %u frames",
                  static_cast<unsigned>(frames));
     return 1;
@@ -172,11 +172,6 @@ void App::toggleFullscreen() {
   }
 }
 
-void App::update(double dt) {
-  simTime_ += dt;
-  ++stepsRun_;
-}
-
 void App::render(double /*alpha*/) {
   SDL_Renderer* r = renderer_.get();
 
@@ -195,7 +190,7 @@ void App::render(double /*alpha*/) {
   SDL_RenderFillRect(r, &panel);
 
   // A marker that moves with simulated time, proving the fixed-step loop runs.
-  const float t = static_cast<float>(std::fmod(simTime_, 2.0) / 2.0);
+  const float t = static_cast<float>(std::fmod(game_.simTime(), 2.0) / 2.0);
   const SDL_FRect marker{playfield.w * t - 8.0F, h * 0.5F - 8.0F, 16.0F, 16.0F};
   if (paused_) {
     SDL_SetRenderDrawColor(r, 200, 160, 40, SDL_ALPHA_OPAQUE);
