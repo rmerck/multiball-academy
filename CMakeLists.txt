@@ -1,5 +1,9 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.26)
 project(SpaceCadetPinball VERSION 0.1.0 LANGUAGES CXX)
+
+if(CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
+  message(FATAL_ERROR "In-source builds are not supported. Use: cmake -S . -B build")
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,7 +26,9 @@ find_package(SDL3 3.4 REQUIRED CONFIG)
 # Platform-independent game logic. No SDL dependency so it is unit-testable headless.
 add_library(pinball_core STATIC
   src/core/Args.cpp
+  src/core/AssetName.cpp
   src/core/Game.cpp
+  src/core/PngHeader.cpp
 )
 target_include_directories(pinball_core PUBLIC src)
 # PUBLIC so the same warnings, hardening and sanitizer flags reach every consumer.
@@ -31,19 +37,43 @@ pinball_apply_hardening(pinball_core PUBLIC)
 add_executable(pinball
   src/main.cpp
   src/platform/App.cpp
+  src/platform/Assets.cpp
 )
 target_link_libraries(pinball PRIVATE pinball_core SDL3::SDL3)
+
+# The game loads assets from an "assets" directory next to the executable.
+# Copied by a target that runs on every build (not only on relink), so an
+# edited asset is never stale. Nothing is ever deleted: a removed asset leaves
+# an unused file behind in the build tree, which is harmless.
+add_custom_target(pinball_assets
+  COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+          ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:pinball>/assets
+  COMMENT "Copying assets"
+  VERBATIM)
+# $<TARGET_FILE_DIR> adds no dependency, so this is not circular. It makes
+# building just the pinball target bring its assets along.
+add_dependencies(pinball pinball_assets)
 
 include(CTest)
 if(BUILD_TESTING)
   add_executable(core_tests
     tests/main.cpp
     tests/ArgsTest.cpp
+    tests/AssetNameTest.cpp
     tests/FixedTimestepTest.cpp
     tests/GameTest.cpp
+    tests/PngHeaderTest.cpp
   )
   target_link_libraries(core_tests PRIVATE pinball_core)
   add_test(NAME core_tests COMMAND core_tests)
+
+  # Assets must be well-formed PNGs with no metadata.
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME assets_clean
+      COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tools/check_assets.py
+              ${CMAKE_SOURCE_DIR}/assets)
+  endif()
 
   set(PINBALL_HEADLESS_ENV "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 

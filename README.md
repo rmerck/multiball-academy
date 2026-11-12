@@ -9,7 +9,7 @@ This is an independent fan project. It contains no code or assets from the origi
 | Phase | Feature | State |
 |---|---|---|
 | 1 | Project skeleton, window, fixed-step loop, CI | Done |
-| 2 | Asset loading and rendering | Planned |
+| 2 | Asset loading and rendering | In progress: loader and ball sprite done, table art pending |
 | 3 | Physics foundation | Planned |
 | 4 | Flippers | Planned |
 | 5 | Plunger and launch lane | Planned |
@@ -60,8 +60,23 @@ Options:
 
 - `src/core` game state and rules as a static library with no SDL dependency, unit tested without a display.
 - `src/platform` SDL window, input and rendering. Feeds input to `core` and draws its state.
+- `assets` PNG art, copied next to the executable at build time. Sprites are authored at 4x.
+- `tools/gimp` GIMP 3 Python scripts that generate every asset, so art is reproducible.
 - `tests` unit tests and headless smoke tests, run by `ctest`.
 - `cmake` shared build settings.
+
+## Assets
+
+All art is original and generated in GIMP 3 by the scripts in `tools/gimp`. To regenerate one, open GIMP's Python console and run:
+
+```python
+REPO = "/path/to/space-cadet-pinball"
+exec(open(REPO + "/tools/gimp/make_ball.py").read())
+```
+
+The game only opens files inside the `assets` directory next to the executable. Asset names are validated, and files over 16 MB or images over 4096 pixels on an edge are refused before decoding.
+
+Assets are exported with all metadata off. `tools/check_assets.py` (run by `ctest`) fails the build if a PNG carries EXIF, text, timestamp, profile or thumbnail chunks.
 
 ## License
 

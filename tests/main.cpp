@@ -6,8 +6,10 @@
 
 int main() {
   testArgs();
+  testAssetName();
   testFixedTimestep();
   testGame();
+  testPngHeader();
 
   if (pinball_test::failures() == 0) {
     std::puts("core_tests: all passed");
