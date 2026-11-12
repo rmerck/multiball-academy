@@ -50,6 +50,7 @@ void drawAbout(SDL_Renderer* r, const HighScores& scores) {
   std::array<char, 32> version{};
   drawText(r, formatText(version.data(), version.size(), "VERSION %s", kGameVersion), middle, y,
            2.0F, kDim, TextAlign::Center);
+  drawNeonRule(r, middle, y + 24.0F, 300.0F);
   y += 54.0F;
 
   drawText(r, "SOURCE", middle, y, 2.0F, kDim, TextAlign::Center);
@@ -78,6 +79,7 @@ void drawAbout(SDL_Renderer* r, const HighScores& scores) {
     y += 36.0F;
   }
 
+  drawNeonRule(r, middle, box.y + box.h - 124.0F, 300.0F);
   drawText(r, "AN INDEPENDENT FAN PROJECT. NOT AFFILIATED WITH MICROSOFT,", middle,
            box.y + box.h - 100.0F, 2.0F, kDim, TextAlign::Center);
   drawText(r, "MAXIS OR CINEMATRONICS. ALL ART AND SOUND ARE ORIGINAL.", middle,

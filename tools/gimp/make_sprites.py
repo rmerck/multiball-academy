@@ -98,11 +98,11 @@ def make_bumper(repo):
 
     skirt = new_layer(img, "skirt")
     select_circle(img, c, 30, S)
-    fill_selection(skirt, color(0.10, 0.10, 0.14))
+    fill_selection(skirt, color(0.16, 0.16, 0.20))
     select_circle(img, c, 28.5, S)
     fill_selection(skirt, color(1.0, 1.0, 1.0))
     select_circle(img, c, 26.5, S)
-    radial_gradient(skirt, color(0.92, 0.92, 0.95), color(0.60, 0.60, 0.66),
+    radial_gradient(skirt, color(0.96, 0.96, 0.98), color(0.70, 0.70, 0.76),
                     (c[0] - 8) * S, (c[1] - 9) * S, (c[0] + 28) * S, (c[1] + 28) * S)
 
     # Sixteen alternating wedges: the classic pop bumper starburst.

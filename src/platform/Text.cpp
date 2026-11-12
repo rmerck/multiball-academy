@@ -160,7 +160,7 @@ void drawNeonFrame(SDL_Renderer* renderer, const SDL_FRect& box) {
     fillRect(renderer, faceX, y, faceW, 1.0F);
   }
   // The inner cyan line, broken at the corners by yellow studs.
-  const float inset = 12.0F;
+  const float inset = 9.0F;
   const float lx = box.x + inset;
   const float ly = box.y + inset;
   const float lw = box.w - inset * 2.0F;
@@ -176,6 +176,20 @@ void drawNeonFrame(SDL_Renderer* renderer, const SDL_FRect& box) {
   fillRect(renderer, lx, ly + lh - 6.0F, 6.0F, 6.0F);
   fillRect(renderer, lx + lw - 6.0F, ly + lh - 6.0F, 6.0F, 6.0F);
   SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+}
+
+void drawNeonRule(SDL_Renderer* renderer, float centerX, float y, float halfWidth) {
+  if (renderer == nullptr) {
+    return;
+  }
+  constexpr SDL_Color kBars[] = {{255, 225, 70, 255}, {255, 140, 110, 255}, {255, 60, 170, 255}};
+  float half = halfWidth;
+  for (const SDL_Color& c : kBars) {
+    SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, c.a);
+    fillRect(renderer, centerX - half, y, half * 2.0F, 2.0F);
+    y += 4.0F;
+    half *= 0.72F;
+  }
 }
 
 }  // namespace pinball

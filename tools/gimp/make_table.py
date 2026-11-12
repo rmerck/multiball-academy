@@ -130,8 +130,6 @@ def make_table(repo, layout_path):
     img.select_rectangle(REPLACE, 0, 0, W, H)
     linear_gradient(cabinet, color(0.15, 0.04, 0.30), color(0.05, 0.02, 0.13), 0, 0, W, H)
     select_none(img)
-    apply_filter(cabinet, "gegl:noise-hurl", pct_random=1.2, repeat=1, seed=7)
-    blur(cabinet, 1.6)
     # Diagonal pinstripes.
     stripes = new_layer(img, "cabinet-stripes", opacity=16)
     op = REPLACE

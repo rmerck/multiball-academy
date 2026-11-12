@@ -29,6 +29,10 @@ void drawNeonText(SDL_Renderer* renderer, std::string_view text, float x, float 
 // a dark, faintly rastered face.
 void drawNeonFrame(SDL_Renderer* renderer, const SDL_FRect& box);
 
+// A decorative rule for the dialogs: three stacked bars centred on x that
+// shorten and shift from laser yellow to hot pink, like the slats of the sun.
+void drawNeonRule(SDL_Renderer* renderer, float centerX, float y, float halfWidth);
+
 inline constexpr std::size_t kMaxTextLength = 96;
 
 }  // namespace pinball

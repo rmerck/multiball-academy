@@ -61,8 +61,6 @@ def make_panel(repo, layout_path):
     img.select_rectangle(REPLACE, 0, 0, W, H)
     linear_gradient(base, color(0.13, 0.03, 0.28), color(0.04, 0.01, 0.12), 0, 0, 0, H)
     select_none(img)
-    apply_filter(base, "gegl:noise-hurl", pct_random=1.2, repeat=1, seed=11)
-    blur(base, 1.6)
 
     # --- Backglass illustration (composited source) ------------------------
     art = load_layer(img, repo + "/tools/gimp/sources/backglass.png", "backglass")
@@ -77,7 +75,7 @@ def make_panel(repo, layout_path):
     rect(0, HEADER - 26, PW, art_h - (HEADER - 26) + 2)
     alpha_gradient(fade, color(0.115, 0.027, 0.25), 0, (HEADER + 60) * S, 0, (HEADER - 26) * S)
     # A soft shade behind the title keeps the lettering clear of the sun.
-    shade = new_layer(img, "title-shade", opacity=58)
+    shade = new_layer(img, "title-shade", opacity=50)
     Gimp.context_set_feather(True)
     Gimp.context_set_feather_radius(70.0, 70.0)
     img.select_ellipse(REPLACE, 30 * S, 22 * S, (PW - 60) * S, 112 * S)

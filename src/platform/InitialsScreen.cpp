@@ -46,6 +46,8 @@ void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_
            TextAlign::Center);
   drawText(r, "ENTER YOUR INITIALS", middle, box.y + 150.0F, 2.0F, kDim, TextAlign::Center);
 
+  drawNeonRule(r, middle, box.y + 174.0F, 200.0F);
+
   const Initials& letters = entry.letters();
   const float lettersTop = box.y + 196.0F;
   for (std::size_t i = 0; i < letters.size(); ++i) {
