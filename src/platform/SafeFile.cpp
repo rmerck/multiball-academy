@@ -65,6 +65,22 @@ bool writeAll(int fd, std::string_view text) noexcept {
   return true;
 }
 
+// Pushes a file's data to the disk itself, not only to the drive's cache.
+bool syncToDisk(int fd) noexcept {
+#if defined(__APPLE__) && defined(F_FULLFSYNC)
+  // On macOS plain fsync stops at the drive. Not every volume supports the
+  // full flush, so fall through to fsync if it is refused.
+  if (::fcntl(fd, F_FULLFSYNC) == 0) {
+    return true;
+  }
+#endif
+  int synced = -1;
+  do {
+    synced = ::fsync(fd);
+  } while (synced != 0 && errno == EINTR);
+  return synced == 0;
+}
+
 }  // namespace
 
 ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
@@ -76,8 +92,11 @@ ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
   // No link following on the last component. Non-blocking, so opening a
   // pipe put at the path returns at once; it is then refused below. Never
   // adopts a terminal found there.
-  const Descriptor file(
-      ::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY | O_CLOEXEC));
+  int opened = -1;
+  do {
+    opened = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY | O_CLOEXEC);
+  } while (opened < 0 && errno == EINTR);
+  const Descriptor file(opened);
   if (!file.ok()) {
     switch (errno) {
       case ENOENT:
@@ -88,6 +107,9 @@ ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
       case EFTYPE:  // A link, on NetBSD.
 #endif
       case ENXIO:   // A socket, or a device with nothing behind it.
+#if defined(EOPNOTSUPP)
+      case EOPNOTSUPP:  // A socket, on macOS and FreeBSD.
+#endif
         return ReadResult::NotRegular;
       default:
         return ReadResult::Error;
@@ -123,8 +145,8 @@ ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
     }
     total += static_cast<std::size_t>(got);
   }
-  if (total > expected) {
-    // It grew under us: what was read is not a whole, settled file.
+  if (total != expected) {
+    // It grew or shrank under us: what was read is not a whole, settled file.
     out.clear();
     return total > maxBytes ? ReadResult::TooLarge : ReadResult::Error;
   }
@@ -144,11 +166,7 @@ bool replaceFile(const std::string& path, std::string_view text) {
   // The data must be on disk before the rename makes it the real file.
   bool ok = writeAll(file.get(), text);
   if (ok) {
-    int synced = -1;
-    do {
-      synced = ::fsync(file.get());
-    } while (synced != 0 && errno == EINTR);
-    ok = synced == 0;
+    ok = syncToDisk(file.get());
   }
   // Once the data is safely down, an interrupted close has still closed.
   const bool closed = file.close() || errno == EINTR;
@@ -202,7 +220,7 @@ ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
     total += got;
   }
   SDL_CloseIO(stream);
-  if (failed || total > expected) {
+  if (failed || total != expected) {
     out.clear();
     return total > maxBytes ? ReadResult::TooLarge : ReadResult::Error;
   }
