@@ -10,6 +10,7 @@ void testFixedTimestep();
 void testFlippers();
 void testFormat();
 void testGame();
+void testHighScores();
 void testHoles();
 void testMissions();
 void testNudge();

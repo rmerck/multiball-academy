@@ -31,6 +31,7 @@ add_library(pinball_core STATIC
   src/core/AssetName.cpp
   src/core/Format.cpp
   src/core/Game.cpp
+  src/core/HighScores.cpp
   src/core/Missions.cpp
   src/core/Physics.cpp
   src/core/PngHeader.cpp
@@ -51,6 +52,7 @@ add_library(pinball_platform STATIC
   src/platform/AudioOutput.cpp
   src/platform/EmbeddedManifest.cpp
   src/platform/Hud.cpp
+  src/platform/ScoreStore.cpp
   src/platform/TableRenderer.cpp
   src/platform/Text.cpp
 )
@@ -116,6 +118,7 @@ if(BUILD_TESTING)
     tests/FlipperTest.cpp
     tests/FormatTest.cpp
     tests/GameTest.cpp
+    tests/HighScoreTest.cpp
     tests/HoleTest.cpp
     tests/MissionTest.cpp
     tests/NudgeTest.cpp

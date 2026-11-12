@@ -30,7 +30,7 @@ void label(SDL_Renderer* r, const panel::Rect& well, std::string_view text) {
 
 }  // namespace
 
-void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game) {
+void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game, const HudExtras& extras) {
   if (r == nullptr) {
     return;
   }
@@ -49,8 +49,21 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game) {
   drawText(r, "SPACE CADET", middle, 38.0F, 6.0F, kCyan, TextAlign::Center);
   drawText(r, "PINBALL", middle, 98.0F, 3.0F, kAmber, TextAlign::Center);
 
-  // Score.
+  // Score, with the best score beside the label.
   label(r, panel::kScoreWell, "SCORE");
+  {
+    ScoreText bestBuffer{};
+    std::array<char, 48> bestLine{};
+    const std::string_view best = formatScore(extras.bestScore, bestBuffer);
+    const bool celebrate = extras.newHighScore && (game.stepCount() / 30U) % 2U == 0U;
+    drawText(r,
+             extras.newHighScore
+                 ? std::string_view("NEW HIGH SCORE")
+                 : formatText(bestLine.data(), bestLine.size(), "HIGH %.*s",
+                              static_cast<int>(best.size()), best.data()),
+             panel::kScoreWell.x + panel::kScoreWell.w - kPad, panel::kScoreWell.y + 10.0F,
+             kLabelSize, celebrate ? kGreen : kDim, TextAlign::Right);
+  }
   ScoreText scoreBuffer{};
   const std::string_view score = formatScore(rules.score(), scoreBuffer);
   // Shrink the digits when the number gets long, so it always fits the well.

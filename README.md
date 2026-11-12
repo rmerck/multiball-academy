@@ -103,6 +103,13 @@ A ball that drains within 6 seconds of entering play is returned free. The rules
 
 Differences from the original are deliberate simplifications: awards do not time out, and there is no replay score.
 
+## High scores
+
+The five best games are kept in a small text file in the per-user preferences directory (on macOS, `~/Library/Application Support/space-cadet-pinball/Space Cadet Pinball/highscores.txt`), with the score and the rank reached. This is the only file the game ever writes.
+
+- It is written to a temporary file and renamed into place, so a crash cannot leave half a table.
+- On load it must be a regular file of at most 512 bytes and every line is validated strictly (digits only, in range, in order). Anything else is ignored and the table starts empty; it is never partly trusted.
+
 ## Sound
 
 Every sound is synthesized at run time from sine, square and triangle oscillators and noise (`src/core/Sound`), so the game ships no audio files and has nothing extra to verify. Twenty effects cover flippers, launch, bumpers, targets, lanes, holes, drains, awards, missions, tilt and game over.
