@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include "core/Missions.hpp"
+#include "core/Sound.hpp"
 #include "core/TableLayout.hpp"
 
 namespace pinball {
@@ -108,6 +109,13 @@ class Rules {
   // Rank, mission and fuel.
   const MissionControl& missions() const noexcept { return missions_; }
 
+  // Sounds the rules asked for since the last call. Calling it clears them.
+  SoundSet takeSounds() noexcept {
+    const SoundSet sounds = sounds_;
+    sounds_ = 0;
+    return sounds;
+  }
+
   // Text for the message display. Empty when there is nothing to say.
   std::string_view message() const noexcept { return message_; }
 
@@ -116,6 +124,7 @@ class Rules {
   void addScore(std::uint64_t amount) noexcept;
   void addBonus() noexcept;
   void say(std::string_view text) noexcept;
+  void cue(Sound sound) noexcept { sounds_ |= soundBit(sound); }
   // A mission announcement. It is not replaced by lesser messages from the
   // same event (the bank award that the completing hit also earned, say).
   void sayMission(std::string_view text) noexcept;
@@ -156,6 +165,7 @@ class Rules {
   std::uint32_t hyperspaceReflexSteps_ = 0;
   std::uint32_t messageSteps_ = 0;
   std::string_view message_;
+  SoundSet sounds_ = 0;
 };
 
 }  // namespace pinball

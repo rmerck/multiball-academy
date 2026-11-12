@@ -35,6 +35,7 @@ void Rules::startGame() noexcept {
   targetLit_.fill(false);
   laneLit_.fill(false);
   missions_.reset();
+  sounds_ = 0;
   ballInPlay_ = false;
   missionMessageThisStep_ = false;
   resetBall();
@@ -87,6 +88,7 @@ void Rules::awardExtraBall() noexcept {
   }
   ++extraBalls_;
   say("EXTRA BALL");
+  cue(Sound::ExtraBall);
 }
 
 void Rules::report(GoalSet goals) noexcept { handleMission(missions_.onEvent(goals)); }
@@ -100,16 +102,25 @@ void Rules::handleMission(const MissionControl::Outcome& outcome) noexcept {
       jackpotLit_ = false;
     }
     sayMission(outcome.promoted ? "MISSION COMPLETE  PROMOTED" : "MISSION COMPLETE");
+    cue(Sound::MissionComplete);
+    if (outcome.promoted) {
+      cue(Sound::Promotion);
+    }
   } else if (outcome.aborted) {
     sayMission("OUT OF FUEL  MISSION ABORTED");
+    cue(Sound::TiltWarning);
   } else if (outcome.stageCompleted) {
     sayMission("STAGE COMPLETE");
+    cue(Sound::BankComplete);
   } else if (outcome.accepted) {
     sayMission("MISSION ACCEPTED");
+    cue(Sound::MissionAccept);
   } else if (outcome.selected) {
     sayMission("MISSION SELECTED  SHOOT THE RAMP");
+    cue(Sound::MissionSelect);
   } else if (outcome.refueled) {
     sayMission("REFUELED");
+    cue(Sound::MissionSelect);
   }
 }
 
@@ -191,6 +202,9 @@ void Rules::onTarget(std::size_t index) noexcept {
 }
 
 void Rules::completeBank(table::TargetBank bank) noexcept {
+  if (bank != table::TargetBank::Mission) {
+    cue(Sound::BankComplete);
+  }
   switch (bank) {
     case table::TargetBank::Booster:
       award(points::kBoosterBank);
@@ -248,6 +262,7 @@ void Rules::onRollover(std::size_t index) noexcept {
       if (laneLit_[0] && laneLit_[1] && laneLit_[2]) {
         laneLit_.fill(false);
         award(points::kReEntryComplete);
+        cue(Sound::BankComplete);
         if (attackLevel_ < 3) {
           ++attackLevel_;
           say("ATTACK BUMPERS UPGRADED");
@@ -349,6 +364,7 @@ Rules::DrainResult Rules::onDrain() noexcept {
     ballSaveSteps_ = 0;
     ballSaveUsed_ = true;
     say("RE-DEPLOY");
+    cue(Sound::BallSaved);
     return DrainResult::BallSaved;
   }
 
@@ -358,17 +374,21 @@ Rules::DrainResult Rules::onDrain() noexcept {
   }
   resetBall();
 
+  // The game-over phrase replaces the drain phrase; the two would clash.
   if (extraBalls_ > 0) {
     --extraBalls_;
+    cue(Sound::Drain);
     say("SHOOT AGAIN");
     return DrainResult::ShootAgain;
   }
   if (ball_ >= kBallsPerGame) {
     gameOver_ = true;
     say("GAME OVER   PRESS F2");
+    cue(Sound::GameOver);
     return DrainResult::GameOver;
   }
   ++ball_;
+  cue(Sound::Drain);
   say("NEXT BALL");
   return DrainResult::NextBall;
 }
@@ -386,10 +406,12 @@ bool Rules::onNudge() noexcept {
     tiltHeat_ = kTiltLimit;
     ballSaveSteps_ = 0;  // A tilted ball is not returned.
     say("TILT");
+    cue(Sound::Tilt);
     return false;
   }
   if (tiltHeat_ >= kTiltLimit - 1.0) {
     say("DANGER  TILT WARNING");
+    cue(Sound::TiltWarning);
   }
   return true;
 }

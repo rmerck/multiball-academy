@@ -10,6 +10,8 @@
 #include "core/FixedTimestep.hpp"
 #include "core/Game.hpp"
 #include "core/Input.hpp"
+#include "core/Sound.hpp"
+#include "platform/AudioOutput.hpp"
 #include "platform/TableRenderer.hpp"
 
 namespace pinball {
@@ -62,6 +64,9 @@ class App {
   bool vsync_ = false;
   bool running_ = true;
   bool paused_ = false;
+  // Null when no audio device could be opened: the game then runs silent.
+  std::unique_ptr<AudioOutput> audio_;
+  SoundMixer mixer_;
   Game game_;
   InputState input_;
   // Keys that went down since the last simulation step, held until a step

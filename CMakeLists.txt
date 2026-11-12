@@ -36,6 +36,7 @@ add_library(pinball_core STATIC
   src/core/PngHeader.cpp
   src/core/Rules.cpp
   src/core/Sha256.cpp
+  src/core/Sound.cpp
   src/core/TableLayout.cpp
 )
 target_include_directories(pinball_core PUBLIC src)
@@ -47,6 +48,7 @@ pinball_apply_hardening(pinball_core PUBLIC)
 add_library(pinball_platform STATIC
   src/platform/App.cpp
   src/platform/Assets.cpp
+  src/platform/AudioOutput.cpp
   src/platform/EmbeddedManifest.cpp
   src/platform/Hud.cpp
   src/platform/TableRenderer.cpp
@@ -122,6 +124,7 @@ if(BUILD_TESTING)
     tests/PngHeaderTest.cpp
     tests/RulesTest.cpp
     tests/Sha256Test.cpp
+    tests/SoundTest.cpp
     tests/TargetTest.cpp
   )
   target_link_libraries(core_tests PRIVATE pinball_core)
