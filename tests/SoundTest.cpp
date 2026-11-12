@@ -1,3 +1,4 @@
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -94,6 +95,52 @@ void testSound() {
     CHECK(finite);
     CHECK(peak <= 1.0F);
     CHECK(peak > 0.1F);
+    // What the replaced voices left behind dies away too: once the last
+    // voice has ended the output is exactly silent again.
+    render(mixer, static_cast<std::size_t>(SoundMixer::kSampleRate) * 3);
+    CHECK(mixer.activeVoices() == 0);
+    CHECK(render(mixer, 480).peak == 0.0F);
+    CHECK(!mixer.busy());
+  }
+
+  {  // A stretch of silence leaves no trace: the same sounds started after it
+     // give the same samples as on a new mixer, starting from zero.
+    SoundMixer rested;
+    SoundMixer fresh;
+    render(rested, 4800);
+    rested.trigger(~SoundSet{0});
+    fresh.trigger(~SoundSet{0});
+    std::vector<float> x(4800);
+    std::vector<float> y(4800);
+    rested.render(x);
+    fresh.render(y.data(), y.size());
+    CHECK(x == y);
+    CHECK(x[0] == 0.0F);
+    CHECK(std::fabs(x[1]) < 0.02F);
+  }
+
+  {  // The launch is a whoosh that brightens: its noise changes level slowly
+     // at first and faster later, and never jumps the way white noise does.
+    SoundMixer mixer;
+    mixer.trigger(soundBit(Sound::Launch));
+    std::vector<float> x(14400);
+    mixer.render(x);
+    const auto roughness = [&x](std::size_t from, std::size_t to) {
+      double change = 0.0;
+      double level = 0.0;
+      for (std::size_t i = from; i < to; ++i) {
+        change += std::fabs(static_cast<double>(x[i]) - static_cast<double>(x[i - 1]));
+        level += std::fabs(static_cast<double>(x[i]));
+      }
+      return change / level;
+    };
+    CHECK(roughness(8000, 11000) > 1.8 * roughness(1000, 4000));
+    float largestJump = 0.0F;
+    for (std::size_t i = 1; i < x.size(); ++i) {
+      largestJump = std::fmax(largestJump, std::fabs(x[i] - x[i - 1]));
+    }
+    CHECK(largestJump < 0.03F);
+    CHECK(mixer.activeVoices() == 0);
   }
 
   {  // Mute produces silence without stopping the voices' clocks.
@@ -138,26 +185,34 @@ void testSound() {
   {  // Replacing a sounding voice does not make the output jump. Two copies of
      // a mixer with a full pool; one then has voices replaced. Its next sample
      // still matches the other's, because new voices fade in from nothing and
-     // what was cut off dies away from where it stood. Sounds with noise in
-     // them are left out: noise jumps from sample to sample by itself.
+     // what was cut off dies away from where it stood; and over the samples
+     // that follow the two drift apart smoothly, because it dies away slowly.
+     // Sounds with noise in them are left out: noise jumps from sample to
+     // sample by itself.
     const SoundSet tonal =
         ~(soundBit(Sound::Flipper) | soundBit(Sound::Launch) | soundBit(Sound::Bumper) |
           soundBit(Sound::Slingshot) | soundBit(Sound::HoleOut));
     SoundMixer crowded;
     float largestCut = 0.0F;
+    float largestStep = 0.0F;
     for (int round = 0; round < 40; ++round) {
       crowded.trigger(tonal);
       render(crowded, SoundMixer::kRetriggerSamples);
       SoundMixer before = crowded;
       SoundMixer after = crowded;
       after.trigger(tonal);
-      float kept = 0.0F;
-      float cut = 0.0F;
-      before.render(&kept, 1);
-      after.render(&cut, 1);
-      largestCut = std::fmax(largestCut, std::fabs(cut - kept));
+      std::array<float, 16> kept{};
+      std::array<float, 16> cut{};
+      before.render(kept);
+      after.render(cut);
+      largestCut = std::fmax(largestCut, std::fabs(cut[0] - kept[0]));
+      for (std::size_t i = 1; i < kept.size(); ++i) {
+        largestStep =
+            std::fmax(largestStep, std::fabs((cut[i] - kept[i]) - (cut[i - 1] - kept[i - 1])));
+      }
     }
     CHECK(largestCut < 0.02F);
+    CHECK(largestStep < 0.05F);
   }
 
   {  // The same triggers give the same samples.

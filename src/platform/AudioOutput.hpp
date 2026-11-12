@@ -14,7 +14,7 @@ class AudioOutput {
  public:
   // Returns nullptr, after logging a warning, if no device can be opened.
   // The game then simply runs silent.
-  static std::unique_ptr<AudioOutput> open();
+  [[nodiscard]] static std::unique_ptr<AudioOutput> open();
 
   ~AudioOutput();
   AudioOutput(const AudioOutput&) = delete;
