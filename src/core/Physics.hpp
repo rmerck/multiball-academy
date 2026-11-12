@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "core/TableLayout.hpp"
@@ -58,7 +59,7 @@ class PhysicsWorld {
   // Sets which flipper buttons are held. Applied on the next step.
   void setFlippers(bool leftHeld, bool rightHeld) noexcept;
   // Current angle of a flipper in radians. Index 0 is left, 1 is right.
-  float flipperAngle(std::size_t index) const noexcept;
+  [[nodiscard]] float flipperAngle(std::size_t index) const noexcept;
 
   // Plunger. While held it draws back over kPlungerChargeSeconds; on release
   // it drives forward at a speed set by how far it was drawn back.
@@ -70,11 +71,11 @@ class PhysicsWorld {
 
   void setPlunger(bool held) noexcept;
   // How far the plunger is drawn back, in pixels: 0 at rest.
-  float plungerPull() const noexcept { return plungerPull_; }
+  [[nodiscard]] float plungerPull() const noexcept { return plungerPull_; }
 
   // Opens or closes the one-way gate at the top of the launch lane.
   void setLaneGateClosed(bool closed);
-  bool laneGateClosed() const noexcept { return laneGateClosed_; }
+  [[nodiscard]] bool laneGateClosed() const noexcept { return laneGateClosed_; }
 
   // Speed added to the ball, in m/s, when it touches a bumper.
   static constexpr float kBumperKickSpeed = 5.5F;
@@ -84,20 +85,20 @@ class PhysicsWorld {
   static constexpr std::size_t kMaxEventsPerStep = 32;
 
   // Events from the most recent step. Cleared at the start of each step.
-  const std::vector<PhysicsEvent>& events() const noexcept { return events_; }
+  [[nodiscard]] const std::vector<PhysicsEvent>& events() const noexcept { return events_; }
 
   // Advances by one fixed step. Ignored unless stepSeconds is within
   // [kMinStepSeconds, kMaxStepSeconds].
   void step(float stepSeconds);
 
-  Vec2 ballPosition() const;
-  Vec2 ballVelocity() const;
-  float ballAngle() const;
+  [[nodiscard]] Vec2 ballPosition() const;
+  [[nodiscard]] Vec2 ballVelocity() const;
+  [[nodiscard]] float ballAngle() const;
 
   // True while a hole is holding the ball off the playfield.
-  bool ballHeld() const noexcept { return ballHeld_; }
+  [[nodiscard]] bool ballHeld() const noexcept { return ballHeld_; }
   // Index of the hole holding the ball. Meaningful only while ballHeld().
-  std::size_t heldHole() const noexcept { return heldHole_; }
+  [[nodiscard]] std::size_t heldHole() const noexcept { return heldHole_; }
   // Returns a held ball to play at position with velocity. The hole it was
   // in, and the hole at the exit, ignore it until it has moved clear.
   void releaseBall(Vec2 position, Vec2 velocity);
@@ -113,7 +114,7 @@ class PhysicsWorld {
 
   // False if the ball has left the table shell or its state is not finite.
   // The caller should reset the ball when this happens.
-  bool ballIsSane() const;
+  [[nodiscard]] bool ballIsSane() const;
 
  private:
   void buildTable();

@@ -3,6 +3,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <numbers>
+#include <utility>
 #include <vector>
 
 #include "core/Vec2.hpp"
@@ -135,7 +137,7 @@ struct Flipper {
   float activeAngle;
 };
 
-inline constexpr float kPi = 3.14159265358979323846F;
+inline constexpr float kPi = std::numbers::pi_v<float>;
 inline constexpr float kFlipperLength = 98.0F;      // Pivot to tip centre.
 inline constexpr float kFlipperBaseRadius = 11.0F;
 inline constexpr float kFlipperTipRadius = 6.0F;
@@ -182,7 +184,7 @@ inline constexpr std::array<Bumper, 8> kBumpers{{
 // Stand-up targets: short rubber-faced bars that register a hit.
 enum class TargetBank : std::uint8_t { Booster, Medal, Mission, Multiplier };
 inline constexpr std::size_t kTargetBankCount = 4;
-static_assert(static_cast<std::size_t>(TargetBank::Multiplier) + 1 == kTargetBankCount,
+static_assert(std::to_underlying(TargetBank::Multiplier) + 1U == kTargetBankCount,
               "kTargetBankCount must match the TargetBank enumeration");
 struct Target {
   Capsule shape;
@@ -283,8 +285,11 @@ inline constexpr float kRampMinUpwardSpeed = 1100.0F;
 inline constexpr float kRampMouthReach = 37.0F;
 // The mouth faces the right flipper: the ball must also be heading left, by
 // at least this fraction of its upward speed (about 14 degrees off straight
-// up). Shots off the right bat lean 0.3 or more; a ball driven straight up
-// the table by the left flipper leans under 0.2 and is not taken.
+// up). Shots off the right bat lean 0.3 or more; a ball rolling along the
+// left bat is driven straight up the table, leans under 0.2 and is not
+// taken. (The left flipper can still make the ramp another way: a falling
+// ball met late in the stroke by the outer half of the bat leaves leaning
+// 0.25 to 0.45 to the left.)
 inline constexpr float kRampMinLeftLean = 0.25F;
 
 inline constexpr Vec2 kWormholeA{215.0F, 560.0F};
@@ -325,33 +330,35 @@ enum class ElementKind : std::uint8_t { None, Bumper, Slingshot, Target, Rollove
 struct ElementRef {
   ElementKind kind = ElementKind::None;
   std::uint8_t index = 0;
+
+  friend constexpr bool operator==(const ElementRef&, const ElementRef&) noexcept = default;
 };
-constexpr bool operator==(ElementRef a, ElementRef b) noexcept {
-  return a.kind == b.kind && a.index == b.index;
-}
 
 // Number of elements of a kind; 0 for None or an unknown kind.
-constexpr std::size_t elementCount(ElementKind kind) noexcept {
+[[nodiscard]] constexpr std::size_t elementCount(ElementKind kind) noexcept {
   switch (kind) {
-    case ElementKind::Bumper:
+    using enum ElementKind;
+    case Bumper:
       return kBumpers.size();
-    case ElementKind::Slingshot:
+    case Slingshot:
       return kSlingshots.size();
-    case ElementKind::Target:
+    case Target:
       return kTargets.size();
-    case ElementKind::Rollover:
+    case Rollover:
       return kRollovers.size();
-    case ElementKind::Hole:
+    case Hole:
       return kHoles.size();
-    case ElementKind::None:
+    case None:
       break;
   }
   return 0;
 }
-constexpr bool isValid(ElementRef ref) noexcept { return ref.index < elementCount(ref.kind); }
+[[nodiscard]] constexpr bool isValid(ElementRef ref) noexcept {
+  return ref.index < elementCount(ref.kind);
+}
 
 // Outer shell as a closed loop, ordered counter-clockwise on screen so the
 // one-sided collision normals point into the table.
-std::vector<Vec2> outerBoundary();
+[[nodiscard]] std::vector<Vec2> outerBoundary();
 
 }  // namespace pinball::table
