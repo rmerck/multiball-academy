@@ -54,7 +54,7 @@ std::unique_ptr<App> App::create(const AppOptions& options) {
 
   // Refuse to start unless every asset matches the build. Done first, before
   // any window exists.
-  const AssetLoader assets = AssetLoader::fromExecutableLocation();
+  AssetLoader assets = AssetLoader::fromExecutableLocation();
   if (!assets.verifyAll()) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                  "Asset integrity check failed; reinstall or rebuild the game");
