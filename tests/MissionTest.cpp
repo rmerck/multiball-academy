@@ -340,13 +340,147 @@ void testMissions() {
     CHECK(!control.onMissionTarget(1, false).selected);
     CHECK(control.phase() == MissionControl::Phase::Selected);
     CHECK(control.missionIndex() == pinball::kSpecialMission);
-    CHECK(control.onMissionTarget(1, true).selected);
+    // Selecting it again is not a new selection.
+    CHECK(!control.onMissionTarget(1, true).selected);
+    CHECK(control.phase() == MissionControl::Phase::Selected);
     CHECK(control.missionIndex() == pinball::kSpecialMission);
     // An ordinary selection can still be changed, up to the special too.
     MissionControl other(kStep);
     other.onMissionTarget(0, false);
     CHECK(other.onMissionTarget(2, false).selected);
     CHECK(other.missionIndex() == 2);
+    // The same target again changes nothing; all three lit is a change.
+    CHECK(!other.onMissionTarget(2, false).selected);
+    CHECK(other.missionIndex() == 2);
+    CHECK(other.onMissionTarget(2, true).selected);
+    CHECK(other.missionIndex() == pinball::kSpecialMission);
+  }
+
+  {  // Standing down drops the mission and keeps the rank.
+    MissionControl control(kStep);
+    control.onMissionTarget(0, true);
+    control.onRamp();
+    playThrough(control);
+    const int progress = control.progress();
+    CHECK(progress > 0 && control.completedMissions() == 1);
+    control.onMissionTarget(1, false);
+    control.standDown();
+    CHECK(control.phase() == MissionControl::Phase::Idle && control.mission() == nullptr);
+    control.onMissionTarget(1, false);
+    control.onRamp();
+    CHECK(control.phase() == MissionControl::Phase::Active && control.fuelLights() > 0);
+    control.standDown();
+    CHECK(control.phase() == MissionControl::Phase::Idle && control.mission() == nullptr);
+    CHECK(control.stage() == nullptr && control.fuelLights() == 0 && control.remaining() == 0);
+    CHECK(!control.tick().aborted);
+    CHECK(control.progress() == progress && control.completedMissions() == 1);
+  }
+
+  {  // The selection is announced, with its sound, only when it changes: a
+     // further hit on the mission targets with the same mission selected
+     // leaves the display and the speaker alone.
+    const pinball::SoundSet select = pinball::soundBit(pinball::Sound::MissionSelect);
+    const std::string_view selected = "MISSION SELECTED  SHOOT THE RAMP";
+    const auto quiet = [&](Rules& rules, std::size_t target) {
+      // Let the last announcement leave the display first.
+      for (int i = 0; i < 1200 && !rules.message().empty(); ++i) {
+        rules.tick();
+      }
+      rules.takeSounds();
+      rules.onTarget(missionTarget(target));
+      return rules.message() != selected && (rules.takeSounds() & select) == 0U;
+    };
+    Rules rules(kStep);
+    rules.onBallInPlay();
+    rules.onTarget(missionTarget(1));
+    CHECK(rules.message() == selected);
+    CHECK((rules.takeSounds() & select) != 0U);
+    CHECK(quiet(rules, 1));  // The same ordinary mission.
+    CHECK(rules.missions().missionIndex() == 1);
+    CHECK(!quiet(rules, 0));  // A different one is news.
+    CHECK(rules.missions().missionIndex() == 0);
+    CHECK(!quiet(rules, 2));  // The third light: the special.
+    CHECK(rules.missions().missionIndex() == pinball::kSpecialMission);
+    for (std::size_t round = 0; round < 2; ++round) {
+      for (std::size_t target = 0; target < 3; ++target) {
+        CHECK(quiet(rules, target));
+        CHECK(rules.missions().phase() == MissionControl::Phase::Selected);
+        CHECK(rules.missions().missionIndex() == pinball::kSpecialMission);
+      }
+    }
+    // The ramp still accepts it.
+    rules.onHole(hole(table::HoleType::Ramp));
+    CHECK(rules.message() == std::string_view("MISSION ACCEPTED"));
+  }
+
+  {  // Game over puts the mission lights out: a waiting selection or a
+     // running mission is dropped, and the next game starts clean.
+    const auto drainOut = [](Rules& rules) {
+      for (int guard = 0; guard < 50 && !rules.gameOver(); ++guard) {
+        rules.onBallInPlay();
+        rules.onDrain();
+      }
+      return rules.gameOver();
+    };
+    const auto dark = [](const Rules& rules) {
+      bool anyLit = false;
+      for (std::size_t i = 0; i < 3; ++i) {
+        anyLit = anyLit || rules.targetLit(missionTarget(i));
+      }
+      const MissionControl& missions = rules.missions();
+      return !anyLit && missions.phase() == MissionControl::Phase::Idle &&
+             missions.mission() == nullptr && missions.fuelLights() == 0;
+    };
+    const std::size_t ramp = hole(table::HoleType::Ramp);
+    for (int scenario = 0; scenario < 4; ++scenario) {
+      Rules rules(kStep);
+      rules.onBallInPlay();
+      // 0: one target lit, an ordinary mission selected. 1: all three lit,
+      // the special selected. 2: a mission running. 3: one mission done and
+      // the next selected.
+      rules.onTarget(missionTarget(0));
+      if (scenario == 1) {
+        rules.onTarget(missionTarget(1));
+        rules.onTarget(missionTarget(2));
+      }
+      if (scenario >= 2) {
+        rules.onHole(ramp);
+        CHECK(rules.missions().phase() == MissionControl::Phase::Active);
+      }
+      if (scenario == 3) {
+        for (int guard = 0; guard < 100 && rules.missions().completedMissions() == 0; ++guard) {
+          for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
+            rules.onBumper(i);
+          }
+        }
+        CHECK(rules.missions().completedMissions() == 1);
+        rules.onTarget(missionTarget(2));
+      }
+      CHECK(!dark(rules));
+      const int progress = rules.missions().progress();
+      CHECK(drainOut(rules));
+      CHECK(dark(rules));
+      CHECK(rules.message() == std::string_view("GAME OVER   PRESS F2"));
+      // What was earned stays on show; nothing more happens on a dead table.
+      CHECK(rules.missions().progress() == progress);
+      CHECK(rules.missions().completedMissions() == (scenario == 3 ? 1U : 0U));
+      rules.onTarget(missionTarget(1));
+      rules.onHole(ramp);
+      for (int i = 0; i < 240; ++i) {
+        rules.tick();
+      }
+      CHECK(dark(rules));
+      CHECK(rules.message() == std::string_view("GAME OVER   PRESS F2"));
+
+      rules.startGame();
+      CHECK(dark(rules) && !rules.gameOver());
+      CHECK(rules.missions().rank() == 0 && rules.missions().progress() == 0);
+      rules.onBallInPlay();
+      rules.onTarget(missionTarget(2));
+      CHECK(rules.missions().phase() == MissionControl::Phase::Selected);
+      CHECK(rules.missions().missionIndex() == 2);
+      CHECK(rules.targetLit(missionTarget(2)) && !rules.targetLit(missionTarget(0)));
+    }
   }
 
   {  // The special mission, and a two-stage mission.

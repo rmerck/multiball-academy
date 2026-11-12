@@ -68,7 +68,7 @@ class MissionControl {
 
   // What a call changed, for the caller to score and announce.
   struct Outcome {
-    bool selected = false;
+    bool selected = false;  // A different mission from the one selected before.
     bool accepted = false;
     bool refueled = false;
     bool stageCompleted = false;
@@ -82,11 +82,15 @@ class MissionControl {
 
   // Back to Cadet with nothing selected.
   void reset() noexcept;
+  // The game is over: a selected or active mission is dropped, unannounced
+  // and unpaid. Rank, progress and the count of missions done are kept.
+  void standDown() noexcept;
 
   // A mission target was hit: 0 top, 1 middle, 2 bottom. With the whole bank
   // lit, the rank's special mission is selected instead, and it stays
   // selected: a later hit without the whole bank lit changes nothing.
-  // Ignored while a mission is active.
+  // Ignored while a mission is active. Outcome::selected is set only when
+  // the selection changed, not when the same mission was picked again.
   Outcome onMissionTarget(std::size_t which, bool bankComplete) noexcept;
   // The launch ramp was shot: accepts a selected mission, or refuels an
   // active one (and then counts towards it like any other event).

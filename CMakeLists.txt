@@ -245,6 +245,23 @@ if(BUILD_TESTING)
             -DSCRATCH=$<TARGET_FILE_DIR:safefile_tests>/safefile_scratch
             -P ${CMAKE_SOURCE_DIR}/tests/RunInScratch.cmake)
 
+  # The same tests with SafeFile.cpp built without the single-call
+  # move-without-replace (renameat2, renamex_np), so that the link() and
+  # unlink() path other systems and file systems fall back to is compiled
+  # and run on every system. SafeFile.cpp is compiled here a second time:
+  # the copy in pinball_platform is the normal one. On a system that is not
+  # POSIX the macro changes nothing and this repeats safe_files.
+  add_executable(safefile_fallback_tests tests/SafeFileTest.cpp src/platform/SafeFile.cpp)
+  target_compile_definitions(safefile_fallback_tests PRIVATE PINBALL_NO_ATOMIC_NOREPLACE)
+  # The include path, warnings and hardening come with pinball_core; SDL is
+  # for SafeFile's portable half. Not pinball_platform, which has the normal
+  # SafeFile in it.
+  target_link_libraries(safefile_fallback_tests PRIVATE pinball_core SDL3::SDL3)
+  add_test(NAME safe_files_fallback
+    COMMAND ${CMAKE_COMMAND} -DTEST=$<TARGET_FILE:safefile_fallback_tests>
+            -DSCRATCH=$<TARGET_FILE_DIR:safefile_fallback_tests>/safefile_fallback_scratch
+            -P ${CMAKE_SOURCE_DIR}/tests/RunInScratch.cmake)
+
   # Python runs isolated (-I): no user site directory, no PYTHON* variables
   # and no import from the script's or the current directory.
   find_package(Python3 COMPONENTS Interpreter)

@@ -479,6 +479,10 @@ Rules::DrainResult Rules::onDrain() noexcept {
   }
   if (ball_ >= kBallsPerGame) {
     gameOver_ = true;
+    // The mission lights go out with the game: nothing is left selected or
+    // running on a dead table.
+    clearBank(table::TargetBank::Mission);
+    missions_.standDown();
     say("GAME OVER   PRESS F2");
     cue(Sound::GameOver);
     return DrainResult::GameOver;

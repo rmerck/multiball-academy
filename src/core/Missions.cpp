@@ -164,6 +164,14 @@ void MissionControl::reset() noexcept {
   completed_ = 0;
 }
 
+void MissionControl::standDown() noexcept {
+  phase_ = Phase::Idle;
+  missionIndex_ = 0;
+  stageIndex_ = 0;
+  remaining_ = 0;
+  fuelSteps_ = 0;
+}
+
 const Mission* MissionControl::mission() const noexcept {
   return phase_ == Phase::Idle ? nullptr : &missionAt(rank_, missionIndex_);
 }
@@ -199,9 +207,12 @@ MissionControl::Outcome MissionControl::onMissionTarget(std::size_t which,
   if (phase_ == Phase::Selected && missionIndex_ == kSpecialMission && !bankComplete) {
     return outcome;
   }
-  missionIndex_ = bankComplete ? kSpecialMission : which;
+  const std::size_t chosen = bankComplete ? kSpecialMission : which;
+  // Hitting the target of the mission already selected changes nothing, so
+  // there is nothing to announce again.
+  outcome.selected = phase_ != Phase::Selected || missionIndex_ != chosen;
+  missionIndex_ = chosen;
   phase_ = Phase::Selected;
-  outcome.selected = true;
   return outcome;
 }
 

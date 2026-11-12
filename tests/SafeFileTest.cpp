@@ -22,6 +22,15 @@
 #define PINBALL_POSIX_TESTS 1
 #endif
 
+// True where renameNoReplace has only link() and unlink() to work with: on a
+// POSIX system without the single call, or when a build leaves that call out
+// on purpose (the safe_files_fallback test), so that the path other systems
+// depend on is run here too.
+#if defined(PINBALL_POSIX_TESTS) && \
+    (defined(PINBALL_NO_ATOMIC_NOREPLACE) || !(defined(__linux__) || defined(__APPLE__)))
+#define PINBALL_LINK_FALLBACK 1
+#endif
+
 #if defined(__linux__)
 #include <sys/syscall.h>
 
@@ -163,6 +172,44 @@ int main(int argc, char* argv[]) {
   CHECK(slurp(victim) == "untouched");
 #endif
 
+#if defined(PINBALL_POSIX_TESTS)
+  // Permissions of the result: owner-only unless asked, under any umask;
+  // Shared is 0644 less the umask, and never less than the owner's own.
+  {
+    using pinball::FileAccess;
+    const fs::path sub = dir / "modes";
+    fs::create_directory(sub, error);
+    const std::string secret = (sub / "scores.txt").string();
+    const std::string picture = (sub / "frame.png").string();
+    const auto modeOf = [](const std::string& path) {
+      struct stat status {};
+      return ::stat(path.c_str(), &status) == 0 ? static_cast<unsigned>(status.st_mode & 07777U)
+                                                : 07777U + 1U;
+    };
+    const mode_t original = ::umask(022);
+    for (const unsigned mask : {022U, 002U, 027U, 077U, 0U, 0377U, 0777U}) {
+      ::umask(static_cast<mode_t>(mask));
+      const bool savedSecret = pinball::replaceFile(secret, "s");
+      const bool savedDefault = pinball::replaceFile(secret, "secret", FileAccess::OwnerOnly);
+      const bool savedPicture = pinball::replaceFile(picture, "picture", FileAccess::Shared);
+      // The call leaves the umask as it found it.
+      const auto after = static_cast<unsigned>(::umask(022));
+      CHECK(savedSecret && savedDefault && savedPicture);
+      CHECK(after == mask);
+      CHECK(modeOf(secret) == 0600U);
+      CHECK(modeOf(picture) == (0644U & ~(mask & 0077U)));
+      CHECK(slurp(secret) == "secret" && slurp(picture) == "picture");
+    }
+    // The mode asked for wins over the mode of the file replaced, both ways.
+    ::umask(022);
+    CHECK(pinball::replaceFile(secret, "open", FileAccess::Shared) && modeOf(secret) == 0644U);
+    CHECK(pinball::replaceFile(picture, "shut") && modeOf(picture) == 0600U);
+    CHECK(::chmod(picture.c_str(), 0666) == 0);
+    CHECK(pinball::replaceFile(picture, "shut again") && modeOf(picture) == 0600U);
+    ::umask(original);
+  }
+#endif
+
 #if defined(PINBALL_FSYNC_TESTS)
   // A file system with no flush to offer does not stop a save; a flush that
   // failed does, and leaves the old file and no temporary behind.
@@ -210,6 +257,28 @@ int main(int argc, char* argv[]) {
     CHECK(pinball::renameNoReplace((sub / "absent").string(), (sub / "new").string()) ==
           MoveResult::Error);
     CHECK(!fs::exists(sub / "new"));
+    // A directory. The single system call moves it; the link() fallback
+    // cannot, and must say so with the directory and its contents in place
+    // and nothing made at the new name. A taken name is refused either way.
+    {
+      const fs::path folder = sub / "folder";
+      const fs::path moved = sub / "folder2";
+      fs::create_directory(folder, error);
+      spit(folder / "inside.txt", "inside");
+      CHECK(pinball::renameNoReplace(folder.string(), to) == MoveResult::Exists);
+      CHECK(slurp(folder / "inside.txt") == "inside" && slurp(to) == "moved");
+#if defined(PINBALL_LINK_FALLBACK)
+      CHECK(pinball::renameNoReplace(folder.string(), moved.string()) == MoveResult::Error);
+      CHECK(slurp(folder / "inside.txt") == "inside" && !fs::exists(moved));
+      CHECK(pinball::setAside(folder.string()).empty());
+      CHECK(fs::is_directory(folder) && !fs::exists(folder.string() + ".bad"));
+#else
+      CHECK(pinball::renameNoReplace(folder.string(), moved.string()) == MoveResult::Moved);
+      CHECK(!fs::exists(folder) && slurp(moved / "inside.txt") == "inside");
+      CHECK(pinball::setAside(moved.string()) == moved.string() + ".bad");
+      CHECK(slurp(fs::path(moved.string() + ".bad") / "inside.txt") == "inside");
+#endif
+    }
 #if defined(PINBALL_POSIX_TESTS)
     // A link that points nowhere still holds its name: not replaced, and
     // nothing appears where it points.
@@ -320,6 +389,10 @@ int main(int argc, char* argv[]) {
     std::fprintf(stderr, "safefile_tests: %d failure(s)\n", failures);
     return EXIT_FAILURE;
   }
+#if defined(PINBALL_NO_ATOMIC_NOREPLACE)
+  std::puts("safefile_tests (link fallback): all passed");
+#else
   std::puts("safefile_tests: all passed");
+#endif
   return EXIT_SUCCESS;
 }
