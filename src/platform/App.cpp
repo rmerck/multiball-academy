@@ -1,5 +1,6 @@
 #include "platform/App.hpp"
 
+#include <cmath>
 #include <cstddef>
 #include <utility>
 
@@ -147,12 +148,18 @@ int App::run() {
     const double frameSeconds = static_cast<double>(frameStart - previous) / 1e9;
     previous = frameStart;
 
+    readInput();
+
     // While paused the clock keeps moving but nothing accumulates, so there is
     // no burst of catch-up steps on resume.
     if (!paused_) {
       const int steps = timestep_.advance(frameSeconds);
       for (int i = 0; i < steps; ++i) {
         game_.step(input_);
+      }
+      if (steps > 0) {
+        // The simulation has seen every latched press at least once.
+        latched_ = InputState{};
       }
     }
 
@@ -192,14 +199,71 @@ void App::handleEvent(const SDL_Event& event) {
       if (event.key.repeat) {
         break;
       }
+      latchKey(event.key.scancode);
       if (event.key.key == SDLK_F3) {
         paused_ = !paused_;
+        // Nothing pressed during a pause carries into play.
+        latched_ = InputState{};
       } else if (event.key.key == SDLK_F4) {
         toggleFullscreen();
       }
       break;
     default:
       break;
+  }
+}
+
+namespace {
+
+// Maps a physical key to the control it drives, or nullptr. Scancodes are
+// key positions, so the controls sit under the same fingers on every
+// keyboard layout. Positions match the original defaults.
+bool InputState::* controlFor(SDL_Scancode scancode) noexcept {
+  switch (scancode) {
+    case SDL_SCANCODE_Z:
+      return &InputState::leftFlipper;
+    case SDL_SCANCODE_SLASH:
+      return &InputState::rightFlipper;
+    case SDL_SCANCODE_SPACE:
+      return &InputState::plunger;
+    case SDL_SCANCODE_X:
+      return &InputState::nudgeLeft;
+    case SDL_SCANCODE_PERIOD:
+      return &InputState::nudgeRight;
+    case SDL_SCANCODE_UP:
+      return &InputState::nudgeUp;
+    case SDL_SCANCODE_F2:
+      return &InputState::newGame;
+    default:
+      return nullptr;
+  }
+}
+
+constexpr SDL_Scancode kControlKeys[] = {
+    SDL_SCANCODE_Z, SDL_SCANCODE_SLASH, SDL_SCANCODE_SPACE, SDL_SCANCODE_X,
+    SDL_SCANCODE_PERIOD, SDL_SCANCODE_UP, SDL_SCANCODE_F2};
+
+}  // namespace
+
+void App::latchKey(SDL_Scancode scancode) {
+  if (paused_) {
+    return;
+  }
+  if (bool InputState::* const control = controlFor(scancode)) {
+    latched_.*control = true;
+  }
+}
+
+void App::readInput() {
+  int keyCount = 0;
+  const bool* keys = SDL_GetKeyboardState(&keyCount);
+  input_ = InputState{};
+  for (const SDL_Scancode scancode : kControlKeys) {
+    bool InputState::* const control = controlFor(scancode);
+    const bool held = keys != nullptr && static_cast<int>(scancode) < keyCount &&
+                      keys[static_cast<int>(scancode)];
+    // Held now, or pressed and released since the last simulation step.
+    input_.*control = held || latched_.*control;
   }
 }
 
@@ -249,6 +313,21 @@ void App::render(double /*alpha*/) {
 
   // Placeholder outline until the table art lands.
   drawTableOutline();
+
+  // Flippers as thick placeholder lines along their centre lines.
+  SDL_SetRenderDrawColor(r, 230, 120, 60, SDL_ALPHA_OPAQUE);
+  for (std::size_t i = 0; i < table::kFlippers.size(); ++i) {
+    const FlipperView flipper = game_.flipper(i);
+    const float dx = std::cos(flipper.angle);
+    const float dy = std::sin(flipper.angle);
+    for (int offset = -3; offset <= 3; ++offset) {
+      const float ox = -dy * static_cast<float>(offset);
+      const float oy = dx * static_cast<float>(offset);
+      SDL_RenderLine(r, flipper.pivot.x + ox, flipper.pivot.y + oy,
+                     flipper.pivot.x + dx * table::kFlipperLength + ox,
+                     flipper.pivot.y + dy * table::kFlipperLength + oy);
+    }
+  }
 
   const BallView ball = game_.ball();
   const float radius = table::kBallRadius;

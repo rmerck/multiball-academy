@@ -2,6 +2,7 @@
 
 #include <box2d/box2d.h>
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
@@ -12,13 +13,18 @@ namespace pinball {
 
 namespace {
 
-constexpr int kSubSteps = 4;
+// Solver sub-steps within each slice.
+constexpr int kSubSteps = 2;
 
 constexpr float kWallFriction = 0.1F;
 constexpr float kWallRestitution = 0.45F;
 constexpr float kBallFriction = 0.1F;
 constexpr float kBallRestitution = 0.3F;
 constexpr float kBallDensity = 8.0F;
+
+// Flipper rubber: grippy and a little lively.
+constexpr float kFlipperFriction = 0.6F;
+constexpr float kFlipperRestitution = 0.35F;
 
 constexpr float toMeters(float pixels) noexcept {
   return pixels / PhysicsWorld::kPixelsPerMeter;
@@ -45,6 +51,9 @@ PhysicsWorld::PhysicsWorld() {
   def.gravity = {0.0F, kGravity};
   def.maximumLinearSpeed = kMaxBallSpeed;
   def.enableContinuous = true;
+  // Contacts closing slower than this do not bounce. Keeps a ball rolling
+  // from the inlane guide onto the flipper from hopping off the pivot.
+  def.restitutionThreshold = 1.5F;
   world_ = b2CreateWorld(&def);
   // Box2D returns a null id when its world table is full. Every later call
   // would dereference it, so stop here.
@@ -54,6 +63,7 @@ PhysicsWorld::PhysicsWorld() {
 
   buildTable();
   buildBall();
+  buildFlippers();
 }
 
 PhysicsWorld::~PhysicsWorld() {
@@ -123,11 +133,96 @@ void PhysicsWorld::buildBall() {
   b2CreateCircleShape(ball_, &shapeDef, &circle);
 }
 
+void PhysicsWorld::buildFlippers() {
+  b2ShapeDef shapeDef = b2DefaultShapeDef();
+  shapeDef.material.friction = kFlipperFriction;
+  shapeDef.material.restitution = kFlipperRestitution;
+
+  // In the flipper's own frame the pivot is the origin and the bat lies along
+  // +x: a large circle at the pivot, a small one at the tip, and a tapered
+  // quad joining them.
+  const float length = toMeters(table::kFlipperLength);
+  const float baseRadius = toMeters(table::kFlipperBaseRadius);
+  const float tipRadius = toMeters(table::kFlipperTipRadius);
+  const b2Circle base{{0.0F, 0.0F}, baseRadius};
+  const b2Circle tip{{length, 0.0F}, tipRadius};
+  const b2Vec2 quad[4] = {
+      {0.0F, -baseRadius}, {length, -tipRadius}, {length, tipRadius}, {0.0F, baseRadius}};
+  const b2Hull hull = b2ComputeHull(quad, 4);
+
+  for (std::size_t i = 0; i < flippers_.size(); ++i) {
+    const table::Flipper& layout = table::kFlippers[i];
+    FlipperState& flipper = flippers_[i];
+    flipper.angle = layout.restAngle;
+
+    // Kinematic: the bat follows its commanded angle exactly and is never
+    // pushed back by the ball, like a solenoid-driven flipper.
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    bodyDef.type = b2_kinematicBody;
+    bodyDef.position = b2ToPos(toMeters(layout.pivot));
+    bodyDef.rotation = b2MakeRot(flipper.angle);
+    bodyDef.enableSleep = false;
+    flipper.body = b2CreateBody(world_, &bodyDef);
+
+    b2CreateCircleShape(flipper.body, &shapeDef, &base);
+    b2CreateCircleShape(flipper.body, &shapeDef, &tip);
+    if (hull.count == 4) {
+      const b2Polygon bat = b2MakePolygon(&hull, 0.0F);
+      b2CreatePolygonShape(flipper.body, &shapeDef, &bat);
+    }
+  }
+}
+
+void PhysicsWorld::setFlippers(bool leftHeld, bool rightHeld) noexcept {
+  flippers_[table::kLeftFlipperIndex].held = leftHeld;
+  flippers_[table::kRightFlipperIndex].held = rightHeld;
+}
+
+float PhysicsWorld::flipperAngle(std::size_t index) const noexcept {
+  return index < flippers_.size() ? flippers_[index].angle : 0.0F;
+}
+
+void PhysicsWorld::driveFlippers(float stepSeconds) {
+  for (std::size_t i = 0; i < flippers_.size(); ++i) {
+    const table::Flipper& layout = table::kFlippers[i];
+    FlipperState& flipper = flippers_[i];
+
+    const float goal = flipper.held ? layout.activeAngle : layout.restAngle;
+    const float speed = flipper.held ? kFlipperUpSpeed : kFlipperDownSpeed;
+    const float maxDelta = speed * stepSeconds;
+    const float delta = std::clamp(goal - flipper.angle, -maxDelta, maxDelta);
+    flipper.angle += delta;
+
+    // The angle is tracked here and commanded as an absolute target every
+    // slice, so error cannot accumulate and the limits cannot be overshot.
+    // Box2D derives the velocity that carries the ball from the target; the
+    // body follows to within about a thousandth of a radian.
+    const b2WorldTransform target{b2ToPos(toMeters(layout.pivot)), b2MakeRot(flipper.angle)};
+    b2Body_SetTargetTransform(flipper.body, target, stepSeconds, true);
+  }
+}
+
 void PhysicsWorld::step(float stepSeconds) {
   if (!std::isfinite(stepSeconds) || stepSeconds <= 0.0F || stepSeconds > kMaxStepSeconds) {
     return;
   }
-  b2World_Step(world_, stepSeconds, kSubSteps);
+  const float slice = stepSeconds / static_cast<float>(kSlicesPerStep);
+  for (int i = 0; i < kSlicesPerStep; ++i) {
+    driveFlippers(slice);
+    b2World_Step(world_, slice, kSubSteps);
+    clampBallSpeed();
+  }
+}
+
+void PhysicsWorld::clampBallSpeed() {
+  // Box2D's own limit is applied inside the solver and a contact with a fast
+  // kinematic body can still leave the ball above it, so enforce it here.
+  const b2Vec2 v = b2Body_GetLinearVelocity(ball_);
+  const float speedSquared = v.x * v.x + v.y * v.y;
+  if (speedSquared > kMaxBallSpeed * kMaxBallSpeed) {
+    const float scale = kMaxBallSpeed / std::sqrt(speedSquared);
+    b2Body_SetLinearVelocity(ball_, {v.x * scale, v.y * scale});
+  }
 }
 
 Vec2 PhysicsWorld::ballPosition() const {

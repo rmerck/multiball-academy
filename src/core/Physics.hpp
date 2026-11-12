@@ -2,6 +2,9 @@
 
 #include <box2d/id.h>
 
+#include <array>
+#include <cstddef>
+
 #include "core/Vec2.hpp"
 
 namespace pinball {
@@ -13,9 +16,13 @@ class PhysicsWorld {
   static constexpr float kPixelsPerMeter = 100.0F;
   // In-plane gravity of the inclined table, in m/s^2.
   static constexpr float kGravity = 9.5F;
-  // Hard cap on ball speed in m/s. Keeps continuous collision reliable: at
-  // 120 Hz this is 25 px per step, about one ball diameter.
+  // Hard cap on ball speed in m/s, enforced after every slice.
   static constexpr float kMaxBallSpeed = 30.0F;
+  // Each step is simulated as this many equal slices. Box2D sweeps the fast
+  // ball but not a rotating kinematic flipper, whose tip would otherwise move
+  // most of a ball diameter per step and could pass through the ball. At four
+  // slices the tip moves about 3.5 px per slice.
+  static constexpr int kSlicesPerStep = 4;
   // Longest step accepted, in seconds. Larger values make the solver diverge.
   static constexpr float kMaxStepSeconds = 0.1F;
 
@@ -24,6 +31,18 @@ class PhysicsWorld {
   ~PhysicsWorld();
   PhysicsWorld(const PhysicsWorld&) = delete;
   PhysicsWorld& operator=(const PhysicsWorld&) = delete;
+
+  // Flipper stroke speeds in radians per second. A real flipper completes its
+  // stroke in 60 to 80 ms and falls back more slowly. The up speed sets how
+  // hard shots are: at this value a ball struck near the pivot reaches the
+  // middle of the table and one struck from mid-bat outward reaches the top.
+  static constexpr float kFlipperUpSpeed = 13.5F;
+  static constexpr float kFlipperDownSpeed = 12.0F;
+
+  // Sets which flipper buttons are held. Applied on the next step.
+  void setFlippers(bool leftHeld, bool rightHeld) noexcept;
+  // Current angle of a flipper in radians. Index 0 is left, 1 is right.
+  float flipperAngle(std::size_t index) const noexcept;
 
   // Advances by one fixed step. Ignored unless 0 < stepSeconds <= kMaxStepSeconds.
   void step(float stepSeconds);
@@ -43,10 +62,20 @@ class PhysicsWorld {
  private:
   void buildTable();
   void buildBall();
+  void buildFlippers();
+  void driveFlippers(float stepSeconds);
+  void clampBallSpeed();
+
+  struct FlipperState {
+    b2BodyId body{};
+    float angle = 0.0F;
+    bool held = false;
+  };
 
   b2WorldId world_{};
   b2BodyId table_{};
   b2BodyId ball_{};
+  std::array<FlipperState, 2> flippers_{};
 };
 
 }  // namespace pinball
