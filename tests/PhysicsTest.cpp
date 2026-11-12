@@ -105,6 +105,8 @@ void testPhysics() {
     world.step(NAN);
     world.step(-1.0F);
     world.step(0.0F);
+    world.step(PhysicsWorld::kMaxStepSeconds * 1.01F);
+    world.step(3.0e38F);
     const Vec2 after = world.ballPosition();
     CHECK(before.x == after.x && before.y == after.y);
   }
