@@ -54,7 +54,7 @@ class App {
   // Members are destroyed in reverse order: renderer first, then window.
   std::unique_ptr<SDL_Window, WindowDeleter> window_;
   std::unique_ptr<SDL_Renderer, RendererDeleter> renderer_;
-  FixedTimestep timestep_{1.0 / 120.0, 8};
+  FixedTimestep timestep_{Game::kStepSeconds, 8};
   bool vsync_ = false;
   bool running_ = true;
   bool paused_ = false;

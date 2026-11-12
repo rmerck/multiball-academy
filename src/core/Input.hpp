@@ -2,12 +2,14 @@
 
 namespace pinball {
 
-// Player intent for one simulation step, independent of any input device.
+// Player intent, independent of any input device. Every field is a level:
+// true for as long as the control is held. Game derives press edges itself,
+// one step at a time, so a press is never missed on a frame with no step and
+// never repeated on a frame with several.
 struct InputState {
   bool leftFlipper = false;
   bool rightFlipper = false;
   bool plunger = false;
-  // Edge-triggered: true only for the step in which the key went down.
   bool nudgeLeft = false;
   bool nudgeRight = false;
   bool nudgeUp = false;

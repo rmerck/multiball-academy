@@ -1,6 +1,7 @@
 #include <string>
 
 #include "Check.hpp"
+#include "Suites.hpp"
 #include "core/Args.hpp"
 
 void testArgs() {
@@ -9,6 +10,9 @@ void testArgs() {
   CHECK(parseFrameLimit("1") == 1U);
   CHECK(parseFrameLimit("120") == 120U);
   CHECK(parseFrameLimit("1000000") == pinball::kMaxFrameLimit);
+  // Leading zeros are plain decimal and harmless.
+  CHECK(parseFrameLimit("007") == 7U);
+  CHECK(parseFrameLimit(std::string(64, '0') + "9") == 9U);
 
   CHECK(!parseFrameLimit(""));
   CHECK(!parseFrameLimit("0"));
