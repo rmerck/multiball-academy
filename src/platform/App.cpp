@@ -50,7 +50,6 @@ class VideoSession {
 
 std::unique_ptr<App> App::create(const AppOptions& options) {
   SDL_SetAppMetadata(kGameTitle, kGameVersion, "io.github.rmerck.spacecadetpinball");
-  SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "rmerck");
   SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, "https://github.com/rmerck");
 
   // Refuse to start unless every asset matches the build. Done first, before
