@@ -41,6 +41,7 @@ void launch(Game& game) {
 void testNudge() {
   {  // Tilt heat: two quick nudges warn, the third tilts; spaced out they do not.
     Rules rules(kStep);
+    rules.onBallInPlay();
     CHECK(rules.onNudge());
     CHECK(!rules.tilted());
     CHECK(rules.onNudge());
@@ -55,6 +56,7 @@ void testNudge() {
   }
   {
     Rules rules(kStep);
+    rules.onBallInPlay();
     for (int i = 0; i < 20; ++i) {
       CHECK(rules.onNudge());
       wait(rules, Rules::kTiltCoolSeconds);
@@ -178,6 +180,52 @@ void testNudge() {
     }
     CHECK(std::fabs(game.flipper(table::kLeftFlipperIndex).angle -
                     table::kLeftFlipper.activeAngle) < 0.01F);
+  }
+
+  {  // A ball waiting on the plunger cannot be nudged or tilted, so the table
+     // can never be locked with a dead plunger and a ball that cannot drain.
+    Rules rules(kStep);
+    for (int i = 0; i < 10; ++i) {
+      CHECK(!rules.onNudge());
+    }
+    CHECK(!rules.tilted());
+    CHECK(rules.tiltWarning() == 0.0);
+
+    Game game;
+    for (int i = 0; i < 10; ++i) {
+      InputState press;
+      press.nudgeLeft = true;
+      game.step(press);
+      game.step(InputState{});
+    }
+    CHECK(!game.rules().tilted());
+    launch(game);
+    CHECK(game.laneGateClosed());
+  }
+
+  {  // A tilt never outlives its ball, and a tilted ball is not saved: tilt
+     // inside the ball-save window, drain, and the next ball is clean.
+    Rules rules(kStep);
+    rules.onBallInPlay();
+    CHECK(rules.ballSaveActive());
+    rules.onNudge();
+    rules.onNudge();
+    rules.onNudge();
+    CHECK(rules.tilted());
+    CHECK(rules.onDrain() == Rules::DrainResult::NextBall);
+    CHECK(!rules.tilted());
+    CHECK(rules.ball() == 2);
+  }
+
+  {  // While tilted the display keeps saying so.
+    Rules rules(kStep);
+    rules.onBallInPlay();
+    rules.onNudge();
+    rules.onNudge();
+    rules.onNudge();
+    rules.onHole(0);
+    wait(rules, 5.0);
+    CHECK(rules.message() == std::string_view("TILT"));
   }
 
   {  // Nudging with the game over does nothing.
