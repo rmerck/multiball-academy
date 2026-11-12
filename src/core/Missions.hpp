@@ -84,8 +84,9 @@ class MissionControl {
   void reset() noexcept;
 
   // A mission target was hit: 0 top, 1 middle, 2 bottom. With the whole bank
-  // lit, the rank's special mission is selected instead. Ignored while a
-  // mission is active.
+  // lit, the rank's special mission is selected instead, and it stays
+  // selected: a later hit without the whole bank lit changes nothing.
+  // Ignored while a mission is active.
   Outcome onMissionTarget(std::size_t which, bool bankComplete) noexcept;
   // The launch ramp was shot: accepts a selected mission, or refuels an
   // active one (and then counts towards it like any other event).

@@ -194,6 +194,11 @@ MissionControl::Outcome MissionControl::onMissionTarget(std::size_t which,
   if (phase_ == Phase::Active || which >= kSpecialMission) {
     return outcome;
   }
+  // A selected special mission is kept until the ramp accepts it: a single
+  // target cannot trade it down to an ordinary mission.
+  if (phase_ == Phase::Selected && missionIndex_ == kSpecialMission && !bankComplete) {
+    return outcome;
+  }
   missionIndex_ = bankComplete ? kSpecialMission : which;
   phase_ = Phase::Selected;
   outcome.selected = true;
