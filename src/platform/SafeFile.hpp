@@ -16,19 +16,26 @@ enum class ReadResult {
   Error,       // Could not be opened or read.
 };
 
-// Reads a whole regular file of at most maxBytes into out.
+// Reads a whole regular file of at most maxBytes into out. out is empty
+// unless the result is Ok. A file that changes size while being read is an
+// Error. Never buffers more than one byte beyond the file's size.
 //
-// The file is opened once and every check is made on that open handle, so
-// what is checked is what is read. A symbolic link at the path is refused,
-// and a pipe or device there cannot block the caller. At most maxBytes + 1
-// bytes are ever buffered. out is empty unless the result is Ok.
+// On POSIX systems the file is opened once and every check is made on that
+// open handle, so what is checked is what is read. A symbolic link as the
+// last part of the path is refused (links in directories above it are
+// followed), and a pipe or device there cannot block the caller. Elsewhere
+// plain SDL file calls are used: same limits, without those protections.
 ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
                            std::vector<std::uint8_t>& out);
 
-// Replaces the file at path with text, all or nothing: the text is written
-// to a new private file beside it, flushed to disk, and renamed into place.
-// A link or leftover at the temporary name is never written through.
-// Returns false, leaving any existing file untouched, on failure.
+// Replaces the file at path with text, all or nothing. Returns false,
+// leaving any existing file untouched, on failure.
+//
+// On POSIX systems the text goes to a new, uniquely named, owner-only file
+// beside the target, is flushed to disk, and is renamed into place. No
+// existing file or link is ever written through, and a link at path itself
+// is replaced, not followed. The result is readable by its owner only.
+// Elsewhere a fixed temporary name and plain SDL file calls are used.
 bool replaceFile(const std::string& path, std::string_view text);
 
 }  // namespace pinball

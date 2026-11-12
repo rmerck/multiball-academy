@@ -113,7 +113,7 @@ The five best games are kept in a small text file in the per-user preferences di
 
 A game that makes the table asks for initials: type letters, or use Up and Down to change one, Enter to confirm each, Backspace to go back, Escape to accept as shown. The last initials entered are offered again.
 
-- It is written to a new owner-only temporary file, flushed to disk and renamed into place, so a crash cannot leave half a table and a link planted at the temporary name is never written through. (These link and permission protections are POSIX; other platforms use plain SDL file calls with the same size limit.)
+- It is written to a new, uniquely named, owner-only temporary file, flushed to disk and renamed into place, so a crash cannot leave half a table and no existing file or link is ever written through. (These link and permission protections are POSIX; other platforms use plain SDL file calls with the same size limit.)
 - On load it must be a regular file, not a link, of at most 512 bytes and every line is validated strictly (digits only, in range, in order, initials A to Z or dashes). Anything else is set aside as `highscores.txt.bad` and the table starts empty; it is never partly trusted.
 - Files from before initials were added are still read; their entries show dashes.
 

@@ -1,5 +1,6 @@
 // Tests for platform/SafeFile against a scratch directory given on the
 // command line. The directory must not exist yet; it is created and removed.
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -74,6 +75,14 @@ int main(int argc, char* argv[]) {
   CHECK(bytes.empty());
   CHECK(pinball::readRegularFile(dir.string(), 16, bytes) != ReadResult::Ok);
   CHECK(bytes.empty());
+  // Limits at the extremes.
+  CHECK(pinball::readRegularFile((dir / "empty").string(), 0, bytes) == ReadResult::Ok);
+  CHECK(pinball::readRegularFile(file.string(), 0, bytes) == ReadResult::TooLarge);
+  CHECK(pinball::readRegularFile(file.string(), SIZE_MAX, bytes) == ReadResult::Error);
+  CHECK(bytes.empty());
+  // A generous limit does not mean a generous buffer.
+  CHECK(pinball::readRegularFile(file.string(), std::size_t{1} << 30U, bytes) == ReadResult::Ok);
+  CHECK(bytes.size() == 5 && bytes.capacity() < 4096);
 
   // Writing.
   const fs::path target = dir / "scores.txt";
@@ -81,7 +90,6 @@ int main(int argc, char* argv[]) {
   CHECK(slurp(target) == "one\n");
   CHECK(pinball::replaceFile(target.string(), "two\n"));
   CHECK(slurp(target) == "two\n");
-  CHECK(!fs::exists(dir / "scores.txt.tmp"));
   CHECK(pinball::replaceFile(target.string(), ""));
   CHECK(slurp(target).empty());
   // A missing directory fails and leaves nothing behind.
@@ -99,18 +107,27 @@ int main(int argc, char* argv[]) {
   CHECK(::mkfifo(pipe.c_str(), 0600) == 0);
   CHECK(pinball::readRegularFile(pipe.string(), 16, bytes) == ReadResult::NotRegular);
 
-  // The saved file is private to its owner.
-  struct stat info {};
-  CHECK(::stat(target.c_str(), &info) == 0 && (info.st_mode & 0777) == 0600);
+  CHECK(pinball::readRegularFile(dir.string(), 16, bytes) == ReadResult::NotRegular);
+  // A dangling link is refused too, not reported as missing.
+  fs::create_symlink(dir / "nowhere", dir / "dangling");
+  CHECK(pinball::readRegularFile((dir / "dangling").string(), 16, bytes) ==
+        ReadResult::NotRegular);
 
-  // A link planted at the temporary name is replaced, never written through.
+  // The saved file gives nothing to anyone but its owner.
+  struct stat info {};
+  CHECK(::stat(target.c_str(), &info) == 0 && (info.st_mode & 0077) == 0);
+
+  // Saving leaves no temporary files behind: only the files made above.
   const fs::path victim = dir / "victim.txt";
   spit(victim, "untouched");
-  fs::create_symlink(victim, dir / "scores.txt.tmp");
   CHECK(pinball::replaceFile(target.string(), "three\n"));
   CHECK(slurp(target) == "three\n");
-  CHECK(slurp(victim) == "untouched");
-  CHECK(!fs::is_symlink(target));
+  std::size_t entries = 0;
+  for (const auto& entry : fs::directory_iterator(dir)) {
+    (void)entry;
+    ++entries;
+  }
+  CHECK(entries == 7);  // data, empty, scores, link, pipe, dangling, victim.
 
   // A link at the destination is replaced by a real file; its target is kept.
   fs::remove(target);
