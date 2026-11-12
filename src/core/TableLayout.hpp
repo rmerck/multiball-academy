@@ -237,6 +237,10 @@ struct Rollover {
   RolloverGroup group;
 };
 inline constexpr float kRolloverRadius = 10.0F;
+// A rollover is a switch across its lane, so it reaches further sideways than
+// its light is drawn. The widest lane lets the ball's centre sit 13.6 px from
+// the light; a ball hugging the lane's wall must still trip the switch.
+inline constexpr float kRolloverReach = 15.0F;
 inline constexpr float kReEntryY = 150.0F;
 inline constexpr float kReturnLaneY = 700.0F;
 inline constexpr Vec2 kLeftOutlane{65.0F, kReturnLaneY};

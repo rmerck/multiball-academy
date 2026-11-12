@@ -106,8 +106,38 @@ void testPhysics() {
     world.step(0.0F);
     world.step(PhysicsWorld::kMaxStepSeconds * 1.01F);
     world.step(3.0e38F);
+    // Too short to divide by: Box2D's 1/dt overflows for these.
+    world.step(1.0e-38F);
+    world.step(1.0e-45F);
+    world.step(PhysicsWorld::kMinStepSeconds * 0.99F);
     const Vec2 after = world.ballPosition();
     CHECK(before.x == after.x && before.y == after.y);
+    // The world is still usable afterwards.
+    world.setFlippers(true, true);
+    for (int i = 0; i < 30; ++i) {
+      world.step(kStep);
+    }
+    CHECK(world.ballIsSane());
+    CHECK(std::isfinite(world.flipperAngle(0)) && std::isfinite(world.flipperAngle(1)));
+  }
+
+  {  // A finite but enormous velocity is cut to the speed cap and keeps its
+     // direction. Squaring it overflows, which once stopped the ball dead.
+    const float cap = PhysicsWorld::kMaxBallSpeed * PhysicsWorld::kPixelsPerMeter;
+    const float huge = 3.0e38F;
+    PhysicsWorld world;
+    world.resetBall({table::kFieldCenterX, 600.0F}, {0.0F, 0.0F});
+    world.pushBall({huge, 0.0F});
+    Vec2 v = world.ballVelocity();
+    CHECK(std::fabs(v.x - cap) < cap * 0.01F && std::fabs(v.y) < 1.0F);
+
+    world.resetBall({table::kFieldCenterX, 600.0F}, {-huge, huge});
+    v = world.ballVelocity();
+    CHECK(std::isfinite(v.x) && std::isfinite(v.y));
+    CHECK(v.x < 0.0F && v.y > 0.0F);
+    CHECK(std::fabs(std::sqrt(v.x * v.x + v.y * v.y) - cap) < cap * 0.01F);
+    world.step(kStep);
+    CHECK(world.ballIsSane());
   }
 
   {  // The simulation is deterministic: the same scripted input gives

@@ -145,6 +145,50 @@ void testHoles() {
     CHECK(enters == 1);
   }
 
+  // A rollover spans its lane: a ball that runs down the lane is counted
+  // wherever it is across the width, including hard against either wall.
+  // The drawn circle is narrower than the return lanes and used to miss a
+  // ball hugging the outer wall.
+  for (std::size_t i = 0; i < table::kRollovers.size(); ++i) {
+    const Vec2 c = table::kRollovers[i].zone.center;
+    int passes = 0;
+    for (float offset = -16.0F; offset <= 16.0F; offset += 1.0F) {
+      PhysicsWorld world;
+      // Starts that overlap a wall are pushed into the lane by the solver.
+      world.resetBall({c.x + offset, c.y - 30.0F}, {0.0F, 250.0F});
+      std::size_t enters = 0;
+      bool stayedInLane = true;
+      bool through = false;
+      for (int s = 0; s < 60 && !through; ++s) {
+        world.step(kStep);
+        for (const PhysicsEvent& e : world.events()) {
+          if (e.type == PhysicsEvent::Type::Enter && e.element.index == i) {
+            ++enters;
+          }
+        }
+        const Vec2 p = world.ballPosition();
+        stayedInLane = stayedInLane && std::fabs(p.x - c.x) < table::kRolloverReach;
+        through = p.y > c.y + table::kRolloverRadius + 5.0F;
+      }
+      if (through && stayedInLane) {
+        ++passes;
+        CHECK(enters == 1);
+      }
+    }
+    CHECK(passes >= 15);
+  }
+
+  {  // The switches of neighbouring lanes do not overlap.
+    for (std::size_t i = 0; i < table::kRollovers.size(); ++i) {
+      for (std::size_t j = i + 1; j < table::kRollovers.size(); ++j) {
+        const Vec2 a = table::kRollovers[i].zone.center;
+        const Vec2 b = table::kRollovers[j].zone.center;
+        CHECK(std::fabs(a.x - b.x) > 2.0F * table::kRolloverReach ||
+              std::fabs(a.y - b.y) > 2.0F * table::kRolloverRadius);
+      }
+    }
+  }
+
   {  // Through the game: a wormhole hides the ball, holds it, and returns it
      // from the next wormhole in the ring; the ramp keeps it visible and
      // delivers it to the top of the field.
