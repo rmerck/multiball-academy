@@ -181,6 +181,8 @@ void Game::updateHeldBall() {
   if (static_cast<double>(heldSteps_) * kStepSeconds >= kHoleHoldSeconds) {
     const table::Hole& hole = table::kHoles[heldBy_];
     physics_.releaseBall(hole.exitPosition, hole.exitVelocity);
+    // So that a capture on the very next step still counts as a new one.
+    wasHeld_ = false;
     sounds_ |= soundBit(Sound::HoleOut);
   }
 }
