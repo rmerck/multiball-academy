@@ -53,9 +53,18 @@ void fuzzAssetName(std::string_view name) {
     return;
   }
   require(!name.empty() && name.size() <= 128);
-  require(name.front() != '/' && name.front() != '.');
-  require(name.find("..") == std::string_view::npos);
-  require(name.find("//") == std::string_view::npos);
+  // Every part between slashes is a real name: not empty, not "." or "..",
+  // not hidden. (Two dots inside a name, as in "a..png", are harmless.)
+  std::size_t start = 0;
+  while (start <= name.size()) {
+    std::size_t end = name.find('/', start);
+    if (end == std::string_view::npos) {
+      end = name.size();
+    }
+    const std::string_view part = name.substr(start, end - start);
+    require(!part.empty() && part.front() != '.' && part.back() != '.');
+    start = end + 1;
+  }
   require(name.find('\\') == std::string_view::npos);
   require(name.find('\0') == std::string_view::npos);
   require(name.find(':') == std::string_view::npos);
