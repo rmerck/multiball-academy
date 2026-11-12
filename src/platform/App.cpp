@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "core/Version.hpp"
+#include "platform/About.hpp"
 #include "platform/Canvas.hpp"
 #include "platform/ScoreStore.hpp"
 
@@ -40,7 +42,9 @@ class VideoSession {
 }  // namespace
 
 std::unique_ptr<App> App::create(const AppOptions& options) {
-  SDL_SetAppMetadata("Space Cadet Pinball", "0.1.0", "io.github.rmerck.spacecadetpinball");
+  SDL_SetAppMetadata(kGameTitle, kGameVersion, "io.github.rmerck.spacecadetpinball");
+  SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "rmerck");
+  SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, "https://github.com/rmerck");
 
   // Refuse to start unless every asset matches the build. Done first, before
   // any window exists.
@@ -58,7 +62,7 @@ std::unique_ptr<App> App::create(const AppOptions& options) {
   }
 
   std::unique_ptr<SDL_Window, WindowDeleter> window(
-      SDL_CreateWindow("Space Cadet Pinball", kCanvasWidth, kCanvasHeight,
+      SDL_CreateWindow(kGameTitle, kCanvasWidth, kCanvasHeight,
                        SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY));
   if (!window) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_CreateWindow failed: %s", SDL_GetError());
@@ -141,7 +145,7 @@ int App::run() {
 
     // While paused the clock keeps moving but nothing accumulates, so there is
     // no burst of catch-up steps on resume.
-    if (!paused_) {
+    if (!paused_ && !aboutOpen_) {
       const int steps = timestep_.advance(frameSeconds);
       for (int i = 0; i < steps; ++i) {
         game_.step(input_);
@@ -195,7 +199,10 @@ void App::handleEvent(const SDL_Event& event) {
         break;
       }
       latchKey(event.key.scancode);
-      if (event.key.key == SDLK_F3) {
+      if (event.key.key == SDLK_F1) {
+        aboutOpen_ = !aboutOpen_;
+        latched_ = InputState{};
+      } else if (event.key.key == SDLK_F3) {
         paused_ = !paused_;
         // Nothing pressed during a pause carries into play.
         latched_ = InputState{};
@@ -243,7 +250,7 @@ constexpr SDL_Scancode kControlKeys[] = {
 }  // namespace
 
 void App::latchKey(SDL_Scancode scancode) {
-  if (paused_) {
+  if (paused_ || aboutOpen_) {
     return;
   }
   if (bool InputState::* const control = controlFor(scancode)) {
@@ -297,6 +304,9 @@ void App::render(double /*alpha*/) {
   SDL_RenderClear(r);
 
   table_->draw(r, game_, paused_, HudExtras{highScores_.best(), newHighScore_});
+  if (aboutOpen_) {
+    drawAbout(r, highScores_);
+  }
 
   SDL_RenderPresent(r);
 }
