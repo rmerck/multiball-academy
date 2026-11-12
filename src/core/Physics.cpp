@@ -449,8 +449,11 @@ void PhysicsWorld::checkZones() {
   };
 
   for (std::size_t i = 0; i < table::kRollovers.size(); ++i) {
-    const bool inside = distanceTo(table::kRollovers[i].zone.center) <
-                        table::kRollovers[i].zone.radius;
+    // A strip across the lane, not the drawn circle: the circle is narrower
+    // than the lane and missed a ball running down the lane's wall.
+    const table::Circle& zone = table::kRollovers[i].zone;
+    const bool inside = std::fabs(p.x - zone.center.x) < table::kRolloverReach &&
+                        std::fabs(p.y - zone.center.y) < zone.radius;
     if (inside && !onRollover_[i]) {
       pushEvent(PhysicsEvent::Type::Enter,
                 {table::ElementKind::Rollover, static_cast<std::uint8_t>(i)}, speed);
