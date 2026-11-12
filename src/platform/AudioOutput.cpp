@@ -4,6 +4,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <span>
 
 namespace pinball {
 
@@ -26,7 +28,7 @@ constexpr int kPumpsPerDeviceCheck = 120;
 // time at deviceHz. The device empties the queue a whole buffer at a time,
 // and takes two between pumps whenever one frame is late, so less than two
 // buffers queued leaves a gap of silence in the second.
-int targetFor(int deviceFrames, int deviceHz) noexcept {
+constexpr int targetFor(int deviceFrames, int deviceHz) noexcept {
   if (deviceFrames <= 0 || deviceHz <= 0) {
     return kMinQueuedFrames;
   }
@@ -37,6 +39,21 @@ int targetFor(int deviceFrames, int deviceHz) noexcept {
   return static_cast<int>(
       std::clamp<std::int64_t>(wanted, kMinQueuedFrames, kMaxFramesPerPump));
 }
+// A small buffer keeps the 40 ms floor; the usual 1024 frames gives two
+// buffers and the margin; other rates are converted, rounding up; nothing
+// the device reports can take the target below the floor or past the buffer
+// pump() renders into.
+static_assert(targetFor(256, 48000) == kMinQueuedFrames);
+static_assert(targetFor(1024, 48000) == 2 * 1024 + kMarginFrames);
+static_assert(targetFor(1024, 44100) == 2 * 1115 + kMarginFrames);
+static_assert(targetFor(2048, 96000) == 2 * 1024 + kMarginFrames);
+static_assert(targetFor(8192, 48000) == kMaxFramesPerPump);
+static_assert(targetFor(std::numeric_limits<int>::max(), 1) == kMaxFramesPerPump);
+static_assert(targetFor(0, 48000) == kMinQueuedFrames);
+static_assert(targetFor(-1024, 48000) == kMinQueuedFrames);
+static_assert(targetFor(1024, 0) == kMinQueuedFrames);
+static_assert(targetFor(1024, -48000) == kMinQueuedFrames);
+static_assert(kMinQueuedFrames > 0 && kMinQueuedFrames <= kMaxFramesPerPump);
 
 }  // namespace
 
@@ -45,10 +62,7 @@ std::unique_ptr<AudioOutput> AudioOutput::open() {
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio: %s", SDL_GetError());
     return nullptr;
   }
-  SDL_AudioSpec spec{};
-  spec.format = SDL_AUDIO_F32;
-  spec.channels = 1;
-  spec.freq = SoundMixer::kSampleRate;
+  const SDL_AudioSpec spec{.format = SDL_AUDIO_F32, .channels = 1, .freq = SoundMixer::kSampleRate};
   SDL_AudioStream* stream =
       SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
   if (stream == nullptr) {
@@ -93,7 +107,7 @@ void AudioOutput::pump(SoundMixer& mixer) {
   // of silence and never a delay that grows.
   const auto frames = static_cast<std::size_t>(targetFrames_ - queuedFrames);
   std::array<float, kMaxFramesPerPump> buffer{};
-  mixer.render(buffer.data(), frames);
+  mixer.render(std::span<float>(buffer).first(frames));
   // If this fails the sound for one frame is lost; nothing else depends on it.
   SDL_PutAudioStreamData(stream_, buffer.data(), static_cast<int>(frames * sizeof(float)));
 }
