@@ -64,7 +64,7 @@ void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_
 
   drawText(r, "TYPE A LETTER, OR UP AND DOWN TO CHANGE IT", middle, box.y + box.h - 84.0F, 2.0F,
            kDim, TextAlign::Center);
-  drawText(r, "ENTER TO CONFIRM   BACKSPACE TO GO BACK", middle, box.y + box.h - 56.0F, 2.0F,
+  drawText(r, "ENTER TO CONFIRM   BACKSPACE TO GO BACK   ESC TO ACCEPT", middle, box.y + box.h - 56.0F, 2.0F,
            kDim, TextAlign::Center);
 }
 

@@ -54,8 +54,9 @@ class App {
     return paused_ || autoPaused_ || aboutOpen_ || entry_.has_value();
   }
   // Key presses while the initials prompt is up.
-  void handleEntryKey(SDL_Keycode key);
-  // Enters the finished game in the table under the entered initials.
+  void handleEntryKey(SDL_Keycode key, SDL_Keymod modifiers);
+  // Enters the finished game in the table under the entered initials. Does
+  // nothing if the prompt is not up.
   void commitInitials();
   void recordFinishedGame();
   void latchKey(SDL_Scancode scancode);
@@ -93,6 +94,8 @@ class App {
   // stands still behind the prompt.
   std::optional<InitialsEntry> entry_;
   HighScore pending_;
+  // SDL_GetTicks() when the prompt opened.
+  Uint64 entryOpenedMs_ = 0;
   // Offered again next time, so a returning player only has to confirm.
   Initials lastInitials_{'A', 'A', 'A'};
   bool wasGameOver_ = false;

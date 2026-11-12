@@ -76,7 +76,7 @@ void drawAbout(SDL_Renderer* r, const HighScores& scores) {
     std::array<char, 8> place{};
     drawText(r, formatText(place.data(), place.size(), "%u.", static_cast<unsigned>(i + 1)),
              middle - 330.0F, y, 3.0F, kDim);
-    drawText(r, std::string_view(entry.initials.data(), entry.initials.size()), middle - 260.0F,
+    drawText(r, std::string_view(entry.initials.data(), entry.initials.size()), middle - 285.0F,
              y, 3.0F, kCyan);
     drawText(r, score, middle + 60.0F, y, 3.0F, kWhite, TextAlign::Right);
     drawText(r, rankName(entry.rank), middle + 100.0F, y, 3.0F, kAmber);

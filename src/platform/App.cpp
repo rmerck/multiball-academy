@@ -22,6 +22,8 @@ constexpr std::uint64_t kUnsyncedFrameNs = 1'000'000'000ULL / 120ULL;
 constexpr std::uint64_t kMinFrameNs = 1'000'000'000ULL / 1000ULL;
 // Half period of the blinking cursor in the initials prompt.
 constexpr Uint64 kCursorBlinkMs = 400;
+// How long the initials prompt ignores keys after it appears.
+constexpr Uint64 kEntryGuardMs = 700;
 
 // Pairs SDL_InitSubSystem with SDL_QuitSubSystem on every exit path of create().
 // The subsystem calls are reference counted, unlike SDL_Init/SDL_Quit.
@@ -216,6 +218,9 @@ int App::run() {
     }
   }
 
+  // Quitting at the initials prompt keeps the score, under the letters shown.
+  commitInitials();
+
   // Self-check for automated runs: a long enough run must have simulated.
   if (options_.frameLimit && *options_.frameLimit >= 30 && game_.stepCount() == 0) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "No simulation steps ran in %u frames",
@@ -249,7 +254,7 @@ void App::handleEvent(const SDL_Event& event) {
         break;
       }
       if (entry_ && !aboutOpen_) {
-        handleEntryKey(event.key.key);
+        handleEntryKey(event.key.key, event.key.mod);
         break;
       }
       latchKey(event.key.scancode);
@@ -271,7 +276,8 @@ void App::handleEvent(const SDL_Event& event) {
       break;
     default:
       // The About item in the system menu bar. It only ever opens the screen.
-      if (aboutEvent_ != 0 && event.type == aboutEvent_ && !aboutOpen_) {
+      // Not over the initials prompt, which must be answered first, as with F1.
+      if (aboutEvent_ != 0 && event.type == aboutEvent_ && !aboutOpen_ && !entry_) {
         aboutOpen_ = true;
         latched_ = InputState{};
       }
@@ -337,8 +343,15 @@ void App::readInput() {
   }
 }
 
-void App::handleEntryKey(SDL_Keycode key) {
+void App::handleEntryKey(SDL_Keycode key, SDL_Keymod modifiers) {
   if (!entry_) {
+    return;
+  }
+  // The prompt appears the moment the last ball drains, while fingers are
+  // still on the flipper keys. Presses in the first moments are play, not
+  // typing. Shortcuts such as Cmd+H are not typing either.
+  if (SDL_GetTicks() - entryOpenedMs_ < kEntryGuardMs ||
+      (modifiers & (SDL_KMOD_GUI | SDL_KMOD_CTRL | SDL_KMOD_ALT)) != 0) {
     return;
   }
   // Letters are matched by what the key types, so they follow the layout.
@@ -362,7 +375,7 @@ void App::handleEntryKey(SDL_Keycode key) {
       break;
     case SDLK_RETURN:
     case SDLK_KP_ENTER:
-    case SDLK_SPACE:
+      // Not Space: it is the plunger key, and too easy to hit by habit.
       if (entry_->confirm()) {
         commitInitials();
       }
@@ -411,6 +424,7 @@ void App::recordFinishedGame() {
       // Ask for initials. The entry is made when they are confirmed.
       pending_ = entry;
       entry_.emplace(lastInitials_);
+      entryOpenedMs_ = SDL_GetTicks();
       latched_ = InputState{};
     }
   } else if (!over) {

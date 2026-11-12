@@ -98,7 +98,23 @@ void testHighScores() {
     CHECK(old.serialize() == header2 + "900 3 ---\n");
   }
 
+  {  // A full table of the largest entries round trips and fits the size cap.
+    HighScores full;
+    for (std::size_t i = 0; i < HighScores::kCapacity; ++i) {
+      full.submit({pinball::points::kMaxScore, 8, {'Z', 'Z', 'Z'}});
+    }
+    const std::string text = full.serialize();
+    CHECK(text.size() <= HighScores::kMaxTextBytes);
+    HighScores copy;
+    CHECK(copy.parse(text) && copy.size() == HighScores::kCapacity);
+    // Bytes that are not initials are cleaned on the way in.
+    HighScores odd;
+    odd.submit({10, 0, {'\0', static_cast<char>(0xC3), ' '}});
+    CHECK(odd.at(0).initials == pinball::kNoInitials);
+  }
+
   {  // Entering initials.
+    static_assert(pinball::InitialsEntry().letters()[0] == 'A', "usable in constant expressions");
     pinball::InitialsEntry entry;
     CHECK(entry.letters() == (pinball::Initials{'A', 'A', 'A'}) && entry.cursor() == 0);
     entry.previous();
@@ -157,6 +173,13 @@ void testHighScores() {
         header2 + "100  1 ABC\n",                     // Double space.
         header2 + std::string("100 1 A\0C\n", 10),    // Embedded NUL.
         header + "100 1 ABC\n",                       // Initials in the first format.
+        header2 + "6 0 AAA\n5 0 AAA\n4 0 AAA\n3 0 AAA\n2 0 AAA\n1 0 AAA\n",  // Too many.
+        header2 + "100 1 AAA\n200 1 AAA\n",           // Out of order.
+        header2 + "100 1 ABC\r\n",                    // Carriage return.
+        header2 + "100\t1\tABC\n",                    // Tabs.
+        header2 + " 1 ABC\n",                         // Empty score.
+        header2 + "100  ABC\n",                       // Empty rank.
+        header2 + "200 1 ABC\n" + header2 + "100 1 ABC\n",  // Second header.
         "space-cadet-pinball-scores 1\n",
         header.substr(0, header.size() - 1),          // No final newline.
         header + "100 1",                             // No final newline.
