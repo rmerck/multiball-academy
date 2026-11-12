@@ -10,7 +10,7 @@ This is an independent fan project. It contains no code or assets from the origi
 |---|---|---|
 | 1 | Project skeleton, window, fixed-step loop, CI | Done |
 | 2 | Asset loading and rendering | In progress: loader and ball sprite done, table art pending |
-| 3 | Physics foundation | Planned |
+| 3 | Physics foundation | Done: Box2D world, table shell, ball, drain |
 | 4 | Flippers | Planned |
 | 5 | Plunger and launch lane | Planned |
 | 6 | Bumpers, targets, ramps, table geometry | Planned |
@@ -24,7 +24,7 @@ This is an independent fan project. It contains no code or assets from the origi
 ## Build (macOS)
 
 ```sh
-brew install cmake sdl3
+brew install cmake sdl3 box2d
 cmake -S . -B build
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
@@ -55,6 +55,14 @@ Options:
 1. Secure software practices: RAII ownership with no owning raw pointers, standard-library hardening, validated input, no network access, sanitizer builds in CI.
 2. Performance: fixed 120 Hz simulation step, rendering at display refresh rate with a manual pacing fallback, 60 FPS minimum target.
 3. Faithfulness to the original feel.
+
+## Physics notes
+
+- Box2D 3.2 runs in metres at 100 playfield pixels per metre, stepped at a fixed 120 Hz with 4 sub-steps.
+- Playfield space has y pointing down, so table gravity is +9.5 m/s^2 in y. This stands in for the incline of a real table.
+- The ball is a Box2D bullet body with continuous collision, and its speed is capped at 40 m/s.
+- The outer shell is one closed chain shape, which avoids ghost collisions at segment joints.
+- `src/core/TableLayout.hpp` is the single source of table geometry for physics, drawing and art.
 
 ## Layout
 

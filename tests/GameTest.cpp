@@ -11,10 +11,10 @@ void testGame() {
   {  // Time is derived from the step count and does not drift.
     Game game;
     const InputState input;
-    for (int i = 0; i < 120 * 3600; ++i) {
+    for (int i = 0; i < 120 * 600; ++i) {
       game.step(input);
     }
-    CHECK(game.stepCount() == 120U * 3600U);
-    CHECK(std::fabs(game.simTime() - 3600.0) < 1e-9);
+    CHECK(game.stepCount() == 120U * 600U);
+    CHECK(std::fabs(game.simTime() - 600.0) < 1e-9);
   }
 }

@@ -9,6 +9,7 @@ int main() {
   testAssetName();
   testFixedTimestep();
   testGame();
+  testPhysics();
   testPngHeader();
 
   if (pinball_test::failures() == 0) {
