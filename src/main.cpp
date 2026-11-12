@@ -1,3 +1,4 @@
+#include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
 #include <charconv>
@@ -57,9 +58,13 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  const auto app = pinball::App::create(options);
-  if (!app) {
-    return EXIT_FAILURE;
+  int exitCode = EXIT_FAILURE;
+  {
+    const auto app = pinball::App::create(options);
+    if (app) {
+      exitCode = app->run();
+    }
   }
-  return app->run();
+  SDL_Quit();
+  return exitCode;
 }

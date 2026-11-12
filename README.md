@@ -52,8 +52,8 @@ Options:
 
 ## Design priorities
 
-1. Secure software practices: RAII ownership, no raw `new`/`delete` in game code, validated input, no network access, sanitizer builds in CI.
-2. Performance: fixed 120 Hz simulation step, vsynced rendering, 60 FPS target.
+1. Secure software practices: RAII ownership with no owning raw pointers, standard-library hardening, validated input, no network access, sanitizer builds in CI.
+2. Performance: fixed 120 Hz simulation step, rendering at display refresh rate with a manual pacing fallback, 60 FPS minimum target.
 3. Faithfulness to the original feel.
 
 ## Layout

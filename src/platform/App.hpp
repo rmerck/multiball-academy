@@ -15,7 +15,7 @@ struct AppOptions {
   std::optional<std::uint32_t> frameLimit;
 };
 
-// Owns SDL, the window and the renderer, and runs the main loop.
+// Owns the SDL video subsystem, the window and the renderer, and runs the main loop.
 class App {
  public:
   // Logical canvas. 4:3 like the original, at twice 640x480.
@@ -40,22 +40,25 @@ class App {
     void operator()(SDL_Renderer* r) const noexcept { SDL_DestroyRenderer(r); }
   };
 
-  App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer);
+  App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, bool vsync);
 
   void handleEvent(const SDL_Event& event);
   void update(double dt);
   void render(double alpha);
   void toggleFullscreen();
+  // True when presenting will not block, so the loop must sleep on its own.
+  bool needsManualPacing() const;
 
   AppOptions options_;
-  // Declared in destruction-safe order: renderer is destroyed before window.
+  // Members are destroyed in reverse order: renderer first, then window.
   std::unique_ptr<SDL_Window, WindowDeleter> window_;
   std::unique_ptr<SDL_Renderer, RendererDeleter> renderer_;
   FixedTimestep timestep_{1.0 / 120.0, 8};
+  bool vsync_ = false;
   bool running_ = true;
   bool paused_ = false;
-  bool fullscreen_ = false;
   double simTime_ = 0.0;
+  std::uint64_t stepsRun_ = 0;
 };
 
 }  // namespace pinball
