@@ -44,6 +44,22 @@ class PhysicsWorld {
   // Current angle of a flipper in radians. Index 0 is left, 1 is right.
   float flipperAngle(std::size_t index) const noexcept;
 
+  // Plunger. While held it draws back over kPlungerChargeSeconds; on release
+  // it drives forward at a speed set by how far it was drawn back.
+  static constexpr float kPlungerChargeSeconds = 1.0F;
+  // These are plunger speeds in m/s. The ball leaves about 1.3 times faster,
+  // because it rebounds off the moving face with its own restitution.
+  static constexpr float kPlungerMinSpeed = 3.0F;   // Lightest tap.
+  static constexpr float kPlungerMaxSpeed = 12.5F;  // Full draw.
+
+  void setPlunger(bool held) noexcept;
+  // How far the plunger is drawn back, in pixels: 0 at rest.
+  float plungerPull() const noexcept { return plungerPull_; }
+
+  // Opens or closes the one-way gate at the top of the launch lane.
+  void setLaneGateClosed(bool closed);
+  bool laneGateClosed() const noexcept { return laneGateClosed_; }
+
   // Advances by one fixed step. Ignored unless 0 < stepSeconds <= kMaxStepSeconds.
   void step(float stepSeconds);
 
@@ -64,6 +80,8 @@ class PhysicsWorld {
   void buildBall();
   void buildFlippers();
   void driveFlippers(float stepSeconds);
+  void buildPlunger();
+  void drivePlunger(float stepSeconds);
   void clampBallSpeed();
 
   struct FlipperState {
@@ -76,6 +94,14 @@ class PhysicsWorld {
   b2BodyId table_{};
   b2BodyId ball_{};
   std::array<FlipperState, 2> flippers_{};
+
+  b2BodyId plunger_{};
+  float plungerPull_ = 0.0F;          // Pixels drawn back.
+  float plungerReleaseSpeed_ = 0.0F;  // Pixels per second while driving forward.
+  bool plungerHeld_ = false;
+
+  b2BodyId laneGate_{};
+  bool laneGateClosed_ = false;
 };
 
 }  // namespace pinball

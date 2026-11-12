@@ -43,10 +43,9 @@ bool insideShell(Vec2 p) {
 }  // namespace
 
 void testPhysics() {
-  {  // A ball at rest on the lane floor stays there.
+  {  // A ball at rest on the plunger stays there.
     PhysicsWorld world;
-    const Vec2 start{table::kBallStart.x, table::kLaneFloorY - table::kWallRadius -
-                                              table::kBallRadius - 1.0F};
+    const Vec2 start = table::kBallStart;
     world.resetBall(start, {0.0F, 0.0F});
     for (int i = 0; i < 120 * 5; ++i) {
       world.step(kStep);
@@ -111,38 +110,23 @@ void testPhysics() {
     CHECK(before.x == after.x && before.y == after.y);
   }
 
-  {  // The simulation is deterministic: same inputs, identical trajectories.
+  {  // The simulation is deterministic: the same scripted input gives
+     // bit-identical trajectories through a launch and a minute of flipping.
     pinball::Game a;
     pinball::Game b;
-    const pinball::InputState input;
     bool identical = true;
-    for (int i = 0; i < 120 * 20; ++i) {
+    for (int i = 0; i < 120 * 60 && identical; ++i) {
+      pinball::InputState input;
+      input.plunger = (i % 2400) < 150;
+      input.leftFlipper = (i / 37) % 3 == 0;
+      input.rightFlipper = (i / 53) % 3 == 1;
       a.step(input);
       b.step(input);
       const Vec2 pa = a.ball().position;
       const Vec2 pb = b.ball().position;
-      if (pa.x != pb.x || pa.y != pb.y) {
-        identical = false;
-        break;
-      }
+      identical = pa.x == pb.x && pa.y == pb.y && a.drainCount() == b.drainCount();
     }
     CHECK(identical);
-  }
-
-  {  // With no flippers yet, a served ball climbs the lane, crosses the arch
-     // into the playfield, and eventually drains and is served again.
-    pinball::Game game;
-    const pinball::InputState input;
-    bool reachedLeftHalf = false;
-    float highest = table::kHeight;
-    for (int i = 0; i < 120 * 60 && game.drainCount() == 0; ++i) {
-      game.step(input);
-      const Vec2 p = game.ball().position;
-      highest = std::fmin(highest, p.y);
-      reachedLeftHalf = reachedLeftHalf || p.x < table::kFieldCenterX;
-    }
-    CHECK(highest < table::kArchCenterY);
-    CHECK(reachedLeftHalf);
-    CHECK(game.drainCount() == 1);
+    CHECK(a.drainCount() >= 1);
   }
 }

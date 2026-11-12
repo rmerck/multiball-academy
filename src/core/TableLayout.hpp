@@ -29,8 +29,17 @@ inline constexpr float kDrainY = kHeight + kBallRadius;
 // Launch lane along the right wall.
 inline constexpr float kLaneWallX = 676.0F;
 inline constexpr float kLaneWallTopY = 290.0F;
-inline constexpr float kLaneFloorY = 925.0F;
-inline constexpr Vec2 kBallStart{(kLaneWallX + kWallRight) * 0.5F + 2.5F, 880.0F};
+inline constexpr float kLaneCenterX = (kLaneWallX + 5.0F + kWallRight) * 0.5F;
+
+// Plunger: a block that closes the bottom of the lane. Pulling it back lowers
+// its top face by up to kPlungerTravel.
+inline constexpr float kPlungerWidth = 36.0F;
+inline constexpr float kPlungerHeight = 60.0F;
+inline constexpr float kPlungerRestTopY = 895.0F;
+inline constexpr float kPlungerTravel = 40.0F;
+
+// A new ball is placed resting on the plunger.
+inline constexpr Vec2 kBallStart{kLaneCenterX, kPlungerRestTopY - kBallRadius};
 
 // Half thickness of interior walls and guides.
 inline constexpr float kWallRadius = 5.0F;
@@ -65,9 +74,14 @@ inline constexpr Capsule kLeftGuideUpper{{90.0F, 640.0F}, {90.0F, 743.2F}, kWall
 inline constexpr Capsule kLeftGuideLower{{90.0F, 743.2F}, {247.0F, 844.8F}, kWallRadius};
 
 // Static interior walls.
+// Hangs from the top of the arch, left of centre. A launched ball riding the
+// arch strikes it and drops into the top of the field instead of orbiting
+// all the way round to the left wall.
+inline constexpr Capsule kArchDeflector{{250.0F, 58.0F}, {258.0F, 98.0F}, kWallRadius};
+
 inline constexpr std::array<Capsule, 6> kWalls{{
     {{kLaneWallX, kLaneWallTopY}, {kLaneWallX, kFloorY}, kWallRadius},
-    {{kLaneWallX, kLaneFloorY}, {kWallRight, kLaneFloorY}, kWallRadius},
+    kArchDeflector,
     kLeftGuideUpper,
     kLeftGuideLower,
     mirrored(kLeftGuideUpper),
@@ -81,6 +95,13 @@ inline constexpr Triangle kRightSlingshot{
       mirrored(kLeftSlingshot.points[2])}},
     kLeftSlingshot.cornerRadius};
 inline constexpr std::array<Triangle, 2> kSlingshots{{kLeftSlingshot, kRightSlingshot}};
+
+// One-way gate at the top of the launch lane. It continues the lane wall up
+// to the arch. Open while a ball is being launched, closed once the ball is
+// in play so it cannot fall back into the lane.
+inline constexpr Capsule kLaneGate{{kLaneWallX, kLaneWallTopY}, {690.0F, 183.0F}, 4.0F};
+// The gate closes when the launched ball has moved this far left.
+inline constexpr float kLaneGateCloseX = kLaneWallX - 40.0F;
 
 // Flippers. Angles are in radians, measured from +x towards +y (clockwise on
 // screen, because y points down). The flipper extends from its pivot along

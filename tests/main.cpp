@@ -11,6 +11,7 @@ int main() {
   testFlippers();
   testGame();
   testPhysics();
+  testPlunger();
   testPngHeader();
   testSha256();
 

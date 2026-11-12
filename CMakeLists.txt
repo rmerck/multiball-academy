@@ -88,6 +88,7 @@ if(BUILD_TESTING)
     tests/FlipperTest.cpp
     tests/GameTest.cpp
     tests/PhysicsTest.cpp
+    tests/PlungerTest.cpp
     tests/PngHeaderTest.cpp
     tests/Sha256Test.cpp
   )

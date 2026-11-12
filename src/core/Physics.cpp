@@ -64,6 +64,7 @@ PhysicsWorld::PhysicsWorld() {
   buildTable();
   buildBall();
   buildFlippers();
+  buildPlunger();
 }
 
 PhysicsWorld::~PhysicsWorld() {
@@ -202,6 +203,69 @@ void PhysicsWorld::driveFlippers(float stepSeconds) {
   }
 }
 
+void PhysicsWorld::buildPlunger() {
+  // Kinematic block whose top face carries the ball. Its origin is the centre
+  // of that top face.
+  b2BodyDef bodyDef = b2DefaultBodyDef();
+  bodyDef.type = b2_kinematicBody;
+  bodyDef.position = b2ToPos(toMeters(Vec2{table::kLaneCenterX, table::kPlungerRestTopY}));
+  bodyDef.enableSleep = false;
+  plunger_ = b2CreateBody(world_, &bodyDef);
+
+  b2ShapeDef shapeDef = b2DefaultShapeDef();
+  shapeDef.material.friction = 0.4F;
+  // Box2D takes the larger restitution of the two shapes, so the ball's own
+  // value governs the rebound whatever is set here.
+  shapeDef.material.restitution = 0.0F;
+  const float halfWidth = toMeters(table::kPlungerWidth) * 0.5F;
+  const float halfHeight = toMeters(table::kPlungerHeight) * 0.5F;
+  const b2Polygon block =
+      b2MakeOffsetBox(halfWidth, halfHeight, {0.0F, halfHeight}, b2MakeRot(0.0F));
+  b2CreatePolygonShape(plunger_, &shapeDef, &block);
+
+  // Lane gate on its own body so it can be switched on and off.
+  b2BodyDef gateDef = b2DefaultBodyDef();
+  gateDef.type = b2_staticBody;
+  laneGate_ = b2CreateBody(world_, &gateDef);
+  const b2ShapeDef gateShape = wallShapeDef();
+  const b2Capsule gate{toMeters(table::kLaneGate.a), toMeters(table::kLaneGate.b),
+                       toMeters(table::kLaneGate.radius)};
+  b2CreateCapsuleShape(laneGate_, &gateShape, &gate);
+  b2Body_Disable(laneGate_);
+  laneGateClosed_ = false;
+}
+
+void PhysicsWorld::setPlunger(bool held) noexcept { plungerHeld_ = held; }
+
+void PhysicsWorld::setLaneGateClosed(bool closed) {
+  if (closed == laneGateClosed_) {
+    return;
+  }
+  if (closed) {
+    b2Body_Enable(laneGate_);
+  } else {
+    b2Body_Disable(laneGate_);
+  }
+  laneGateClosed_ = closed;
+}
+
+void PhysicsWorld::drivePlunger(float stepSeconds) {
+  if (plungerHeld_) {
+    // Drawing back. The release speed tracks how far it has been drawn.
+    const float drawSpeed = table::kPlungerTravel / kPlungerChargeSeconds;
+    plungerPull_ = std::min(plungerPull_ + drawSpeed * stepSeconds, table::kPlungerTravel);
+    const float charge = plungerPull_ / table::kPlungerTravel;
+    plungerReleaseSpeed_ =
+        toPixels(kPlungerMinSpeed + (kPlungerMaxSpeed - kPlungerMinSpeed) * charge);
+  } else if (plungerPull_ > 0.0F) {
+    plungerPull_ = std::max(plungerPull_ - plungerReleaseSpeed_ * stepSeconds, 0.0F);
+  }
+
+  const Vec2 top{table::kLaneCenterX, table::kPlungerRestTopY + plungerPull_};
+  const b2WorldTransform target{b2ToPos(toMeters(top)), b2MakeRot(0.0F)};
+  b2Body_SetTargetTransform(plunger_, target, stepSeconds, true);
+}
+
 void PhysicsWorld::step(float stepSeconds) {
   if (!std::isfinite(stepSeconds) || stepSeconds <= 0.0F || stepSeconds > kMaxStepSeconds) {
     return;
@@ -209,6 +273,7 @@ void PhysicsWorld::step(float stepSeconds) {
   const float slice = stepSeconds / static_cast<float>(kSlicesPerStep);
   for (int i = 0; i < kSlicesPerStep; ++i) {
     driveFlippers(slice);
+    drivePlunger(slice);
     b2World_Step(world_, slice, kSubSteps);
     clampBallSpeed();
   }
