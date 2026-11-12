@@ -7,11 +7,12 @@
 
 namespace pinball {
 
-// Enough for the largest 64-bit value with separators, plus a terminator.
+// Enough for the largest 64-bit value with separators (26 characters).
 using ScoreText = std::array<char, 28>;
 
 // Writes value in decimal with a comma every three digits ("1,234,567") into
-// buffer and returns a view of the text. Never writes outside buffer.
+// buffer and returns a view of the text. Never writes outside buffer. The
+// text sits at the end of buffer and is not terminated: use the view.
 std::string_view formatScore(std::uint64_t value, ScoreText& buffer) noexcept;
 
 // printf-style formatting into a caller-supplied buffer. The result is

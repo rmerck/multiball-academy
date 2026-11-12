@@ -38,6 +38,21 @@ void testSha256() {
   CHECK(hashOf(std::string(1000000, 'a')) ==
         "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
 
+  // Lengths on each side of the padding boundary (55, 56), of the block
+  // boundary (63, 64) and of the same boundaries in a second block.
+  CHECK(hashOf(std::string(55, 'a')) ==
+        "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318");
+  CHECK(hashOf(std::string(56, 'a')) ==
+        "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a");
+  CHECK(hashOf(std::string(63, 'a')) ==
+        "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34");
+  CHECK(hashOf(std::string(64, 'a')) ==
+        "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb");
+  CHECK(hashOf(std::string(119, 'a')) ==
+        "31eba51c313a5c08226adf18d4a359cfdfd8d2e816b13f4af952f7ea6584dcfb");
+  CHECK(hashOf(std::string(120, 'a')) ==
+        "2f3d335432c70b580af0e8e1b3674a7c020d683aa5f73aaaedfdc55af904c21c");
+
   {  // Every length around the block and padding boundaries, hashed in one
      // call and in uneven pieces, must agree.
     for (std::size_t length = 0; length <= 200; ++length) {
