@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -34,6 +35,9 @@ inline constexpr std::uint64_t kMultiplierBank = 5000;
 inline constexpr std::uint64_t kJackpot = 500000;
 inline constexpr std::uint64_t kBonusPerHit = 250;
 inline constexpr std::uint64_t kMaxScore = 999'999'999'999ULL;
+// Awards that climb in steps never step down.
+static_assert(std::ranges::is_sorted(kAttackBumper) && std::ranges::is_sorted(kHyperspace) &&
+              std::ranges::is_sorted(kMedalBank));
 }  // namespace points
 
 // The rules of the game: scoring, lights, balls and awards. It knows nothing
@@ -55,6 +59,8 @@ class Rules {
   static constexpr double kTiltLimit = 2.5;
   static constexpr double kTiltCoolSeconds = 2.5;
 
+  static_assert(kFieldMultipliers.front() == 1 && std::ranges::is_sorted(kFieldMultipliers));
+
   enum class DrainResult : std::uint8_t { BallSaved, ShootAgain, NextBall, GameOver };
 
   explicit Rules(double stepSeconds) noexcept;
@@ -71,6 +77,11 @@ class Rules {
   void onHole(std::size_t index) noexcept;
   // The launched ball has left the lane and entered play.
   void onBallInPlay() noexcept;
+  // The ball is back on the plunger without having drained (Game's fail-safe
+  // for a lost ball). It is out of play until launched again: fuel stops
+  // burning, nudges stop counting, and a tilt is cleared so that the plunger
+  // works. Nothing is scored or forfeited and the ball number stays.
+  void onBallReturned() noexcept;
   // The ball went down the drain. Says what happens next.
   DrainResult onDrain() noexcept;
   // A flipper button went down: lit re-entry lanes rotate that way.
@@ -128,7 +139,9 @@ class Rules {
   // A mission announcement. It is not replaced by lesser messages from the
   // same event (the bank award that the completing hit also earned, say).
   void sayMission(std::string_view text) noexcept;
-  void awardExtraBall() noexcept;
+  // False if the most allowed are already held.
+  bool awardExtraBall() noexcept;
+  void clearBank(table::TargetBank bank) noexcept;
   void completeBank(table::TargetBank bank) noexcept;
   void resetBall() noexcept;
   void report(GoalSet goals) noexcept;

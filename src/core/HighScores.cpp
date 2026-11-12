@@ -1,6 +1,8 @@
 #include "core/HighScores.hpp"
 
+#include <algorithm>
 #include <charconv>
+#include <concepts>
 #include <system_error>
 
 #include "core/Missions.hpp"
@@ -17,15 +19,13 @@ constexpr std::string_view kHeaderV1 = "SPACE-CADET-PINBALL-SCORES 1";
 
 // Reads an unsigned decimal number made only of digits, with no sign, space
 // or leading zero (other than "0" itself).
-template <typename T>
+template <std::unsigned_integral T>
 bool parseNumber(std::string_view text, T& out) noexcept {
   if (text.empty() || text.size() > 20 || (text.size() > 1 && text.front() == '0')) {
     return false;
   }
-  for (const char c : text) {
-    if (c < '0' || c > '9') {
-      return false;
-    }
+  if (!std::ranges::all_of(text, [](char c) { return c >= '0' && c <= '9'; })) {
+    return false;
   }
   const char* const end = text.data() + text.size();
   const auto result = std::from_chars(text.data(), end, out, 10);
@@ -51,11 +51,7 @@ std::size_t HighScores::submit(HighScore entry) noexcept {
   if (entry.rank >= kRankCount) {
     entry.rank = static_cast<std::uint8_t>(kRankCount - 1);
   }
-  for (char& c : entry.initials) {
-    if (!isInitialsChar(c)) {
-      c = '-';
-    }
-  }
+  std::ranges::replace_if(entry.initials, [](char c) { return !isInitialsChar(c); }, '-');
   // Find the slot: after any equal scores, so earlier games keep their place.
   std::size_t position = 0;
   while (position < count_ && entries_[position].score >= entry.score) {

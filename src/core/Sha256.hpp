@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace pinball {
 
@@ -14,14 +15,20 @@ class Sha256 {
  public:
   Sha256() noexcept;
 
-  // Adds size bytes. data may be null only when size is 0.
-  void update(const std::uint8_t* data, std::size_t size) noexcept;
+  // Adds bytes to the message.
+  void update(std::span<const std::uint8_t> data) noexcept;
+  // The same for a pointer and a length. Null data adds nothing.
+  void update(const std::uint8_t* data, std::size_t size) noexcept {
+    if (data != nullptr) {
+      update(std::span<const std::uint8_t>(data, size));
+    }
+  }
 
   // Completes the hash. The object must not be used again afterwards.
-  Sha256Digest finish() noexcept;
+  [[nodiscard]] Sha256Digest finish() noexcept;
 
  private:
-  void compress(const std::uint8_t* block) noexcept;
+  void compress(std::span<const std::uint8_t, 64> block) noexcept;
 
   std::array<std::uint32_t, 8> state_;
   std::array<std::uint8_t, 64> buffer_{};
@@ -30,6 +37,11 @@ class Sha256 {
 };
 
 // One-shot convenience.
-Sha256Digest sha256(const std::uint8_t* data, std::size_t size) noexcept;
+[[nodiscard]] Sha256Digest sha256(std::span<const std::uint8_t> data) noexcept;
+// The same for a pointer and a length. Null data is the empty message.
+[[nodiscard]] inline Sha256Digest sha256(const std::uint8_t* data, std::size_t size) noexcept {
+  return data != nullptr ? sha256(std::span<const std::uint8_t>(data, size))
+                         : sha256(std::span<const std::uint8_t>{});
+}
 
 }  // namespace pinball

@@ -9,6 +9,6 @@ namespace pinball {
 // ".." components and no leading or trailing separator. Asset names are
 // compile-time constants today; this keeps any future caller from escaping
 // the asset directory.
-bool isSafeAssetName(std::string_view name) noexcept;
+[[nodiscard]] bool isSafeAssetName(std::string_view name) noexcept;
 
 }  // namespace pinball

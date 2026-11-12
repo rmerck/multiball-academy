@@ -1,5 +1,7 @@
 #include "core/AssetName.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 
 namespace pinball {
@@ -10,19 +12,18 @@ constexpr std::size_t kMaxAssetNameLength = 128;
 constexpr std::string_view kExtension = ".png";
 
 // Names Windows treats as devices whatever the directory or extension.
-bool isReservedStem(std::string_view stem) noexcept {
-  for (const std::string_view reserved : {"con", "prn", "aux", "nul"}) {
-    if (stem == reserved) {
-      return true;
-    }
+constexpr bool isReservedStem(std::string_view stem) noexcept {
+  constexpr std::array<std::string_view, 4> kDevices{"con", "prn", "aux", "nul"};
+  if (std::ranges::find(kDevices, stem) != kDevices.end()) {
+    return true;
   }
-  if (stem.size() == 4 && (stem.substr(0, 3) == "com" || stem.substr(0, 3) == "lpt")) {
+  if (stem.size() == 4 && (stem.starts_with("com") || stem.starts_with("lpt"))) {
     return stem[3] >= '0' && stem[3] <= '9';
   }
   return false;
 }
 
-bool isAllowedChar(char c) noexcept {
+constexpr bool isAllowedChar(char c) noexcept {
   return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' ||
          c == '/';
 }
@@ -33,7 +34,7 @@ bool isSafeAssetName(std::string_view name) noexcept {
   if (name.size() <= kExtension.size() || name.size() > kMaxAssetNameLength) {
     return false;
   }
-  if (name.substr(name.size() - kExtension.size()) != kExtension) {
+  if (!name.ends_with(kExtension)) {
     return false;
   }
 
@@ -50,7 +51,7 @@ bool isSafeAssetName(std::string_view name) noexcept {
         return false;
       }
       // Two dots in a row are never needed and are refused wherever they sit.
-      if (component.find("..") != std::string_view::npos) {
+      if (component.contains("..")) {
         return false;
       }
       // Portability: refuse names Windows aliases to devices.
