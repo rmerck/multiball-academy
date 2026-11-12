@@ -14,6 +14,7 @@ int main() {
   testGame();
   testHoles();
   testMissions();
+  testNudge();
   testPhysics();
   testPlunger();
   testPngHeader();

@@ -46,6 +46,8 @@ void Rules::resetBall() noexcept {
   ballSaveSteps_ = 0;
   rampReflexSteps_ = 0;
   hyperspaceReflexSteps_ = 0;
+  tilted_ = false;
+  tiltHeat_ = 0.0;
 }
 
 void Rules::say(std::string_view text) noexcept {
@@ -98,7 +100,7 @@ void Rules::handleMission(const MissionControl::Outcome& outcome) noexcept {
 }
 
 void Rules::onBumper(std::size_t index) noexcept {
-  if (gameOver_ || index >= table::kBumpers.size()) {
+  if (gameOver_ || tilted_ || index >= table::kBumpers.size()) {
     return;
   }
   switch (table::kBumpers[index].group) {
@@ -119,7 +121,7 @@ void Rules::onBumper(std::size_t index) noexcept {
 }
 
 void Rules::onSlingshot(std::size_t index) noexcept {
-  if (gameOver_ || index >= table::kSlingshots.size()) {
+  if (gameOver_ || tilted_ || index >= table::kSlingshots.size()) {
     return;
   }
   award(points::kSlingshot);
@@ -127,7 +129,7 @@ void Rules::onSlingshot(std::size_t index) noexcept {
 }
 
 void Rules::onTarget(std::size_t index) noexcept {
-  if (gameOver_ || index >= table::kTargets.size()) {
+  if (gameOver_ || tilted_ || index >= table::kTargets.size()) {
     return;
   }
   award(points::kTarget);
@@ -218,7 +220,7 @@ void Rules::completeBank(table::TargetBank bank) noexcept {
 }
 
 void Rules::onRollover(std::size_t index) noexcept {
-  if (gameOver_ || index >= table::kRollovers.size()) {
+  if (gameOver_ || tilted_ || index >= table::kRollovers.size()) {
     return;
   }
   switch (table::kRollovers[index].group) {
@@ -255,7 +257,7 @@ void Rules::onRollover(std::size_t index) noexcept {
 }
 
 void Rules::onHole(std::size_t index) noexcept {
-  if (gameOver_ || index >= table::kHoles.size()) {
+  if (gameOver_ || tilted_ || index >= table::kHoles.size()) {
     return;
   }
   switch (table::kHoles[index].type) {
@@ -327,8 +329,10 @@ Rules::DrainResult Rules::onDrain() noexcept {
     return DrainResult::BallSaved;
   }
 
-  // End-of-ball bonus, multiplied once here.
-  addScore(bonus_ * static_cast<std::uint64_t>(fieldMultiplier()));
+  // End-of-ball bonus, multiplied once here. A tilt forfeits it.
+  if (!tilted_) {
+    addScore(bonus_ * static_cast<std::uint64_t>(fieldMultiplier()));
+  }
   resetBall();
 
   if (extraBalls_ > 0) {
@@ -346,8 +350,26 @@ Rules::DrainResult Rules::onDrain() noexcept {
   return DrainResult::NextBall;
 }
 
+bool Rules::onNudge() noexcept {
+  if (gameOver_ || tilted_) {
+    return false;
+  }
+  tiltHeat_ += 1.0;
+  if (tiltHeat_ >= kTiltLimit) {
+    tilted_ = true;
+    tiltHeat_ = kTiltLimit;
+    ballSaveSteps_ = 0;  // A tilted ball is not returned.
+    say("TILT");
+    return false;
+  }
+  if (tiltHeat_ >= kTiltLimit - 1.0) {
+    say("DANGER  TILT WARNING");
+  }
+  return true;
+}
+
 void Rules::onFlipper(bool left) noexcept {
-  if (gameOver_) {
+  if (gameOver_ || tilted_) {
     return;
   }
   if (left) {
@@ -366,10 +388,13 @@ void Rules::tick() noexcept {
   countDown(ballSaveSteps_);
   countDown(rampReflexSteps_);
   countDown(hyperspaceReflexSteps_);
+  if (!tilted_) {
+    tiltHeat_ = std::max(0.0, tiltHeat_ - stepSeconds_ / kTiltCoolSeconds);
+  }
   if (!gameOver_) {
     handleMission(missions_.tick());
   }
-  if (messageSteps_ > 0 && --messageSteps_ == 0 && !gameOver_) {
+  if (messageSteps_ > 0 && --messageSteps_ == 0 && !gameOver_ && !tilted_) {
     message_ = {};
   }
 }

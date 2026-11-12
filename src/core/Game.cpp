@@ -1,6 +1,7 @@
 #include "core/Game.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "core/TableLayout.hpp"
 
@@ -18,7 +19,45 @@ void Game::startNewGame() {
   bumperFlash_.fill(0.0F);
   slingshotFlash_.fill(0.0F);
   stillSteps_ = 0;
+  shake_ = {};
   serveBall();
+}
+
+void Game::handleNudges(const InputState& input) {
+  // The drawn displacement springs back quickly.
+  shake_ = shake_ * 0.86F;
+  if (std::fabs(shake_.x) < 0.05F && std::fabs(shake_.y) < 0.05F) {
+    shake_ = {};
+  }
+
+  // As in the original, a bump from one side sends the ball towards the
+  // other: bump from the left and the ball jumps right. A bump from the
+  // bottom sends it up the table.
+  struct Nudge {
+    bool pressed;
+    Vec2 ballKick;
+    Vec2 tableShift;
+  };
+  const Nudge nudges[] = {
+      {input.nudgeLeft && !previousInput_.nudgeLeft, {kNudgeSideSpeed, -30.0F}, {5.0F, 0.0F}},
+      {input.nudgeRight && !previousInput_.nudgeRight, {-kNudgeSideSpeed, -30.0F}, {-5.0F, 0.0F}},
+      {input.nudgeUp && !previousInput_.nudgeUp, {0.0F, -kNudgeUpSpeed}, {0.0F, -5.0F}},
+  };
+  for (const Nudge& nudge : nudges) {
+    if (!nudge.pressed) {
+      continue;
+    }
+    // The table moves even when the shove tilts it; the ball is only helped
+    // by a shove that does not.
+    const bool wasTilted = rules_.tilted();
+    const bool helps = rules_.onNudge();
+    if (!wasTilted && !rules_.gameOver()) {
+      shake_ = shake_ + nudge.tableShift;
+    }
+    if (helps) {
+      physics_.pushBall(nudge.ballKick);
+    }
+  }
 }
 
 void Game::handleDrain() {
@@ -34,7 +73,8 @@ void Game::step(const InputState& input) {
   if (input.newGame && !previousInput_.newGame) {
     startNewGame();
   }
-  const bool playable = !rules_.gameOver();
+  handleNudges(input);
+  const bool playable = !rules_.gameOver() && !rules_.tilted();
   if (playable && input.leftFlipper && !previousInput_.leftFlipper) {
     rules_.onFlipper(true);
   }

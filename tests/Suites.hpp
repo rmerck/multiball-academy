@@ -12,6 +12,7 @@ void testFormat();
 void testGame();
 void testHoles();
 void testMissions();
+void testNudge();
 void testPhysics();
 void testPlunger();
 void testPngHeader();

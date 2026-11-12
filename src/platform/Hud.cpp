@@ -171,11 +171,13 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game) {
     }
     drawText(r, message, centerX(panel::kMessageWell),
              panel::kMessageWell.y + panel::kMessageWell.h * 0.5F - 3.5F * messageSize,
-             messageSize, rules.gameOver() ? kRed : kAmber, TextAlign::Center);
+             messageSize, rules.gameOver() || rules.tilted() ? kRed : kAmber,
+             TextAlign::Center);
   }
 
   // Controls.
-  drawText(r, "Z AND / FLIP     SPACE LAUNCH", middle, 892.0F, kLabelSize, kDim, TextAlign::Center);
+  drawText(r, "Z AND / FLIP   SPACE LAUNCH   X . UP NUDGE", middle, 892.0F, kLabelSize, kDim,
+           TextAlign::Center);
   drawText(r, "F2 NEW GAME   F3 PAUSE   F4 FULL SCREEN", middle, 916.0F, kLabelSize, kDim,
            TextAlign::Center);
 }
