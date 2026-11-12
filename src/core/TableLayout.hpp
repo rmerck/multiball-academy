@@ -281,7 +281,9 @@ inline constexpr float kRampMinUpwardSpeed = 1100.0F;
 // The ramp's mouth is a strip across the field, not a point: the ball's
 // centre may pass this far either side of the entry. Each flipper trigger
 // step (1/120 s) moves a shot 20 to 30 px sideways at the entry, so this
-// width is what gives the shot a timing window of three to five steps.
+// width is what gives the shot a timing window of a few steps: two to five
+// (usually three or four) for a ball rolling down the bat, depending on
+// exactly how it arrives, and about six from a cradle.
 inline constexpr float kRampMouthReach = 37.0F;
 // The mouth faces the right flipper: the ball must also be heading left, by
 // at least this fraction of its upward speed (about 14 degrees off straight
