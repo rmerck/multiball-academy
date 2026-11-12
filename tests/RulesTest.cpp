@@ -415,6 +415,68 @@ void testRules() {
     CHECK(roomy.message() == std::string_view("EXTRA BALL"));
   }
 
+  {  // A ball put back on the plunger without draining is out of play: a
+     // tilt is cleared so the plunger works, nudges no longer count, and
+     // nothing is scored, forfeited or used up.
+    Rules rules(kStep);
+    rules.onBallInPlay();
+    rules.onBumper(0);
+    rules.onNudge();
+    rules.onNudge();
+    rules.onNudge();
+    CHECK(rules.tilted());
+    wait(rules, Rules::kMessageSeconds);
+    CHECK(rules.message() == std::string_view("TILT"));
+    const std::uint64_t score = rules.score();
+    const std::uint64_t bonus = rules.bonus();
+    rules.takeSounds();
+    rules.onBallReturned();
+    CHECK(!rules.tilted());
+    CHECK(rules.tiltWarning() == 0.0);
+    CHECK(rules.message() == std::string_view("RE-DEPLOY"));
+    CHECK(rules.score() == score && rules.bonus() == bonus && bonus > 0);
+    CHECK(rules.ball() == 1 && !rules.gameOver());
+    CHECK(rules.takeSounds() == 0U);
+    // On the plunger: shoves do nothing and cannot tilt.
+    for (int i = 0; i < 5; ++i) {
+      CHECK(!rules.onNudge());
+    }
+    CHECK(!rules.tilted());
+    wait(rules, Rules::kMessageSeconds);
+    CHECK(rules.message().empty());
+    // Launched again, play carries on as before.
+    rules.onBallInPlay();
+    CHECK(rules.onNudge());
+    rules.onBumper(0);
+    CHECK(rules.score() > score);
+    CHECK(drain(rules) == Rules::DrainResult::NextBall);
+
+    // Fuel stops burning while the returned ball waits.
+    Rules fuel(kStep);
+    fuel.onBallInPlay();
+    for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
+      if (table::kTargets[i].bank == table::TargetBank::Mission) {
+        fuel.onTarget(i);
+        break;
+      }
+    }
+    fuel.onHole(firstHole(table::HoleType::Ramp));
+    CHECK(fuel.missions().phase() == pinball::MissionControl::Phase::Active);
+    fuel.onBallReturned();
+    wait(fuel, pinball::MissionControl::kFuelSeconds + 5.0);
+    CHECK(fuel.missions().phase() == pinball::MissionControl::Phase::Active);
+    CHECK(fuel.missions().fuelLights() == pinball::MissionControl::kFuelLights);
+
+    // After the game it does nothing.
+    Rules over(kStep);
+    for (int i = 0; i < Rules::kBallsPerGame; ++i) {
+      over.onDrain();
+    }
+    CHECK(over.gameOver());
+    over.onBallReturned();
+    CHECK(over.message() == std::string_view("GAME OVER   PRESS F2"));
+  }
+
   {  // Through the game: a full game ends after three balls and F2 restarts.
     pinball::Game game;
     int steps = 0;

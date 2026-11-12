@@ -380,6 +380,19 @@ void Rules::onBallInPlay() noexcept {
   }
 }
 
+void Rules::onBallReturned() noexcept {
+  if (gameOver_) {
+    return;
+  }
+  ballInPlay_ = false;
+  // Its own event, like a drain. A tilt cannot outlive the ball's time in
+  // play: on the plunger it would leave the controls dead for good.
+  missionMessageThisStep_ = false;
+  tilted_ = false;
+  tiltHeat_ = 0.0;
+  say("RE-DEPLOY");
+}
+
 Rules::DrainResult Rules::onDrain() noexcept {
   ballInPlay_ = false;
   if (gameOver_) {

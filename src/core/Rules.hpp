@@ -71,6 +71,11 @@ class Rules {
   void onHole(std::size_t index) noexcept;
   // The launched ball has left the lane and entered play.
   void onBallInPlay() noexcept;
+  // The ball is back on the plunger without having drained (Game's fail-safe
+  // for a lost ball). It is out of play until launched again: fuel stops
+  // burning, nudges stop counting, and a tilt is cleared so that the plunger
+  // works. Nothing is scored or forfeited and the ball number stays.
+  void onBallReturned() noexcept;
   // The ball went down the drain. Says what happens next.
   DrainResult onDrain() noexcept;
   // A flipper button went down: lit re-entry lanes rotate that way.
