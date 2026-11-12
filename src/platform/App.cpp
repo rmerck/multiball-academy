@@ -153,7 +153,6 @@ constexpr Sint32 kHaltedWaitMs = 100;
 int App::run() {
   std::uint64_t previous = SDL_GetTicksNS();
   std::uint32_t frames = 0;
-  PauseClock clock;
   std::uint32_t haltedFrames = 0;
 
   while (running_) {
@@ -183,7 +182,7 @@ int App::run() {
     // While halted the clock keeps moving but nothing accumulates, and the
     // first frame after a halt adds no time either (see PauseClock).
     const bool isHalted = halted();
-    const double simSeconds = clock.simulated(frameSeconds, isHalted);
+    const double simSeconds = clock_.simulated(frameSeconds, isHalted);
     if (!isHalted) {
       const int steps = timestep_.advance(simSeconds);
       // Sounds from every step of the frame start together, once each.
@@ -489,6 +488,11 @@ void App::noteRenderFailure(const char* call) {
 }
 
 void App::reloadTextures() {
+  // Reading, checking and decoding every asset takes many frames' worth of
+  // time, inside event handling. Count it as a halt, so the frame that
+  // follows adds no simulation time instead of a burst of catch-up steps.
+  // Whether or not the reload works: the time is spent either way.
+  (void)clock_.simulated(0.0, true);
   // Read and verified again from disk: the bytes checked at start were freed.
   AssetLoader assets = AssetLoader::fromExecutableLocation();
   std::unique_ptr<TableRenderer> table;

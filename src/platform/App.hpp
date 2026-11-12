@@ -12,6 +12,7 @@
 #include "core/Input.hpp"
 #include "core/HighScores.hpp"
 #include "core/InitialsEntry.hpp"
+#include "core/LoopPolicy.hpp"
 #include "core/Sound.hpp"
 #include "platform/AudioOutput.hpp"
 #include "platform/ScoreStore.hpp"
@@ -79,6 +80,8 @@ class App {
   // destroyed first.
   std::unique_ptr<TableRenderer> table_;
   FixedTimestep timestep_{Game::kStepSeconds, 8};
+  // Keeps time spent standing still out of the simulation (see run()).
+  PauseClock clock_;
   bool vsync_ = false;
   // The last frame was presented. When it was not, presenting did not wait
   // for the display either.
