@@ -113,7 +113,7 @@ App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, 
       audio_(AudioOutput::open()),
       highScores_(loadHighScores()),
       aboutEvent_(SDL_RegisterEvents(1)) {
-  const bool routed = routeAboutMenu(aboutEvent_, kGameTitle);
+  const bool routed = routeAboutMenu(aboutEvent_);
   SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "About menu item routed to the game: %s",
                routed ? "yes" : "no");
 }

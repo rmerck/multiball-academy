@@ -61,8 +61,6 @@ target_link_libraries(pinball_platform PUBLIC pinball_core SDL3::SDL3)
 if(APPLE)
   # The menu bar's About item is routed to the game's own About screen.
   enable_language(OBJCXX)
-  set(CMAKE_OBJCXX_STANDARD 17)
-  set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
   target_sources(pinball_platform PRIVATE src/platform/MacMenu.mm)
   set_source_files_properties(src/platform/MacMenu.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
   target_link_libraries(pinball_platform PRIVATE "-framework Cocoa")

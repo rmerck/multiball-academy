@@ -6,15 +6,15 @@ namespace pinball {
 
 // macOS gives every application an "About" item in its menu bar that opens a
 // stock system panel. This points that item at the game instead: choosing it
-// pushes an SDL event of the given type. It also puts the game's title, not
-// the executable's file name, on the application menu items.
+// pushes an SDL event of the given type. (The item titles already carry the
+// game's name, which SDL takes from the application metadata.)
 //
 // Call after the video subsystem is up. Returns false if there was no such
 // menu item, which is normal with an offscreen video driver.
 #if defined(__APPLE__)
-bool routeAboutMenu(Uint32 eventType, const char* title);
+bool routeAboutMenu(Uint32 eventType);
 #else
-inline bool routeAboutMenu(Uint32 /*eventType*/, const char* /*title*/) { return false; }
+inline bool routeAboutMenu(Uint32 /*eventType*/) { return false; }
 #endif
 
 }  // namespace pinball

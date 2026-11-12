@@ -1,6 +1,7 @@
 #include "platform/MacMenu.hpp"
 
 #import <Cocoa/Cocoa.h>
+#import <objc/runtime.h>
 
 // Receives the menu action and hands it to the game as an SDL event, so the
 // game reacts on its own loop like any other input.
@@ -21,8 +22,8 @@
 
 namespace pinball {
 
-bool routeAboutMenu(Uint32 eventType, const char* title) {
-  if (eventType == 0 || title == nullptr || NSApp == nil) {
+bool routeAboutMenu(Uint32 eventType) {
+  if (eventType == 0 || NSApp == nil) {
     return false;
   }
   NSMenu* const mainMenu = [NSApp mainMenu];
@@ -30,21 +31,15 @@ bool routeAboutMenu(Uint32 eventType, const char* title) {
     return false;
   }
   NSMenu* const appMenu = [[mainMenu itemAtIndex:0] submenu];
-  NSString* const name = [NSString stringWithUTF8String:title];
-  if (appMenu == nil || name == nil) {
+  if (appMenu == nil) {
     return false;
   }
 
   // A menu item does not keep its target alive, so this does. One per process.
   static PinballMenuTarget* target = nil;
-  NSString* const processName = [[NSProcessInfo processInfo] processName];
   bool routed = false;
   for (NSMenuItem* item in [appMenu itemArray]) {
-    if ([processName length] > 0) {
-      [item setTitle:[[item title] stringByReplacingOccurrencesOfString:processName
-                                                             withString:name]];
-    }
-    if ([item action] == @selector(orderFrontStandardAboutPanel:)) {
+    if (sel_isEqual([item action], @selector(orderFrontStandardAboutPanel:))) {
       if (target == nil) {
         target = [[PinballMenuTarget alloc] init];
       }
