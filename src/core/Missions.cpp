@@ -109,9 +109,12 @@ const Mission& missionAt(std::size_t rank, std::size_t index) noexcept {
 }
 
 MissionControl::MissionControl(double stepSeconds) noexcept
-    : fullFuelSteps_(static_cast<std::uint32_t>(std::lround(
-          kFuelSeconds /
-          (std::isfinite(stepSeconds) && stepSeconds > 0.0 ? stepSeconds : 1.0 / 120.0)))) {}
+    // Clamped before converting, so an extreme step length cannot ask for a
+    // count outside the integer's range or a tank that holds nothing.
+    : fullFuelSteps_(static_cast<std::uint32_t>(std::clamp(
+          std::round(kFuelSeconds /
+                     (std::isfinite(stepSeconds) && stepSeconds > 0.0 ? stepSeconds : 1.0 / 120.0)),
+          1.0, 4.0e9))) {}
 
 void MissionControl::reset() noexcept {
   rank_ = 0;
