@@ -86,8 +86,8 @@ exec(open(REPO + "/tools/gimp/make_ball.py").read())
 
 Assets are external files, so the game checks them before it runs:
 
-- At build time CMake records the size and SHA-256 of every file under `assets/` and compiles that manifest into the executable (`cmake/GenerateAssetManifest.cmake`).
-- At startup every listed asset is read into memory and compared with the manifest. Any missing, resized or altered file stops the game with exit code 1 before a window opens.
+- At build time CMake records the size and SHA-256 of every PNG under `assets/`, applying the same name and size rules the game enforces, and compiles that manifest into the executable (`cmake/GenerateAssetManifest.cmake`).
+- At startup every listed asset is read into memory and compared with the manifest. Any missing, resized or altered file, or anything that is not a regular file, stops the game with exit code 1 before a window opens.
 - Each image is then decoded from the same bytes that were hashed, so a file cannot be swapped between the check and the use.
 - The manifest is also the allowlist. A file that is not in it is never opened.
 - `ctest` runs `tools/test_asset_integrity.py`, which flips a bit, appends, truncates, empties and deletes each asset and confirms every case is refused.

@@ -16,8 +16,9 @@ from pathlib import Path
 
 def run(exe: Path):
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+    # The short timeout turns a hang into a failure.
     result = subprocess.run([str(exe), "--frames", "40"], env=env, capture_output=True,
-                            text=True, timeout=60)
+                            text=True, timeout=20)
     return result.returncode, result.stdout + result.stderr
 
 
@@ -96,6 +97,19 @@ def main() -> int:
         fresh_assets()
         target.unlink()
         expect("%s deleted" % rel, False)
+
+        # A FIFO or a directory in place of the file must be refused at once,
+        # not opened (opening a FIFO with no writer would block forever).
+        if hasattr(os, "mkfifo"):
+            fresh_assets()
+            target.unlink()
+            os.mkfifo(target)
+            expect("%s replaced by a FIFO" % rel, False)
+
+        fresh_assets()
+        target.unlink()
+        target.mkdir()
+        expect("%s replaced by a directory" % rel, False)
 
     # An extra file that is not in the manifest is simply never opened.
     fresh_assets()

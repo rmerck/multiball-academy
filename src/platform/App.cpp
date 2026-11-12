@@ -42,6 +42,15 @@ class VideoSession {
 std::unique_ptr<App> App::create(const AppOptions& options) {
   SDL_SetAppMetadata("Space Cadet Pinball", "0.1.0", "io.github.rmerck.spacecadetpinball");
 
+  // Refuse to start unless every asset matches the build. Done first, before
+  // any window exists.
+  const AssetLoader assets = AssetLoader::fromExecutableLocation();
+  if (!assets.verifyAll()) {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                 "Asset integrity check failed; reinstall or rebuild the game");
+    return nullptr;
+  }
+
   VideoSession session;
   if (!session.ok()) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL video init failed: %s", SDL_GetError());
@@ -78,13 +87,6 @@ std::unique_ptr<App> App::create(const AppOptions& options) {
   // A missing or damaged asset is fatal: fail at startup, not mid-game.
   // (The Game inside App can throw if the physics world cannot be created;
   // main reports that.)
-  const AssetLoader assets = AssetLoader::fromExecutableLocation();
-  // Refuse to start unless every asset matches the build.
-  if (!assets.verifyAll()) {
-    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                 "Asset integrity check failed; reinstall or rebuild the game");
-    return nullptr;
-  }
   Textures textures;
   textures.ball = assets.loadTexture(renderer.get(), "sprites/ball.png");
   if (!textures.ball) {

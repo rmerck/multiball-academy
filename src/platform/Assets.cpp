@@ -48,6 +48,17 @@ bool AssetLoader::readVerified(const AssetEntry& entry, std::vector<std::uint8_t
   }
 
   const std::string path = root_ + std::string(entry.name);
+  // Only regular files. Opening a FIFO or device placed at the asset path
+  // could block forever or never end.
+  SDL_PathInfo info{};
+  if (!SDL_GetPathInfo(path.c_str(), &info)) {
+    logAssetError(entry.name, SDL_GetError());
+    return false;
+  }
+  if (info.type != SDL_PATHTYPE_FILE || info.size != entry.size) {
+    logAssetError(entry.name, "integrity check failed: not a regular file of the built size");
+    return false;
+  }
   const IoPtr io(SDL_IOFromFile(path.c_str(), "rb"));
   if (!io) {
     logAssetError(entry.name, SDL_GetError());
