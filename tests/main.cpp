@@ -14,6 +14,7 @@ int main() {
   testPhysics();
   testPlunger();
   testPngHeader();
+  testSha256();
   testTargets();
 
   if (pinball_test::failures() == 0) {
