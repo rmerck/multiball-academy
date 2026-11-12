@@ -153,10 +153,13 @@ int main(int argc, char* argv[]) {
     const fs::path oddName = base + ".tmp-Ab3d.9";
     const fs::path other = dir / "other.txt.tmp-Ab3dE9";  // Another target's.
     const fs::path folder = base + ".tmp-Folder";
+    // Written "after now", as when the system clock has since been set back.
+    const fs::path future = base + ".tmp-Future";
     for (const fs::path& path : {stale, fresh, backup, oldStyle, shortName, longName, oddName,
-                                 other}) {
+                                 other, future}) {
       spit(path, "x");
     }
+    fs::last_write_time(future, fs::file_time_type::clock::now() + std::chrono::minutes(5), error);
     fs::create_directory(folder, error);
     for (const fs::path& path : {stale, backup, oldStyle, shortName, longName, oddName, other,
                                  folder}) {
@@ -170,7 +173,7 @@ int main(int argc, char* argv[]) {
     CHECK(pinball::removeStaleTemporaries(base) == 1);
     CHECK(!fs::exists(stale));
     for (const fs::path& path : {fresh, backup, oldStyle, shortName, longName, oddName, other,
-                                 folder}) {
+                                 folder, future}) {
       CHECK(fs::exists(path));
     }
 #if defined(PINBALL_POSIX_TESTS)
@@ -181,6 +184,8 @@ int main(int argc, char* argv[]) {
     CHECK(pinball::removeStaleTemporaries(base) == 0);
     CHECK(pinball::removeStaleTemporaries(base, 0) == 1);
     CHECK(!fs::exists(fresh) && fs::exists(backup));
+    // Its age is negative, so no limit makes it old.
+    CHECK(fs::exists(future));
     // A directory that is not there is not an error.
     CHECK(pinball::removeStaleTemporaries((dir / "absent" / "x.txt").string()) == 0);
   }
