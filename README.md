@@ -81,6 +81,8 @@ Every pull request must pass seven CI jobs, all with warnings as errors. The fir
 - Linux Release with GCC, with the hardening checked by `readelf`.
 - A two minute libFuzzer run over the parsers.
 
+An eighth job, not required, builds and tests on Linux with clang and libc++ under sanitizers. libc++ is the standard library macOS uses, so a missing include shows up there before it breaks the macOS jobs.
+
 ## Controls
 
 Keys are read by physical position (scancode), so they sit where Z and / are on a US keyboard whatever the layout. F1, F3, F4 and Escape are matched by name.
@@ -105,6 +107,8 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 1. Secure software practices: RAII ownership with no owning raw pointers, standard-library hardening, validated input, no network access, sanitizer builds in CI.
 2. Performance: fixed 120 Hz simulation step, rendering at display refresh rate with a manual pacing fallback, 60 FPS minimum target.
 3. Faithfulness to the original feel.
+
+The code is C++23 with compiler extensions off, kept to the parts of the language and library that GCC 13 with libstdc++, clang 18 with libstdc++ or libc++, and Xcode 16 all provide. That rules out `std::expected`, `std::print` and explicit object parameters for now. Every file includes the header for each standard name it uses, because libc++ in C++23 no longer brings them in through other headers. Warnings are errors in CI with all three compilers.
 
 ## Rules
 
@@ -136,8 +140,8 @@ Each nudge adds tilt heat, which cools over 2.5 seconds. Two quick nudges show a
 
 ### Missions and ranks
 
-1. Hit a mission target on the left wall to select a mission: top, middle or bottom picks one of the rank's three missions. Lighting all three selects the rank's special mission. The mission targets are ignored while a mission is active.
-2. Shoot the launch ramp to accept it. The fuel gauge fills.
+1. Hit a mission target on the left wall to select a mission: top, middle or bottom picks one of the rank's three missions. Lighting all three selects the rank's special mission. The mission targets are ignored while a mission is active, and the hit that completes a mission does not select the next one.
+2. Shoot the launch ramp to accept it. The fuel gauge fills. The ramp is a timed shot from the right flipper.
 3. Do what the display asks. Some missions have two stages.
 4. Fuel lasts 90 seconds and burns only while a ball is in play. The ramp refuels. If it runs out the mission is aborted.
 5. Completing a mission pays its award (500,000 at Cadet up to 10,000,000 for the last special mission), plus the jackpot if lit, and fills the rank gauge: 6 of 18 for a normal mission, 9 for a special. A full gauge is a promotion.
@@ -156,8 +160,8 @@ The five best games are kept in a small text file in the per-user preferences di
 
 A game that makes the table asks for initials: type letters, or use Up and Down to change one, Enter to confirm each, Left or Backspace to go back, Right to move on, Escape to accept as shown. The last initials entered are offered again.
 
-- It is written to a new, uniquely named, owner-only temporary file, flushed to disk and renamed into place, so a crash cannot leave half a table and no existing file or link is ever written through. A temporary file left by an interrupted save is removed at a later start. (These link and permission protections are POSIX; other platforms use plain SDL file calls with the same size limit.)
-- On load it must be a regular file, not a link, of at most 512 bytes and every line is validated strictly (digits only, in range, in order, initials A to Z or dashes). Anything else is set aside as `highscores.txt.bad` and the table starts empty; it is never partly trusted.
+- It is written to a new, uniquely named, owner-only temporary file, flushed to disk and renamed into place, so a crash cannot leave half a table and no existing file or link is ever written through. The temporary file is named `highscores.txt.tmp-` and six more characters; one left by an interrupted save is removed at a later start, once it is a minute old. Only regular files with exactly such a name are removed. (These link and permission protections are POSIX; other platforms use plain SDL file calls with the same size limit.)
+- On load it must be a regular file, not a link, of at most 512 bytes and every line is validated strictly (digits only, in range, in order, initials A to Z or dashes). Anything else is set aside as `highscores.txt.bad` and the table starts empty; it is never partly trusted. A file that cannot be read at all is left where it is, and nothing is saved that run.
 - Files from before initials were added are still read; their entries show dashes.
 
 ## Sound
@@ -178,9 +182,9 @@ The background tune (`src/core/Music`) is an original eight-bar loop for bass, a
 - The plunger is a kinematic block. Holding Space draws it back over one second; on release it drives forward at 3 to 12.5 m/s depending on the draw, and the ball leaves about 1.3 times faster. A full draw clears the arch; a tap does not leave the lane.
 - A one-way gate at the top of the lane is modelled as a wall that is switched on once the launched ball is clear, and off again for the next serve.
 - Bumpers and slingshot faces add a fixed kick on top of the solver's bounce. Elements are tagged in Box2D shape user data with a packed integer, never a pointer, and validated on the way out.
-- Rollovers and holes are detected by ball position every slice, not by Box2D sensors, so the result is exact and deterministic.
+- Rollovers and holes are detected by ball position every slice, not by Box2D sensors, so the result is exact and deterministic. A rollover is a switch across the whole width of its lane, wider than its drawn light, so a ball running down the lane's wall still trips it.
 - Holes take the ball off the table (its body is disabled) for 0.9 s and return it: wormholes pass it round a ring of three, the black hole and hyperspace chute return it from themselves.
-- The launch ramp is modelled as a hole that only takes a ball travelling up the table at 3 m/s or more. A real ramp lifts the ball above the playfield; here the ball is drawn riding over the table and is dropped into the top of the field.
+- The launch ramp's mouth is a strip 74 pixels wide in the left of the lower field, facing the right flipper. It takes only a ball travelling up the table at 11 m/s or more that is also heading left by at least a quarter of that speed: a firm shot off the right flipper, with a timing window of three to five steps. A slower ball, or one driven straight up by the left flipper, rolls over it. A real ramp lifts the ball above the playfield; here the ball is drawn riding over the table from where it entered and is dropped into the top of the field.
 - `src/core/TableLayout.hpp` is the single source of table geometry for physics, drawing and art.
 
 ## Layout
@@ -251,6 +255,17 @@ What this does not cover: the hashes live in the executable, so someone able to 
 The game only opens files inside the `assets` directory next to the executable. Files over 16 MB or images over 4096 pixels on an edge are refused before decoding.
 
 Assets are exported with all metadata off. `tools/check_assets.py` (run by `ctest`) fails if a PNG carries EXIF, text, timestamp, profile or thumbnail chunks, is malformed, or if anything but a regular `.png` file is in `assets`.
+
+## Known limitations
+
+Minor findings from review that were looked at and left as they are:
+
+- The ball is drawn at its latest 120 Hz step, with no interpolation between steps. On a display that is not 60 or 120 Hz (75, 144, 165 Hz) its motion can judder by up to one step.
+- If the fail-safe that returns a lost ball to the plunger ever fired, the rules would still count that ball as in play until it is launched again. It did not fire in 40 million soak-test steps.
+- The flippers and plunger are commanded on every physics slice, even at rest (about a tenth of the 8 microseconds a step takes).
+- HUD text is redrawn as rectangles every frame, and target angles are recomputed every frame. On SDL's software renderer the About, initials and pause screens take 15 to 24 ms a frame; the loop sleeps while they are up.
+- `clang-tidy` is not run in CI. A configuration is in `.clang-tidy`.
+- Windows is untested, and the link and permission protections of the score file are POSIX only.
 
 ## How this was made
 

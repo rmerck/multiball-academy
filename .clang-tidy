@@ -1,0 +1,29 @@
+# A small, high-signal set for an occasional run; not part of CI.
+#   cmake -S . -B build && cmake --build build --target pinball_manifest
+#   run-clang-tidy -p build -quiet 'src/|tests/|tools/'
+# Left out on purpose: readability-*, modernize-use-nodiscard and the other
+# style checks, bugprone-easily-swappable-parameters (fires on every
+# (x, y) pair), and bugprone-narrowing-conversions (the build already has
+# -Wconversion as an error). cert-err33-c and performance-enum-size are also
+# out: here they only ask for a checked fprintf and for one-byte enums.
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  cert-err34-c,
+  cert-err52-cpp,
+  cert-err58-cpp,
+  cert-err60-cpp,
+  cert-flp30-c,
+  cert-mem57-cpp,
+  cert-msc50-cpp,
+  cert-msc51-cpp,
+  cert-oop54-cpp,
+  cert-oop57-cpp,
+  cert-oop58-cpp,
+  cert-str34-c,
+  performance-*,
+  -performance-enum-size
+HeaderFilterRegex: '.*/(src|tests|tools)/.*'

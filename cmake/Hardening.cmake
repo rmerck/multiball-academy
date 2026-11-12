@@ -19,7 +19,14 @@ function(pinball_apply_hardening target scope)
     -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion
     -Wnon-virtual-dtor -Wold-style-cast -Wcast-align -Woverloaded-virtual
     -Wnull-dereference -Wformat=2 -Wimplicit-fallthrough
+    -Wdouble-promotion -Wextra-semi -Wunused-macros
     -fstack-protector-strong)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # Known to GCC only (clang 18 rejects both names).
+    # Not -Wuseless-cast: a cast between size_t and a fixed-width type is
+    # needed on one platform and "useless" on another.
+    target_compile_options(${target} ${scope} -Wformat-signedness)
+  endif()
   # Keep the builder's directory names out of assertion messages and debug
   # information: file names are recorded relative to the source tree. (On
   # macOS a build with debug information still lists its object files by
