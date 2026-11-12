@@ -1,0 +1,23 @@
+name: Dependency pins
+
+# Dependabot cannot see versions pinned in CMake. Once a week this fails,
+# which sends a notification, if SDL or Box2D has a newer release than the
+# one in cmake/PinnedDeps.cmake. GitHub switches scheduled workflows off after
+# 60 days without activity in a public repository; re-enable it if so.
+on:
+  schedule:
+    - cron: "23 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh tools/check_pins.sh

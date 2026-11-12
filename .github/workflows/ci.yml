@@ -10,29 +10,149 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request replaces the older run; runs on main finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Every job builds SDL3 and Box2D from pinned, hash-checked sources
+# (cmake/PinnedDeps.cmake), not from whatever a package manager has today.
 jobs:
   macos:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         sanitize: ["OFF", "ON"]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install dependencies
-        run: brew install sdl3 box2d
       - name: Configure
+        env:
+          SANITIZE: ${{ matrix.sanitize }}
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DPINBALL_FETCH_DEPS=ON
           -DPINBALL_WERROR=ON
-          -DPINBALL_SANITIZE=${{ matrix.sanitize }}
+          -DPINBALL_SANITIZE="$SANITIZE"
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  # The build that would be handed to someone: optimised, self-contained,
+  # hardened runtime, and free of the build machine's paths.
+  macos-release:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DPINBALL_FETCH_DEPS=ON
+          -DPINBALL_WERROR=ON
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: No build paths in the binary
+        run: |
+          test -x build/pinball
+          if strings -a build/pinball | grep -E '/Users/|/home/|/private/var/'; then
+            echo "build paths found in the binary"; exit 1
+          fi
+      - name: Only system libraries are loaded
+        run: |
+          otool -L build/pinball
+          if otool -L build/pinball | tail -n +2 | grep -v -E '^\s+(/System/Library/|/usr/lib/)'; then
+            echo "non-system library dependency"; exit 1
+          fi
+      - name: Hardened runtime is on
+        run: |
+          codesign --verify --strict build/pinball
+          codesign -dv build/pinball 2>&1 | grep -E 'flags=.*runtime'
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {cc: gcc, cxx: g++, build: RelWithDebInfo, sanitize: "ON"}
+          - {cc: clang, cxx: clang++, build: RelWithDebInfo, sanitize: "ON"}
+          # Optimised, as it would be handed out: other warnings appear at
+          # this level, and the hardening is checked on the result.
+          - {cc: gcc, cxx: g++, build: Release, sanitize: "OFF"}
+    name: linux (${{ matrix.cxx }}, ${{ matrix.build }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install build headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev \
+            libgl1-mesa-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+          BUILD_TYPE: ${{ matrix.build }}
+          SANITIZE: ${{ matrix.sanitize }}
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
+          -DPINBALL_FETCH_DEPS=ON
+          -DPINBALL_WERROR=ON
+          -DPINBALL_SANITIZE="$SANITIZE"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Hardening is present in the Release binary
+        if: matrix.build == 'Release'
+        run: |
+          test -x build/pinball
+          readelf -h build/pinball | grep -E 'Type:\s+DYN'
+          readelf -d build/pinball | grep -E 'BIND_NOW'
+          readelf -lW build/pinball | grep -E 'GNU_RELRO'
+          readelf -lW build/pinball | grep -E 'GNU_STACK\s.*RW\s'
+          readelf -W --dyn-syms build/pinball | grep -E '__stack_chk_fail'
+          readelf -W --dyn-syms build/pinball | grep -v stack_chk | grep -E '__[a-z]+_chk'
+          readelf -n build/pinball | grep -E 'IBT, SHSTK'
+          if strings -a build/pinball | grep -E '/home/|/Users/'; then
+            echo "build paths found in the binary"; exit 1
+          fi
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Configure
+        env:
+          CC: clang
+          CXX: clang++
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DPINBALL_FUZZ=ON
+          -DPINBALL_SANITIZE=ON
+          -DPINBALL_WERROR=ON
+      - name: Build
+        run: cmake --build build --parallel --target pinball_fuzz
+      - name: Fuzz the parsers
+        run: |
+          mkdir found
+          ./build/pinball_fuzz -max_total_time=120 -max_len=1024 -print_final_stats=1 \
+            -dict=tests/fuzz/parsers.dict found tests/fuzz/corpus

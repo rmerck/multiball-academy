@@ -21,7 +21,7 @@ This is an independent fan project. It contains no code or assets from the origi
 | 11 | High scores, polish, performance | Done: high score table, About screen, auto-pause, idle wait while paused |
 | 12 | Final playability pass | Done: full test suite under sanitizers and in Release, 10 minute simulated soak, offscreen render checks of play and About |
 
-Known approximations: the table geometry, art and sounds are original work in the style of the 1995 table, not copies of it. The music is an original tune, not the original soundtrack. Mission goals follow the original's structure with simplified conditions. Linux and Windows builds are untested.
+Known approximations: the table geometry, art and sounds are original work in the style of the 1995 table, not copies of it. The music is an original tune, not the original soundtrack. Mission goals follow the original's structure with simplified conditions. Windows builds are untested.
 
 ## Build (macOS)
 
@@ -37,6 +37,21 @@ Options:
 
 - `-DPINBALL_SANITIZE=ON` builds with AddressSanitizer and UBSan.
 - `-DPINBALL_WERROR=ON` treats warnings as errors. CI uses this.
+- `-DPINBALL_FETCH_DEPS=ON` needs no Homebrew libraries: it downloads SDL3 3.4.20 (release archive, checked by SHA-256) and Box2D 3.2.0 (fixed by commit), builds them with the same protective compiler flags as the game, and links them statically. CI uses this. On macOS a Release build is also signed ad hoc with the hardened runtime. `tools/check_pins.sh` reports when either has a newer release; a weekly workflow runs it.
+- `-DPINBALL_FUZZ=ON` (clang with libFuzzer, not Apple clang) builds only `pinball_fuzz`, which fuzzes the score file, PNG header, asset name and argument parsers.
+
+A build to give to someone else:
+
+```sh
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DPINBALL_FETCH_DEPS=ON
+cmake --build build-release --parallel
+```
+
+On macOS that binary is optimised, links only system libraries, carries no path from the build machine, and runs under the hardened runtime, so the system ignores injected libraries. It is not signed by an identified developer or notarised, so macOS Gatekeeper will still warn about it on another machine.
+
+On Linux the same build is a position-independent executable with full RELRO, stack protection, fortified library calls and control-flow protection. SDL still opens the system's display and audio libraries at run time, as every SDL program does.
+
+Linux builds and passes the tests in CI with GCC and clang, with sanitizers and as an optimised Release build. Windows is untested.
 
 ## Controls
 
