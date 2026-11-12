@@ -1,6 +1,7 @@
 #include "platform/App.hpp"
 
 #include <cmath>
+#include <utility>
 
 namespace pinball {
 
@@ -72,15 +73,30 @@ std::unique_ptr<App> App::create(const AppOptions& options) {
   }
   SDL_SetWindowMinimumSize(window.get(), kLogicalWidth / 4, kLogicalHeight / 4);
 
-  std::unique_ptr<App> app(new App(options, window.release(), renderer.release(), vsync));
+  // A missing or damaged asset is fatal: fail at startup, not mid-game.
+  const AssetLoader assets = AssetLoader::fromExecutableLocation();
+  Textures textures;
+  textures.ball = assets.loadTexture(renderer.get(), "sprites/ball.png");
+  if (!textures.ball) {
+    return nullptr;
+  }
+
+  std::unique_ptr<App> app(
+      new App(options, window.release(), renderer.release(), vsync, std::move(textures)));
   session.release();
   return app;
 }
 
-App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, bool vsync)
-    : options_(options), window_(window), renderer_(renderer), vsync_(vsync) {}
+App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, bool vsync,
+         Textures textures)
+    : options_(options),
+      window_(window),
+      renderer_(renderer),
+      textures_(std::move(textures)),
+      vsync_(vsync) {}
 
 App::~App() {
+  textures_ = Textures{};
   renderer_.reset();
   window_.reset();
   SDL_QuitSubSystem(SDL_INIT_VIDEO);
@@ -191,15 +207,14 @@ void App::render(double /*alpha*/) {
   SDL_SetRenderDrawColor(r, 24, 24, 30, SDL_ALPHA_OPAQUE);
   SDL_RenderFillRect(r, &panel);
 
-  // A marker that moves with simulated time, proving the fixed-step loop runs.
+  // Placeholder motion until physics lands: the ball sweeps across with
+  // simulated time, proving the fixed-step loop and the sprite path.
   const float t = static_cast<float>(std::fmod(game_.simTime(), 2.0) / 2.0);
-  const SDL_FRect marker{playfield.w * t - 8.0F, h * 0.5F - 8.0F, 16.0F, 16.0F};
-  if (paused_) {
-    SDL_SetRenderDrawColor(r, 200, 160, 40, SDL_ALPHA_OPAQUE);
-  } else {
-    SDL_SetRenderDrawColor(r, 200, 200, 210, SDL_ALPHA_OPAQUE);
-  }
-  SDL_RenderFillRect(r, &marker);
+  const float diameter = 24.0F;
+  const SDL_FRect ball{playfield.w * t - diameter * 0.5F, h * 0.5F - diameter * 0.5F, diameter,
+                       diameter};
+  SDL_SetTextureAlphaMod(textures_.ball.get(), paused_ ? 128 : 255);
+  SDL_RenderTexture(r, textures_.ball.get(), nullptr, &ball);
 
   SDL_RenderPresent(r);
 }

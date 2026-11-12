@@ -9,6 +9,7 @@
 #include "core/FixedTimestep.hpp"
 #include "core/Game.hpp"
 #include "core/Input.hpp"
+#include "platform/Assets.hpp"
 
 namespace pinball {
 
@@ -42,7 +43,13 @@ class App {
     void operator()(SDL_Renderer* r) const noexcept { SDL_DestroyRenderer(r); }
   };
 
-  App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, bool vsync);
+  // Every texture the game draws. Loaded once at startup.
+  struct Textures {
+    TexturePtr ball;
+  };
+
+  App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, bool vsync,
+      Textures textures);
 
   void handleEvent(const SDL_Event& event);
   void render(double alpha);
@@ -51,9 +58,12 @@ class App {
   bool needsManualPacing() const;
 
   AppOptions options_;
-  // Members are destroyed in reverse order: renderer first, then window.
+  // Members are destroyed in reverse order: textures, renderer, then window.
   std::unique_ptr<SDL_Window, WindowDeleter> window_;
   std::unique_ptr<SDL_Renderer, RendererDeleter> renderer_;
+  // Textures belong to the renderer and are declared after it so they are
+  // destroyed first.
+  Textures textures_;
   FixedTimestep timestep_{1.0 / 120.0, 8};
   bool vsync_ = false;
   bool running_ = true;

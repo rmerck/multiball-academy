@@ -22,6 +22,7 @@ find_package(SDL3 3.4 REQUIRED CONFIG)
 # Platform-independent game logic. No SDL dependency so it is unit-testable headless.
 add_library(pinball_core STATIC
   src/core/Args.cpp
+  src/core/AssetName.cpp
   src/core/Game.cpp
 )
 target_include_directories(pinball_core PUBLIC src)
@@ -31,14 +32,23 @@ pinball_apply_hardening(pinball_core PUBLIC)
 add_executable(pinball
   src/main.cpp
   src/platform/App.cpp
+  src/platform/Assets.cpp
 )
 target_link_libraries(pinball PRIVATE pinball_core SDL3::SDL3)
+
+# The game loads assets from an "assets" directory next to the executable.
+add_custom_command(TARGET pinball POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+          ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:pinball>/assets
+  COMMENT "Copying assets"
+  VERBATIM)
 
 include(CTest)
 if(BUILD_TESTING)
   add_executable(core_tests
     tests/main.cpp
     tests/ArgsTest.cpp
+    tests/AssetNameTest.cpp
     tests/FixedTimestepTest.cpp
     tests/GameTest.cpp
   )

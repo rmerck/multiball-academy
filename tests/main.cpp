@@ -4,11 +4,13 @@
 #include "Check.hpp"
 
 void testArgs();
+void testAssetName();
 void testFixedTimestep();
 void testGame();
 
 int main() {
   testArgs();
+  testAssetName();
   testFixedTimestep();
   testGame();
 
