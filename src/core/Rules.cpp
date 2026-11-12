@@ -35,6 +35,8 @@ void Rules::startGame() noexcept {
   targetLit_.fill(false);
   laneLit_.fill(false);
   missions_.reset();
+  ballInPlay_ = false;
+  missionMessageThisStep_ = false;
   resetBall();
   say("PULL THE PLUNGER TO LAUNCH");
 }
@@ -49,7 +51,16 @@ void Rules::resetBall() noexcept {
   hyperspaceReflexSteps_ = 0;
 }
 
+void Rules::sayMission(std::string_view text) noexcept {
+  missionMessageThisStep_ = false;
+  say(text);
+  missionMessageThisStep_ = true;
+}
+
 void Rules::say(std::string_view text) noexcept {
+  if (missionMessageThisStep_) {
+    return;
+  }
   message_ = text;
   messageSteps_ = stepsFor(kMessageSeconds);
 }
@@ -85,17 +96,17 @@ void Rules::handleMission(const MissionControl::Outcome& outcome) noexcept {
       addScore(points::kJackpot);
       jackpotLit_ = false;
     }
-    say(outcome.promoted ? "MISSION COMPLETE  PROMOTED" : "MISSION COMPLETE");
+    sayMission(outcome.promoted ? "MISSION COMPLETE  PROMOTED" : "MISSION COMPLETE");
   } else if (outcome.aborted) {
-    say("OUT OF FUEL  MISSION ABORTED");
+    sayMission("OUT OF FUEL  MISSION ABORTED");
   } else if (outcome.stageCompleted) {
-    say("STAGE COMPLETE");
+    sayMission("STAGE COMPLETE");
   } else if (outcome.accepted) {
-    say("MISSION ACCEPTED");
+    sayMission("MISSION ACCEPTED");
   } else if (outcome.selected) {
-    say("MISSION SELECTED  SHOOT THE RAMP");
+    sayMission("MISSION SELECTED  SHOOT THE RAMP");
   } else if (outcome.refueled) {
-    say("REFUELED");
+    sayMission("REFUELED");
   }
 }
 
@@ -316,12 +327,14 @@ void Rules::onBallInPlay() noexcept {
   if (gameOver_) {
     return;
   }
+  ballInPlay_ = true;
   if (!ballSaveUsed_) {
     ballSaveSteps_ = stepsFor(kBallSaveSeconds);
   }
 }
 
 Rules::DrainResult Rules::onDrain() noexcept {
+  ballInPlay_ = false;
   if (gameOver_) {
     return DrainResult::GameOver;
   }
@@ -371,9 +384,11 @@ void Rules::tick() noexcept {
   countDown(ballSaveSteps_);
   countDown(rampReflexSteps_);
   countDown(hyperspaceReflexSteps_);
-  if (!gameOver_) {
+  // Fuel burns only while a ball is in play, not while one waits on the plunger.
+  if (!gameOver_ && ballInPlay_) {
     handleMission(missions_.tick());
   }
+  missionMessageThisStep_ = false;
   if (messageSteps_ > 0 && --messageSteps_ == 0 && !gameOver_) {
     message_ = {};
   }

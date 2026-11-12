@@ -266,13 +266,62 @@ void testMissions() {
     CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
   }
 
-  {  // Out of fuel through the rules.
+  {  // Fuel through the rules: it burns only while a ball is in play, so a
+     // mission survives any wait on the plunger, and runs dry in play.
     Rules rules(kStep);
+    const int fullTank = static_cast<int>(MissionControl::kFuelSeconds / kStep) + 5;
+    rules.onBallInPlay();
     rules.onTarget(missionTarget(2));
     rules.onHole(hole(table::HoleType::Ramp));
-    for (int i = 0; i < static_cast<int>(MissionControl::kFuelSeconds / kStep) + 5; ++i) {
+    for (int i = 0; i < 600; ++i) {
+      rules.tick();
+    }
+    const int lightsBefore = rules.missions().fuelLights();
+    rules.onDrain();
+    for (int i = 0; i < fullTank * 2; ++i) {
+      rules.tick();
+    }
+    CHECK(rules.missions().phase() == MissionControl::Phase::Active);
+    CHECK(rules.missions().fuelLights() == lightsBefore);
+
+    rules.onBallInPlay();
+    for (int i = 0; i < fullTank && rules.missions().phase() == MissionControl::Phase::Active;
+         ++i) {
       rules.tick();
     }
     CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
+    CHECK(rules.message() == std::string_view("OUT OF FUEL  MISSION ABORTED"));
+  }
+
+  {  // The mission announcement wins over a lesser message from the same
+     // hit: completing the Science Mission on the target that also completes
+     // a bank still says the mission is complete.
+    Rules rules(kStep);
+    rules.onBallInPlay();
+    for (std::size_t t = 0; t < 3; ++t) {
+      rules.onTarget(missionTarget(t));  // Selects the special mission.
+    }
+    rules.onHole(hole(table::HoleType::Ramp));
+    CHECK(rules.missions().mission() == &pinball::missionAt(0, pinball::kSpecialMission));
+    // Nine target hits, the last of which also completes the multiplier bank.
+    std::size_t multiplier[2] = {0, 0};
+    std::size_t found = 0;
+    for (std::size_t i = 0; i < table::kTargets.size() && found < 2; ++i) {
+      if (table::kTargets[i].bank == table::TargetBank::Multiplier) {
+        multiplier[found++] = i;
+      }
+    }
+    for (int i = 0; i < 8; ++i) {
+      rules.onTarget(multiplier[0]);
+    }
+    CHECK(rules.missions().remaining() == 1);
+    rules.onTarget(multiplier[1]);
+    CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
+    CHECK(rules.fieldMultiplier() == 2);
+    CHECK(rules.message() == std::string_view("MISSION COMPLETE"));
+    // The lock lasts only for that step.
+    rules.tick();
+    rules.onHole(hole(table::HoleType::BlackHole));
+    CHECK(rules.message() == std::string_view("BLACK HOLE"));
   }
 }
