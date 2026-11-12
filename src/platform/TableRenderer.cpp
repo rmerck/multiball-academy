@@ -58,10 +58,12 @@ std::array<TargetSprite, table::kTargets.size()> makeTargetSprites() noexcept {
                               (length / kBarSpriteLength);
     const float spriteHeight = 2.0F * (kBarSpriteRadius + kBarSpriteMargin);
     sprites[i] = {
-        .dst = {mid.x - spriteWidth * 0.5F, mid.y - spriteHeight * 0.5F, spriteWidth, spriteHeight},
+        .dst = {mid.x - spriteWidth * 0.5F, mid.y - spriteHeight * 0.5F, spriteWidth,
+                spriteHeight},
         .mid = mid,
         .length = length,
-        .angleDegrees = static_cast<double>(std::atan2(b.y - a.y, b.x - a.x) * kRadiansToDegrees)};
+        .angleDegrees =
+            static_cast<double>(std::atan2(b.y - a.y, b.x - a.x) * kRadiansToDegrees)};
   }
   return sprites;
 }

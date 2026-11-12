@@ -15,7 +15,8 @@ namespace pinball {
 class TableRenderer {
  public:
   // Loads all textures. Returns nullptr, after logging, if any is missing.
-  [[nodiscard]] static std::unique_ptr<TableRenderer> create(SDL_Renderer* renderer, const AssetLoader& assets);
+  [[nodiscard]] static std::unique_ptr<TableRenderer> create(SDL_Renderer* renderer,
+                                                             const AssetLoader& assets);
 
   // Draws one frame. Does not clear or present. alpha is the fraction of a
   // step since the latest one (FixedTimestep::alpha()): the ball and the
