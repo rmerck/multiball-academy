@@ -51,7 +51,7 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 | . | Nudge right | Done |
 | Up | Nudge from bottom | Done |
 | F2 | New game | Done |
-| F1 | About and high scores | Done |
+| F1 | About and high scores. On macOS the menu bar's About item opens the same screen | Done |
 | F3 | Pause. The game also pauses by itself when its window loses focus or is minimised | Done |
 | F4 | Fullscreen | Done |
 | M | Mute | Done |

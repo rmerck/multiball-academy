@@ -5,6 +5,7 @@
 #include "core/Version.hpp"
 #include "platform/About.hpp"
 #include "platform/Canvas.hpp"
+#include "platform/MacMenu.hpp"
 #include "platform/ScoreStore.hpp"
 #include "platform/Text.hpp"
 
@@ -110,7 +111,12 @@ App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, 
       table_(std::move(table)),
       vsync_(vsync),
       audio_(AudioOutput::open()),
-      highScores_(loadHighScores()) {}
+      highScores_(loadHighScores()),
+      aboutEvent_(SDL_RegisterEvents(1)) {
+  const bool routed = routeAboutMenu(aboutEvent_, kGameTitle);
+  SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "About menu item routed to the game: %s",
+               routed ? "yes" : "no");
+}
 
 App::~App() {
   table_.reset();
@@ -252,6 +258,11 @@ void App::handleEvent(const SDL_Event& event) {
       }
       break;
     default:
+      // The About item in the system menu bar. It only ever opens the screen.
+      if (aboutEvent_ != 0 && event.type == aboutEvent_ && !aboutOpen_) {
+        aboutOpen_ = true;
+        latched_ = InputState{};
+      }
       break;
   }
 }
