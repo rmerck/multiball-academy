@@ -15,6 +15,17 @@ float blendFactor(float alpha) noexcept {
   return alpha >= 0.0F && alpha <= 1.0F ? alpha : (alpha < 0.0F ? 0.0F : 1.0F);
 }
 
+// On the playfield proper: past the old closing line at the top of the
+// table, or anywhere left of the lane wall and below its top. The second
+// part covers the right-hand channel (the hyperspace chute, the booster
+// targets, the right outlane), which lies between that line and the wall. A
+// ball's centre there is at least a ball's radius below the gate's foot, so
+// the gate never closes on it; in the lane it is right of the wall.
+bool onPlayfield(Vec2 p) noexcept {
+  return p.x < table::kLaneGateCloseX ||
+         (p.x < table::kLaneWallX && p.y > table::kLaneWallTopY + table::kBallRadius);
+}
+
 }  // namespace
 
 Game::Game() {
@@ -132,10 +143,11 @@ void Game::step(const InputState& input) {
     handleDrain();
   }
 
-  // Once the launched ball is clear of the lane, shut the gate behind it.
-  if (!physics_.laneGateClosed() && physics_.ballPosition().x < table::kLaneGateCloseX) {
+  // Once the launched ball is clear of the lane, shut the gate behind it. A
+  // ball in a hole is on the playfield wherever the hole is.
+  if (!physics_.laneGateClosed() && (physics_.ballHeld() || onPlayfield(physics_.ballPosition()))) {
     physics_.setLaneGateClosed(true);
-    rules_.onBallInPlay();
+    enterPlay();
   }
 
   if (ballPlaced_) {
@@ -146,6 +158,13 @@ void Game::step(const InputState& input) {
   sounds_ |= rules_.takeSounds();
   ++stepCount_;
   previousInput_ = input;
+}
+
+void Game::enterPlay() {
+  // Once per ball: the rules arm the ball save when they hear it.
+  if (!rules_.ballInPlay()) {
+    rules_.onBallInPlay();
+  }
 }
 
 void Game::handleEvents() {
@@ -159,41 +178,56 @@ void Game::handleEvents() {
     flash = std::max(flash - fade, 0.0F);
   }
 
+  // A tilted or finished table is dead: the ball still bounces and the
+  // holes still take and return it, but nothing lights or sounds for a hit
+  // that does not score. The hit counts go on; they record what the ball did.
+  const bool live = !rules_.gameOver() && !rules_.tilted();
+  SoundSet hitSounds = 0;
   for (const PhysicsEvent& event : physics_.events()) {
     if (!table::isValid(event.element)) {
       continue;
     }
+    // Anything the ball can hit is on the playfield, so the first hit puts
+    // the ball in play even if it has not been seen clear of the lane yet.
+    enterPlay();
     const std::size_t index = event.element.index;
     switch (event.element.kind) {
       using enum table::ElementKind;
       case Bumper:
-        bumperFlash_[index] = 1.0F;
+        if (live) {
+          bumperFlash_[index] = 1.0F;
+        }
         ++bumperHits_;
-        sounds_ |= soundBit(Sound::Bumper);
+        hitSounds |= soundBit(Sound::Bumper);
         rules_.onBumper(index);
         break;
       case Slingshot:
-        slingshotFlash_[index] = 1.0F;
-        sounds_ |= soundBit(Sound::Slingshot);
+        if (live) {
+          slingshotFlash_[index] = 1.0F;
+        }
+        hitSounds |= soundBit(Sound::Slingshot);
         rules_.onSlingshot(index);
         break;
       case Target:
-        sounds_ |= soundBit(Sound::Target);
+        hitSounds |= soundBit(Sound::Target);
         rules_.onTarget(index);
         break;
       case Rollover:
         ++rolloverCounts_[index];
-        sounds_ |= soundBit(Sound::Rollover);
+        hitSounds |= soundBit(Sound::Rollover);
         rules_.onRollover(index);
         break;
       case Hole:
         ++holeCounts_[index];
-        sounds_ |= soundBit(Sound::HoleIn);
+        hitSounds |= soundBit(Sound::HoleIn);
         rules_.onHole(index);
         break;
       case None:
         break;
     }
+  }
+  if (live) {
+    sounds_ |= hitSounds;
   }
 }
 
