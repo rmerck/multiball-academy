@@ -66,6 +66,8 @@ class PhysicsWorld {
 
   // Speed added to the ball, in m/s, when it touches a bumper.
   static constexpr float kBumperKickSpeed = 5.5F;
+  // Speed added along a slingshot's face normal, in m/s.
+  static constexpr float kSlingshotKickSpeed = 4.5F;
   // Most events kept per step. Further events in the same step are dropped.
   static constexpr std::size_t kMaxEventsPerStep = 32;
 
@@ -96,6 +98,9 @@ class PhysicsWorld {
   void buildBumpers();
   void collectEvents();
   void kickFromBumper(const table::Bumper& bumper);
+  void buildTargets();
+  // Kicks the ball if it is on the slingshot's kicker face. Returns whether it did.
+  bool kickFromSlingshot(const table::Triangle& sling);
   void drivePlunger(float stepSeconds);
 
   struct FlipperState {

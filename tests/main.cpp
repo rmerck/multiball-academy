@@ -14,6 +14,7 @@ int main() {
   testPhysics();
   testPlunger();
   testPngHeader();
+  testTargets();
 
   if (pinball_test::failures() == 0) {
     std::puts("core_tests: all passed");

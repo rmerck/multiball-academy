@@ -50,6 +50,18 @@ class Game {
   float bumperFlash(std::size_t index) const noexcept {
     return index < bumperFlash_.size() ? bumperFlash_[index] : 0.0F;
   }
+  // Whether a stand-up target is currently lit.
+  bool targetLit(std::size_t index) const noexcept {
+    return index < targetLit_.size() && targetLit_[index];
+  }
+  // How many times every target in a bank has been lit.
+  std::uint32_t bankCompletions(table::TargetBank bank) const noexcept {
+    return bankCompletions_[static_cast<std::size_t>(bank)];
+  }
+  // 1 just after a slingshot fired, fading to 0.
+  float slingshotFlash(std::size_t index) const noexcept {
+    return index < slingshotFlash_.size() ? slingshotFlash_[index] : 0.0F;
+  }
   // Total bumper hits this session.
   std::uint32_t bumperHits() const noexcept { return bumperHits_; }
   // Number of balls lost down the drain so far.
@@ -58,6 +70,7 @@ class Game {
  private:
   void serveBall();
   void handleEvents();
+  void lightTarget(std::size_t index);
 
   PhysicsWorld physics_;
   std::uint64_t stepCount_ = 0;
@@ -65,6 +78,9 @@ class Game {
   InputState previousInput_;
   std::array<float, table::kBumpers.size()> bumperFlash_{};
   std::uint32_t bumperHits_ = 0;
+  std::array<float, table::kSlingshots.size()> slingshotFlash_{};
+  std::array<bool, table::kTargets.size()> targetLit_{};
+  std::array<std::uint32_t, table::kTargetBankCount> bankCompletions_{};
 };
 
 }  // namespace pinball

@@ -71,6 +71,7 @@ if(BUILD_TESTING)
     tests/PhysicsTest.cpp
     tests/PlungerTest.cpp
     tests/PngHeaderTest.cpp
+    tests/TargetTest.cpp
   )
   target_link_libraries(core_tests PRIVATE pinball_core)
   add_test(NAME core_tests COMMAND core_tests)

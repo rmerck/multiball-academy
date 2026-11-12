@@ -39,15 +39,21 @@ void* packElement(table::ElementRef ref) noexcept {
 
 table::ElementRef unpackElement(const void* data) noexcept {
   const auto value = reinterpret_cast<std::uintptr_t>(data);  // NOLINT: integer tag.
-  const auto kind = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+  const auto kindValue = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
   const auto index = static_cast<std::uint8_t>(value & 0xFFU);
   // Validate before trusting: only known kinds with in-range indices pass.
-  if (kind == static_cast<std::uint8_t>(table::ElementKind::Bumper) &&
-      index < table::kBumpers.size()) {
-    return {table::ElementKind::Bumper, index};
+  for (const table::ElementKind kind :
+       {table::ElementKind::Bumper, table::ElementKind::Slingshot, table::ElementKind::Target}) {
+    if (kindValue == static_cast<std::uint8_t>(kind)) {
+      const table::ElementRef ref{kind, index};
+      return table::isValid(ref) ? ref : table::ElementRef{};
+    }
   }
   return {};
 }
+
+// Slingshot and target faces are rubber.
+constexpr float kRubberRestitution = 0.55F;
 
 constexpr float toMeters(float pixels) noexcept {
   return pixels / PhysicsWorld::kPixelsPerMeter;
@@ -86,6 +92,7 @@ PhysicsWorld::PhysicsWorld() {
   buildFlippers();
   buildPlunger();
   buildBumpers();
+  buildTargets();
   events_.reserve(kMaxEventsPerStep);
 }
 
@@ -124,17 +131,26 @@ void PhysicsWorld::buildTable() {
     const b2Capsule capsule{toMeters(wall.a), toMeters(wall.b), toMeters(wall.radius)};
     b2CreateCapsuleShape(table_, &shapeDef, &capsule);
   }
-  for (const table::Triangle& sling : table::kSlingshots) {
+  const auto addTriangle = [this](const table::Triangle& triangle, const b2ShapeDef& def) {
     b2Vec2 corners[3];
-    for (int i = 0; i < 3; ++i) {
-      corners[i] = toMeters(sling.points[static_cast<std::size_t>(i)]);
+    for (std::size_t i = 0; i < 3; ++i) {
+      corners[i] = toMeters(triangle.points[i]);
     }
     const b2Hull hull = b2ComputeHull(corners, 3);
     if (hull.count == 3) {
-      const b2Polygon polygon = b2MakePolygon(&hull, toMeters(sling.cornerRadius));
-      b2CreatePolygonShape(table_, &shapeDef, &polygon);
+      const b2Polygon polygon = b2MakePolygon(&hull, toMeters(triangle.cornerRadius));
+      b2CreatePolygonShape(table_, &def, &polygon);
     }
+  };
+
+  b2ShapeDef slingDef = wallShapeDef();
+  slingDef.material.restitution = kRubberRestitution;
+  for (std::size_t i = 0; i < table::kSlingshots.size(); ++i) {
+    slingDef.userData =
+        packElement({table::ElementKind::Slingshot, static_cast<std::uint8_t>(i)});
+    addTriangle(table::kSlingshots[i], slingDef);
   }
+  addTriangle(table::kMedalIsland, shapeDef);
 }
 
 void PhysicsWorld::buildBall() {
@@ -271,6 +287,51 @@ void PhysicsWorld::buildBumpers() {
   }
 }
 
+void PhysicsWorld::buildTargets() {
+  b2ShapeDef shapeDef = wallShapeDef();
+  shapeDef.material.restitution = kRubberRestitution;
+  for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
+    const table::Capsule& c = table::kTargets[i].shape;
+    shapeDef.userData = packElement({table::ElementKind::Target, static_cast<std::uint8_t>(i)});
+    const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
+    b2CreateCapsuleShape(table_, &shapeDef, &capsule);
+  }
+}
+
+bool PhysicsWorld::kickFromSlingshot(const table::Triangle& sling) {
+  // The kicker is the long face from the top corner to the inner bottom
+  // corner (points 0 and 2). Its normal points away from the third corner.
+  const b2Vec2 top = toMeters(sling.points[0]);
+  const b2Vec2 bottom = toMeters(sling.points[2]);
+  const b2Vec2 back = toMeters(sling.points[1]);
+  const b2Vec2 face{bottom.x - top.x, bottom.y - top.y};
+  const float faceLength = std::sqrt(face.x * face.x + face.y * face.y);
+  if (!(faceLength > 1e-6F)) {
+    return false;
+  }
+  b2Vec2 normal{face.y / faceLength, -face.x / faceLength};
+  if ((back.x - top.x) * normal.x + (back.y - top.y) * normal.y > 0.0F) {
+    normal = {-normal.x, -normal.y};
+  }
+
+  const b2Pos ballPos = b2Body_GetPosition(ball_);
+  const b2Vec2 rel{static_cast<float>(ballPos.x) - top.x, static_cast<float>(ballPos.y) - top.y};
+  const float along = (rel.x * face.x + rel.y * face.y) / (faceLength * faceLength);
+  const float outward = rel.x * normal.x + rel.y * normal.y;
+  // Only the middle of the face kicks, and only a ball in front of it. The
+  // back and bottom edges are plain rubber.
+  if (along < 0.12F || along > 0.88F || outward <= 0.0F) {
+    return false;
+  }
+
+  b2Vec2 v = b2Body_GetLinearVelocity(ball_);
+  const float inward = std::min(v.x * normal.x + v.y * normal.y, 0.0F);
+  v.x += normal.x * (kSlingshotKickSpeed - inward);
+  v.y += normal.y * (kSlingshotKickSpeed - inward);
+  b2Body_SetLinearVelocity(ball_, v);
+  return true;
+}
+
 void PhysicsWorld::kickFromBumper(const table::Bumper& bumper) {
   // Push the ball straight away from the bumper's centre, on top of the
   // bounce the solver already gave it.
@@ -315,6 +376,11 @@ void PhysicsWorld::collectEvents() {
     const float speed = toPixels(std::sqrt(v.x * v.x + v.y * v.y));
     if (element.kind == table::ElementKind::Bumper) {
       kickFromBumper(table::kBumpers[element.index]);
+    } else if (element.kind == table::ElementKind::Slingshot) {
+      // A touch on a passive edge of the slingshot is not an event.
+      if (!kickFromSlingshot(table::kSlingshots[element.index])) {
+        continue;
+      }
     }
     if (events_.size() < kMaxEventsPerStep) {
       events_.push_back({PhysicsEvent::Type::Hit, element, speed});
