@@ -11,6 +11,7 @@
 #include "core/Game.hpp"
 #include "core/Input.hpp"
 #include "core/HighScores.hpp"
+#include "core/InitialsEntry.hpp"
 #include "core/Sound.hpp"
 #include "platform/AudioOutput.hpp"
 #include "platform/TableRenderer.hpp"
@@ -49,7 +50,13 @@ class App {
   void handleEvent(const SDL_Event& event);
   void readInput();
   // True when the simulation should stand still.
-  bool halted() const noexcept { return paused_ || autoPaused_ || aboutOpen_; }
+  bool halted() const noexcept {
+    return paused_ || autoPaused_ || aboutOpen_ || entry_.has_value();
+  }
+  // Key presses while the initials prompt is up.
+  void handleEntryKey(SDL_Keycode key);
+  // Enters the finished game in the table under the entered initials.
+  void commitInitials();
   void recordFinishedGame();
   void latchKey(SDL_Scancode scancode);
   void render(double alpha);
@@ -82,6 +89,12 @@ class App {
   // Event type the system menu's About item sends, or 0 if none could be
   // registered.
   Uint32 aboutEvent_ = 0;
+  // Present while the player is entering initials for pending_. The game
+  // stands still behind the prompt.
+  std::optional<InitialsEntry> entry_;
+  HighScore pending_;
+  // Offered again next time, so a returning player only has to confirm.
+  Initials lastInitials_{'A', 'A', 'A'};
   bool wasGameOver_ = false;
   bool newHighScore_ = false;
   InputState input_;

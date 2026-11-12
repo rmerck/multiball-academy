@@ -5,6 +5,7 @@
 #include "core/Version.hpp"
 #include "platform/About.hpp"
 #include "platform/Canvas.hpp"
+#include "platform/InitialsScreen.hpp"
 #include "platform/MacMenu.hpp"
 #include "platform/ScoreStore.hpp"
 #include "platform/Text.hpp"
@@ -19,6 +20,8 @@ constexpr std::uint64_t kUnsyncedFrameNs = 1'000'000'000ULL / 120ULL;
 // is above any display refresh rate, so it never costs a vblank, and it still
 // stops a driver that ignores vsync from spinning a core flat out.
 constexpr std::uint64_t kMinFrameNs = 1'000'000'000ULL / 1000ULL;
+// Half period of the blinking cursor in the initials prompt.
+constexpr Uint64 kCursorBlinkMs = 400;
 
 // Pairs SDL_InitSubSystem with SDL_QuitSubSystem on every exit path of create().
 // The subsystem calls are reference counted, unlike SDL_Init/SDL_Quit.
@@ -177,6 +180,11 @@ int App::run() {
         // Checked per step, so a game that ends and restarts within one
         // frame is still recorded.
         recordFinishedGame();
+        if (halted()) {
+          // The initials prompt opened. Nothing more runs behind it, so a
+          // key held this frame cannot start a new game under the prompt.
+          break;
+        }
       }
       mixer_.trigger(sounds);
       if (steps > 0) {
@@ -238,6 +246,10 @@ void App::handleEvent(const SDL_Event& event) {
     }
     case SDL_EVENT_KEY_DOWN:
       if (event.key.repeat) {
+        break;
+      }
+      if (entry_ && !aboutOpen_) {
+        handleEntryKey(event.key.key);
         break;
       }
       latchKey(event.key.scancode);
@@ -325,15 +337,81 @@ void App::readInput() {
   }
 }
 
+void App::handleEntryKey(SDL_Keycode key) {
+  if (!entry_) {
+    return;
+  }
+  // Letters are matched by what the key types, so they follow the layout.
+  if (key >= SDLK_A && key <= SDLK_Z) {
+    entry_->type(static_cast<char>('A' + static_cast<int>(key - SDLK_A)));
+    return;
+  }
+  switch (key) {
+    case SDLK_UP:
+      entry_->next();
+      break;
+    case SDLK_DOWN:
+      entry_->previous();
+      break;
+    case SDLK_LEFT:
+    case SDLK_BACKSPACE:
+      entry_->left();
+      break;
+    case SDLK_RIGHT:
+      entry_->right();
+      break;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:
+    case SDLK_SPACE:
+      if (entry_->confirm()) {
+        commitInitials();
+      }
+      break;
+    case SDLK_ESCAPE:
+      // Accept the letters as they stand.
+      commitInitials();
+      break;
+    case SDLK_F4:
+      toggleFullscreen();
+      break;
+    default:
+      break;
+  }
+}
+
+void App::commitInitials() {
+  if (!entry_) {
+    return;
+  }
+  pending_.initials = entry_->letters();
+  lastInitials_ = pending_.initials;
+  entry_.reset();
+  latched_ = InputState{};
+  newHighScore_ = highScores_.submit(pending_) < HighScores::kCapacity;
+  if (newHighScore_) {
+    saveHighScores(highScores_);
+  }
+}
+
 void App::recordFinishedGame() {
   const bool over = game_.gameOver();
   if (over && !wasGameOver_) {
     // The game has just ended: enter it in the table and save if it made it.
     const HighScore entry{game_.rules().score(),
                           static_cast<std::uint8_t>(game_.rules().missions().rank())};
-    newHighScore_ = highScores_.submit(entry) < HighScores::kCapacity;
-    if (newHighScore_) {
-      saveHighScores(highScores_);
+    if (!highScores_.qualifies(entry.score)) {
+      newHighScore_ = false;
+    } else if (options_.frameLimit) {
+      // A timed automated run has no one to type: record it without initials.
+      newHighScore_ = highScores_.submit(entry) < HighScores::kCapacity;
+      if (newHighScore_) {
+        saveHighScores(highScores_);
+      }
+    } else {
+      // Ask for initials. The entry is made when they are confirmed.
+      pending_ = entry;
+      entry_.emplace(lastInitials_);
+      latched_ = InputState{};
     }
   } else if (!over) {
     newHighScore_ = false;
@@ -359,13 +437,15 @@ void App::render(double /*alpha*/) {
 
   const bool showPaused = paused_ || autoPaused_;
   table_->draw(r, game_, showPaused, HudExtras{highScores_.best(), newHighScore_});
-  if (showPaused && !aboutOpen_) {
+  if (showPaused && !aboutOpen_ && !entry_) {
     drawText(r, "PAUSED", 384.0F, 430.0F, 9.0F, SDL_Color{235, 240, 255, 255}, TextAlign::Center);
     drawText(r, paused_ ? "PRESS F3 TO RESUME" : "CLICK THE WINDOW TO RESUME", 384.0F, 520.0F, 3.0F,
              SDL_Color{255, 190, 70, 255}, TextAlign::Center);
   }
   if (aboutOpen_) {
     drawAbout(r, highScores_);
+  } else if (entry_) {
+    drawInitialsEntry(r, *entry_, pending_.score, (SDL_GetTicks() / kCursorBlinkMs) % 2U == 0U);
   }
 
   SDL_RenderPresent(r);

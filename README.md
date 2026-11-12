@@ -108,10 +108,13 @@ Differences from the original are deliberate simplifications: awards do not time
 
 ## High scores
 
-The five best games are kept in a small text file in the per-user preferences directory (on macOS, `~/Library/Application Support/space-cadet-pinball/Space Cadet Pinball/highscores.txt`), with the score and the rank reached. This is the only file the game ever writes.
+The five best games are kept in a small text file in the per-user preferences directory (on macOS, `~/Library/Application Support/space-cadet-pinball/Space Cadet Pinball/highscores.txt`), with the score, the rank reached and the player's three initials. This is the only file the game ever writes.
+
+A game that makes the table asks for initials: type letters, or use Up and Down to change one, Enter to confirm each, Backspace to go back, Escape to accept as shown. The last initials entered are offered again.
 
 - It is written to a temporary file and renamed into place, so a crash cannot leave half a table.
-- On load it must be a regular file of at most 512 bytes and every line is validated strictly (digits only, in range, in order). Anything else is ignored and the table starts empty; it is never partly trusted.
+- On load it must be a regular file of at most 512 bytes and every line is validated strictly (digits only, in range, in order, initials A to Z or dashes). Anything else is set aside as `highscores.txt.bad` and the table starts empty; it is never partly trusted.
+- Files from before initials were added are still read; their entries show dashes.
 
 ## Sound
 

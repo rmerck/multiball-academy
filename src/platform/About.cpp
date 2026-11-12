@@ -19,18 +19,10 @@ constexpr SDL_Color kCyan{110, 220, 255, 255};
 constexpr SDL_Color kWhite{235, 240, 255, 255};
 constexpr SDL_Color kDim{130, 145, 180, 255};
 
-// Attribution. The game is credited to its author and to no one else.
+// Attribution. The game is credited to its author and to no one else, with
+// one place to find the source.
 constexpr std::string_view kAuthor = "rmerck";
-struct Contact {
-  std::string_view label;
-  std::string_view value;
-};
-constexpr std::array<Contact, 4> kContacts{{
-    {"GITHUB", "GITHUB.COM/RMERCK"},
-    {"ORCID", "example.org"},
-    {"LINKEDIN", "example.org"},
-    {"X", "(removed)"},
-}};
+constexpr std::string_view kSource = "GITHUB.COM/RMERCK";
 
 }  // namespace
 
@@ -66,15 +58,10 @@ void drawAbout(SDL_Renderer* r, const HighScores& scores) {
 
   drawText(r, "CREATED BY", middle, y, 2.0F, kDim, TextAlign::Center);
   y += 26.0F;
-  drawText(r, kAuthor, middle, y, 7.0F, kAmber, TextAlign::Center);
-  y += 84.0F;
-
-  for (const Contact& contact : kContacts) {
-    drawText(r, contact.label, middle - 300.0F, y, 3.0F, kDim);
-    drawText(r, contact.value, middle - 110.0F, y, 3.0F, kWhite);
-    y += 36.0F;
-  }
-  y += 30.0F;
+  drawText(r, kAuthor, middle, y, 5.0F, kAmber, TextAlign::Center);
+  y += 56.0F;
+  drawText(r, kSource, middle, y, 2.0F, kDim, TextAlign::Center);
+  y += 80.0F;
 
   drawText(r, "HIGH SCORES", middle, y, 3.0F, kCyan, TextAlign::Center);
   y += 38.0F;
@@ -88,10 +75,12 @@ void drawAbout(SDL_Renderer* r, const HighScores& scores) {
     const std::string_view score = formatScore(entry.score, scoreBuffer);
     std::array<char, 8> place{};
     drawText(r, formatText(place.data(), place.size(), "%u.", static_cast<unsigned>(i + 1)),
-             middle - 300.0F, y, 3.0F, kDim);
-    drawText(r, score, middle + 20.0F, y, 3.0F, kWhite, TextAlign::Right);
-    drawText(r, rankName(entry.rank), middle + 60.0F, y, 3.0F, kAmber);
-    y += 32.0F;
+             middle - 330.0F, y, 3.0F, kDim);
+    drawText(r, std::string_view(entry.initials.data(), entry.initials.size()), middle - 260.0F,
+             y, 3.0F, kCyan);
+    drawText(r, score, middle + 60.0F, y, 3.0F, kWhite, TextAlign::Right);
+    drawText(r, rankName(entry.rank), middle + 100.0F, y, 3.0F, kAmber);
+    y += 36.0F;
   }
 
   drawText(r, "AN INDEPENDENT FAN PROJECT. NOT AFFILIATED WITH MICROSOFT,", middle,

@@ -10,7 +10,10 @@ namespace pinball {
 
 namespace {
 
-constexpr std::string_view kHeader = "SPACE-CADET-PINBALL-SCORES 1";
+// Version 2 added initials. Version 1 files are still read; their entries
+// get dashes.
+constexpr std::string_view kHeader = "SPACE-CADET-PINBALL-SCORES 2";
+constexpr std::string_view kHeaderV1 = "SPACE-CADET-PINBALL-SCORES 1";
 
 // Reads an unsigned decimal number made only of digits, with no sign, space
 // or leading zero (other than "0" itself).
@@ -48,6 +51,11 @@ std::size_t HighScores::submit(HighScore entry) noexcept {
   if (entry.rank >= kRankCount) {
     entry.rank = static_cast<std::uint8_t>(kRankCount - 1);
   }
+  for (char& c : entry.initials) {
+    if (!isInitialsChar(c)) {
+      c = '-';
+    }
+  }
   // Find the slot: after any equal scores, so earlier games keep their place.
   std::size_t position = 0;
   while (position < count_ && entries_[position].score >= entry.score) {
@@ -74,6 +82,8 @@ std::string HighScores::serialize() const {
     text += std::to_string(entries_[i].score);
     text.push_back(' ');
     text += std::to_string(static_cast<unsigned>(entries_[i].rank));
+    text.push_back(' ');
+    text.append(entries_[i].initials.data(), entries_[i].initials.size());
     text.push_back('\n');
   }
   return text;
@@ -89,6 +99,7 @@ bool HighScores::parse(std::string_view text) noexcept {
   std::array<HighScore, kCapacity> parsed{};
   std::size_t parsedCount = 0;
   bool sawHeader = false;
+  bool hasInitials = false;
   while (!text.empty()) {
     const std::size_t newline = text.find('\n');
     if (newline == std::string_view::npos) {
@@ -98,9 +109,10 @@ bool HighScores::parse(std::string_view text) noexcept {
     text.remove_prefix(newline + 1);
 
     if (!sawHeader) {
-      if (line != kHeader) {
+      if (line != kHeader && line != kHeaderV1) {
         return false;
       }
+      hasInitials = line == kHeader;
       sawHeader = true;
       continue;
     }
@@ -111,9 +123,26 @@ bool HighScores::parse(std::string_view text) noexcept {
     if (space == std::string_view::npos) {
       return false;
     }
+    std::string_view rankText = line.substr(space + 1);
+    Initials initials = kNoInitials;
+    if (hasInitials) {
+      // Exactly one more field: three initials characters.
+      const std::size_t second = rankText.find(' ');
+      if (second == std::string_view::npos || rankText.size() - second - 1 != initials.size()) {
+        return false;
+      }
+      for (std::size_t i = 0; i < initials.size(); ++i) {
+        const char c = rankText[second + 1 + i];
+        if (!isInitialsChar(c)) {
+          return false;
+        }
+        initials[i] = c;
+      }
+      rankText = rankText.substr(0, second);
+    }
     std::uint64_t score = 0;
     unsigned rank = 0;
-    if (!parseNumber(line.substr(0, space), score) || !parseNumber(line.substr(space + 1), rank)) {
+    if (!parseNumber(line.substr(0, space), score) || !parseNumber(rankText, rank)) {
       return false;
     }
     if (score == 0 || score > points::kMaxScore || rank >= kRankCount) {
@@ -123,7 +152,7 @@ bool HighScores::parse(std::string_view text) noexcept {
     if (parsedCount > 0 && score > parsed[parsedCount - 1].score) {
       return false;
     }
-    parsed[parsedCount++] = {score, static_cast<std::uint8_t>(rank)};
+    parsed[parsedCount++] = {score, static_cast<std::uint8_t>(rank), initials};
   }
   if (!sawHeader) {
     return false;
