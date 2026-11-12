@@ -3,12 +3,15 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <numbers>
 
 namespace pinball {
 
 namespace {
 
-constexpr float kTwoPi = 6.28318530717958647692F;
+constexpr float kTwoPi = 2.0F * std::numbers::pi_v<float>;
+static_assert(kTwoPi == 6.28318530717958647692F);
 // Fade in or out over 50 ms.
 constexpr float kFadeStep = 1.0F / (0.050F * static_cast<float>(Music::kSampleRate));
 // Each note rises over 2 ms, so no note starts with a click.

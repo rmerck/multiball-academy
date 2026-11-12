@@ -21,9 +21,9 @@ class Music {
   // Starts or stops the tune. It fades over 50 ms instead of cutting, and
   // picks up where it stopped.
   void setPlaying(bool playing) noexcept { playing_ = playing; }
-  bool playing() const noexcept { return playing_; }
+  [[nodiscard]] bool playing() const noexcept { return playing_; }
   // True while any sound is still coming out, including a fade-out.
-  bool audible() const noexcept { return playing_ || gain_ > 0.0F; }
+  [[nodiscard]] bool audible() const noexcept { return playing_ || gain_ > 0.0F; }
 
   // The next sample, within [-kPeak, kPeak]. Silent, and standing still,
   // while stopped.
