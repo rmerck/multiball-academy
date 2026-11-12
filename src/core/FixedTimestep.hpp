@@ -42,10 +42,10 @@ class FixedTimestep {
   }
 
   // Fraction of a step left over, in [0, 1). Used to interpolate rendering.
-  double alpha() const noexcept { return accumulator_ / step_; }
+  [[nodiscard]] double alpha() const noexcept { return accumulator_ / step_; }
 
-  double step() const noexcept { return step_; }
-  int maxSteps() const noexcept { return maxSteps_; }
+  [[nodiscard]] double step() const noexcept { return step_; }
+  [[nodiscard]] int maxSteps() const noexcept { return maxSteps_; }
 
  private:
   double step_;

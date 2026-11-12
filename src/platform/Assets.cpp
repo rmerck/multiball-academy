@@ -1,7 +1,12 @@
 #include "platform/Assets.hpp"
 
 #include <cstddef>
-#include <utility>
+#include <cstdint>
+#include <memory>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "core/AssetName.hpp"
 #include "core/PngHeader.hpp"
@@ -70,11 +75,10 @@ bool AssetLoader::readVerified(const AssetEntry& entry, std::vector<std::uint8_t
 }
 
 bool AssetLoader::verifyAll() {
-  const AssetEntry* const entries = embeddedAssets();
-  const std::size_t count = embeddedAssetCount();
-  bool ok = count > 0;
-  verified_.assign(count, {});
-  for (std::size_t i = 0; i < count; ++i) {
+  const std::span<const AssetEntry> entries = embeddedAssets();
+  bool ok = !entries.empty();
+  verified_.assign(entries.size(), {});
+  for (std::size_t i = 0; i < entries.size(); ++i) {
     ok = readVerified(entries[i], verified_[i]) && ok;
   }
   if (!ok) {
@@ -88,7 +92,8 @@ TexturePtr AssetLoader::loadTexture(SDL_Renderer* renderer, std::string_view nam
     return nullptr;
   }
   // The manifest is the allowlist: nothing else can be opened.
-  const AssetEntry* const entry = findAsset(embeddedAssets(), embeddedAssetCount(), name);
+  const std::span<const AssetEntry> entries = embeddedAssets();
+  const AssetEntry* const entry = findAsset(entries.data(), entries.size(), name);
   if (entry == nullptr) {
     logAssetError(name, "not in the asset manifest");
     return nullptr;
@@ -96,12 +101,12 @@ TexturePtr AssetLoader::loadTexture(SDL_Renderer* renderer, std::string_view nam
 
   // Use what verifyAll already read and checked; otherwise do both now.
   std::vector<std::uint8_t> ownBytes;
-  const auto index = static_cast<std::size_t>(entry - embeddedAssets());
+  const auto index = static_cast<std::size_t>(entry - entries.data());
   const bool kept = index < verified_.size() && !verified_[index].empty();
   if (!kept && !readVerified(*entry, ownBytes)) {
     return nullptr;
   }
-  const std::vector<std::uint8_t>& bytes = kept ? verified_[index] : ownBytes;
+  const std::span<const std::uint8_t> bytes = kept ? verified_[index] : ownBytes;
 
   // Check the declared image size before decoding.
   const auto declared = parsePngHeader(bytes.data(), bytes.size());

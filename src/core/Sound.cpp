@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace pinball {
 
 namespace {
 
-constexpr float kTwoPi = 6.28318530717958647692F;
+constexpr float kTwoPi = 2.0F * std::numbers::pi_v<float>;
+static_assert(kTwoPi == 6.28318530717958647692F);
 constexpr float kMasterGain = 0.55F;
 // Fade in and out, in samples, so no voice starts or stops with a click.
 constexpr std::uint32_t kFadeIn = 96;
@@ -29,6 +31,11 @@ constexpr float kG5 = 783.99F;
 constexpr float kC6 = 1046.5F;
 constexpr float kE6 = 1318.5F;
 constexpr float kG6 = 1568.0F;
+
+// The noise generator's state as a level in [-1, 1).
+constexpr float noiseLevel(std::uint32_t state) noexcept {
+  return static_cast<float>(state >> 8U) / 8388608.0F - 1.0F;
+}
 
 }  // namespace
 
@@ -76,11 +83,18 @@ void SoundMixer::start(Wave wave, float startHz, float endHz, float seconds, flo
   v.perLength = 1.0F / static_cast<float>(v.length);
   v.phase = 0.0F;
   v.last = 0.0F;
+  v.held = 0.0F;
+  v.target = 0.0F;
   v.batch = batch_;
 }
 
 void SoundMixer::startNoise(float seconds, float gain) noexcept {
   start(Wave::Noise, 20.0F, 20.0F, seconds, gain);
+}
+
+void SoundMixer::startSweptNoise(float startHz, float endHz, float seconds, float gain) noexcept {
+  // It starts level and silent; the first random level comes a cycle in.
+  start(Wave::SweptNoise, startHz, endHz, seconds, gain);
 }
 
 void SoundMixer::startSound(Sound sound) noexcept {
@@ -91,7 +105,8 @@ void SoundMixer::startSound(Sound sound) noexcept {
       startNoise(0.02F, 0.20F);
       break;
     case Sound::Launch:
-      startNoise(0.28F, 0.30F);
+      // A whoosh that brightens as the ball leaves.
+      startSweptNoise(900.0F, 4000.0F, 0.28F, 0.30F);
       start(Wave::Sine, 110.0F, 330.0F, 0.25F, 0.35F);
       break;
     case Sound::Bumper:
@@ -187,29 +202,26 @@ void SoundMixer::trigger(SoundSet sounds) noexcept {
 }
 
 std::size_t SoundMixer::activeVoices() const noexcept {
-  return static_cast<std::size_t>(
-      std::count_if(voices_.begin(), voices_.end(), [](const Voice& v) { return v.active; }));
+  return static_cast<std::size_t>(std::ranges::count(voices_, true, &Voice::active));
 }
 
-void SoundMixer::render(float* out, std::size_t frames) noexcept {
-  if (out == nullptr) {
-    return;
-  }
+void SoundMixer::render(std::span<float> out) noexcept {
+  const std::size_t frames = out.size();
   for (std::uint32_t& wait : holdoff_) {
     wait = frames >= wait ? 0U : wait - static_cast<std::uint32_t>(frames);
   }
   if (!busy() && cutTail_ == 0.0F) {
     // Nothing is sounding and nothing can start during this call, so the
     // output is silence. Only the mute ramp still moves.
-    for (std::size_t frame = 0; frame < frames; ++frame) {
+    for (float& sample : out) {
       muteGain_ = std::clamp(muteGain_ + (muted_ ? -kMuteStep : kMuteStep), 0.0F, 1.0F);
-      out[frame] = 0.0F;
+      sample = 0.0F;
     }
     return;
   }
   constexpr float kPerFadeIn = 1.0F / static_cast<float>(kFadeIn);
   constexpr float kPerFadeOut = 1.0F / static_cast<float>(kFadeOut);
-  for (std::size_t frame = 0; frame < frames; ++frame) {
+  for (float& output : out) {
     float mix = music_.next();
     if (cutTail_ != 0.0F) {
       mix += cutTail_;
@@ -229,25 +241,40 @@ void SoundMixer::render(float* out, std::size_t frames) noexcept {
       const float t = static_cast<float>(v.position) * v.perLength;
 
       float sample = 0.0F;
-      switch (v.wave) {
-        case Wave::Sine:
-          sample = std::sin(kTwoPi * v.phase);
-          break;
-        case Wave::Square:
-          sample = v.phase < 0.5F ? 0.6F : -0.6F;
-          break;
-        case Wave::Triangle:
-          sample = 4.0F * std::fabs(v.phase - 0.5F) - 1.0F;
-          break;
-        case Wave::Noise:
-          noiseState_ = noiseState_ * 1664525U + 1013904223U;
-          sample = static_cast<float>(noiseState_ >> 8U) / 8388608.0F - 1.0F;
-          break;
+      if (v.wave == Wave::SweptNoise) {
+        // Kept out of the switch: a fifth case turns it into a jump table,
+        // which costs every voice about a fifth more time (measured, GCC 13).
+        // The generator still moves once a sample, as for white noise, so
+        // every other noise voice gets the numbers it always did.
+        noiseState_ = noiseState_ * 1664525U + 1013904223U;
+        sample = v.held + (v.target - v.held) * v.phase;
+      } else {
+        switch (v.wave) {
+          case Wave::Sine:
+            sample = std::sin(kTwoPi * v.phase);
+            break;
+          case Wave::Square:
+            sample = v.phase < 0.5F ? 0.6F : -0.6F;
+            break;
+          case Wave::Triangle:
+            sample = 4.0F * std::fabs(v.phase - 0.5F) - 1.0F;
+            break;
+          case Wave::Noise:
+            noiseState_ = noiseState_ * 1664525U + 1013904223U;
+            sample = noiseLevel(noiseState_);
+            break;
+          case Wave::SweptNoise:
+            break;  // Handled above.
+        }
       }
       // The step is at most a quarter cycle, so one subtraction wraps it.
       v.phase += v.startStep + v.stepGlide * t;
       if (v.phase >= 1.0F) {
         v.phase -= 1.0F;
+        if (v.wave == Wave::SweptNoise) {
+          v.held = v.target;
+          v.target = noiseLevel(noiseState_);
+        }
       }
 
       // Envelope: quick fade in, decay across the note, short fade out.
@@ -270,7 +297,7 @@ void SoundMixer::render(float* out, std::size_t frames) noexcept {
     // Mute fades over a few milliseconds, so it never cuts mid-wave.
     muteGain_ += muted_ ? -kMuteStep : kMuteStep;
     muteGain_ = std::clamp(muteGain_, 0.0F, 1.0F);
-    out[frame] = std::tanh(mix * kMasterGain) * muteGain_;
+    output = std::tanh(mix * kMasterGain) * muteGain_;
   }
 }
 

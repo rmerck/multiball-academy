@@ -1,7 +1,10 @@
 // Development tool: prints the table geometry as JSON on standard output.
 // The GIMP art scripts read this, so the art is drawn from exactly the same
 // geometry the physics uses. Takes no input.
+#include <concepts>
+#include <cstddef>
 #include <cstdio>
+#include <ranges>
 #include <vector>
 
 #include "core/PanelLayout.hpp"
@@ -32,11 +35,12 @@ void triangle(const table::Triangle& t) {
 
 const char* name(table::BumperGroup g) {
   switch (g) {
-    case table::BumperGroup::Attack:
+    using enum table::BumperGroup;
+    case Attack:
       return "attack";
-    case table::BumperGroup::Engine:
+    case Engine:
       return "engine";
-    case table::BumperGroup::Satellite:
+    case Satellite:
       return "satellite";
   }
   return "unknown";
@@ -44,13 +48,14 @@ const char* name(table::BumperGroup g) {
 
 const char* name(table::TargetBank b) {
   switch (b) {
-    case table::TargetBank::Booster:
+    using enum table::TargetBank;
+    case Booster:
       return "booster";
-    case table::TargetBank::Medal:
+    case Medal:
       return "medal";
-    case table::TargetBank::Mission:
+    case Mission:
       return "mission";
-    case table::TargetBank::Multiplier:
+    case Multiplier:
       return "multiplier";
   }
   return "unknown";
@@ -58,11 +63,12 @@ const char* name(table::TargetBank b) {
 
 const char* name(table::RolloverGroup g) {
   switch (g) {
-    case table::RolloverGroup::ReEntry:
+    using enum table::RolloverGroup;
+    case ReEntry:
       return "reentry";
-    case table::RolloverGroup::Outlane:
+    case Outlane:
       return "outlane";
-    case table::RolloverGroup::Inlane:
+    case Inlane:
       return "inlane";
   }
   return "unknown";
@@ -70,26 +76,28 @@ const char* name(table::RolloverGroup g) {
 
 const char* name(table::HoleType t) {
   switch (t) {
-    case table::HoleType::Wormhole:
+    using enum table::HoleType;
+    case Wormhole:
       return "wormhole";
-    case table::HoleType::BlackHole:
+    case BlackHole:
       return "blackhole";
-    case table::HoleType::Hyperspace:
+    case Hyperspace:
       return "hyperspace";
-    case table::HoleType::Ramp:
+    case Ramp:
       return "ramp";
   }
   return "unknown";
 }
 
-template <typename Container, typename Fn>
+template <std::ranges::sized_range Container,
+          std::invocable<std::ranges::range_reference_t<const Container>> Fn>
 void list(const char* key, const Container& items, Fn&& each, bool last = false) {
   std::printf("  \"%s\": [\n", key);
   std::size_t i = 0;
   for (const auto& item : items) {
     std::printf("    ");
     each(item);
-    std::printf(++i < items.size() ? ",\n" : "\n");
+    std::printf(++i < std::ranges::size(items) ? ",\n" : "\n");
   }
   std::printf(last ? "  ]\n" : "  ],\n");
 }

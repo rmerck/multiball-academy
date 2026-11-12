@@ -41,38 +41,50 @@ class Game {
   void step(const InputState& input);
 
   // Derived from the step count so it cannot drift from it.
-  double simTime() const noexcept { return static_cast<double>(stepCount_) * kStepSeconds; }
-  std::uint64_t stepCount() const noexcept { return stepCount_; }
+  [[nodiscard]] double simTime() const noexcept {
+    return static_cast<double>(stepCount_) * kStepSeconds;
+  }
+  [[nodiscard]] std::uint64_t stepCount() const noexcept { return stepCount_; }
 
-  BallView ball() const;
+  [[nodiscard]] BallView ball() const;
   // Index 0 is the left flipper, 1 the right.
-  FlipperView flipper(std::size_t index) const;
+  [[nodiscard]] FlipperView flipper(std::size_t index) const;
+
+  // For drawing between steps. alpha is the fraction of a step that has
+  // passed since the latest one (FixedTimestep::alpha()): 0 gives the state
+  // one step ago, 1 the latest state, and anything else lies between them.
+  // Values outside [0, 1] are clamped; a value that is not a number counts
+  // as 1. A ball that was moved by hand during the latest step (served,
+  // returned by a hole) is given at its new place for every alpha, so it is
+  // never drawn part-way along the jump.
+  [[nodiscard]] BallView ball(float alpha) const;
+  [[nodiscard]] FlipperView flipper(std::size_t index, float alpha) const;
   // How far the plunger is drawn back, in pixels.
-  float plungerPull() const noexcept { return physics_.plungerPull(); }
-  bool laneGateClosed() const noexcept { return physics_.laneGateClosed(); }
+  [[nodiscard]] float plungerPull() const noexcept { return physics_.plungerPull(); }
+  [[nodiscard]] bool laneGateClosed() const noexcept { return physics_.laneGateClosed(); }
   // 1 just after a bumper was hit, fading to 0. Drives its light.
-  float bumperFlash(std::size_t index) const noexcept {
+  [[nodiscard]] float bumperFlash(std::size_t index) const noexcept {
     return index < bumperFlash_.size() ? bumperFlash_[index] : 0.0F;
   }
   // Ball search: if a ball in play has not moved for this long, the table
   // gives it a shove, as a real machine fires its coils to free a stuck ball.
   static constexpr double kBallSearchSeconds = 4.0;
   // Times the ball search has fired.
-  std::uint32_t ballSearchCount() const noexcept { return ballSearchCount_; }
+  [[nodiscard]] std::uint32_t ballSearchCount() const noexcept { return ballSearchCount_; }
 
   // How long a hole keeps the ball, in seconds.
   static constexpr double kHoleHoldSeconds = 0.9;
 
   // Times the ball has rolled over each rollover.
-  std::uint32_t rolloverCount(std::size_t index) const noexcept {
+  [[nodiscard]] std::uint32_t rolloverCount(std::size_t index) const noexcept {
     return index < rolloverCounts_.size() ? rolloverCounts_[index] : 0;
   }
   // Times the ball has dropped into each hole.
-  std::uint32_t holeCount(std::size_t index) const noexcept {
+  [[nodiscard]] std::uint32_t holeCount(std::size_t index) const noexcept {
     return index < holeCounts_.size() ? holeCounts_[index] : 0;
   }
   // Whether a hole is holding the ball right now.
-  bool ballHeld() const noexcept { return physics_.ballHeld(); }
+  [[nodiscard]] bool ballHeld() const noexcept { return physics_.ballHeld(); }
 
   // Nudge: speed given to the ball, in pixels per second, by a shove from
   // the side and from the bottom of the table.
@@ -80,32 +92,35 @@ class Game {
   static constexpr float kNudgeUpSpeed = 170.0F;
   // How far the playfield is drawn displaced right now, in pixels. Decays to
   // zero after a nudge.
-  Vec2 shake() const noexcept { return shake_; }
+  [[nodiscard]] Vec2 shake() const noexcept { return shake_; }
 
   // Sounds started by the most recent step.
-  SoundSet sounds() const noexcept { return sounds_; }
+  [[nodiscard]] SoundSet sounds() const noexcept { return sounds_; }
 
   // Score, lights, balls and messages.
-  const Rules& rules() const noexcept { return rules_; }
-  bool gameOver() const noexcept { return rules_.gameOver(); }
-  bool targetLit(std::size_t index) const noexcept { return rules_.targetLit(index); }
+  [[nodiscard]] const Rules& rules() const noexcept { return rules_; }
+  [[nodiscard]] bool gameOver() const noexcept { return rules_.gameOver(); }
+  [[nodiscard]] bool targetLit(std::size_t index) const noexcept { return rules_.targetLit(index); }
   // 1 just after a slingshot fired, fading to 0.
-  float slingshotFlash(std::size_t index) const noexcept {
+  [[nodiscard]] float slingshotFlash(std::size_t index) const noexcept {
     return index < slingshotFlash_.size() ? slingshotFlash_[index] : 0.0F;
   }
   // Total bumper hits this session.
-  std::uint32_t bumperHits() const noexcept { return bumperHits_; }
+  [[nodiscard]] std::uint32_t bumperHits() const noexcept { return bumperHits_; }
   // Number of balls lost down the drain so far.
-  std::uint32_t drainCount() const noexcept { return drainCount_; }
+  [[nodiscard]] std::uint32_t drainCount() const noexcept { return drainCount_; }
 
  private:
   void serveBall();
+  void snapshotForDrawing();
   void handleEvents();
   void startNewGame();
   void handleNudges(const InputState& input);
   void handleDrain();
   void updateHeldBall();
-  void updateBallSearch(const InputState& input);
+  // The flags say which flippers are actually raised: the keys count only
+  // while the controls are live.
+  void updateBallSearch(bool leftRaised, bool rightRaised);
 
   PhysicsWorld physics_;
   Rules rules_{kStepSeconds};
@@ -127,6 +142,11 @@ class Game {
   std::uint32_t ballSearchCount_ = 0;
   Vec2 shake_{};
   SoundSet sounds_ = 0;
+  // State one step ago, for drawing between steps.
+  BallView previousBall_{};
+  std::array<float, table::kFlippers.size()> previousFlipperAngles_{};
+  // The ball was placed somewhere during the latest step.
+  bool ballPlaced_ = false;
 };
 
 }  // namespace pinball

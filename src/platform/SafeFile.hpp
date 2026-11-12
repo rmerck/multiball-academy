@@ -25,8 +25,8 @@ enum class ReadResult {
 // last part of the path is refused (links in directories above it are
 // followed), and a pipe or device there cannot block the caller. Elsewhere
 // plain SDL file calls are used: same limits, without those protections.
-ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
-                           std::vector<std::uint8_t>& out);
+[[nodiscard]] ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
+                                         std::vector<std::uint8_t>& out);
 
 // Replaces the file at path with text, all or nothing. Returns false,
 // leaving any existing file untouched, on failure.
@@ -36,7 +36,7 @@ ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
 // existing file or link is ever written through, and a link at path itself
 // is replaced, not followed. The result is readable by its owner only.
 // Elsewhere a fixed temporary name and plain SDL file calls are used.
-bool replaceFile(const std::string& path, std::string_view text);
+[[nodiscard]] bool replaceFile(const std::string& path, std::string_view text);
 
 // Removes temporary files that a replaceFile(path, ...) cut short by a crash
 // left beside path. Only regular files that carry replaceFile's own temporary
@@ -44,6 +44,6 @@ bool replaceFile(const std::string& path, std::string_view text);
 // user's with a similar name is not ours to delete, and a fresh temporary may
 // be another running copy's save in progress. Returns how many were removed.
 // File system errors are not reported; whatever could not be removed stays.
-std::size_t removeStaleTemporaries(const std::string& path, long long minAgeSeconds = 60);
+std::size_t removeStaleTemporaries(std::string_view path, long long minAgeSeconds = 60);
 
 }  // namespace pinball

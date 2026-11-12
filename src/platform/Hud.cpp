@@ -12,12 +12,17 @@ namespace pinball {
 
 namespace {
 
-constexpr SDL_Color kAmber{255, 190, 70, 255};
-constexpr SDL_Color kCyan{110, 220, 255, 255};
-constexpr SDL_Color kWhite{235, 240, 255, 255};
-constexpr SDL_Color kDim{120, 135, 170, 255};
-constexpr SDL_Color kGreen{120, 255, 150, 255};
-constexpr SDL_Color kRed{255, 110, 100, 255};
+// Neon palette: laser yellow, cyan, mint and hot pink on dark glass.
+constexpr SDL_Color kAmber{255, 225, 70, 255};
+constexpr SDL_Color kCyan{70, 235, 255, 255};
+constexpr SDL_Color kWhite{248, 240, 255, 255};
+constexpr SDL_Color kDim{170, 142, 224, 255};
+constexpr SDL_Color kGreen{90, 255, 180, 255};
+constexpr SDL_Color kRed{255, 70, 150, 255};
+constexpr SDL_Color kPink{255, 60, 170, 255};
+constexpr SDL_Color kViolet{120, 30, 200, 255};
+// An unlit segment of a gauge.
+constexpr SDL_Color kUnlit{58, 30, 92, 255};
 
 constexpr float kLabelSize = 2.0F;
 constexpr float kPad = 12.0F;
@@ -46,8 +51,8 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game, const Hud
   const float middle = panel::kLeft + panel::kWidth * 0.5F;
 
   // Title.
-  drawText(r, "SPACE CADET", middle, 38.0F, 6.0F, kCyan, TextAlign::Center);
-  drawText(r, "PINBALL", middle, 98.0F, 3.0F, kAmber, TextAlign::Center);
+  drawNeonText(r, "SPACE CADET", middle, 38.0F, 6.0F, kWhite, kCyan, kPink, TextAlign::Center);
+  drawNeonText(r, "PINBALL", middle, 98.0F, 3.0F, kAmber, kPink, kViolet, TextAlign::Center);
 
   // Score, with the best score beside the label.
   label(r, panel::kScoreWell, "SCORE");
@@ -104,7 +109,7 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game, const Hud
       if (i < missions.progress()) {
         SDL_SetRenderDrawColor(r, kAmber.r, kAmber.g, kAmber.b, SDL_ALPHA_OPAQUE);
       } else {
-        SDL_SetRenderDrawColor(r, 40, 48, 70, SDL_ALPHA_OPAQUE);
+        SDL_SetRenderDrawColor(r, kUnlit.r, kUnlit.g, kUnlit.b, SDL_ALPHA_OPAQUE);
       }
       SDL_RenderFillRect(r, &box);
     }
@@ -137,7 +142,7 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game, const Hud
           const SDL_Color c = low ? kRed : kGreen;
           SDL_SetRenderDrawColor(r, c.r, c.g, c.b, SDL_ALPHA_OPAQUE);
         } else {
-          SDL_SetRenderDrawColor(r, 40, 48, 70, SDL_ALPHA_OPAQUE);
+          SDL_SetRenderDrawColor(r, kUnlit.r, kUnlit.g, kUnlit.b, SDL_ALPHA_OPAQUE);
         }
         SDL_RenderFillRect(r, &box);
       }
