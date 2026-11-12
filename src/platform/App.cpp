@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "core/LoopPolicy.hpp"
 #include "core/Version.hpp"
 #include "platform/About.hpp"
 #include "platform/Canvas.hpp"
@@ -141,14 +142,12 @@ bool App::needsManualPacing() const {
 namespace {
 // How long a halted loop sleeps between redraws.
 constexpr Sint32 kHaltedWaitMs = 100;
-// Longest a halted loop stays awake for sound: beyond any effect's tail.
-constexpr std::uint32_t kMaxHaltedBusyFrames = 600;
 }  // namespace
 
 int App::run() {
   std::uint64_t previous = SDL_GetTicksNS();
   std::uint32_t frames = 0;
-  bool wasHalted = false;
+  PauseClock clock;
   std::uint32_t haltedFrames = 0;
 
   while (running_) {
@@ -157,10 +156,11 @@ int App::run() {
     // instead of redrawing a still picture at full rate. A sound still
     // ringing keeps the loop at frame rate so its tail plays without gaps.
     // It sleeps anyway after a while, in case the audio device has stopped
-    // taking sound and a tail can never finish.
+    // taking sound and a tail can never finish. With no audio device nothing
+    // drains the mixer, so its voices never end and do not count.
     haltedFrames = halted() ? haltedFrames + 1 : 0;
-    if (halted() && !options_.frameLimit &&
-        (!mixer_.busy() || haltedFrames > kMaxHaltedBusyFrames) &&
+    if (sleepsWhileHalted(halted(), options_.frameLimit.has_value(),
+                          audio_ != nullptr && mixer_.busy(), haltedFrames) &&
         SDL_WaitEventTimeout(&event, kHaltedWaitMs)) {
       handleEvent(event);
     }
@@ -174,12 +174,12 @@ int App::run() {
 
     readInput();
 
-    // While halted the clock keeps moving but nothing accumulates. The first
-    // frame after a halt adds no time either: its interval covers the wait,
-    // and would otherwise arrive as a burst of catch-up steps.
+    // While halted the clock keeps moving but nothing accumulates, and the
+    // first frame after a halt adds no time either (see PauseClock).
     const bool isHalted = halted();
+    const double simSeconds = clock.simulated(frameSeconds, isHalted);
     if (!isHalted) {
-      const int steps = timestep_.advance(wasHalted ? 0.0 : frameSeconds);
+      const int steps = timestep_.advance(simSeconds);
       // Sounds from every step of the frame start together, once each.
       SoundSet sounds = 0;
       for (int i = 0; i < steps; ++i) {
@@ -200,7 +200,6 @@ int App::run() {
         latched_ = InputState{};
       }
     }
-    wasHalted = isHalted;
 
     // The tune plays while the game runs and rests while it stands still.
     mixer_.setMusicPlaying(musicOn_ && !isHalted);
