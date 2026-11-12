@@ -27,6 +27,8 @@ struct FlipperView {
   float angle = 0.0F;  // Radians, clockwise on screen from +x.
 };
 
+struct GameTestAccess;
+
 // All game state and rules. Has no dependency on SDL so it can be driven and
 // verified headless. The platform layer feeds it input and draws its state.
 class Game {
@@ -111,6 +113,10 @@ class Game {
   [[nodiscard]] std::uint32_t drainCount() const noexcept { return drainCount_; }
 
  private:
+  // The tests force states that play cannot reach (a ball lost outside the
+  // table) through this. It is defined only in the tests.
+  friend struct GameTestAccess;
+
   void serveBall();
   void snapshotForDrawing();
   void handleEvents();

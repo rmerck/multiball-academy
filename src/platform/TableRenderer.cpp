@@ -4,6 +4,8 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <initializer_list>
+#include <memory>
 #include <utility>
 
 #include "core/TableLayout.hpp"
@@ -27,7 +29,12 @@ constexpr float kBarSpriteRadius = 5.0F;
 constexpr float kBarSpriteMargin = 2.0F;
 
 Uint8 toByte(float unit) noexcept {
-  return static_cast<Uint8>(std::clamp(unit, 0.0F, 1.0F) * 255.0F + 0.5F);
+  // Written so that not-a-number takes the first branch: std::clamp would
+  // pass it through, and converting it to an integer is undefined.
+  if (!(unit > 0.0F)) {
+    return 0;
+  }
+  return static_cast<Uint8>(std::min(unit, 1.0F) * 255.0F + 0.5F);
 }
 
 // Where a target's bar sprite goes. The targets never move, so this is worked
@@ -50,11 +57,13 @@ std::array<TargetSprite, table::kTargets.size()> makeTargetSprites() noexcept {
     const float spriteWidth = (kBarSpriteLength + 2.0F * (kBarSpriteRadius + kBarSpriteMargin)) *
                               (length / kBarSpriteLength);
     const float spriteHeight = 2.0F * (kBarSpriteRadius + kBarSpriteMargin);
-    sprites[i] = {{mid.x - spriteWidth * 0.5F, mid.y - spriteHeight * 0.5F, spriteWidth,
-                   spriteHeight},
-                  mid,
-                  length,
-                  static_cast<double>(std::atan2(b.y - a.y, b.x - a.x) * kRadiansToDegrees)};
+    sprites[i] = {
+        .dst = {mid.x - spriteWidth * 0.5F, mid.y - spriteHeight * 0.5F, spriteWidth,
+                spriteHeight},
+        .mid = mid,
+        .length = length,
+        .angleDegrees =
+            static_cast<double>(std::atan2(b.y - a.y, b.x - a.x) * kRadiansToDegrees)};
   }
   return sprites;
 }
@@ -137,20 +146,21 @@ void TableRenderer::drawLights(SDL_Renderer* r, const Game& game) const {
   std::size_t lane = 0;
   for (const table::Rollover& rollover : table::kRollovers) {
     switch (rollover.group) {
-      case table::RolloverGroup::ReEntry:
+      using enum table::RolloverGroup;
+      case ReEntry:
         if (rules.laneLit(lane)) {
           drawGlow(r, rollover.zone.center, 28.0F, {77, 255, 178}, 0.95F);
           drawGlow(r, rollover.zone.center, 11.0F, {255, 255, 255}, 0.55F);
         }
         ++lane;
         break;
-      case table::RolloverGroup::Outlane:
+      case Outlane:
         if (rules.bonusLaneLit()) {
           drawGlow(r, rollover.zone.center, 28.0F, {255, 41, 153}, 0.95F);
           drawGlow(r, rollover.zone.center, 11.0F, {255, 255, 255}, 0.55F);
         }
         break;
-      case table::RolloverGroup::Inlane:
+      case Inlane:
         break;
     }
   }
@@ -262,13 +272,13 @@ void TableRenderer::drawPlungerAndGate(SDL_Renderer* r, const Game& game) const 
   }
 }
 
-void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game) const {
+void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game, float alpha) const {
   SDL_Texture* const sprite = textures_.flipper.get();
   // The pivot inside the sprite: the centre of the base circle.
   const SDL_FPoint pivotInSprite{kFlipperSpriteMargin + table::kFlipperBaseRadius,
                                  kFlipperSpriteHeight * 0.5F};
   for (std::size_t i = 0; i < table::kFlippers.size(); ++i) {
-    const FlipperView flipper = game.flipper(i);
+    const FlipperView flipper = game.flipper(i, alpha);
     const SDL_FRect dst{flipper.pivot.x - pivotInSprite.x, flipper.pivot.y - pivotInSprite.y,
                         kFlipperSpriteWidth, kFlipperSpriteHeight};
     // The right flipper points left, so its sprite is mirrored top to bottom
@@ -280,8 +290,9 @@ void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game) const {
   }
 }
 
-void TableRenderer::drawBall(SDL_Renderer* r, const Game& game) const {
-  const BallView ball = game.ball();
+void TableRenderer::drawBall(SDL_Renderer* r, const Game& game, float alpha) const {
+  // The shadow and the halo follow the same in-between position as the ball.
+  const BallView ball = game.ball(alpha);
   if (!ball.visible) {
     return;
   }
@@ -308,7 +319,7 @@ void TableRenderer::drawBall(SDL_Renderer* r, const Game& game) const {
   SDL_RenderTexture(r, textures_.ball.get(), nullptr, &dst);
 }
 
-void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed,
+void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha, bool dimmed,
                          const HudExtras& extras) const {
   if (r == nullptr) {
     return;
@@ -333,8 +344,8 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed,
   drawTargets(r, game);
   drawBumpers(r, game);
   drawPlungerAndGate(r, game);
-  drawFlippers(r, game);
-  drawBall(r, game);
+  drawFlippers(r, game, alpha);
+  drawBall(r, game, alpha);
 
   if (dimmed) {
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);

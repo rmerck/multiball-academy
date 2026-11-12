@@ -124,6 +124,9 @@ void Game::step(const InputState& input) {
 
   if (!physics_.ballIsSane()) {
     // Fail safe: a ball outside the table or with a corrupt state is put back.
+    // Rules must hear of it: there is no drain to end a tilt, and a tilted
+    // table with the ball on the plunger could never launch it again.
+    rules_.onBallReturned();
     serveBall();
   } else if (physics_.ballPosition().y > table::kDrainY) {
     handleDrain();

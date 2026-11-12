@@ -503,7 +503,7 @@ void App::reloadTextures() {
   table_ = std::move(table);
 }
 
-void App::render(double /*alpha*/) {
+void App::render(double alpha) {
   SDL_Renderer* r = renderer_.get();
 
   // Letterbox bars.
@@ -513,7 +513,9 @@ void App::render(double /*alpha*/) {
   }
 
   const bool showPaused = paused_ || autoPaused_;
-  table_->draw(r, game_, showPaused, HudExtras{highScores_.best(), newHighScore_});
+  // The ball and flippers are drawn part-way between the last two steps.
+  table_->draw(r, game_, static_cast<float>(alpha), showPaused,
+               HudExtras{highScores_.best(), newHighScore_});
   if (showPaused && !aboutOpen_ && !entry_) {
     drawText(r, "PAUSED", 384.0F, 430.0F, 9.0F, SDL_Color{235, 240, 255, 255}, TextAlign::Center);
     drawText(r, paused_ ? "PRESS F3 TO RESUME" : "CLICK THE WINDOW TO RESUME", 384.0F, 520.0F, 3.0F,

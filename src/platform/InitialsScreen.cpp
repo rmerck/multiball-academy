@@ -1,6 +1,7 @@
 #include "platform/InitialsScreen.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
 
 #include "core/Format.hpp"
