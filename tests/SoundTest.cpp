@@ -35,6 +35,24 @@ Stats render(SoundMixer& mixer, std::size_t frames) {
 }  // namespace
 
 void testSound() {
+  {  // A sound repeated at once does not stack; after the hold-off it starts again.
+    SoundMixer mixer;
+    mixer.trigger(soundBit(Sound::Nudge));
+    const std::size_t one = mixer.activeVoices();
+    CHECK(one > 0);
+    mixer.trigger(soundBit(Sound::Nudge));
+    CHECK(mixer.activeVoices() == one);
+    render(mixer, SoundMixer::kRetriggerSamples - 1);
+    mixer.trigger(soundBit(Sound::Nudge));
+    CHECK(mixer.activeVoices() == one);
+    render(mixer, 1);
+    mixer.trigger(soundBit(Sound::Nudge));
+    CHECK(mixer.activeVoices() == 2 * one);
+    // A different sound is not held off.
+    mixer.trigger(soundBit(Sound::Bumper));
+    CHECK(mixer.activeVoices() > 2 * one);
+  }
+
   {  // Silence when nothing is playing, and the buffer is always written.
     SoundMixer mixer;
     const Stats stats = render(mixer, 4800);

@@ -374,9 +374,10 @@ Rules::DrainResult Rules::onDrain() noexcept {
   }
   resetBall();
 
-  cue(Sound::Drain);
+  // The game-over phrase replaces the drain phrase; the two would clash.
   if (extraBalls_ > 0) {
     --extraBalls_;
+    cue(Sound::Drain);
     say("SHOOT AGAIN");
     return DrainResult::ShootAgain;
   }
@@ -387,6 +388,7 @@ Rules::DrainResult Rules::onDrain() noexcept {
     return DrainResult::GameOver;
   }
   ++ball_;
+  cue(Sound::Drain);
   say("NEXT BALL");
   return DrainResult::NextBall;
 }

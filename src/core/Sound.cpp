@@ -25,7 +25,8 @@ constexpr float kG6 = 1568.0F;
 
 void SoundMixer::start(Wave wave, float startHz, float endHz, float seconds, float gain,
                        float delaySeconds) noexcept {
-  // Reuse a free voice, or failing that the one nearest its end.
+  // Reuse a free voice, or failing that the one with the least left to play,
+  // counting any wait before it starts.
   Voice* chosen = nullptr;
   std::uint32_t leastLeft = 0;
   for (Voice& v : voices_) {
@@ -33,7 +34,7 @@ void SoundMixer::start(Wave wave, float startHz, float endHz, float seconds, flo
       chosen = &v;
       break;
     }
-    const std::uint32_t left = v.length - std::min(v.position, v.length);
+    const std::uint32_t left = v.delay + (v.length - std::min(v.position, v.length));
     if (chosen == nullptr || left < leastLeft) {
       chosen = &v;
       leastLeft = left;
@@ -147,8 +148,10 @@ void SoundMixer::startSound(Sound sound) noexcept {
 
 void SoundMixer::trigger(SoundSet sounds) noexcept {
   for (std::size_t i = 0; i < kSoundCount; ++i) {
-    if ((sounds & (SoundSet{1} << i)) != 0U) {
-      startSound(static_cast<Sound>(i));
+    const Sound sound = static_cast<Sound>(i);
+    if ((sounds & soundBit(sound)) != 0U && holdoff_[i] == 0) {
+      startSound(sound);
+      holdoff_[i] = kRetriggerSamples;
     }
   }
 }
@@ -161,6 +164,9 @@ std::size_t SoundMixer::activeVoices() const noexcept {
 void SoundMixer::render(float* out, std::size_t frames) noexcept {
   if (out == nullptr) {
     return;
+  }
+  for (std::uint32_t& wait : holdoff_) {
+    wait = frames >= wait ? 0U : wait - static_cast<std::uint32_t>(frames);
   }
   const float rate = static_cast<float>(kSampleRate);
   for (std::size_t frame = 0; frame < frames; ++frame) {
