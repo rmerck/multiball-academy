@@ -195,6 +195,8 @@ int main(int argc, char* argv[]) {
     exitCode = run(*steps, std::string(name), overlay);
   } catch (const std::exception& e) {
     std::fprintf(stderr, "Fatal: %s\n", e.what());
+  } catch (...) {
+    std::fputs("Fatal: unknown error\n", stderr);
   }
   SDL_Quit();
   return exitCode;
