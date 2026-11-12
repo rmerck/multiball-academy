@@ -535,7 +535,8 @@ void PhysicsWorld::drivePlunger(float stepSeconds) {
 void PhysicsWorld::step(float stepSeconds) {
   // Cleared first, so a rejected step never leaves old events behind.
   events_.clear();
-  if (!std::isfinite(stepSeconds) || stepSeconds <= 0.0F || stepSeconds > kMaxStepSeconds) {
+  // Written so that NaN fails the test.
+  if (!(stepSeconds >= kMinStepSeconds && stepSeconds <= kMaxStepSeconds)) {
     return;
   }
   const float slice = stepSeconds / static_cast<float>(kSlicesPerStep);
@@ -555,10 +556,18 @@ void PhysicsWorld::clampBallSpeed() {
   // kinematic body can still leave the ball above it, so enforce it here.
   const b2Vec2 v = b2Body_GetLinearVelocity(ball_);
   const float speedSquared = v.x * v.x + v.y * v.y;
-  if (speedSquared > kMaxBallSpeed * kMaxBallSpeed) {
-    const float scale = kMaxBallSpeed / std::sqrt(speedSquared);
-    b2Body_SetLinearVelocity(ball_, {v.x * scale, v.y * scale});
+  if (speedSquared <= kMaxBallSpeed * kMaxBallSpeed) {
+    return;
   }
+  // The squares overflow for a huge velocity; hypot does not, so the
+  // direction survives. Anything that is still not a number stops the ball.
+  const float speed = std::hypot(v.x, v.y);
+  if (!std::isfinite(speed)) {
+    b2Body_SetLinearVelocity(ball_, {0.0F, 0.0F});
+    return;
+  }
+  const float scale = kMaxBallSpeed / speed;
+  b2Body_SetLinearVelocity(ball_, {v.x * scale, v.y * scale});
 }
 
 Vec2 PhysicsWorld::ballPosition() const {
@@ -586,6 +595,7 @@ void PhysicsWorld::resetBall(Vec2 position, Vec2 velocity) {
   }
   b2Body_SetTransform(ball_, b2ToPos(toMeters(position)), b2MakeRot(0.0F));
   b2Body_SetLinearVelocity(ball_, toMeters(velocity));
+  clampBallSpeed();
   b2Body_SetAngularVelocity(ball_, 0.0F);
   b2Body_SetAwake(ball_, true);
 }
