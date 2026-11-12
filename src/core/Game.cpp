@@ -1,15 +1,10 @@
 #include "core/Game.hpp"
 
-#include <cmath>
-
 namespace pinball {
 
-void Game::update(double dt, const InputState& /*input*/) {
-  if (!std::isfinite(dt) || dt <= 0.0) {
-    return;
-  }
-  simTime_ += dt;
+void Game::step(const InputState& input) {
   ++stepCount_;
+  previousInput_ = input;
 }
 
 }  // namespace pinball

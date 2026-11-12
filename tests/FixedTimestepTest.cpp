@@ -2,6 +2,7 @@
 #include <limits>
 
 #include "Check.hpp"
+#include "Suites.hpp"
 #include "core/FixedTimestep.hpp"
 
 void testFixedTimestep() {

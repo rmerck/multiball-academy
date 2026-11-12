@@ -1,6 +1,7 @@
 #include <string>
 
 #include "Check.hpp"
+#include "Suites.hpp"
 #include "core/AssetName.hpp"
 
 void testAssetName() {

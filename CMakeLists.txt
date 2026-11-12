@@ -63,28 +63,22 @@ if(BUILD_TESTING)
   set_tests_properties(smoke_headless PROPERTIES
     ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 30)
 
-  # Bad arguments must be rejected by the parser, shown by the usage text.
-  # A crash or an SDL failure would not print it.
+  # Bad arguments must be rejected cleanly: exit code 1, usage text, and no
+  # sanitizer report. Checked by a script because CTest's WILL_FAIL and
+  # PASS_REGULAR_EXPRESSION cannot assert all three together.
   set(bad_args_cases
-    "negative|--frames|-5"
-    "zero|--frames|0"
-    "too_large|--frames|1000001"
-    "trailing_junk|--frames|5x"
-    "missing_value|--frames"
-    "unknown_flag|--bogus")
+    "negative:--frames|-5"
+    "zero:--frames|0"
+    "too_large:--frames|1000001"
+    "trailing_junk:--frames|5x"
+    "missing_value:--frames"
+    "unknown_flag:--bogus")
   foreach(case IN LISTS bad_args_cases)
-    string(REPLACE "|" ";" parts "${case}")
-    list(POP_FRONT parts name)
-    add_test(NAME rejects_${name} COMMAND pinball ${parts})
-    set_tests_properties(rejects_${name} PROPERTIES
-      ENVIRONMENT "${PINBALL_HEADLESS_ENV}"
-      PASS_REGULAR_EXPRESSION "Usage: pinball"
-      TIMEOUT 30)
-    # PASS_REGULAR_EXPRESSION ignores the exit code, so assert that separately.
-    add_test(NAME rejects_${name}_exit_code COMMAND pinball ${parts})
-    set_tests_properties(rejects_${name}_exit_code PROPERTIES
-      ENVIRONMENT "${PINBALL_HEADLESS_ENV}"
-      WILL_FAIL TRUE
-      TIMEOUT 30)
+    string(REGEX MATCH "^[^:]+" name "${case}")
+    string(REGEX REPLACE "^[^:]+:" "" args "${case}")
+    add_test(NAME rejects_${name}
+      COMMAND ${CMAKE_COMMAND} -DPINBALL=$<TARGET_FILE:pinball> -DARGS=${args}
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/ExpectUsageError.cmake)
+    set_tests_properties(rejects_${name} PROPERTIES TIMEOUT 30)
   endforeach()
 endif()

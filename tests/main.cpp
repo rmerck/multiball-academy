@@ -2,11 +2,7 @@
 #include <cstdlib>
 
 #include "Check.hpp"
-
-void testArgs();
-void testAssetName();
-void testFixedTimestep();
-void testGame();
+#include "Suites.hpp"
 
 int main() {
   testArgs();

@@ -64,7 +64,7 @@ class App {
   // Textures belong to the renderer and are declared after it so they are
   // destroyed first.
   Textures textures_;
-  FixedTimestep timestep_{1.0 / 120.0, 8};
+  FixedTimestep timestep_{Game::kStepSeconds, 8};
   bool vsync_ = false;
   bool running_ = true;
   bool paused_ = false;

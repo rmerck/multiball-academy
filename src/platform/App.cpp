@@ -130,7 +130,7 @@ int App::run() {
     if (!paused_) {
       const int steps = timestep_.advance(frameSeconds);
       for (int i = 0; i < steps; ++i) {
-        game_.update(timestep_.step(), input_);
+        game_.step(input_);
       }
     }
 
