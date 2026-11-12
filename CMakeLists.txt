@@ -11,9 +11,27 @@ if(APPLE)
   enable_language(OBJCXX)
 endif()
 
-set(CMAKE_CXX_STANDARD 17)
+# C++23 for every target, set before any target exists: the game, the tests,
+# the tools and the fuzzer. (The pinned dependencies are C and Objective-C,
+# which this does not touch. With MSVC, CMake passes /std:c++latest until
+# it knows a C++23 flag for that compiler.)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+if(APPLE)
+  # The same for the Objective-C++ file. CMake knows no C++23 flag for
+  # Objective-C++ with Apple clang (up to 4.1 at least) and would stop with
+  # "requires the language dialect OBJCXX23", so name the flag here. It is
+  # the one CMake uses for C++ with the same compiler.
+  if(CMAKE_OBJCXX_COMPILER_ID MATCHES "Clang"
+     AND NOT DEFINED CMAKE_OBJCXX23_STANDARD_COMPILE_OPTION)
+    set(CMAKE_OBJCXX23_STANDARD_COMPILE_OPTION "-std=c++2b")
+    set(CMAKE_OBJCXX23_EXTENSION_COMPILE_OPTION "-std=gnu++2b")
+  endif()
+  set(CMAKE_OBJCXX_STANDARD 23)
+  set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+  set(CMAKE_OBJCXX_EXTENSIONS OFF)
+endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Makes executables position independent at link time too, where supported.
