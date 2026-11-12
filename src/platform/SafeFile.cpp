@@ -1,8 +1,14 @@
 #include "platform/SafeFile.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
+#include <string>
+#include <string_view>
 #include <system_error>
+#include <vector>
 
 #if defined(__unix__) || defined(__APPLE__)
 #define PINBALL_POSIX_FILES 1
@@ -34,21 +40,17 @@ constexpr std::size_t kTemporarySuffixLength = 6;
 // True if name is prefix followed by exactly the unique suffix. The suffix
 // is letters and digits on every system's mkstemp.
 bool isTemporaryName(std::string_view name, std::string_view prefix) noexcept {
-  if (name.size() != prefix.size() + kTemporarySuffixLength ||
-      name.substr(0, prefix.size()) != prefix) {
+  if (name.size() != prefix.size() + kTemporarySuffixLength || !name.starts_with(prefix)) {
     return false;
   }
-  for (const char c : name.substr(prefix.size())) {
-    if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) {
-      return false;
-    }
-  }
-  return true;
+  return std::ranges::all_of(name.substr(prefix.size()), [](char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+  });
 }
 
 }  // namespace
 
-std::size_t removeStaleTemporaries(const std::string& path, long long minAgeSeconds) {
+std::size_t removeStaleTemporaries(std::string_view path, long long minAgeSeconds) {
   namespace fs = std::filesystem;
   const fs::path target(path);
   const std::string prefix = target.filename().string() + std::string(kTemporaryMark);
@@ -93,10 +95,10 @@ class Descriptor {
   }
   Descriptor(const Descriptor&) = delete;
   Descriptor& operator=(const Descriptor&) = delete;
-  int get() const noexcept { return fd_; }
-  bool ok() const noexcept { return fd_ >= 0; }
+  [[nodiscard]] int get() const noexcept { return fd_; }
+  [[nodiscard]] bool ok() const noexcept { return fd_ >= 0; }
   // Closes now and reports whether that succeeded.
-  bool close() noexcept {
+  [[nodiscard]] bool close() noexcept {
     const int fd = fd_;
     fd_ = -1;
     return fd >= 0 && ::close(fd) == 0;

@@ -1,7 +1,9 @@
 #include "platform/App.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <utility>
 
 #include "core/LoopPolicy.hpp"
@@ -362,12 +364,14 @@ void App::readInput() {
     return;
   }
   int keyCount = 0;
-  const bool* keys = SDL_GetKeyboardState(&keyCount);
+  const bool* const state = SDL_GetKeyboardState(&keyCount);
+  const std::span<const bool> keys(
+      state, state != nullptr && keyCount > 0 ? static_cast<std::size_t>(keyCount) : 0);
   input_ = InputState{};
   for (const SDL_Scancode scancode : kControlKeys) {
     bool InputState::* const control = controlFor(scancode);
-    const bool held = keys != nullptr && static_cast<int>(scancode) < keyCount &&
-                      keys[static_cast<int>(scancode)];
+    const auto index = static_cast<std::size_t>(scancode);
+    const bool held = index < keys.size() && keys[index];
     // Held now, or pressed and released since the last simulation step.
     input_.*control = held || latched_.*control;
   }

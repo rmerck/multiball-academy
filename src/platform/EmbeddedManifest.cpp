@@ -1,7 +1,5 @@
 #include "platform/EmbeddedManifest.hpp"
 
-#include <iterator>
-
 namespace pinball {
 
 namespace {
@@ -12,7 +10,6 @@ const AssetEntry kEntries[] = {
 
 }  // namespace
 
-const AssetEntry* embeddedAssets() noexcept { return kEntries; }
-std::size_t embeddedAssetCount() noexcept { return std::size(kEntries); }
+std::span<const AssetEntry> embeddedAssets() noexcept { return kEntries; }
 
 }  // namespace pinball

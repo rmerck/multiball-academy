@@ -28,14 +28,14 @@ struct AppOptions {
 class App {
  public:
   // Returns nullptr and logs the SDL error if any resource fails to initialise.
-  static std::unique_ptr<App> create(const AppOptions& options);
+  [[nodiscard]] static std::unique_ptr<App> create(const AppOptions& options);
 
   ~App();
   App(const App&) = delete;
   App& operator=(const App&) = delete;
 
   // Runs until the user quits or the frame limit is reached. Returns exit code.
-  int run();
+  [[nodiscard]] int run();
 
  private:
   struct WindowDeleter {

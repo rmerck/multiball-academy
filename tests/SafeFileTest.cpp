@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -39,7 +40,7 @@ std::string slurp(const std::filesystem::path& path) {
   return text.str();
 }
 
-void spit(const std::filesystem::path& path, const std::string& text) {
+void spit(const std::filesystem::path& path, std::string_view text) {
   std::ofstream out(path, std::ios::binary);
   out << text;
 }
@@ -82,7 +83,7 @@ int main(int argc, char* argv[]) {
   CHECK(pinball::readRegularFile(file.string(), SIZE_MAX, bytes) == ReadResult::Error);
   CHECK(bytes.empty());
   // A generous limit does not mean a generous buffer.
-  CHECK(pinball::readRegularFile(file.string(), std::size_t{1} << 30U, bytes) == ReadResult::Ok);
+  CHECK(pinball::readRegularFile(file.string(), 1uz << 30U, bytes) == ReadResult::Ok);
   CHECK(bytes.size() == 5 && bytes.capacity() < 4096);
 
   // Writing.
@@ -155,8 +156,8 @@ int main(int argc, char* argv[]) {
     const fs::path folder = base + ".tmp-Folder";
     // Written "after now", as when the system clock has since been set back.
     const fs::path future = base + ".tmp-Future";
-    for (const fs::path& path : {stale, fresh, backup, oldStyle, shortName, longName, oddName,
-                                 other, future}) {
+    for (const fs::path& path :
+         {stale, fresh, backup, oldStyle, shortName, longName, oddName, other, future}) {
       spit(path, "x");
     }
     fs::last_write_time(future, fs::file_time_type::clock::now() + std::chrono::minutes(5), error);
@@ -172,8 +173,8 @@ int main(int argc, char* argv[]) {
 #endif
     CHECK(pinball::removeStaleTemporaries(base) == 1);
     CHECK(!fs::exists(stale));
-    for (const fs::path& path : {fresh, backup, oldStyle, shortName, longName, oddName, other,
-                                 folder, future}) {
+    for (const fs::path& path :
+         {fresh, backup, oldStyle, shortName, longName, oddName, other, folder, future}) {
       CHECK(fs::exists(path));
     }
 #if defined(PINBALL_POSIX_TESTS)

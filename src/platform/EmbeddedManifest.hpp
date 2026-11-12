@@ -1,13 +1,12 @@
 #pragma once
 
-#include <cstddef>
+#include <span>
 
 #include "core/AssetManifest.hpp"
 
 namespace pinball {
 
 // The asset manifest compiled into this executable at build time.
-const AssetEntry* embeddedAssets() noexcept;
-std::size_t embeddedAssetCount() noexcept;
+[[nodiscard]] std::span<const AssetEntry> embeddedAssets() noexcept;
 
 }  // namespace pinball

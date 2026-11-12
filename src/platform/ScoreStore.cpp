@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,15 +22,13 @@ constexpr const char* kFileName = "highscores.txt";
 // Full path of the score file, or empty if there is no preferences directory.
 std::string scoreFilePath() {
   // Created if missing; the returned string is ours to free.
-  char* const directory = SDL_GetPrefPath(kOrganisation, kApplication);
-  if (directory == nullptr) {
+  const std::unique_ptr<char, decltype([](char* text) { SDL_free(text); })> directory(
+      SDL_GetPrefPath(kOrganisation, kApplication));
+  if (!directory) {
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No preferences directory: %s", SDL_GetError());
     return {};
   }
-  std::string path(directory);
-  SDL_free(directory);
-  path += kFileName;
-  return path;
+  return std::string(directory.get()) + kFileName;
 }
 
 }  // namespace
