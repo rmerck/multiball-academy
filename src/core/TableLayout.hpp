@@ -146,7 +146,9 @@ inline constexpr std::array<Bumper, 8> kBumpers{{
     {{{kFieldCenterX, 232.0F}, 24.0F}, BumperGroup::Attack},
     {{{kFieldCenterX - 72.5F, 292.0F}, 24.0F}, BumperGroup::Attack},
     {{{kFieldCenterX + 72.5F, 292.0F}, 24.0F}, BumperGroup::Attack},
-    {{{kFieldCenterX, 352.0F}, 24.0F}, BumperGroup::Attack},
+    // One pixel off the centre line: directly below the top bumper, a ball
+    // could bounce straight up and down between the two for ever.
+    {{{kFieldCenterX + 1.0F, 352.0F}, 24.0F}, BumperGroup::Attack},
     // Engine bumpers: a triangle on the left.
     {{{150.0F, 340.0F}, 22.0F}, BumperGroup::Engine},
     {{{232.0F, 372.0F}, 22.0F}, BumperGroup::Engine},
