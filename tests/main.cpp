@@ -7,6 +7,7 @@
 int main() {
   testArgs();
   testAssetName();
+  testBumpers();
   testFixedTimestep();
   testFlippers();
   testGame();

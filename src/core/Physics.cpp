@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 #include <vector>
 
@@ -24,6 +25,29 @@ constexpr float kBallDensity = 8.0F;
 // Flipper rubber: grippy and a little lively.
 constexpr float kFlipperFriction = 0.6F;
 constexpr float kFlipperRestitution = 0.35F;
+
+// Bumper skirts are rubber rings.
+constexpr float kBumperRestitution = 0.6F;
+
+// Element references ride in Box2D's shape user data as an integer packed
+// into the pointer value. No real pointer is ever stored or dereferenced.
+void* packElement(table::ElementRef ref) noexcept {
+  const std::uintptr_t value = (static_cast<std::uintptr_t>(ref.kind) << 8U) |
+                               static_cast<std::uintptr_t>(ref.index);
+  return reinterpret_cast<void*>(value);  // NOLINT: integer tag, not a pointer.
+}
+
+table::ElementRef unpackElement(const void* data) noexcept {
+  const auto value = reinterpret_cast<std::uintptr_t>(data);  // NOLINT: integer tag.
+  const auto kind = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+  const auto index = static_cast<std::uint8_t>(value & 0xFFU);
+  // Validate before trusting: only known kinds with in-range indices pass.
+  if (kind == static_cast<std::uint8_t>(table::ElementKind::Bumper) &&
+      index < table::kBumpers.size()) {
+    return {table::ElementKind::Bumper, index};
+  }
+  return {};
+}
 
 constexpr float toMeters(float pixels) noexcept {
   return pixels / PhysicsWorld::kPixelsPerMeter;
@@ -61,6 +85,8 @@ PhysicsWorld::PhysicsWorld() {
   buildBall();
   buildFlippers();
   buildPlunger();
+  buildBumpers();
+  events_.reserve(kMaxEventsPerStep);
 }
 
 PhysicsWorld::~PhysicsWorld() {
@@ -126,6 +152,8 @@ void PhysicsWorld::buildBall() {
   shapeDef.density = kBallDensity;
   shapeDef.material.friction = kBallFriction;
   shapeDef.material.restitution = kBallRestitution;
+  // Off by default in Box2D. Only one shape of a pair needs it.
+  shapeDef.enableContactEvents = true;
   const b2Circle circle{{0.0F, 0.0F}, toMeters(table::kBallRadius)};
   b2CreateCircleShape(ball_, &shapeDef, &circle);
 }
@@ -230,6 +258,70 @@ void PhysicsWorld::buildPlunger() {
   laneGateClosed_ = false;
 }
 
+void PhysicsWorld::buildBumpers() {
+  b2ShapeDef shapeDef = b2DefaultShapeDef();
+  shapeDef.material.friction = kWallFriction;
+  shapeDef.material.restitution = kBumperRestitution;
+  for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
+    const table::Circle& c = table::kBumpers[i].shape;
+    shapeDef.userData =
+        packElement({table::ElementKind::Bumper, static_cast<std::uint8_t>(i)});
+    const b2Circle circle{toMeters(c.center), toMeters(c.radius)};
+    b2CreateCircleShape(table_, &shapeDef, &circle);
+  }
+}
+
+void PhysicsWorld::kickFromBumper(const table::Bumper& bumper) {
+  // Push the ball straight away from the bumper's centre, on top of the
+  // bounce the solver already gave it.
+  const b2Vec2 center = toMeters(bumper.shape.center);
+  const b2Pos ball = b2Body_GetPosition(ball_);
+  b2Vec2 away{static_cast<float>(ball.x) - center.x, static_cast<float>(ball.y) - center.y};
+  const float length = std::sqrt(away.x * away.x + away.y * away.y);
+  if (!(length > 1e-6F)) {
+    return;
+  }
+  away.x /= length;
+  away.y /= length;
+
+  b2Vec2 v = b2Body_GetLinearVelocity(ball_);
+  // Drop any remaining motion into the bumper, then add the kick.
+  const float inward = std::min(v.x * away.x + v.y * away.y, 0.0F);
+  v.x += away.x * (kBumperKickSpeed - inward);
+  v.y += away.y * (kBumperKickSpeed - inward);
+  b2Body_SetLinearVelocity(ball_, v);
+}
+
+void PhysicsWorld::collectEvents() {
+  const b2ContactEvents contacts = b2World_GetContactEvents(world_);
+  for (int i = 0; i < contacts.beginCount; ++i) {
+    const b2ContactBeginTouchEvent& touch = contacts.beginEvents[i];
+    if (!b2Shape_IsValid(touch.shapeIdA) || !b2Shape_IsValid(touch.shapeIdB)) {
+      continue;
+    }
+    // One of the two shapes is the ball; the other may be a tagged element.
+    const bool ballIsA = B2_ID_EQUALS(b2Shape_GetBody(touch.shapeIdA), ball_);
+    const bool ballIsB = B2_ID_EQUALS(b2Shape_GetBody(touch.shapeIdB), ball_);
+    if (ballIsA == ballIsB) {
+      continue;
+    }
+    const b2ShapeId other = ballIsA ? touch.shapeIdB : touch.shapeIdA;
+    const table::ElementRef element = unpackElement(b2Shape_GetUserData(other));
+    if (element.kind == table::ElementKind::None) {
+      continue;
+    }
+
+    const b2Vec2 v = b2Body_GetLinearVelocity(ball_);
+    const float speed = toPixels(std::sqrt(v.x * v.x + v.y * v.y));
+    if (element.kind == table::ElementKind::Bumper) {
+      kickFromBumper(table::kBumpers[element.index]);
+    }
+    if (events_.size() < kMaxEventsPerStep) {
+      events_.push_back({PhysicsEvent::Type::Hit, element, speed});
+    }
+  }
+}
+
 void PhysicsWorld::setPlunger(bool held) noexcept { plungerHeld_ = held; }
 
 void PhysicsWorld::setLaneGateClosed(bool closed) {
@@ -267,7 +359,9 @@ void PhysicsWorld::step(float stepSeconds) {
   }
   driveFlippers(stepSeconds);
   drivePlunger(stepSeconds);
+  events_.clear();
   b2World_Step(world_, stepSeconds, kSubSteps);
+  collectEvents();
 }
 
 Vec2 PhysicsWorld::ballPosition() const {
