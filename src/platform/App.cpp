@@ -79,6 +79,12 @@ std::unique_ptr<App> App::create(const AppOptions& options) {
   // (The Game inside App can throw if the physics world cannot be created;
   // main reports that.)
   const AssetLoader assets = AssetLoader::fromExecutableLocation();
+  // Refuse to start unless every asset matches the build.
+  if (!assets.verifyAll()) {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                 "Asset integrity check failed; reinstall or rebuild the game");
+    return nullptr;
+  }
   Textures textures;
   textures.ball = assets.loadTexture(renderer.get(), "sprites/ball.png");
   if (!textures.ball) {
