@@ -9,3 +9,4 @@ void testFixedTimestep();
 void testGame();
 void testPhysics();
 void testPngHeader();
+void testSha256();
