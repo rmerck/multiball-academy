@@ -84,6 +84,7 @@ if(BUILD_TESTING)
     tests/main.cpp
     tests/ArgsTest.cpp
     tests/AssetNameTest.cpp
+    tests/BumperTest.cpp
     tests/FixedTimestepTest.cpp
     tests/FlipperTest.cpp
     tests/GameTest.cpp

@@ -1,5 +1,7 @@
 #include "core/Game.hpp"
 
+#include <algorithm>
+
 #include "core/TableLayout.hpp"
 
 namespace pinball {
@@ -16,6 +18,8 @@ void Game::step(const InputState& input) {
   physics_.setPlunger(input.plunger);
   physics_.step(static_cast<float>(kStepSeconds));
 
+  handleEvents();
+
   if (!physics_.ballIsSane()) {
     // Fail safe: a ball outside the table or with a corrupt state is put back.
     serveBall();
@@ -31,6 +35,22 @@ void Game::step(const InputState& input) {
 
   ++stepCount_;
   previousInput_ = input;
+}
+
+void Game::handleEvents() {
+  constexpr float kFlashSeconds = 0.25F;
+  const float fade = static_cast<float>(kStepSeconds) / kFlashSeconds;
+  for (float& flash : bumperFlash_) {
+    flash = std::max(flash - fade, 0.0F);
+  }
+
+  for (const PhysicsEvent& event : physics_.events()) {
+    if (event.element.kind == table::ElementKind::Bumper &&
+        event.element.index < bumperFlash_.size()) {
+      bumperFlash_[event.element.index] = 1.0F;
+      ++bumperHits_;
+    }
+  }
 }
 
 FlipperView Game::flipper(std::size_t index) const {

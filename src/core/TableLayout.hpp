@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "core/Vec2.hpp"
@@ -124,6 +125,48 @@ inline constexpr Flipper kRightFlipper{mirrored(kLeftFlipper.pivot), kPi - kFlip
 inline constexpr std::array<Flipper, 2> kFlippers{{kLeftFlipper, kRightFlipper}};
 inline constexpr std::size_t kLeftFlipperIndex = 0;
 inline constexpr std::size_t kRightFlipperIndex = 1;
+
+struct Circle {
+  Vec2 center;
+  float radius;
+};
+
+// Pop bumpers: round posts that kick the ball away when touched.
+enum class BumperGroup : std::uint8_t { Attack, Engine, Satellite };
+struct Bumper {
+  Circle shape;
+  BumperGroup group;
+};
+
+// Spacing rule: every gap between bumpers, and between a bumper and a wall,
+// is either closed or comfortably wider than the 24 px ball, so there is no
+// pocket for a ball to settle in.
+inline constexpr std::array<Bumper, 8> kBumpers{{
+    // Attack bumpers: a diamond under the top lanes.
+    {{{kFieldCenterX, 232.0F}, 24.0F}, BumperGroup::Attack},
+    {{{kFieldCenterX - 72.5F, 292.0F}, 24.0F}, BumperGroup::Attack},
+    {{{kFieldCenterX + 72.5F, 292.0F}, 24.0F}, BumperGroup::Attack},
+    // One pixel off the centre line: directly below the top bumper, a ball
+    // could bounce straight up and down between the two for ever.
+    {{{kFieldCenterX + 1.0F, 352.0F}, 24.0F}, BumperGroup::Attack},
+    // Engine bumpers: a triangle on the left.
+    {{{150.0F, 340.0F}, 22.0F}, BumperGroup::Engine},
+    {{{232.0F, 372.0F}, 22.0F}, BumperGroup::Engine},
+    {{{160.0F, 424.0F}, 22.0F}, BumperGroup::Engine},
+    // Satellite bumper on the right.
+    {{{560.0F, 380.0F}, 24.0F}, BumperGroup::Satellite},
+}};
+
+// Identifies one interactive element of the table. Stored in physics shapes
+// and carried by events.
+enum class ElementKind : std::uint8_t { None, Bumper };
+struct ElementRef {
+  ElementKind kind = ElementKind::None;
+  std::uint8_t index = 0;
+};
+constexpr bool operator==(ElementRef a, ElementRef b) noexcept {
+  return a.kind == b.kind && a.index == b.index;
+}
 
 // Outer shell as a closed loop, ordered counter-clockwise on screen so the
 // one-sided collision normals point into the table.

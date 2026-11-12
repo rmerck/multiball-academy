@@ -314,6 +314,17 @@ void App::render(double /*alpha*/) {
   // Placeholder outline until the table art lands.
   drawTableOutline();
 
+  // Bumpers as placeholder squares that brighten when hit.
+  for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
+    const table::Circle& c = table::kBumpers[i].shape;
+    const float flash = game_.bumperFlash(i);
+    const auto level = static_cast<Uint8>(90.0F + 165.0F * flash);
+    SDL_SetRenderDrawColor(r, level, level, 90, SDL_ALPHA_OPAQUE);
+    const float side = c.radius * 1.41421356F;
+    const SDL_FRect box{c.center.x - side * 0.5F, c.center.y - side * 0.5F, side, side};
+    SDL_RenderFillRect(r, &box);
+  }
+
   // Plunger block and, when closed, the lane gate.
   const SDL_FRect plunger{table::kLaneCenterX - table::kPlungerWidth * 0.5F,
                           table::kPlungerRestTopY + game_.plungerPull(), table::kPlungerWidth,

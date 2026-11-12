@@ -1,10 +1,12 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
 #include "core/Input.hpp"
 #include "core/Physics.hpp"
+#include "core/TableLayout.hpp"
 #include "core/Vec2.hpp"
 
 namespace pinball {
@@ -44,16 +46,25 @@ class Game {
   // How far the plunger is drawn back, in pixels.
   float plungerPull() const noexcept { return physics_.plungerPull(); }
   bool laneGateClosed() const noexcept { return physics_.laneGateClosed(); }
+  // 1 just after a bumper was hit, fading to 0. Drives its light.
+  float bumperFlash(std::size_t index) const noexcept {
+    return index < bumperFlash_.size() ? bumperFlash_[index] : 0.0F;
+  }
+  // Total bumper hits this session.
+  std::uint32_t bumperHits() const noexcept { return bumperHits_; }
   // Number of balls lost down the drain so far.
   std::uint32_t drainCount() const noexcept { return drainCount_; }
 
  private:
   void serveBall();
+  void handleEvents();
 
   PhysicsWorld physics_;
   std::uint64_t stepCount_ = 0;
   std::uint32_t drainCount_ = 0;
   InputState previousInput_;
+  std::array<float, table::kBumpers.size()> bumperFlash_{};
+  std::uint32_t bumperHits_ = 0;
 };
 
 }  // namespace pinball

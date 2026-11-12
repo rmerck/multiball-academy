@@ -5,6 +5,7 @@
 // fails to link.
 void testArgs();
 void testAssetName();
+void testBumpers();
 void testFixedTimestep();
 void testFlippers();
 void testGame();

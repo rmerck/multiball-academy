@@ -4,10 +4,20 @@
 
 #include <array>
 #include <cstddef>
+#include <vector>
 
+#include "core/TableLayout.hpp"
 #include "core/Vec2.hpp"
 
 namespace pinball {
+
+// Something that happened to the ball during a step.
+struct PhysicsEvent {
+  enum class Type : std::uint8_t { Hit };
+  Type type = Type::Hit;
+  table::ElementRef element;
+  float speed = 0.0F;  // Ball speed when the event was recorded, pixels per second.
+};
 
 // Owns the Box2D world: the static table and the ball. All values crossing
 // this interface are in playfield pixels; Box2D itself runs in metres.
@@ -60,6 +70,14 @@ class PhysicsWorld {
   void setLaneGateClosed(bool closed);
   bool laneGateClosed() const noexcept { return laneGateClosed_; }
 
+  // Speed added to the ball, in m/s, when it touches a bumper.
+  static constexpr float kBumperKickSpeed = 5.5F;
+  // Most events kept per step. Further events in the same step are dropped.
+  static constexpr std::size_t kMaxEventsPerStep = 32;
+
+  // Events from the most recent step. Cleared at the start of each step.
+  const std::vector<PhysicsEvent>& events() const noexcept { return events_; }
+
   // Advances by one fixed step. Ignored unless 0 < stepSeconds <= kMaxStepSeconds.
   void step(float stepSeconds);
 
@@ -81,6 +99,10 @@ class PhysicsWorld {
   void buildFlippers();
   void driveFlippers(float stepSeconds);
   void buildPlunger();
+  void buildBumpers();
+  void collectEvents();
+  void checkBumpers();
+  void kickFromBumper(const table::Bumper& bumper);
   void drivePlunger(float stepSeconds);
   void clampBallSpeed();
 
@@ -99,6 +121,10 @@ class PhysicsWorld {
   float plungerPull_ = 0.0F;          // Pixels drawn back.
   float plungerReleaseSpeed_ = 0.0F;  // Pixels per second while driving forward.
   bool plungerHeld_ = false;
+
+  std::vector<PhysicsEvent> events_;
+  // Bumpers the ball is touching, so each touch kicks once.
+  std::array<bool, table::kBumpers.size()> touchingBumper_{};
 
   b2BodyId laneGate_{};
   bool laneGateClosed_ = false;
