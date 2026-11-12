@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include "core/Format.hpp"
+#include "core/Missions.hpp"
 #include "core/PanelLayout.hpp"
 #include "platform/Text.hpp"
 
@@ -72,38 +73,93 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game) {
            panel::kStatusWell.x + panel::kStatusWell.w - kPad, panel::kStatusWell.y + 14.0F, 5.0F,
            rules.fieldMultiplier() > 1 ? kAmber : kDim, TextAlign::Right);
 
-  // Awards in progress.
-  label(r, panel::kRankWell, "SYSTEMS");
-  const float awardsY = panel::kRankWell.y + 34.0F;
-  drawText(r, formatText(buffer.data(), buffer.size(), "ATTACK LV %d", rules.attackBumperLevel() + 1),
-           panel::kRankWell.x + kPad, awardsY, kLabelSize, kWhite);
-  drawText(r, formatText(buffer.data(), buffer.size(), "BOOSTER %d/4", rules.boosterLevel()), panel::kRankWell.x + kPad,
-           awardsY + 22.0F, kLabelSize, kWhite);
-  drawText(r, formatText(buffer.data(), buffer.size(), "MEDAL %d/3", rules.medalLevel()), centerX(panel::kRankWell) + kPad,
-           awardsY, kLabelSize, kWhite);
-  drawText(r, formatText(buffer.data(), buffer.size(), "HYPERSPACE %d/4", rules.hyperspaceLevel()),
-           centerX(panel::kRankWell) + kPad, awardsY + 22.0F, kLabelSize, kWhite);
+  const MissionControl& missions = rules.missions();
+  // Slow blink for things waiting on the player.
+  const bool blinkOn = (game.stepCount() / 30U) % 2U == 0U;
 
-  // Lit awards.
-  label(r, panel::kMissionWell, "STATUS");
-  float line = panel::kMissionWell.y + 38.0F;
-  const auto status = [&](std::string_view text, SDL_Color color) {
-    drawText(r, text, panel::kMissionWell.x + kPad, line, 3.0F, color);
-    line += 30.0F;
-  };
-  if (rules.ballSaveActive()) {
-    status("BALL SAVE ON", kGreen);
+  // Rank and progress towards the next one.
+  label(r, panel::kRankWell, "RANK");
+  drawText(r, rankName(missions.rank()), panel::kRankWell.x + kPad, panel::kRankWell.y + 30.0F,
+           4.0F, kCyan);
+  {
+    const float gap = 4.0F;
+    const float segment = (panel::kRankWell.w - 2.0F * kPad - gap * (kProgressPerRank - 1)) /
+                          static_cast<float>(kProgressPerRank);
+    for (int i = 0; i < kProgressPerRank; ++i) {
+      const SDL_FRect box{panel::kRankWell.x + kPad + static_cast<float>(i) * (segment + gap),
+                          panel::kRankWell.y + panel::kRankWell.h - 18.0F, segment, 8.0F};
+      if (i < missions.progress()) {
+        SDL_SetRenderDrawColor(r, kAmber.r, kAmber.g, kAmber.b, SDL_ALPHA_OPAQUE);
+      } else {
+        SDL_SetRenderDrawColor(r, 40, 48, 70, SDL_ALPHA_OPAQUE);
+      }
+      SDL_RenderFillRect(r, &box);
+    }
   }
-  if (rules.jackpotLit()) {
-    status("JACKPOT LIT", kAmber);
+
+  // Mission.
+  label(r, panel::kMissionWell, "MISSION");
+  const float missionX = panel::kMissionWell.x + kPad;
+  const float missionY = panel::kMissionWell.y + 34.0F;
+  if (const Mission* mission = missions.mission()) {
+    drawText(r, mission->name, missionX, missionY, 3.0F, kAmber);
+    if (missions.phase() == MissionControl::Phase::Selected) {
+      if (blinkOn) {
+        drawText(r, "SHOOT THE LAUNCH RAMP TO ACCEPT", missionX, missionY + 34.0F, kLabelSize,
+                 kGreen);
+      }
+    } else if (const MissionStage* stage = missions.stage()) {
+      drawText(r, goalText(stage->goal), missionX, missionY + 34.0F, kLabelSize, kWhite);
+      drawText(r, formatText(buffer.data(), buffer.size(), "%d TO GO", missions.remaining()),
+               panel::kMissionWell.x + panel::kMissionWell.w - kPad, missionY + 34.0F, kLabelSize,
+               kWhite, TextAlign::Right);
+      // Fuel gauge.
+      drawText(r, "FUEL", missionX, missionY + 62.0F, kLabelSize, kDim);
+      for (int i = 0; i < MissionControl::kFuelLights; ++i) {
+        const SDL_FRect box{missionX + 60.0F + static_cast<float>(i) * 34.0F, missionY + 60.0F,
+                            28.0F, 16.0F};
+        const bool lit = i < missions.fuelLights();
+        const bool low = missions.fuelLights() <= 2;
+        if (lit && !(low && !blinkOn)) {
+          const SDL_Color c = low ? kRed : kGreen;
+          SDL_SetRenderDrawColor(r, c.r, c.g, c.b, SDL_ALPHA_OPAQUE);
+        } else {
+          SDL_SetRenderDrawColor(r, 40, 48, 70, SDL_ALPHA_OPAQUE);
+        }
+        SDL_RenderFillRect(r, &box);
+      }
+    }
+  } else {
+    drawText(r, "NO MISSION", missionX, missionY, 3.0F, kDim);
+    drawText(r, "HIT A MISSION TARGET ON THE LEFT WALL", missionX, missionY + 34.0F, kLabelSize,
+             kDim);
   }
-  if (rules.bonusLaneLit()) {
-    status("BONUS LANES LIT", kAmber);
+  // Lit awards along the bottom of the mission window.
+  {
+    const float y = panel::kMissionWell.y + panel::kMissionWell.h - 26.0F;
+    drawText(r, "JACKPOT", missionX, y, kLabelSize, rules.jackpotLit() ? kAmber : kDim);
+    drawText(r, "BONUS LANES", centerX(panel::kMissionWell), y, kLabelSize,
+             rules.bonusLaneLit() ? kAmber : kDim, TextAlign::Center);
+    drawText(r, "BALL SAVE", panel::kMissionWell.x + panel::kMissionWell.w - kPad, y, kLabelSize,
+             rules.ballSaveActive() ? kGreen : kDim, TextAlign::Right);
   }
-  ScoreText bonusBuffer{};
-  std::array<char, 48> bonusLine{};
-  const std::string_view bonus = formatScore(rules.bonus(), bonusBuffer);
-  status(formatText(bonusLine.data(), bonusLine.size(), "BONUS %.*s", static_cast<int>(bonus.size()), bonus.data()), kWhite);
+
+  // Systems.
+  {
+    const panel::Rect& well = panel::kHighScoreWell;
+    std::array<char, 64> line{};
+    drawText(r,
+             formatText(line.data(), line.size(), "ATK %d  BOOST %d/4  MEDAL %d/3  HYP %d/4",
+                        rules.attackBumperLevel() + 1, rules.boosterLevel(), rules.medalLevel(),
+                        rules.hyperspaceLevel()),
+             centerX(well), well.y + 16.0F, kLabelSize, kWhite, TextAlign::Center);
+    ScoreText bonusBuffer{};
+    const std::string_view bonus = formatScore(rules.bonus(), bonusBuffer);
+    drawText(r,
+             formatText(line.data(), line.size(), "END OF BALL BONUS %.*s",
+                        static_cast<int>(bonus.size()), bonus.data()),
+             centerX(well), well.y + 42.0F, kLabelSize, kDim, TextAlign::Center);
+  }
 
   // Message.
   const std::string_view message = rules.message();

@@ -15,7 +15,7 @@ This is an independent fan project. It contains no code or assets from the origi
 | 5 | Plunger and launch lane | Done |
 | 6 | Bumpers, targets, ramps, table geometry | Done: 8 bumpers, slingshots, 4 target banks, 7 rollovers, wormholes, black hole, hyperspace, launch ramp |
 | 7 | Scoring, lights, UI | Done: rules engine, lit lanes and targets, information panel with a built-in pixel font |
-| 8 | Missions and ranks | Planned |
+| 8 | Missions and ranks | Done: 9 ranks, 36 missions, fuel |
 | 9 | Nudge and tilt | Planned |
 | 10 | Audio | Planned |
 | 11 | High scores, polish, performance | Planned |
@@ -79,6 +79,18 @@ Three balls per game. Everything a feature awards is multiplied by the field mul
 | Reflex shot | 25,000 for repeating the ramp or the chute within 5 seconds |
 | Return lanes | Inlane 5,000. Outlane 20,000 when the bonus lanes are lit |
 | End of ball | 250 per bumper or target hit that ball, times the multiplier |
+
+### Missions and ranks
+
+1. Hit a mission target on the left wall to select a mission: top, middle or bottom picks one of the rank's three missions. Lighting all three selects the rank's special mission.
+2. Shoot the launch ramp to accept it. The fuel gauge fills.
+3. Do what the display asks. Some missions have two stages.
+4. Fuel lasts 90 seconds. The ramp refuels. If it runs out the mission is aborted.
+5. Completing a mission pays its award (500,000 at Cadet up to 10,000,000 for the last special mission), plus the jackpot if lit, and fills the rank gauge: 6 of 18 for a normal mission, 9 for a special. A full gauge is a promotion.
+
+Ranks: Cadet, Ensign, Lieutenant, Captain, Lt Commander, Commander, Commodore, Admiral, Fleet Admiral. Each rank has its own four missions with larger counts and awards. Missions carry over from ball to ball. The mission table is in `src/core/Missions.cpp`.
+
+The mission structure follows the original (select with the mission targets, accept on the ramp, fuel, rank lights). The individual missions, their counts and awards are this project's own.
 
 A ball that drains within 6 seconds of entering play is returned free. The rules live in `src/core/Rules` with no dependency on physics, and are unit tested event by event.
 

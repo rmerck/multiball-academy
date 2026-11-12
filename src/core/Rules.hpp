@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string_view>
 
+#include "core/Missions.hpp"
 #include "core/TableLayout.hpp"
 
 namespace pinball {
@@ -91,6 +92,9 @@ class Rules {
   bool laneLit(std::size_t index) const noexcept {
     return index < laneLit_.size() && laneLit_[index];
   }
+  // Rank, mission and fuel.
+  const MissionControl& missions() const noexcept { return missions_; }
+
   // Text for the message display. Empty when there is nothing to say.
   std::string_view message() const noexcept { return message_; }
 
@@ -102,9 +106,12 @@ class Rules {
   void awardExtraBall() noexcept;
   void completeBank(table::TargetBank bank) noexcept;
   void resetBall() noexcept;
+  void report(GoalSet goals) noexcept;
+  void handleMission(const MissionControl::Outcome& outcome) noexcept;
   std::uint32_t stepsFor(double seconds) const noexcept;
 
   double stepSeconds_;
+  MissionControl missions_;
   std::uint64_t score_ = 0;
   std::uint64_t bonus_ = 0;
   int ball_ = 1;

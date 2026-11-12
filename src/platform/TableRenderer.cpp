@@ -73,6 +73,26 @@ void TableRenderer::drawGlow(SDL_Renderer* r, Vec2 center, float radius, Rgb col
 
 void TableRenderer::drawLights(SDL_Renderer* r, const Game& game) const {
   const Rules& rules = game.rules();
+  const MissionControl& missions = rules.missions();
+  const bool blinkOn = (game.stepCount() / 30U) % 2U == 0U;
+
+  // Fuel gauge: lit from the bottom up, green fading to red as it empties.
+  const int fuel = missions.fuelLights();
+  for (std::size_t i = 0; i < table::kFuelLightCount; ++i) {
+    // Light 0 is the top of the column and the last to go out when full.
+    const int rank = static_cast<int>(table::kFuelLightCount - i);
+    if (rank <= fuel) {
+      const float t = static_cast<float>(i) / static_cast<float>(table::kFuelLightCount - 1);
+      drawGlow(r, table::fuelLight(i), 22.0F,
+               {255, static_cast<Uint8>(215.0F - 150.0F * t), 40}, 0.95F);
+    }
+  }
+
+  // A selected mission waits on the ramp: pulse its entry.
+  if (missions.phase() == MissionControl::Phase::Selected && blinkOn) {
+    drawGlow(r, table::kRampEntry, 46.0F, {255, 160, 60}, 0.9F);
+  }
+
   std::size_t lane = 0;
   for (const table::Rollover& rollover : table::kRollovers) {
     switch (rollover.group) {
@@ -122,6 +142,7 @@ void TableRenderer::drawBumpers(SDL_Renderer* r, const Game& game) const {
 
 void TableRenderer::drawTargets(SDL_Renderer* r, const Game& game) const {
   SDL_Texture* const bar = textures_.bar.get();
+  std::size_t missionTargetsSeen = 0;
   for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
     const table::Target& target = table::kTargets[i];
     Rgb color{255, 180, 50};  // Booster.
@@ -138,7 +159,20 @@ void TableRenderer::drawTargets(SDL_Renderer* r, const Game& game) const {
       case table::TargetBank::Booster:
         break;
     }
-    const bool lit = game.targetLit(i);
+    bool lit = game.targetLit(i);
+    if (target.bank == table::TargetBank::Mission) {
+      // The mission bank shows the choice instead: the chosen target (or all
+      // three for the special mission) blinks until the mission is accepted
+      // and stays lit while it runs.
+      const MissionControl& missions = game.rules().missions();
+      if (missions.phase() != MissionControl::Phase::Idle) {
+        const bool chosen = missions.missionIndex() == kSpecialMission ||
+                            missions.missionIndex() == missionTargetsSeen;
+        const bool blinkOn = (game.stepCount() / 30U) % 2U == 0U;
+        lit = chosen && (missions.phase() == MissionControl::Phase::Active || blinkOn);
+      }
+      ++missionTargetsSeen;
+    }
     const float level = lit ? 1.0F : 0.38F;
 
     const Vec2 a = target.shape.a;
