@@ -13,18 +13,31 @@ concurrency:
   # A newer push to a pull request replaces the older run; runs on main finish.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Every job builds SDL3 and Box2D from pinned, hash-checked sources
-# (cmake/PinnedDeps.cmake), not from whatever a package manager has today.
+# Every job builds SDL3 and Box2D from pinned sources that are fetched and
+# checked afresh on every run (cmake/PinnedDeps.cmake): the SDL archive
+# against its SHA-256, Box2D by its commit id. No source tree is ever taken
+# from a cache.
 #
-# Their build tree (build/_deps: sources, objects and libraries) is cached,
-# because compiling SDL is most of each job. The key names the runner image
-# (and so the compiler), the job's configuration and the hash of the build
-# files, with no fallback key: any change there builds from source again.
+# What is cached is SDL's build output alone (build/_deps/sdl3-build: its
+# objects and the files its build generates), because compiling SDL is most
+# of each job. The freshly checked sources are unpacked with the dates they
+# have in the archive, so Make sees the restored objects as up to date, and
+# compares them with their sources and flags as usual. The key names the
+# runner image (and so the compiler), the job's configuration and the hash
+# of the build files, which hold the pinned SDL version and its SHA-256,
+# with no fallback key: any change there compiles SDL again. A restore that
+# brings anything else into the build directory, such as a source tree,
+# stops the job (tools/check_deps_cache.sh). Box2D is small: it is cloned
+# and compiled on every run.
+#
 # Every run may restore. Only a push to main saves, and GitHub keeps a cache
 # written by a pull request run visible to that pull request alone, so
 # nothing a pull request does can change what main or another pull request
-# links. Make still compares the restored objects with their sources and
-# flags, and rebuilds whatever differs.
+# links. The restored build output is trusted on that ground alone: it is
+# not checked against anything.
+#
+# PINBALL_REQUIRE_ALL_TESTS stops a job at configure time if a test could
+# not be registered, and ctest fails if it finds none to run.
 jobs:
   macos:
     runs-on: macos-15
@@ -40,12 +53,14 @@ jobs:
       - name: Runner image
         id: image
         run: echo "id=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
-      - name: Restore the dependency build
+      - name: Restore the SDL objects
         id: deps
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: build/_deps
-          key: deps-${{ steps.image.outputs.id }}-${{ runner.arch }}-RelWithDebInfo-san${{ matrix.sanitize }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+          path: build/_deps/sdl3-build
+          key: sdl-objects-${{ steps.image.outputs.id }}-${{ runner.arch }}-RelWithDebInfo-san${{ matrix.sanitize }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+      - name: The cache holds SDL's build output and nothing else
+        run: sh tools/check_deps_cache.sh build
       - name: Configure
         env:
           SANITIZE: ${{ matrix.sanitize }}
@@ -54,17 +69,18 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DPINBALL_FETCH_DEPS=ON
           -DPINBALL_WERROR=ON
+          -DPINBALL_REQUIRE_ALL_TESTS=ON
           -DPINBALL_SANITIZE="$SANITIZE"
       - name: Build
         run: cmake --build build --parallel
-      - name: Save the dependency build
+      - name: Save the SDL objects
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.deps.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: build/_deps
+          path: build/_deps/sdl3-build
           key: ${{ steps.deps.outputs.cache-primary-key }}
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --no-tests=error
 
   # The build that would be handed to someone: optimised, self-contained,
   # hardened runtime, and free of the build machine's paths.
@@ -78,28 +94,31 @@ jobs:
       - name: Runner image
         id: image
         run: echo "id=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
-      - name: Restore the dependency build
+      - name: Restore the SDL objects
         id: deps
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: build/_deps
-          key: deps-${{ steps.image.outputs.id }}-${{ runner.arch }}-Release-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+          path: build/_deps/sdl3-build
+          key: sdl-objects-${{ steps.image.outputs.id }}-${{ runner.arch }}-Release-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+      - name: The cache holds SDL's build output and nothing else
+        run: sh tools/check_deps_cache.sh build
       - name: Configure
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
           -DPINBALL_FETCH_DEPS=ON
           -DPINBALL_WERROR=ON
+          -DPINBALL_REQUIRE_ALL_TESTS=ON
       - name: Build
         run: cmake --build build --parallel
-      - name: Save the dependency build
+      - name: Save the SDL objects
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.deps.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: build/_deps
+          path: build/_deps/sdl3-build
           key: ${{ steps.deps.outputs.cache-primary-key }}
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --no-tests=error
       - name: No build paths in the binary
         run: |
           test -x build/pinball
@@ -142,12 +161,12 @@ jobs:
       - name: Runner image
         id: image
         run: echo "id=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
-      - name: Restore the dependency build
+      - name: Restore the SDL objects
         id: deps
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: build/_deps
-          key: deps-${{ steps.image.outputs.id }}-${{ runner.arch }}-${{ matrix.cxx }}-${{ matrix.stdlib || 'libstdc++' }}-${{ matrix.build }}-san${{ matrix.sanitize }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+          path: build/_deps/sdl3-build
+          key: sdl-objects-${{ steps.image.outputs.id }}-${{ runner.arch }}-${{ matrix.cxx }}-${{ matrix.stdlib || 'libstdc++' }}-${{ matrix.build }}-san${{ matrix.sanitize }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
       - name: Install build headers
         run: |
           sudo apt-get update
@@ -158,6 +177,8 @@ jobs:
       - name: Install libc++
         if: matrix.stdlib == 'libc++'
         run: sudo apt-get install -y --no-install-recommends libc++-18-dev libc++abi-18-dev
+      - name: The cache holds SDL's build output and nothing else
+        run: sh tools/check_deps_cache.sh build
       - name: Configure
         env:
           CC: ${{ matrix.cc }}
@@ -171,17 +192,18 @@ jobs:
           -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
           -DPINBALL_FETCH_DEPS=ON
           -DPINBALL_WERROR=ON
+          -DPINBALL_REQUIRE_ALL_TESTS=ON
           -DPINBALL_SANITIZE="$SANITIZE"
       - name: Build
         run: cmake --build build --parallel
-      - name: Save the dependency build
+      - name: Save the SDL objects
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.deps.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: build/_deps
+          path: build/_deps/sdl3-build
           key: ${{ steps.deps.outputs.cache-primary-key }}
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --no-tests=error
       - name: Hardening is present in the Release binary
         if: matrix.build == 'Release'
         run: |
@@ -190,9 +212,11 @@ jobs:
           readelf -d build/pinball | grep -E 'BIND_NOW'
           readelf -lW build/pinball | grep -E 'GNU_RELRO'
           readelf -lW build/pinball | grep -E 'GNU_STACK\s.*RW\s'
-          readelf -W --dyn-syms build/pinball | grep -E '__stack_chk_fail'
-          readelf -W --dyn-syms build/pinball | grep -v stack_chk | grep -E '__[a-z]+_chk'
           readelf -n build/pinball | grep -E 'IBT, SHSTK'
+          # The stack protector and FORTIFY are checked on the game's own
+          # translation units and objects, not on the linked binary, where
+          # the statically linked SDL would answer for them.
+          python3 -I tools/check_hardening.py build
           if strings -a build/pinball | grep -E '/home/|/Users/'; then
             echo "build paths found in the binary"; exit 1
           fi

@@ -19,7 +19,7 @@ Platforms: macOS and Linux build and pass the tests in CI. Windows is untested.
 
 ## Build
 
-Needs CMake 3.26 or newer and a C++23 compiler (GCC 13, Clang 18, Xcode 16 or newer). Python 3 is optional: without it CMake warns and three of the tests (`assets_clean`, `asset_integrity`, `layout_json`) are left out. In-source builds are refused.
+Needs CMake 3.26 or newer and a C++23 compiler (GCC 13, Clang 18, Xcode 16 or newer). Python 3 is optional: without it CMake warns and three of the tests (`assets_clean`, `asset_integrity`, `layout_json`) are left out, unless `-DPINBALL_REQUIRE_ALL_TESTS=ON` makes that an error. In-source builds are refused.
 
 macOS, with the libraries from Homebrew:
 
@@ -48,10 +48,12 @@ The default build type is RelWithDebInfo. Options:
 
 - `-DPINBALL_SANITIZE=ON` builds with AddressSanitizer and UBSan.
 - `-DPINBALL_WERROR=ON` treats warnings as errors. CI uses this.
-- `-DPINBALL_FETCH_DEPS=ON` needs no installed SDL or Box2D: it downloads SDL3 3.4.20 (release archive, checked by SHA-256) and Box2D 3.2.0 (fixed by commit), builds them with the same protective compiler flags as the game, and links them statically. CI uses this. `tools/check_pins.sh` reports when either has a newer release; a weekly workflow runs it.
+- `-DPINBALL_FETCH_DEPS=ON` needs no installed SDL or Box2D: it downloads SDL3 3.4.20 (release archive, checked by SHA-256) and Box2D 3.2.0 (fixed by commit), builds them with the same protective compiler flags as the game, and links them statically. CI uses this. `tools/check_pins.sh` reports when either has a newer release; a weekly workflow runs it. FetchContent's own switches that would put other sources in their place unchecked (`FETCHCONTENT_SOURCE_DIR_SDL3`, `FETCHCONTENT_SOURCE_DIR_BOX2D`, `FETCHCONTENT_FULLY_DISCONNECTED`, `FETCHCONTENT_TRY_FIND_PACKAGE_MODE=ALWAYS`) stop the configuration.
+- `-DPINBALL_ALLOW_UNVERIFIED_DEPS=ON` accepts those switches, with a warning: the dependencies are then whatever was supplied, not the pinned and verified sources.
 - `-DPINBALL_HARDENED_RUNTIME=OFF` (macOS, only with `PINBALL_FETCH_DEPS` and without sanitizers) skips the ad hoc signing with the hardened runtime that a Release build otherwise gets.
 - `-DPINBALL_BUILD_TOOLS=OFF` leaves out the development tools `pinball_snapshot` and `pinball_layout`, and with them the render and layout tests.
 - `-DBUILD_TESTING=OFF` leaves out the tests.
+- `-DPINBALL_REQUIRE_ALL_TESTS=ON` stops the configuration if a test cannot be registered: no Python 3, or the tools left out. CI uses this, and runs `ctest --no-tests=error`.
 - `-DPINBALL_FUZZ=ON` (clang with libFuzzer, not Apple clang) builds only `pinball_fuzz`, which fuzzes the score file, PNG header, asset name and argument parsers.
 
 There are no install rules: the game runs from the build directory, with its `assets` directory next to the executable.
@@ -71,14 +73,14 @@ On Linux the same build is a position-independent executable with full RELRO, st
 
 ### Tests and CI
 
-`ctest` runs 15 tests: the core unit tests (`core_tests`, no display needed), the file handling tests, two asset checks, three offscreen render checks, the layout dump check, a headless run of the real game, and six rejected command lines. They need no display or audio device, and scratch files stay in the build directory. A timed run (`--frames`) never opens the high score file, and on Linux the tests also point the per-user preferences directory into the build tree.
+`ctest` runs 16 tests: the core unit tests (`core_tests`, no display needed), the file handling tests, two asset checks, three offscreen render checks, a check that the snapshot tool replaces a symbolic link at its output name instead of writing through it, the layout dump check, a headless run of the real game, and six rejected command lines. They need no display or audio device, and scratch files stay in the build directory. A timed run (`--frames`) never opens the high score file, and on Linux the tests also point the per-user preferences directory into the build tree.
 
-Every pull request must pass seven CI jobs, all with warnings as errors. The first six build SDL3 and Box2D from the pinned sources; that dependency build is cached between runs, and only runs on `main` write the cache.
+Every pull request must pass seven CI jobs, all with warnings as errors. The first six build SDL3 and Box2D from the pinned sources, which are fetched and verified on every run. Only SDL's compiled objects are cached between runs, never source code, and only runs on `main` write the cache.
 
 - macOS, with and without sanitizers.
 - macOS Release, checked for build paths in the binary, system-only libraries and the hardened runtime.
 - Linux with GCC and with clang, both under sanitizers.
-- Linux Release with GCC, with the hardening checked by `readelf`.
+- Linux Release with GCC, with the hardening checked: `readelf` on the binary for what the linker decides, and `tools/check_hardening.py` for the compiler flags of the game's own files and the stack-protector and FORTIFY references in two of its objects (the binary cannot show those, because the statically linked SDL has them too).
 - A two minute libFuzzer run over the parsers.
 
 An eighth job, not required, builds and tests on Linux with clang and libc++ under sanitizers. libc++ is the standard library macOS uses, so a missing include shows up there before it breaks the macOS jobs.
@@ -162,8 +164,8 @@ The five best games are kept in a small text file in the per-user preferences di
 
 A game that makes the table asks for initials: type letters, or use Up and Down to change one, Enter to confirm each, Left or Backspace to go back, Right to move on, Escape to accept as shown. The last initials entered are offered again.
 
-- It is written to a new, uniquely named, owner-only temporary file, flushed to disk and renamed into place, so a crash cannot leave half a table and no existing file or link is ever written through. The temporary file is named `highscores.txt.tmp-` and six more characters; one left by an interrupted save is removed at a later start, once it is a minute old. Only regular files with exactly such a name are removed. (These link and permission protections are POSIX; other platforms use plain SDL file calls with the same size limit.)
-- On load it must be a regular file, not a link, of at most 512 bytes and every line is validated strictly (digits only, in range, in order, initials A to Z or dashes). Anything else is set aside as `highscores.txt.bad` and the table starts empty; it is never partly trusted. A file that cannot be read at all is left where it is, and nothing is saved that run.
+- It is written to a new, uniquely named, owner-only temporary file, flushed to disk and renamed into place, so a crash cannot leave half a table and no existing file or link is ever written through. Where the file system has no flush to offer, the save goes ahead without one; a flush that fails stops it. The temporary file is named `highscores.txt.tmp-` and six more characters; one left by an interrupted save is removed at a later start, once it is a minute old. Only regular files with exactly such a name are removed. (These link and permission protections are POSIX; other platforms use plain SDL file calls with the same size limit.)
+- On load it must be a regular file, not a link, of at most 512 bytes and every line is validated strictly (digits only, in range, in order, initials A to Z or dashes). Anything else is set aside as `highscores.txt.bad`, or `.bad.1` to `.bad.9` when earlier ones are still there (a file set aside is never replaced), and the table starts empty; it is never partly trusted. If all ten names are taken the file stays where it is and nothing is saved that run. A file that cannot be read at all is left where it is, and nothing is saved that run.
 - Files from before initials were added are still read; their entries show dashes.
 
 ## Sound
@@ -197,7 +199,7 @@ The background tune (`src/core/Music`) is an original eight-bar loop for bass, a
 - `tools/gimp` GIMP 3 Python scripts that generate every asset, so art is reproducible.
 - `tools/snapshot` development tool (`pinball_snapshot`) that plays the game headless with scripted input and writes one rendered frame to a PNG, with no window. `ctest` uses it as a rendering smoke test.
 - `tools/layout_dump` development tool (`pinball_layout`) that prints the table geometry as JSON for the art scripts.
-- `tools/check_assets.py`, `tools/test_asset_integrity.py` asset checks run by `ctest`. `tools/make_font.py` regenerates the pixel font header. `tools/check_pins.sh` compares the pinned dependencies with upstream.
+- `tools/check_assets.py`, `tools/test_asset_integrity.py` asset checks run by `ctest`. `tools/make_font.py` regenerates the pixel font header. `tools/check_pins.sh` compares the pinned dependencies with upstream. `tools/check_hardening.py` and `tools/check_deps_cache.sh` are CI's checks of the compiler hardening and of what its cache restored.
 - `tests` unit tests and headless smoke tests, run by `ctest`. `tests/fuzz` holds the fuzzer, its seed corpus and dictionary.
 - `cmake` hardening flags, the pinned dependencies and the asset manifest generator.
 - `.github/workflows` CI and the weekly dependency pin check.
@@ -240,7 +242,7 @@ Regeneration is reproducible: two-colour gradients are drawn without dithering (
 
 Two GIMP behaviours the helpers in `tools/gimp/common.py` work around: a selection fill ignores the alpha of the foreground colour (`fill_selection` applies it as the fill opacity), and a two-colour gradient ignores alpha altogether (`alpha_gradient` fades to transparent instead).
 
-To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png` plays 1200 steps (ten seconds) and writes the frame to the current directory. A third argument, `about` or `initials`, draws that screen instead.
+To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png` plays 1200 steps (ten seconds) and writes the frame to the current directory, as a new file readable by its owner; a link with that name is replaced, not followed. A third argument, `about` or `initials`, draws that screen instead.
 
 ### Integrity
 
