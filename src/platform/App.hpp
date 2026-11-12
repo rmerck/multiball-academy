@@ -10,7 +10,7 @@
 #include "core/FixedTimestep.hpp"
 #include "core/Game.hpp"
 #include "core/Input.hpp"
-#include "platform/Assets.hpp"
+#include "platform/TableRenderer.hpp"
 
 namespace pinball {
 
@@ -22,10 +22,6 @@ struct AppOptions {
 // Owns the SDL video subsystem, the window and the renderer, and runs the main loop.
 class App {
  public:
-  // Logical canvas. 4:3 like the original, at twice 640x480.
-  static constexpr int kLogicalWidth = 1280;
-  static constexpr int kLogicalHeight = 960;
-
   // Returns nullptr and logs the SDL error if any resource fails to initialise.
   static std::unique_ptr<App> create(const AppOptions& options);
 
@@ -44,19 +40,13 @@ class App {
     void operator()(SDL_Renderer* r) const noexcept { SDL_DestroyRenderer(r); }
   };
 
-  // Every texture the game draws. Loaded once at startup.
-  struct Textures {
-    TexturePtr ball;
-  };
-
   App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, bool vsync,
-      Textures textures);
+      std::unique_ptr<TableRenderer> table);
 
   void handleEvent(const SDL_Event& event);
   void readInput();
   void latchKey(SDL_Scancode scancode);
   void render(double alpha);
-  void drawTableOutline();
   void toggleFullscreen();
   // True when presenting will not block, so the loop must sleep on its own.
   bool needsManualPacing() const;
@@ -65,14 +55,13 @@ class App {
   // Members are destroyed in reverse order: textures, renderer, then window.
   std::unique_ptr<SDL_Window, WindowDeleter> window_;
   std::unique_ptr<SDL_Renderer, RendererDeleter> renderer_;
-  // Textures belong to the renderer and are declared after it so they are
+  // Its textures belong to the renderer; declared after it so it is
   // destroyed first.
-  Textures textures_;
+  std::unique_ptr<TableRenderer> table_;
   FixedTimestep timestep_{Game::kStepSeconds, 8};
   bool vsync_ = false;
   bool running_ = true;
   bool paused_ = false;
-  std::vector<SDL_FPoint> outline_;
   Game game_;
   InputState input_;
   // Keys that went down since the last simulation step, held until a step

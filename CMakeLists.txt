@@ -40,13 +40,17 @@ target_link_libraries(pinball_core PUBLIC box2d::box2d)
 # PUBLIC so the same warnings, hardening and sanitizer flags reach every consumer.
 pinball_apply_hardening(pinball_core PUBLIC)
 
-add_executable(pinball
-  src/main.cpp
+# SDL-facing code shared by the game and the snapshot tool.
+add_library(pinball_platform STATIC
   src/platform/App.cpp
   src/platform/Assets.cpp
   src/platform/EmbeddedManifest.cpp
+  src/platform/TableRenderer.cpp
 )
-target_link_libraries(pinball PRIVATE pinball_core SDL3::SDL3)
+target_link_libraries(pinball_platform PUBLIC pinball_core SDL3::SDL3)
+
+add_executable(pinball src/main.cpp)
+target_link_libraries(pinball PRIVATE pinball_platform)
 
 # Asset integrity: the size and SHA-256 of every asset are compiled into the
 # executable, which checks the files against them before it starts. The
@@ -60,8 +64,8 @@ add_custom_target(pinball_manifest
   BYPRODUCTS ${PINBALL_MANIFEST}
   COMMENT "Hashing assets"
   VERBATIM)
-add_dependencies(pinball pinball_manifest)
-target_include_directories(pinball PRIVATE ${PINBALL_MANIFEST_DIR})
+add_dependencies(pinball_platform pinball_manifest)
+target_include_directories(pinball_platform PRIVATE ${PINBALL_MANIFEST_DIR})
 set_source_files_properties(src/platform/EmbeddedManifest.cpp PROPERTIES
   OBJECT_DEPENDS ${PINBALL_MANIFEST})
 
@@ -77,6 +81,18 @@ add_custom_target(pinball_assets
 # $<TARGET_FILE_DIR> adds no dependency, so this is not circular. It makes
 # building just the pinball target bring its assets along.
 add_dependencies(pinball pinball_assets)
+
+# Development tool that renders a frame offscreen to a PNG. Not part of the
+# game; built with the tests.
+option(PINBALL_BUILD_TOOLS "Build development tools" ON)
+if(PINBALL_BUILD_TOOLS)
+  add_executable(pinball_snapshot tools/snapshot/main.cpp)
+  target_link_libraries(pinball_snapshot PRIVATE pinball_platform)
+  # It reads the same assets directory, next to the game.
+  set_target_properties(pinball_snapshot PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY $<TARGET_FILE_DIR:pinball>)
+  add_dependencies(pinball_snapshot pinball_assets)
+endif()
 
 include(CTest)
 if(BUILD_TESTING)
@@ -112,6 +128,16 @@ if(BUILD_TESTING)
       COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tools/test_asset_integrity.py
               $<TARGET_FILE:pinball> ${CMAKE_BINARY_DIR}/asset_integrity_scratch)
     set_tests_properties(asset_integrity PROPERTIES TIMEOUT 120)
+  endif()
+
+  # Rendering smoke test: play ten seconds headless and draw a frame. The
+  # tool fails if the frame is blank.
+  if(PINBALL_BUILD_TOOLS)
+    add_test(NAME render_snapshot
+      COMMAND pinball_snapshot 1200 render_snapshot.png
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_tests_properties(render_snapshot PROPERTIES
+      ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 60)
   endif()
 
   set(PINBALL_HEADLESS_ENV "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")

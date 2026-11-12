@@ -1,10 +1,8 @@
 #include "platform/App.hpp"
 
-#include <cmath>
-#include <cstddef>
 #include <utility>
 
-#include "core/TableLayout.hpp"
+#include "platform/Canvas.hpp"
 
 namespace pinball {
 
@@ -59,7 +57,7 @@ std::unique_ptr<App> App::create(const AppOptions& options) {
   }
 
   std::unique_ptr<SDL_Window, WindowDeleter> window(
-      SDL_CreateWindow("Space Cadet Pinball", kLogicalWidth, kLogicalHeight,
+      SDL_CreateWindow("Space Cadet Pinball", kCanvasWidth, kCanvasHeight,
                        SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY));
   if (!window) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_CreateWindow failed: %s", SDL_GetError());
@@ -79,47 +77,35 @@ std::unique_ptr<App> App::create(const AppOptions& options) {
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "VSync refused, pacing manually: %s",
                 SDL_GetError());
   }
-  if (!SDL_SetRenderLogicalPresentation(renderer.get(), kLogicalWidth, kLogicalHeight,
+  if (!SDL_SetRenderLogicalPresentation(renderer.get(), kCanvasWidth, kCanvasHeight,
                                         SDL_LOGICAL_PRESENTATION_LETTERBOX)) {
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Logical presentation failed: %s", SDL_GetError());
   }
-  SDL_SetWindowMinimumSize(window.get(), kLogicalWidth / 4, kLogicalHeight / 4);
+  SDL_SetWindowMinimumSize(window.get(), kCanvasWidth / 4, kCanvasHeight / 4);
 
-  // A missing or damaged asset is fatal: fail at startup, not mid-game.
   // (The Game inside App can throw if the physics world cannot be created;
   // main reports that.)
-  Textures textures;
-  textures.ball = assets.loadTexture(renderer.get(), "sprites/ball.png");
-  if (!textures.ball) {
+  std::unique_ptr<TableRenderer> table = TableRenderer::create(renderer.get(), assets);
+  if (!table) {
     return nullptr;
   }
 
   std::unique_ptr<App> app(
-      new App(options, window.release(), renderer.release(), vsync, std::move(textures)));
+      new App(options, window.release(), renderer.release(), vsync, std::move(table)));
   session.release();
   return app;
 }
 
 App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, bool vsync,
-         Textures textures)
+         std::unique_ptr<TableRenderer> table)
     : options_(options),
       window_(window),
       renderer_(renderer),
-      textures_(std::move(textures)),
-      vsync_(vsync) {
-  // Built once: the shell outline as a closed strip for debug drawing.
-  const std::vector<Vec2> shell = table::outerBoundary();
-  outline_.reserve(shell.size() + 1U);
-  for (const Vec2 p : shell) {
-    outline_.push_back({p.x, p.y});
-  }
-  if (!shell.empty()) {
-    outline_.push_back({shell.front().x, shell.front().y});
-  }
-}
+      table_(std::move(table)),
+      vsync_(vsync) {}
 
 App::~App() {
-  textures_ = Textures{};
+  table_.reset();
   renderer_.reset();
   window_.reset();
   SDL_QuitSubSystem(SDL_INIT_VIDEO);
@@ -276,58 +262,6 @@ void App::toggleFullscreen() {
   }
 }
 
-void App::drawTableOutline() {
-  SDL_Renderer* r = renderer_.get();
-  SDL_SetRenderDrawColor(r, 120, 150, 230, SDL_ALPHA_OPAQUE);
-
-  // Outer shell, closed.
-  if (outline_.size() >= 2) {
-    SDL_RenderLines(r, outline_.data(), static_cast<int>(outline_.size()));
-  }
-  // Interior walls as their centre lines.
-  for (const table::Capsule& wall : table::kWalls) {
-    SDL_RenderLine(r, wall.a.x, wall.a.y, wall.b.x, wall.b.y);
-  }
-  const auto drawTriangle = [r](const table::Triangle& triangle) {
-    for (std::size_t i = 0; i < 3; ++i) {
-      const Vec2 a = triangle.points[i];
-      const Vec2 b = triangle.points[(i + 1) % 3];
-      SDL_RenderLine(r, a.x, a.y, b.x, b.y);
-    }
-  };
-  for (const table::Triangle& sling : table::kSlingshots) {
-    drawTriangle(sling);
-  }
-  drawTriangle(table::kMedalIsland);
-
-  // Holes and rollovers as placeholder markers.
-  for (const table::Hole& hole : table::kHoles) {
-    SDL_SetRenderDrawColor(r, 200, 80, 200, SDL_ALPHA_OPAQUE);
-    const SDL_FRect box{hole.center.x - table::kHoleRadius, hole.center.y - table::kHoleRadius,
-                        table::kHoleRadius * 2.0F, table::kHoleRadius * 2.0F};
-    SDL_RenderRect(r, &box);
-  }
-  for (const table::Rollover& rollover : table::kRollovers) {
-    SDL_SetRenderDrawColor(r, 80, 200, 120, SDL_ALPHA_OPAQUE);
-    const float half = rollover.zone.radius;
-    const SDL_FRect box{rollover.zone.center.x - half, rollover.zone.center.y - 2.0F, half * 2.0F,
-                        4.0F};
-    SDL_RenderFillRect(r, &box);
-  }
-
-  // Targets: bright when lit.
-  for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
-    const table::Capsule& c = table::kTargets[i].shape;
-    if (game_.targetLit(i)) {
-      SDL_SetRenderDrawColor(r, 255, 230, 90, SDL_ALPHA_OPAQUE);
-    } else {
-      SDL_SetRenderDrawColor(r, 150, 90, 40, SDL_ALPHA_OPAQUE);
-    }
-    SDL_RenderLine(r, c.a.x, c.a.y, c.b.x, c.b.y);
-    SDL_RenderLine(r, c.a.x + 1.0F, c.a.y + 1.0F, c.b.x + 1.0F, c.b.y + 1.0F);
-  }
-}
-
 void App::render(double /*alpha*/) {
   SDL_Renderer* r = renderer_.get();
 
@@ -335,65 +269,7 @@ void App::render(double /*alpha*/) {
   SDL_SetRenderDrawColor(r, 0, 0, 0, SDL_ALPHA_OPAQUE);
   SDL_RenderClear(r);
 
-  // Playfield on the left at 1:1 with table coordinates, info panel on the right.
-  const SDL_FRect playfield{0.0F, 0.0F, table::kWidth, table::kHeight};
-  const SDL_FRect panel{table::kWidth, 0.0F, static_cast<float>(kLogicalWidth) - table::kWidth,
-                        static_cast<float>(kLogicalHeight)};
-  SDL_SetRenderDrawColor(r, 10, 14, 40, SDL_ALPHA_OPAQUE);
-  SDL_RenderFillRect(r, &playfield);
-
-  // Placeholder outline until the table art lands.
-  drawTableOutline();
-
-  // Bumpers as placeholder squares that brighten when hit.
-  for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
-    const table::Circle& c = table::kBumpers[i].shape;
-    const float flash = game_.bumperFlash(i);
-    const auto level = static_cast<Uint8>(90.0F + 165.0F * flash);
-    SDL_SetRenderDrawColor(r, level, level, 90, SDL_ALPHA_OPAQUE);
-    const float side = c.radius * 1.41421356F;
-    const SDL_FRect box{c.center.x - side * 0.5F, c.center.y - side * 0.5F, side, side};
-    SDL_RenderFillRect(r, &box);
-  }
-
-  // Plunger block and, when closed, the lane gate.
-  const SDL_FRect plunger{table::kLaneCenterX - table::kPlungerWidth * 0.5F,
-                          table::kPlungerRestTopY + game_.plungerPull(), table::kPlungerWidth,
-                          table::kPlungerHeight};
-  SDL_SetRenderDrawColor(r, 170, 170, 180, SDL_ALPHA_OPAQUE);
-  SDL_RenderFillRect(r, &plunger);
-  if (game_.laneGateClosed()) {
-    SDL_RenderLine(r, table::kLaneGate.a.x, table::kLaneGate.a.y, table::kLaneGate.b.x,
-                   table::kLaneGate.b.y);
-  }
-
-  // Flippers as thick placeholder lines along their centre lines.
-  SDL_SetRenderDrawColor(r, 230, 120, 60, SDL_ALPHA_OPAQUE);
-  for (std::size_t i = 0; i < table::kFlippers.size(); ++i) {
-    const FlipperView flipper = game_.flipper(i);
-    const float dx = std::cos(flipper.angle);
-    const float dy = std::sin(flipper.angle);
-    for (int offset = -3; offset <= 3; ++offset) {
-      const float ox = -dy * static_cast<float>(offset);
-      const float oy = dx * static_cast<float>(offset);
-      SDL_RenderLine(r, flipper.pivot.x + ox, flipper.pivot.y + oy,
-                     flipper.pivot.x + dx * table::kFlipperLength + ox,
-                     flipper.pivot.y + dy * table::kFlipperLength + oy);
-    }
-  }
-
-  const BallView ball = game_.ball();
-  const float radius = table::kBallRadius * ball.scale;
-  const SDL_FRect ballRect{ball.position.x - radius, ball.position.y - radius, radius * 2.0F,
-                           radius * 2.0F};
-  SDL_SetTextureAlphaMod(textures_.ball.get(), paused_ ? 128 : 255);
-  if (ball.visible) {
-    SDL_RenderTexture(r, textures_.ball.get(), nullptr, &ballRect);
-  }
-
-  // Drawn last so nothing on the playfield can spill over the panel.
-  SDL_SetRenderDrawColor(r, 24, 24, 30, SDL_ALPHA_OPAQUE);
-  SDL_RenderFillRect(r, &panel);
+  table_->draw(r, game_, paused_);
 
   SDL_RenderPresent(r);
 }
