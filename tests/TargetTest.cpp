@@ -133,6 +133,26 @@ void testTargets() {
     CHECK(game.slingshotFlash(999) == 0.0F);
   }
 
+  {  // No ledge on the wall-mounted banks: a ball running down either side
+     // wall, slow or fast, does not come to rest on the top target.
+    for (const float x : {table::kWallLeft + table::kBallRadius + 0.5F,
+                          table::kLaneWallX - table::kWallRadius - table::kBallRadius - 0.5F}) {
+      for (const float speed : {0.0F, 150.0F, 600.0F}) {
+        PhysicsWorld world;
+        world.resetBall({x, 400.0F}, {0.0F, speed});
+        int restingSteps = 0;
+        for (int step = 0; step < 120 * 6; ++step) {
+          world.step(kStep);
+          const Vec2 p = world.ballPosition();
+          const Vec2 v = world.ballVelocity();
+          const bool nearBank = p.y > 470.0F && p.y < 640.0F && std::fabs(p.x - x) < 40.0F;
+          restingSteps = nearBank && v.x * v.x + v.y * v.y < 25.0F ? restingSteps + 1 : 0;
+        }
+        CHECK(restingSteps < 60);
+      }
+    }
+  }
+
   {  // A ball dropped on the medal island's roof rolls off; it cannot rest there.
     for (const float dx : {-40.0F, -10.0F, 0.5F, 12.0F, 45.0F}) {
       PhysicsWorld world;

@@ -37,41 +37,84 @@ void testBumpers() {
     }
   }
 
-  // A ball sent into each bumper from its left is kicked back out,
-  // heading away from the bumper, and exactly that bumper reports a hit.
+  // A ball sent into each bumper from its left is kicked back out, heading
+  // away from the bumper, and that bumper reports exactly one hit for the
+  // whole touch, however long the ball takes to leave.
   for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
     const table::Circle& c = table::kBumpers[i].shape;
     PhysicsWorld world;
     const Vec2 start{c.center.x - c.radius - table::kBallRadius - 30.0F, c.center.y + 6.0F};
     // Fast enough that gravity does not carry it under the bumper first.
     world.resetBall(start, {600.0F, 0.0F});
-    bool hit = false;
-    std::size_t hitCount = 0;
+    std::size_t hitsOnThis = 0;
+    bool measured = false;
     float speedAfter = 0.0F;
     Vec2 away{};
-    for (int step = 0; step < 120 && !hit; ++step) {
+    Vec2 velocityAfter{};
+    for (int step = 0; step < 40; ++step) {
       world.step(kStep);
       for (const PhysicsEvent& e : world.events()) {
-        CHECK(e.type == PhysicsEvent::Type::Hit);
-        CHECK(e.element.kind == table::ElementKind::Bumper);
-        CHECK(e.element.index == i);
         CHECK(e.speed >= 0.0F);
-        hit = true;
-        ++hitCount;
+        // The kicked ball may go on to strike something else; only this
+        // bumper's own reports are counted.
+        if (e.element.kind == table::ElementKind::Bumper && e.element.index == i) {
+          ++hitsOnThis;
+        }
       }
-      if (hit) {
-        speedAfter = length(world.ballVelocity());
+      if (hitsOnThis > 0 && !measured) {
+        measured = true;
+        velocityAfter = world.ballVelocity();
+        speedAfter = length(velocityAfter);
         away = world.ballPosition() - c.center;
       }
     }
-    CHECK(hit);
-    CHECK(hitCount == 1);
+    CHECK(hitsOnThis == 1);
     const float kick = PhysicsWorld::kBumperKickSpeed * PhysicsWorld::kPixelsPerMeter;
     CHECK(speedAfter > kick * 0.9F);
     CHECK(speedAfter < kick * 2.5F);
-    // Moving away from the bumper centre.
-    const Vec2 v = world.ballVelocity();
-    CHECK(v.x * away.x + v.y * away.y > 0.0F);
+    CHECK(velocityAfter.x * away.x + velocityAfter.y * away.y > 0.0F);
+  }
+
+  {  // A near miss is not a hit: a ball passing a pixel and a half clear of
+     // a bumper is neither kicked nor reported.
+    const table::Circle& c = table::kBumpers[7].shape;
+    PhysicsWorld world;
+    const float x = c.center.x + c.radius + table::kBallRadius + 1.5F;
+    world.resetBall({x, c.center.y - 60.0F}, {0.0F, 300.0F});
+    std::size_t events = 0;
+    for (int step = 0; step < 40; ++step) {
+      world.step(kStep);
+      events += world.events().size();
+    }
+    CHECK(events == 0);
+    CHECK(std::fabs(world.ballPosition().x - x) < 1.0F);
+  }
+
+  {  // Two bumpers one above the other cannot hold a ball bouncing between
+     // them: dropped dead centre, it gets away.
+    PhysicsWorld world;
+    world.resetBall({table::kFieldCenterX, 300.0F}, {0.0F, 0.0F});
+    bool escaped = false;
+    for (int step = 0; step < 120 * 10 && !escaped; ++step) {
+      world.step(kStep);
+      escaped = std::fabs(world.ballPosition().x - table::kFieldCenterX) > 60.0F ||
+                world.ballPosition().y > 420.0F;
+    }
+    CHECK(escaped);
+  }
+
+  {  // A rejected step leaves no stale events.
+    const table::Circle& c = table::kBumpers[0].shape;
+    PhysicsWorld world;
+    world.resetBall({c.center.x - c.radius - table::kBallRadius - 6.0F, c.center.y}, {900.0F, 0.0F});
+    bool sawHit = false;
+    for (int step = 0; step < 20 && !sawHit; ++step) {
+      world.step(kStep);
+      sawHit = !world.events().empty();
+    }
+    CHECK(sawHit);
+    world.step(-1.0F);
+    CHECK(world.events().empty());
   }
 
   {  // Events are cleared every step and never exceed the cap.

@@ -16,7 +16,7 @@ struct PhysicsEvent {
   enum class Type : std::uint8_t { Hit };
   Type type = Type::Hit;
   table::ElementRef element;
-  float speed = 0.0F;  // Ball speed just before the event, pixels per second.
+  float speed = 0.0F;  // Ball speed when the event was recorded, pixels per second.
 };
 
 // Owns the Box2D world: the static table and the ball. All values crossing
@@ -103,6 +103,7 @@ class PhysicsWorld {
   void buildPlunger();
   void buildBumpers();
   void collectEvents();
+  void checkBumpers();
   void kickFromBumper(const table::Bumper& bumper);
   void buildTargets();
   // Kicks the ball if it is on the slingshot's kicker face. Returns whether it did.
@@ -127,6 +128,8 @@ class PhysicsWorld {
   bool plungerHeld_ = false;
 
   std::vector<PhysicsEvent> events_;
+  // Bumpers the ball is touching, so each touch kicks once.
+  std::array<bool, table::kBumpers.size()> touchingBumper_{};
 
   b2BodyId laneGate_{};
   bool laneGateClosed_ = false;

@@ -146,7 +146,9 @@ inline constexpr std::array<Bumper, 8> kBumpers{{
     {{{kFieldCenterX, 232.0F}, 24.0F}, BumperGroup::Attack},
     {{{kFieldCenterX - 72.5F, 292.0F}, 24.0F}, BumperGroup::Attack},
     {{{kFieldCenterX + 72.5F, 292.0F}, 24.0F}, BumperGroup::Attack},
-    {{{kFieldCenterX, 352.0F}, 24.0F}, BumperGroup::Attack},
+    // One pixel off the centre line: directly below the top bumper, a ball
+    // could bounce straight up and down between the two for ever.
+    {{{kFieldCenterX + 1.0F, 352.0F}, 24.0F}, BumperGroup::Attack},
     // Engine bumpers: a triangle on the left.
     {{{150.0F, 340.0F}, 22.0F}, BumperGroup::Engine},
     {{{232.0F, 372.0F}, 22.0F}, BumperGroup::Engine},
@@ -158,6 +160,8 @@ inline constexpr std::array<Bumper, 8> kBumpers{{
 // Stand-up targets: short rubber-faced bars that register a hit.
 enum class TargetBank : std::uint8_t { Booster, Medal, Mission, Multiplier };
 inline constexpr std::size_t kTargetBankCount = 4;
+static_assert(static_cast<std::size_t>(TargetBank::Multiplier) + 1 == kTargetBankCount,
+              "kTargetBankCount must match the TargetBank enumeration");
 struct Target {
   Capsule shape;
   TargetBank bank;
@@ -165,7 +169,10 @@ struct Target {
 
 inline constexpr float kTargetRadius = 5.0F;
 // Wall-mounted banks sit just inside the side walls, above the lane guides.
-inline constexpr float kWallTargetX = 52.0F;
+// The centre line sits one target radius off the wall, so the bar is flush
+// against it. Further out, its top end and the wall formed a ledge that a
+// ball could rest on.
+inline constexpr float kWallTargetX = kWallLeft + kTargetRadius;
 inline constexpr Capsule kWallTargetTop{{kWallTargetX, 528.0F}, {kWallTargetX, 560.0F},
                                         kTargetRadius};
 inline constexpr Capsule kWallTargetMiddle{{kWallTargetX, 566.0F}, {kWallTargetX, 598.0F},
