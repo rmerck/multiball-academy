@@ -262,13 +262,13 @@ void TableRenderer::drawPlungerAndGate(SDL_Renderer* r, const Game& game) const 
   }
 }
 
-void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game) const {
+void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game, float alpha) const {
   SDL_Texture* const sprite = textures_.flipper.get();
   // The pivot inside the sprite: the centre of the base circle.
   const SDL_FPoint pivotInSprite{kFlipperSpriteMargin + table::kFlipperBaseRadius,
                                  kFlipperSpriteHeight * 0.5F};
   for (std::size_t i = 0; i < table::kFlippers.size(); ++i) {
-    const FlipperView flipper = game.flipper(i);
+    const FlipperView flipper = game.flipper(i, alpha);
     const SDL_FRect dst{flipper.pivot.x - pivotInSprite.x, flipper.pivot.y - pivotInSprite.y,
                         kFlipperSpriteWidth, kFlipperSpriteHeight};
     // The right flipper points left, so its sprite is mirrored top to bottom
@@ -280,8 +280,9 @@ void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game) const {
   }
 }
 
-void TableRenderer::drawBall(SDL_Renderer* r, const Game& game) const {
-  const BallView ball = game.ball();
+void TableRenderer::drawBall(SDL_Renderer* r, const Game& game, float alpha) const {
+  // The shadow and the halo follow the same in-between position as the ball.
+  const BallView ball = game.ball(alpha);
   if (!ball.visible) {
     return;
   }
@@ -308,7 +309,7 @@ void TableRenderer::drawBall(SDL_Renderer* r, const Game& game) const {
   SDL_RenderTexture(r, textures_.ball.get(), nullptr, &dst);
 }
 
-void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed,
+void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha, bool dimmed,
                          const HudExtras& extras) const {
   if (r == nullptr) {
     return;
@@ -333,8 +334,8 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed,
   drawTargets(r, game);
   drawBumpers(r, game);
   drawPlungerAndGate(r, game);
-  drawFlippers(r, game);
-  drawBall(r, game);
+  drawFlippers(r, game, alpha);
+  drawBall(r, game, alpha);
 
   if (dimmed) {
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);

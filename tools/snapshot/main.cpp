@@ -126,7 +126,8 @@ int run(std::uint32_t steps, const std::string& outputName, Overlay overlay) {
 
     SDL_SetRenderDrawColor(renderer.get(), 0, 0, 0, SDL_ALPHA_OPAQUE);
     SDL_RenderClear(renderer.get());
-    table->draw(renderer.get(), game, false);
+    // Alpha 1: the latest step exactly, so the picture depends only on the step count.
+    table->draw(renderer.get(), game, 1.0F, false);
     if (overlay == Overlay::About) {
       // With a sample table, so the layout of a full list can be checked.
       pinball::HighScores sample;
