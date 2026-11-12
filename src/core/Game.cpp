@@ -71,8 +71,6 @@ void Game::handleEvents() {
         break;
       case table::ElementKind::Hole:
         ++holeCounts_[index];
-        heldBy_ = index;
-        heldSteps_ = 0;
         break;
       case table::ElementKind::None:
         break;
@@ -81,7 +79,15 @@ void Game::handleEvents() {
 }
 
 void Game::updateHeldBall() {
-  if (!physics_.ballHeld()) {
+  const bool held = physics_.ballHeld();
+  if (held && !wasHeld_) {
+    // Taken from the physics state itself, not from the event list, which
+    // can drop entries when a step is very busy.
+    heldBy_ = std::min(physics_.heldHole(), table::kHoles.size() - 1);
+    heldSteps_ = 0;
+  }
+  wasHeld_ = held;
+  if (!held) {
     return;
   }
   ++heldSteps_;
@@ -95,8 +101,18 @@ void Game::updateBallSearch(const InputState& input) {
   const Vec2 p = physics_.ballPosition();
   // Not stuck: off the table in a hole, waiting on the plunger, or being
   // cradled on a raised flipper.
-  const bool exempt = physics_.ballHeld() || p.x > table::kLaneWallX || input.leftFlipper ||
-                      input.rightFlipper;
+  // A cradle means resting on a flipper that is being held up, so only a
+  // ball within reach of a held flipper counts.
+  const auto nearFlipper = [p](std::size_t index) {
+    const Vec2 pivot = table::kFlippers[index].pivot;
+    const float fx = p.x - pivot.x;
+    const float fy = p.y - pivot.y;
+    constexpr float kReach = table::kFlipperLength + 3.0F * table::kBallRadius;
+    return fx * fx + fy * fy < kReach * kReach;
+  };
+  const bool cradled = (input.leftFlipper && nearFlipper(table::kLeftFlipperIndex)) ||
+                       (input.rightFlipper && nearFlipper(table::kRightFlipperIndex));
+  const bool exempt = physics_.ballHeld() || p.x > table::kLaneWallX || cradled;
   const float dx = p.x - searchAnchor_.x;
   const float dy = p.y - searchAnchor_.y;
   constexpr float kMovedPixels = 3.0F;

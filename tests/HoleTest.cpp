@@ -194,6 +194,47 @@ void testHoles() {
           PhysicsWorld::kMaxBallSpeed * PhysicsWorld::kPixelsPerMeter * 1.001F);
   }
 
+  {  // No pocket between the arch deflector and the first lane post: their
+     // surfaces are more than a ball apart, and balls dropped there move on.
+    const Vec2 tip = table::kArchDeflector.b;
+    const table::Capsule post = table::lanePost(-1.5F);
+    CHECK(distance(tip, post.a) - table::kArchDeflector.radius - post.radius >
+          2.0F * table::kBallRadius + 4.0F);
+    for (const float x : {252.0F, 263.0F, 268.0F, 281.0F}) {
+      PhysicsWorld world;
+      world.resetBall({x, 90.0F}, {0.0F, 0.0F});
+      for (int s = 0; s < 120 * 5 && !world.ballHeld(); ++s) {
+        world.step(kStep);
+      }
+      CHECK(world.ballHeld() || world.ballPosition().y > 190.0F);
+    }
+  }
+
+  {  // The hyperspace chute returns the ball to the left flipper, not down
+     // the middle: released untouched, it meets the bat.
+    std::size_t chute = 0;
+    for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
+      if (table::kHoles[i].type == table::HoleType::Hyperspace) {
+        chute = i;
+      }
+    }
+    PhysicsWorld world;
+    // Drop it in, then let the chute return it the way the game does.
+    world.resetBall(table::kHoles[chute].center, {0.0F, 0.0F});
+    world.step(kStep);
+    CHECK(world.ballHeld());
+    world.releaseBall(table::kHoles[chute].exitPosition, table::kHoles[chute].exitVelocity);
+    bool reachedBat = false;
+    for (int s = 0; s < 240 && !reachedBat; ++s) {
+      world.step(kStep);
+      const Vec2 p = world.ballPosition();
+      const Vec2 pivot = table::kLeftFlipper.pivot;
+      reachedBat = p.x > pivot.x && p.x < pivot.x + table::kFlipperLength && p.y > pivot.y - 40.0F &&
+                   p.y < pivot.y + 60.0F;
+    }
+    CHECK(reachedBat);
+  }
+
   {  // Ball search never fires for a ball waiting on the plunger.
     Game game;
     const InputState idle;
