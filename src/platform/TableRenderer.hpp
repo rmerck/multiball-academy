@@ -6,6 +6,7 @@
 
 #include "core/Game.hpp"
 #include "platform/Assets.hpp"
+#include "platform/Hud.hpp"
 
 namespace pinball {
 
@@ -18,7 +19,8 @@ class TableRenderer {
 
   // Draws one frame. Does not clear or present. dimmed darkens the playfield,
   // used while paused.
-  void draw(SDL_Renderer* renderer, const Game& game, bool dimmed) const;
+  void draw(SDL_Renderer* renderer, const Game& game, bool dimmed,
+            const HudExtras& extras = {}) const;
 
  private:
   struct Textures {

@@ -257,7 +257,8 @@ void TableRenderer::drawBall(SDL_Renderer* r, const Game& game) const {
   SDL_RenderTexture(r, textures_.ball.get(), nullptr, &dst);
 }
 
-void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed) const {
+void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed,
+                         const HudExtras& extras) const {
   if (r == nullptr) {
     return;
   }
@@ -288,7 +289,7 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed) const {
   SDL_SetRenderViewport(r, nullptr);
   // The panel covers anything the shifted playfield drew past its right edge.
 
-  drawHud(r, textures_.panel.get(), game);
+  drawHud(r, textures_.panel.get(), game, extras);
 }
 
 }  // namespace pinball

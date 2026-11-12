@@ -12,6 +12,7 @@ int main() {
   testFlippers();
   testFormat();
   testGame();
+  testHighScores();
   testHoles();
   testMissions();
   testNudge();

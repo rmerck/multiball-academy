@@ -10,6 +10,7 @@
 #include "core/FixedTimestep.hpp"
 #include "core/Game.hpp"
 #include "core/Input.hpp"
+#include "core/HighScores.hpp"
 #include "core/Sound.hpp"
 #include "platform/AudioOutput.hpp"
 #include "platform/TableRenderer.hpp"
@@ -47,6 +48,7 @@ class App {
 
   void handleEvent(const SDL_Event& event);
   void readInput();
+  void recordFinishedGame();
   void latchKey(SDL_Scancode scancode);
   void render(double alpha);
   void toggleFullscreen();
@@ -68,6 +70,10 @@ class App {
   std::unique_ptr<AudioOutput> audio_;
   SoundMixer mixer_;
   Game game_;
+  // Best games on this machine, loaded at start and saved when a game ends.
+  HighScores highScores_;
+  bool wasGameOver_ = false;
+  bool newHighScore_ = false;
   InputState input_;
   // Keys that went down since the last simulation step, held until a step
   // has consumed them.

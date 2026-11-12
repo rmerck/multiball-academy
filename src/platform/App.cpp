@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "platform/Canvas.hpp"
+#include "platform/ScoreStore.hpp"
 
 namespace pinball {
 
@@ -103,7 +104,8 @@ App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, 
       renderer_(renderer),
       table_(std::move(table)),
       vsync_(vsync),
-      audio_(AudioOutput::open()) {}
+      audio_(AudioOutput::open()),
+      highScores_(loadHighScores()) {}
 
 App::~App() {
   table_.reset();
@@ -149,6 +151,7 @@ int App::run() {
         // The simulation has seen every latched press at least once.
         latched_ = InputState{};
       }
+      recordFinishedGame();
     }
 
     // The accumulator is frozen while paused, so alpha is stable and nothing snaps.
@@ -261,6 +264,22 @@ void App::readInput() {
   }
 }
 
+void App::recordFinishedGame() {
+  const bool over = game_.gameOver();
+  if (over && !wasGameOver_) {
+    // The game has just ended: enter it in the table and save if it made it.
+    const HighScore entry{game_.rules().score(),
+                          static_cast<std::uint8_t>(game_.rules().missions().rank())};
+    newHighScore_ = highScores_.submit(entry) < HighScores::kCapacity;
+    if (newHighScore_) {
+      saveHighScores(highScores_);
+    }
+  } else if (!over) {
+    newHighScore_ = false;
+  }
+  wasGameOver_ = over;
+}
+
 void App::toggleFullscreen() {
   // Ask the window, not a cached flag: the user can also change fullscreen
   // through the window manager.
@@ -277,7 +296,7 @@ void App::render(double /*alpha*/) {
   SDL_SetRenderDrawColor(r, 0, 0, 0, SDL_ALPHA_OPAQUE);
   SDL_RenderClear(r);
 
-  table_->draw(r, game_, paused_);
+  table_->draw(r, game_, paused_, HudExtras{highScores_.best(), newHighScore_});
 
   SDL_RenderPresent(r);
 }
