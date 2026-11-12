@@ -53,6 +53,7 @@ add_library(pinball_platform STATIC
   src/platform/AudioOutput.cpp
   src/platform/EmbeddedManifest.cpp
   src/platform/Hud.cpp
+  src/platform/InitialsScreen.cpp
   src/platform/ScoreStore.cpp
   src/platform/TableRenderer.cpp
   src/platform/Text.cpp
@@ -167,6 +168,11 @@ if(BUILD_TESTING)
       COMMAND pinball_snapshot 60 render_about.png about
       WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(render_about PROPERTIES
+      ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 60)
+    add_test(NAME render_initials
+      COMMAND pinball_snapshot 60 render_initials.png initials
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_tests_properties(render_initials PROPERTIES
       ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 60)
     set_tests_properties(render_snapshot PROPERTIES
       ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 60)

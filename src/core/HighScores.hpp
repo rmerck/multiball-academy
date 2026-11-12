@@ -8,9 +8,15 @@
 
 namespace pinball {
 
+// A player's three initials: capital letters, or dashes when none were given.
+using Initials = std::array<char, 3>;
+inline constexpr Initials kNoInitials{'-', '-', '-'};
+constexpr bool isInitialsChar(char c) noexcept { return (c >= 'A' && c <= 'Z') || c == '-'; }
+
 struct HighScore {
   std::uint64_t score = 0;
   std::uint8_t rank = 0;  // Rank index reached, 0 (Cadet) to 8.
+  Initials initials = kNoInitials;
 };
 
 // The best games on this machine, highest first. Knows how to turn itself
@@ -35,9 +41,10 @@ class HighScores {
   // position, or kCapacity if it did not make the table. Zero never does.
   std::size_t submit(HighScore entry) noexcept;
 
-  // Text form: a header line then one "score rank" line per entry.
+  // Text form: a header line then one "score rank initials" line per entry.
   std::string serialize() const;
-  // Replaces the table with what text describes. Anything malformed, out of
+  // Replaces the table with what text describes. Also reads the first file
+  // format, which had no initials. Anything malformed, out of
   // range or out of order makes the whole text invalid: the table is left
   // empty and false is returned. Never trusts the input.
   bool parse(std::string_view text) noexcept;
