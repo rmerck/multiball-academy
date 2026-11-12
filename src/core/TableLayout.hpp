@@ -78,11 +78,33 @@ inline constexpr Capsule kLeftGuideLower{{90.0F, 743.2F}, {247.0F, 844.8F}, kWal
 // Hangs from the top of the arch, left of centre. A launched ball riding the
 // arch strikes it and drops into the top of the field instead of orbiting
 // all the way round to the left wall.
-inline constexpr Capsule kArchDeflector{{250.0F, 58.0F}, {258.0F, 98.0F}, kWallRadius};
+// Placed so that its tip stays more than a ball's width from the nearest
+// lane post; closer, the two made a pocket.
+inline constexpr Capsule kArchDeflector{{228.0F, 66.0F}, {238.0F, 104.0F}, kWallRadius};
 
-inline constexpr std::array<Capsule, 6> kWalls{{
+// Posts separating the three re-entry lanes at the top of the field.
+inline constexpr float kLanePitch = 55.5F;
+inline constexpr float kLanePostTopY = 125.0F;
+inline constexpr float kLanePostBottomY = 175.0F;
+constexpr Capsule lanePost(float offsetInPitches) noexcept {
+  const float x = kFieldCenterX + offsetInPitches * kLanePitch;
+  return {{x, kLanePostTopY}, {x, kLanePostBottomY}, kWallRadius};
+}
+
+// A sloped cap from the side wall down to the top of each wall-mounted target
+// bank. Without it a ball can come to rest on the end of the top target,
+// held against the wall.
+inline constexpr Capsule kLeftBankCap{{42.0F, 492.0F}, {60.0F, 524.0F}, 4.0F};
+
+inline constexpr std::array<Capsule, 12> kWalls{{
     {{kLaneWallX, kLaneWallTopY}, {kLaneWallX, kFloorY}, kWallRadius},
     kArchDeflector,
+    lanePost(-1.5F),
+    lanePost(-0.5F),
+    lanePost(0.5F),
+    lanePost(1.5F),
+    kLeftBankCap,
+    mirrored(kLeftBankCap),
     kLeftGuideUpper,
     kLeftGuideLower,
     mirrored(kLeftGuideUpper),
@@ -208,9 +230,72 @@ inline constexpr std::array<Target, 11> kTargets{{
     {{{146.0F, 201.0F}, {168.0F, 174.0F}, kTargetRadius}, TargetBank::Multiplier},
 }};
 
+// Rollovers: switches in the playfield that register a ball passing over.
+enum class RolloverGroup : std::uint8_t { ReEntry, Outlane, Inlane };
+struct Rollover {
+  Circle zone;
+  RolloverGroup group;
+};
+inline constexpr float kRolloverRadius = 10.0F;
+inline constexpr float kReEntryY = 150.0F;
+inline constexpr float kReturnLaneY = 700.0F;
+inline constexpr Vec2 kLeftOutlane{65.0F, kReturnLaneY};
+inline constexpr Vec2 kLeftInlane{117.5F, kReturnLaneY};
+
+inline constexpr std::array<Rollover, 7> kRollovers{{
+    {{{kFieldCenterX - kLanePitch, kReEntryY}, kRolloverRadius}, RolloverGroup::ReEntry},
+    {{{kFieldCenterX, kReEntryY}, kRolloverRadius}, RolloverGroup::ReEntry},
+    {{{kFieldCenterX + kLanePitch, kReEntryY}, kRolloverRadius}, RolloverGroup::ReEntry},
+    {{kLeftOutlane, kRolloverRadius}, RolloverGroup::Outlane},
+    {{kLeftInlane, kRolloverRadius}, RolloverGroup::Inlane},
+    {{mirrored(kLeftInlane), kRolloverRadius}, RolloverGroup::Inlane},
+    {{mirrored(kLeftOutlane), kRolloverRadius}, RolloverGroup::Outlane},
+}};
+
+// Holes take the ball off the playfield for a moment and return it somewhere.
+enum class HoleType : std::uint8_t { Wormhole, BlackHole, Hyperspace, Ramp };
+struct Hole {
+  Vec2 center;
+  HoleType type;
+  // Where and how fast the ball comes back, in pixels and pixels per second.
+  Vec2 exitPosition;
+  Vec2 exitVelocity;
+};
+
+// A ball is captured when its centre comes this close to a hole's centre.
+inline constexpr float kHoleCaptureRadius = 9.0F;
+// Drawn size of a hole.
+inline constexpr float kHoleRadius = 15.0F;
+// After returning a ball, a hole ignores it until it has moved this far away.
+inline constexpr float kHoleRearmDistance = 34.0F;
+// The ramp only takes a ball travelling up the table at least this fast.
+inline constexpr float kRampMinUpwardSpeed = 300.0F;
+
+inline constexpr Vec2 kWormholeA{215.0F, 560.0F};
+inline constexpr Vec2 kWormholeB{490.0F, 200.0F};
+inline constexpr Vec2 kWormholeC = mirrored(kWormholeA);
+inline constexpr Vec2 kBlackHole{600.0F, 250.0F};
+inline constexpr Vec2 kHyperspace{636.0F, 455.0F};
+inline constexpr Vec2 kRampEntry{75.0F, 470.0F};
+// The ramp carries the ball over the playfield and drops it into the top of
+// the field, just right of the arch deflector.
+inline constexpr Vec2 kRampExit{286.0F, 100.0F};
+
+inline constexpr std::size_t kWormholeCount = 3;
+// Wormholes come first, in ring order: a ball entering one leaves the next.
+inline constexpr std::array<Hole, 6> kHoles{{
+    {kWormholeA, HoleType::Wormhole, kWormholeB, {-60.0F, 320.0F}},
+    {kWormholeB, HoleType::Wormhole, kWormholeC, {-120.0F, 300.0F}},
+    {kWormholeC, HoleType::Wormhole, kWormholeA, {120.0F, 300.0F}},
+    {kBlackHole, HoleType::BlackHole, kBlackHole, {-220.0F, 420.0F}},
+    // Lobbed across the table to land on the middle of the left flipper.
+    {kHyperspace, HoleType::Hyperspace, kHyperspace, {-420.0F, 100.0F}},
+    {kRampEntry, HoleType::Ramp, kRampExit, {90.0F, 260.0F}},
+}};
+
 // Identifies one interactive element of the table. Stored in physics shapes
 // and carried by events.
-enum class ElementKind : std::uint8_t { None, Bumper, Slingshot, Target };
+enum class ElementKind : std::uint8_t { None, Bumper, Slingshot, Target, Rollover, Hole };
 struct ElementRef {
   ElementKind kind = ElementKind::None;
   std::uint8_t index = 0;
@@ -228,6 +313,10 @@ constexpr std::size_t elementCount(ElementKind kind) noexcept {
       return kSlingshots.size();
     case ElementKind::Target:
       return kTargets.size();
+    case ElementKind::Rollover:
+      return kRollovers.size();
+    case ElementKind::Hole:
+      return kHoles.size();
     case ElementKind::None:
       break;
   }

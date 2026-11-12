@@ -13,7 +13,10 @@ namespace pinball {
 
 // Something that happened to the ball during a step.
 struct PhysicsEvent {
-  enum class Type : std::uint8_t { Hit };
+  // Hit: touched a bumper, slingshot face or target.
+  // Enter: rolled onto a rollover.
+  // Capture: dropped into a hole. The ball is held until releaseBall().
+  enum class Type : std::uint8_t { Hit, Enter, Capture };
   Type type = Type::Hit;
   table::ElementRef element;
   float speed = 0.0F;  // Ball speed when the event was recorded, pixels per second.
@@ -87,9 +90,21 @@ class PhysicsWorld {
   Vec2 ballVelocity() const;
   float ballAngle() const;
 
+  // True while a hole is holding the ball off the playfield.
+  bool ballHeld() const noexcept { return ballHeld_; }
+  // Index of the hole holding the ball. Meaningful only while ballHeld().
+  std::size_t heldHole() const noexcept { return heldHole_; }
+  // Returns a held ball to play at position with velocity. The hole it was
+  // in, and the hole at the exit, ignore it until it has moved clear.
+  void releaseBall(Vec2 position, Vec2 velocity);
+
   // Teleports the ball and sets its velocity (pixels and pixels per second).
   // Non-finite input is ignored.
   void resetBall(Vec2 position, Vec2 velocity);
+
+  // Adds velocity (pixels per second) to a ball in play. Ignored while the
+  // ball is held or if the value is not finite.
+  void pushBall(Vec2 velocityChange);
 
   // False if the ball has left the table shell or its state is not finite.
   // The caller should reset the ball when this happens.
@@ -106,6 +121,8 @@ class PhysicsWorld {
   void checkBumpers();
   void kickFromBumper(const table::Bumper& bumper);
   void buildTargets();
+  void checkZones();
+  void pushEvent(PhysicsEvent::Type type, table::ElementRef element, float speed);
   // Kicks the ball if it is on the slingshot's kicker face. Returns whether it did.
   bool kickFromSlingshot(const table::Triangle& sling);
   void drivePlunger(float stepSeconds);
@@ -130,6 +147,13 @@ class PhysicsWorld {
   std::vector<PhysicsEvent> events_;
   // Bumpers the ball is touching, so each touch kicks once.
   std::array<bool, table::kBumpers.size()> touchingBumper_{};
+
+  bool ballHeld_ = false;
+  std::size_t heldHole_ = 0;
+  // Rollovers the ball is currently on, so each pass reports once.
+  std::array<bool, table::kRollovers.size()> onRollover_{};
+  // Holes that will take the ball. A hole disarms when it returns a ball.
+  std::array<bool, table::kHoles.size()> holeArmed_{};
 
   b2BodyId laneGate_{};
   bool laneGateClosed_ = false;
