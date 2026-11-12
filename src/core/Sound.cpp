@@ -198,6 +198,15 @@ void SoundMixer::render(float* out, std::size_t frames) noexcept {
   for (std::uint32_t& wait : holdoff_) {
     wait = frames >= wait ? 0U : wait - static_cast<std::uint32_t>(frames);
   }
+  if (!busy() && cutTail_ == 0.0F) {
+    // Nothing is sounding and nothing can start during this call, so the
+    // output is silence. Only the mute ramp still moves.
+    for (std::size_t frame = 0; frame < frames; ++frame) {
+      muteGain_ = std::clamp(muteGain_ + (muted_ ? -kMuteStep : kMuteStep), 0.0F, 1.0F);
+      out[frame] = 0.0F;
+    }
+    return;
+  }
   constexpr float kPerFadeIn = 1.0F / static_cast<float>(kFadeIn);
   constexpr float kPerFadeOut = 1.0F / static_cast<float>(kFadeOut);
   for (std::size_t frame = 0; frame < frames; ++frame) {
