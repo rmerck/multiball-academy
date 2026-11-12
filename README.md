@@ -1,6 +1,6 @@
 # Space Cadet Pinball (C++ recreation)
 
-A 2D recreation of the Space Cadet pinball table in C++17, SDL3 and Box2D, with original art made in GIMP.
+A 2D recreation of the Space Cadet pinball table in C++23, SDL3 and Box2D, with original art made in GIMP.
 
 This is an independent fan project. It contains no code or assets from the original game and is not affiliated with Microsoft, Maxis or Cinematronics.
 
@@ -19,7 +19,7 @@ Platforms: macOS and Linux build and pass the tests in CI. Windows is untested.
 
 ## Build
 
-Needs CMake 3.26 or newer and a C++17 compiler. Python 3 is optional: without it CMake warns and three of the tests (`assets_clean`, `asset_integrity`, `layout_json`) are left out. In-source builds are refused.
+Needs CMake 3.26 or newer and a C++23 compiler (GCC 13, Clang 18, Xcode 16 or newer). Python 3 is optional: without it CMake warns and three of the tests (`assets_clean`, `asset_integrity`, `layout_json`) are left out. In-source builds are refused.
 
 macOS, with the libraries from Homebrew:
 
