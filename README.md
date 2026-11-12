@@ -19,7 +19,9 @@ This is an independent fan project. It contains no code or assets from the origi
 | 9 | Nudge and tilt | Done |
 | 10 | Audio | Done: synthesized sound effects, no audio files. No music |
 | 11 | High scores, polish, performance | Done: high score table, About screen, auto-pause, idle wait while paused |
-| 12 | Final playability pass | Planned |
+| 12 | Final playability pass | Done: full test suite under sanitizers and in Release, 10 minute simulated soak, offscreen render checks of play and About |
+
+Known approximations: the table geometry, art and sounds are original work in the style of the 1995 table, not copies of it. There is no music. Mission goals follow the original's structure with simplified conditions. Linux and Windows builds are untested.
 
 ## Build (macOS)
 
