@@ -5,3 +5,12 @@ cmake-build-*/
 .vscode/
 .idea/
 compile_commands.json
+CMakeUserPresets.json
+__pycache__/
+*.pyc
+# libFuzzer output when pinball_fuzz is run from the source tree, as CI does.
+/found/
+/crash-*
+/leak-*
+/oom-*
+/timeout-*
