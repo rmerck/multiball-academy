@@ -8,8 +8,10 @@ namespace {
 
 // Frame period used when presenting does not block (no vsync, hidden window).
 constexpr std::uint64_t kUnsyncedFrameNs = 1'000'000'000ULL / 120ULL;
-// Hard floor on frame time (250 FPS) that applies even when vsync is reported.
-constexpr std::uint64_t kMinFrameNs = 1'000'000'000ULL / 250ULL;
+// Hard floor on frame time that applies even when vsync is reported. 1000 FPS
+// is above any display refresh rate, so it never costs a vblank, and it still
+// stops a driver that ignores vsync from spinning a core flat out.
+constexpr std::uint64_t kMinFrameNs = 1'000'000'000ULL / 1000ULL;
 
 // Pairs SDL_InitSubSystem with SDL_QuitSubSystem on every exit path of create().
 // The subsystem calls are reference counted, unlike SDL_Init/SDL_Quit.

@@ -70,5 +70,11 @@ if(BUILD_TESTING)
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}"
       PASS_REGULAR_EXPRESSION "Usage: pinball"
       TIMEOUT 30)
+    # PASS_REGULAR_EXPRESSION ignores the exit code, so assert that separately.
+    add_test(NAME rejects_${name}_exit_code COMMAND pinball ${parts})
+    set_tests_properties(rejects_${name}_exit_code PROPERTIES
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}"
+      WILL_FAIL TRUE
+      TIMEOUT 30)
   endforeach()
 endif()
