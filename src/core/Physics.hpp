@@ -100,6 +100,10 @@ class PhysicsWorld {
   // Non-finite input is ignored.
   void resetBall(Vec2 position, Vec2 velocity);
 
+  // Adds velocity (pixels per second) to a ball in play. Ignored while the
+  // ball is held or if the value is not finite.
+  void pushBall(Vec2 velocityChange);
+
   // False if the ball has left the table shell or its state is not finite.
   // The caller should reset the ball when this happens.
   bool ballIsSane() const;

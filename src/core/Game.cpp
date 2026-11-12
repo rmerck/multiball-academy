@@ -20,6 +20,7 @@ void Game::step(const InputState& input) {
 
   handleEvents();
   updateHeldBall();
+  updateBallSearch(input);
 
   if (!physics_.ballIsSane()) {
     // Fail safe: a ball outside the table or with a corrupt state is put back.
@@ -88,6 +89,31 @@ void Game::updateHeldBall() {
     const table::Hole& hole = table::kHoles[heldBy_];
     physics_.releaseBall(hole.exitPosition, hole.exitVelocity);
   }
+}
+
+void Game::updateBallSearch(const InputState& input) {
+  const Vec2 p = physics_.ballPosition();
+  // Not stuck: off the table in a hole, waiting on the plunger, or being
+  // cradled on a raised flipper.
+  const bool exempt = physics_.ballHeld() || p.x > table::kLaneWallX || input.leftFlipper ||
+                      input.rightFlipper;
+  const float dx = p.x - searchAnchor_.x;
+  const float dy = p.y - searchAnchor_.y;
+  constexpr float kMovedPixels = 3.0F;
+  if (exempt || dx * dx + dy * dy > kMovedPixels * kMovedPixels) {
+    searchAnchor_ = p;
+    stillSteps_ = 0;
+    return;
+  }
+  ++stillSteps_;
+  if (static_cast<double>(stillSteps_) * kStepSeconds < kBallSearchSeconds) {
+    return;
+  }
+  // Shove it up the table and towards the centre.
+  const float towardCentre = p.x < table::kFieldCenterX ? 1.0F : -1.0F;
+  physics_.pushBall({towardCentre * 260.0F, -420.0F});
+  ++ballSearchCount_;
+  stillSteps_ = 0;
 }
 
 void Game::lightTarget(std::size_t index) {

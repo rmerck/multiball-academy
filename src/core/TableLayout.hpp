@@ -89,13 +89,20 @@ constexpr Capsule lanePost(float offsetInPitches) noexcept {
   return {{x, kLanePostTopY}, {x, kLanePostBottomY}, kWallRadius};
 }
 
-inline constexpr std::array<Capsule, 10> kWalls{{
+// A sloped cap from the side wall down to the top of each wall-mounted target
+// bank. Without it a ball can come to rest on the end of the top target,
+// held against the wall.
+inline constexpr Capsule kLeftBankCap{{42.0F, 492.0F}, {60.0F, 524.0F}, 4.0F};
+
+inline constexpr std::array<Capsule, 12> kWalls{{
     {{kLaneWallX, kLaneWallTopY}, {kLaneWallX, kFloorY}, kWallRadius},
     kArchDeflector,
     lanePost(-1.5F),
     lanePost(-0.5F),
     lanePost(0.5F),
     lanePost(1.5F),
+    kLeftBankCap,
+    mirrored(kLeftBankCap),
     kLeftGuideUpper,
     kLeftGuideLower,
     mirrored(kLeftGuideUpper),

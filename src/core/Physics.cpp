@@ -551,6 +551,16 @@ void PhysicsWorld::resetBall(Vec2 position, Vec2 velocity) {
   b2Body_SetAwake(ball_, true);
 }
 
+void PhysicsWorld::pushBall(Vec2 velocityChange) {
+  if (ballHeld_ || !isFinite(velocityChange)) {
+    return;
+  }
+  const b2Vec2 v = b2Body_GetLinearVelocity(ball_);
+  const b2Vec2 dv = toMeters(velocityChange);
+  b2Body_SetLinearVelocity(ball_, {v.x + dv.x, v.y + dv.y});
+  clampBallSpeed();
+}
+
 bool PhysicsWorld::ballIsSane() const {
   const Vec2 p = ballPosition();
   const Vec2 v = ballVelocity();

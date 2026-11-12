@@ -154,6 +154,58 @@ void testHoles() {
     CHECK(Game().rolloverCount(999) == 0);
   }
 
+  {  // No pocket on the wall-mounted target banks: balls dropped down either
+     // side wall onto the top of a bank roll off it.
+    for (const float x : {table::kWallLeft + table::kBallRadius + 0.5F,
+                          table::kLaneWallX - table::kWallRadius - table::kBallRadius - 0.5F}) {
+      for (const float speed : {0.0F, 150.0F, 600.0F}) {
+        PhysicsWorld world;
+        world.resetBall({x, 400.0F}, {0.0F, speed});
+        // It may bounce around or drop into a hole afterwards; what it must
+        // not do is stop anywhere near the bank.
+        int restingSteps = 0;
+        for (int s = 0; s < 120 * 6 && !world.ballHeld(); ++s) {
+          world.step(kStep);
+          const Vec2 p = world.ballPosition();
+          const Vec2 v = world.ballVelocity();
+          const bool nearBank = p.y > 470.0F && p.y < 640.0F &&
+                                std::fabs(p.x - x) < 40.0F;
+          const bool still = v.x * v.x + v.y * v.y < 25.0F;
+          restingSteps = nearBank && still ? restingSteps + 1 : 0;
+        }
+        CHECK(restingSteps < 60);
+      }
+    }
+  }
+
+  {  // pushBall adds velocity to a ball in play, respects the speed cap, and
+     // ignores bad input and a held ball.
+    PhysicsWorld world;
+    world.resetBall({table::kFieldCenterX, 600.0F}, {0.0F, 0.0F});
+    world.pushBall({260.0F, -420.0F});
+    Vec2 v = world.ballVelocity();
+    CHECK(std::fabs(v.x - 260.0F) < 1.0F && std::fabs(v.y + 420.0F) < 1.0F);
+    world.pushBall({NAN, 0.0F});
+    v = world.ballVelocity();
+    CHECK(std::fabs(v.x - 260.0F) < 1.0F);
+    world.pushBall({1.0e6F, 0.0F});
+    v = world.ballVelocity();
+    CHECK(std::sqrt(v.x * v.x + v.y * v.y) <=
+          PhysicsWorld::kMaxBallSpeed * PhysicsWorld::kPixelsPerMeter * 1.001F);
+  }
+
+  {  // Ball search never fires for a ball waiting on the plunger.
+    Game game;
+    const InputState idle;
+    for (int i = 0; i < 30; ++i) {
+      game.step(idle);
+    }
+    for (int i = 0; i < 120 * 10; ++i) {
+      game.step(idle);
+    }
+    CHECK(game.ballSearchCount() == 0);
+  }
+
   {  // Soak: ten minutes of scripted play. The ball must never sit still on
      // the playfield (a wedge), every kind of feature must see use, and the
      // game must keep serving balls.
@@ -188,6 +240,9 @@ void testHoles() {
                    static_cast<double>(worstAt.x), static_cast<double>(worstAt.y));
     }
     CHECK(worstStill < 120 * 3);
+    // The geometry alone must keep the ball moving: the ball search is a
+    // safety net and should never be needed in normal play.
+    CHECK(game.ballSearchCount() == 0);
     CHECK(game.drainCount() >= 20);
     CHECK(game.bumperHits() > 50);
 
