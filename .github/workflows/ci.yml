@@ -28,12 +28,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Configure
+        env:
+          SANITIZE: ${{ matrix.sanitize }}
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DPINBALL_FETCH_DEPS=ON
           -DPINBALL_WERROR=ON
-          -DPINBALL_SANITIZE=${{ matrix.sanitize }}
+          -DPINBALL_SANITIZE="$SANITIZE"
       - name: Build
         run: cmake --build build --parallel
       - name: Test
@@ -124,7 +126,7 @@ jobs:
           readelf -lW build/pinball | grep -E 'GNU_RELRO'
           readelf -lW build/pinball | grep -E 'GNU_STACK\s.*RW\s'
           readelf -W --dyn-syms build/pinball | grep -E '__stack_chk_fail'
-          readelf -W --dyn-syms build/pinball | grep -E '__[a-z]+_chk'
+          readelf -W --dyn-syms build/pinball | grep -v stack_chk | grep -E '__[a-z]+_chk'
           readelf -n build/pinball | grep -E 'IBT, SHSTK'
           if strings -a build/pinball | grep -E '/home/|/Users/'; then
             echo "build paths found in the binary"; exit 1
