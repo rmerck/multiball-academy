@@ -1,7 +1,7 @@
 # Generates assets/ui/panel.png: the information panel beside the playfield.
 #
-#   build/pinball_layout > /tmp/layout.json
-#   REPO = "/path/to/repo"; LAYOUT = "/tmp/layout.json"
+#   build/pinball_layout > build/layout.json
+#   REPO = "/path/to/repo"; LAYOUT = REPO + "/build/layout.json"
 #   exec(open(REPO + "/tools/gimp/make_panel.py").read())
 #
 # The recessed display windows come from src/core/PanelLayout.hpp via the

@@ -1,9 +1,9 @@
 # Generates assets/table/background.png from the table geometry.
 #
 # 1. Build the tools and dump the geometry:
-#      build/pinball_layout > /tmp/layout.json
+#      build/pinball_layout > build/layout.json
 # 2. In GIMP 3's Python console:
-#      REPO = "/path/to/repo"; LAYOUT = "/tmp/layout.json"
+#      REPO = "/path/to/repo"; LAYOUT = REPO + "/build/layout.json"
 #      exec(open(REPO + "/tools/gimp/make_table.py").read())
 #
 # Everything is drawn from the same numbers the physics uses, at 2x.
