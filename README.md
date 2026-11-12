@@ -13,7 +13,7 @@ This is an independent fan project. It contains no code or assets from the origi
 | 3 | Physics foundation | Done: Box2D world, table shell, ball, drain |
 | 4 | Flippers | Done |
 | 5 | Plunger and launch lane | Done |
-| 6 | Bumpers, targets, ramps, table geometry | Planned |
+| 6 | Bumpers, targets, ramps, table geometry | Done: 8 bumpers, slingshots, 4 target banks, 7 rollovers, wormholes, black hole, hyperspace, launch ramp |
 | 7 | Scoring, lights, UI | Planned |
 | 8 | Missions and ranks | Planned |
 | 9 | Nudge and tilt | Planned |
@@ -67,6 +67,10 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 - Flippers are kinematic bodies driven to an absolute target angle each step (17 rad/s up, 12 rad/s down, 60 degree stroke). They cannot overshoot or be pushed back by the ball.
 - The plunger is a kinematic block. Holding Space draws it back over one second; on release it drives forward at 3 to 12.5 m/s depending on the draw, and the ball leaves about 1.3 times faster. A full draw clears the arch; a tap does not leave the lane.
 - A one-way gate at the top of the lane is modelled as a wall that is switched on once the launched ball is clear, and off again for the next serve.
+- Bumpers and slingshot faces add a fixed kick on top of the solver's bounce. Elements are tagged in Box2D shape user data with a packed integer, never a pointer, and validated on the way out.
+- Rollovers and holes are detected by ball position every slice, not by Box2D sensors, so the result is exact and deterministic.
+- Holes take the ball off the table (its body is disabled) for 0.9 s and return it: wormholes pass it round a ring of three, the black hole and hyperspace chute return it from themselves.
+- The launch ramp is modelled as a hole that only takes a ball travelling up the table at 3 m/s or more. A real ramp lifts the ball above the playfield; here the ball is drawn riding over the table and is dropped into the top of the field.
 - `src/core/TableLayout.hpp` is the single source of table geometry for physics, drawing and art.
 
 ## Layout

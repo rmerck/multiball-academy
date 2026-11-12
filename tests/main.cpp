@@ -11,6 +11,7 @@ int main() {
   testFixedTimestep();
   testFlippers();
   testGame();
+  testHoles();
   testPhysics();
   testPlunger();
   testPngHeader();

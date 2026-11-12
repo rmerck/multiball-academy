@@ -13,8 +13,10 @@ namespace pinball {
 
 // What the renderer needs to draw the ball.
 struct BallView {
-  Vec2 position;  // Playfield pixels.
-  float angle = 0.0F;  // Radians.
+  Vec2 position;        // Playfield pixels.
+  float angle = 0.0F;   // Radians.
+  bool visible = true;  // False while a hole holds it out of sight.
+  float scale = 1.0F;   // Above 1 while it rides the ramp over the table.
 };
 
 // What the renderer needs to draw one flipper.
@@ -50,6 +52,20 @@ class Game {
   float bumperFlash(std::size_t index) const noexcept {
     return index < bumperFlash_.size() ? bumperFlash_[index] : 0.0F;
   }
+  // How long a hole keeps the ball, in seconds.
+  static constexpr double kHoleHoldSeconds = 0.9;
+
+  // Times the ball has rolled over each rollover.
+  std::uint32_t rolloverCount(std::size_t index) const noexcept {
+    return index < rolloverCounts_.size() ? rolloverCounts_[index] : 0;
+  }
+  // Times the ball has dropped into each hole.
+  std::uint32_t holeCount(std::size_t index) const noexcept {
+    return index < holeCounts_.size() ? holeCounts_[index] : 0;
+  }
+  // Whether a hole is holding the ball right now.
+  bool ballHeld() const noexcept { return physics_.ballHeld(); }
+
   // Whether a stand-up target is currently lit.
   bool targetLit(std::size_t index) const noexcept {
     return index < targetLit_.size() && targetLit_[index];
@@ -71,6 +87,7 @@ class Game {
   void serveBall();
   void handleEvents();
   void lightTarget(std::size_t index);
+  void updateHeldBall();
 
   PhysicsWorld physics_;
   std::uint64_t stepCount_ = 0;
@@ -81,6 +98,11 @@ class Game {
   std::array<float, table::kSlingshots.size()> slingshotFlash_{};
   std::array<bool, table::kTargets.size()> targetLit_{};
   std::array<std::uint32_t, table::kTargetBankCount> bankCompletions_{};
+  std::array<std::uint32_t, table::kRollovers.size()> rolloverCounts_{};
+  std::array<std::uint32_t, table::kHoles.size()> holeCounts_{};
+  // The hole holding the ball, and for how many steps so far.
+  std::size_t heldBy_ = 0;
+  std::uint32_t heldSteps_ = 0;
 };
 
 }  // namespace pinball

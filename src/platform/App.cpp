@@ -287,6 +287,21 @@ void App::drawTableOutline() {
   }
   drawTriangle(table::kMedalIsland);
 
+  // Holes and rollovers as placeholder markers.
+  for (const table::Hole& hole : table::kHoles) {
+    SDL_SetRenderDrawColor(r, 200, 80, 200, SDL_ALPHA_OPAQUE);
+    const SDL_FRect box{hole.center.x - table::kHoleRadius, hole.center.y - table::kHoleRadius,
+                        table::kHoleRadius * 2.0F, table::kHoleRadius * 2.0F};
+    SDL_RenderRect(r, &box);
+  }
+  for (const table::Rollover& rollover : table::kRollovers) {
+    SDL_SetRenderDrawColor(r, 80, 200, 120, SDL_ALPHA_OPAQUE);
+    const float half = rollover.zone.radius;
+    const SDL_FRect box{rollover.zone.center.x - half, rollover.zone.center.y - 2.0F, half * 2.0F,
+                        4.0F};
+    SDL_RenderFillRect(r, &box);
+  }
+
   // Targets: bright when lit.
   for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
     const table::Capsule& c = table::kTargets[i].shape;
@@ -355,11 +370,13 @@ void App::render(double /*alpha*/) {
   }
 
   const BallView ball = game_.ball();
-  const float radius = table::kBallRadius;
+  const float radius = table::kBallRadius * ball.scale;
   const SDL_FRect ballRect{ball.position.x - radius, ball.position.y - radius, radius * 2.0F,
                            radius * 2.0F};
   SDL_SetTextureAlphaMod(textures_.ball.get(), paused_ ? 128 : 255);
-  SDL_RenderTexture(r, textures_.ball.get(), nullptr, &ballRect);
+  if (ball.visible) {
+    SDL_RenderTexture(r, textures_.ball.get(), nullptr, &ballRect);
+  }
 
   // Drawn last so nothing on the playfield can spill over the panel.
   SDL_SetRenderDrawColor(r, 24, 24, 30, SDL_ALPHA_OPAQUE);

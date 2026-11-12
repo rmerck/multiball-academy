@@ -68,6 +68,7 @@ if(BUILD_TESTING)
     tests/FixedTimestepTest.cpp
     tests/FlipperTest.cpp
     tests/GameTest.cpp
+    tests/HoleTest.cpp
     tests/PhysicsTest.cpp
     tests/PlungerTest.cpp
     tests/PngHeaderTest.cpp

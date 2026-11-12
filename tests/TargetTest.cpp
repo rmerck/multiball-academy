@@ -118,7 +118,9 @@ void testTargets() {
       std::size_t events = 0;
       for (int step = 0; step < 30; ++step) {
         world.step(kStep);
-        events += world.events().size();
+        for (const PhysicsEvent& e : world.events()) {
+          events += e.element.kind == table::ElementKind::Slingshot ? 1U : 0U;
+        }
       }
       CHECK(events == 0);
     }

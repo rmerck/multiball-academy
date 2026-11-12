@@ -43,6 +43,7 @@ table::ElementRef unpackElement(const void* data) noexcept {
   const auto kindValue = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
   const auto index = static_cast<std::uint8_t>(value & 0xFFU);
   // Validate before trusting: only known kinds with in-range indices pass.
+  // Rollovers and holes are detected by position and are never shape tags.
   for (const table::ElementKind kind :
        {table::ElementKind::Bumper, table::ElementKind::Slingshot, table::ElementKind::Target}) {
     if (kindValue == static_cast<std::uint8_t>(kind)) {
@@ -94,6 +95,7 @@ PhysicsWorld::PhysicsWorld() {
   buildPlunger();
   buildBumpers();
   buildTargets();
+  holeArmed_.fill(true);
   events_.reserve(kMaxEventsPerStep);
 }
 
@@ -384,8 +386,77 @@ void PhysicsWorld::collectEvents() {
         continue;
       }
     }
-    if (events_.size() < kMaxEventsPerStep) {
-      events_.push_back({PhysicsEvent::Type::Hit, element, speed});
+    pushEvent(PhysicsEvent::Type::Hit, element, speed);
+  }
+}
+
+void PhysicsWorld::pushEvent(PhysicsEvent::Type type, table::ElementRef element, float speed) {
+  if (events_.size() < kMaxEventsPerStep) {
+    events_.push_back({type, element, speed});
+  }
+}
+
+void PhysicsWorld::checkZones() {
+  if (ballHeld_) {
+    return;
+  }
+  const Vec2 p = ballPosition();
+  const Vec2 v = ballVelocity();
+  const float speed = std::sqrt(v.x * v.x + v.y * v.y);
+  const auto distanceTo = [p](Vec2 c) {
+    const float dx = p.x - c.x;
+    const float dy = p.y - c.y;
+    return std::sqrt(dx * dx + dy * dy);
+  };
+
+  for (std::size_t i = 0; i < table::kRollovers.size(); ++i) {
+    const bool inside = distanceTo(table::kRollovers[i].zone.center) <
+                        table::kRollovers[i].zone.radius;
+    if (inside && !onRollover_[i]) {
+      pushEvent(PhysicsEvent::Type::Enter,
+                {table::ElementKind::Rollover, static_cast<std::uint8_t>(i)}, speed);
+    }
+    onRollover_[i] = inside;
+  }
+
+  for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
+    const table::Hole& hole = table::kHoles[i];
+    const float distance = distanceTo(hole.center);
+    if (!holeArmed_[i]) {
+      holeArmed_[i] = distance > table::kHoleRearmDistance;
+      continue;
+    }
+    if (distance >= table::kHoleCaptureRadius) {
+      continue;
+    }
+    if (hole.type == table::HoleType::Ramp && v.y > -table::kRampMinUpwardSpeed) {
+      continue;
+    }
+    // Take the ball off the table. Disabling the body removes it from
+    // collision until it is released.
+    ballHeld_ = true;
+    b2Body_SetLinearVelocity(ball_, {0.0F, 0.0F});
+    b2Body_SetAngularVelocity(ball_, 0.0F);
+    b2Body_Disable(ball_);
+    pushEvent(PhysicsEvent::Type::Capture,
+              {table::ElementKind::Hole, static_cast<std::uint8_t>(i)}, speed);
+    return;
+  }
+}
+
+void PhysicsWorld::releaseBall(Vec2 position, Vec2 velocity) {
+  if (!ballHeld_ || !isFinite(position) || !isFinite(velocity)) {
+    return;
+  }
+  b2Body_Enable(ball_);
+  ballHeld_ = false;
+  resetBall(position, velocity);
+  // Any hole the ball now sits in must not swallow it again at once.
+  for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
+    const float dx = position.x - table::kHoles[i].center.x;
+    const float dy = position.y - table::kHoles[i].center.y;
+    if (std::sqrt(dx * dx + dy * dy) <= table::kHoleRearmDistance) {
+      holeArmed_[i] = false;
     }
   }
 }
@@ -433,6 +504,7 @@ void PhysicsWorld::step(float stepSeconds) {
     b2World_Step(world_, slice, kSubSteps);
     collectEvents();
     clampBallSpeed();
+    checkZones();
   }
 }
 
@@ -464,6 +536,11 @@ float PhysicsWorld::ballAngle() const {
 void PhysicsWorld::resetBall(Vec2 position, Vec2 velocity) {
   if (!isFinite(position) || !isFinite(velocity)) {
     return;
+  }
+  if (ballHeld_) {
+    // A reset always leaves a live ball on the table.
+    b2Body_Enable(ball_);
+    ballHeld_ = false;
   }
   b2Body_SetTransform(ball_, b2ToPos(toMeters(position)), b2MakeRot(0.0F));
   b2Body_SetLinearVelocity(ball_, toMeters(velocity));
