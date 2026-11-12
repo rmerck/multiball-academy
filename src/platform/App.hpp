@@ -48,6 +48,8 @@ class App {
 
   void handleEvent(const SDL_Event& event);
   void readInput();
+  // True when the simulation should stand still.
+  bool halted() const noexcept { return paused_ || autoPaused_ || aboutOpen_; }
   void recordFinishedGame();
   void latchKey(SDL_Scancode scancode);
   void render(double alpha);
@@ -66,6 +68,9 @@ class App {
   bool vsync_ = false;
   bool running_ = true;
   bool paused_ = false;
+  // Paused because the window lost focus or was minimised. Kept apart from
+  // the player's own pause so that regaining focus does not undo F3.
+  bool autoPaused_ = false;
   // The About screen is up. The game stands still behind it.
   bool aboutOpen_ = false;
   // Null when no audio device could be opened: the game then runs silent.
