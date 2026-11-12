@@ -93,6 +93,42 @@ void testPlunger() {
     CHECK(full.peakSpeed < commanded * 1.45F);
   }
 
+  {  // No launch is an unavoidable drain: for every hold that leaves the lane,
+     // an untouched ball does not run round the arch, down the left wall and
+     // straight out of the left outlane.
+    int straightOut = 0;
+    int leftLane = 0;
+    for (int hold = 60; hold <= 200; hold += 4) {
+      Game game;
+      InputState input;
+      for (int i = 0; i < 30; ++i) {
+        game.step(input);
+      }
+      input.plunger = true;
+      for (int i = 0; i < hold; ++i) {
+        game.step(input);
+      }
+      input.plunger = false;
+      bool inPlay = false;
+      bool touchedField = false;
+      for (int i = 0; i < 120 * 6 && game.drainCount() == 0; ++i) {
+        game.step(input);
+        const Vec2 p = game.ball().position;
+        inPlay = inPlay || game.laneGateClosed();
+        // Anywhere in the middle of the table counts as having entered play.
+        touchedField = touchedField || (p.x > 120.0F && p.x < 620.0F && p.y > 200.0F);
+      }
+      if (inPlay) {
+        ++leftLane;
+        if (game.drainCount() > 0 && !touchedField) {
+          ++straightOut;
+        }
+      }
+    }
+    CHECK(leftLane > 10);
+    CHECK(straightOut == 0);
+  }
+
   {  // In a game: the ball is served at rest, launches with the plunger, the
      // gate shuts behind it, and after it drains a new ball is served with
      // the gate open again.
