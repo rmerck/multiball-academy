@@ -84,6 +84,8 @@ class App {
   // Null when no audio device could be opened: the game then runs silent.
   std::unique_ptr<AudioOutput> audio_;
   SoundMixer mixer_;
+  // The player's choice. The tune also rests whenever the game is halted.
+  bool musicOn_ = true;
   Game game_;
   // Best games on this machine, loaded at start and saved when a game ends.
   HighScores highScores_;

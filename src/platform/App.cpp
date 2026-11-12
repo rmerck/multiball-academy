@@ -142,19 +142,26 @@ bool App::needsManualPacing() const {
 namespace {
 // How long a halted loop sleeps between redraws.
 constexpr Sint32 kHaltedWaitMs = 100;
+// Longest a halted loop stays awake for sound: beyond any effect's tail.
+constexpr std::uint32_t kMaxHaltedBusyFrames = 600;
 }  // namespace
 
 int App::run() {
   std::uint64_t previous = SDL_GetTicksNS();
   std::uint32_t frames = 0;
   bool wasHalted = false;
+  std::uint32_t haltedFrames = 0;
 
   while (running_) {
     SDL_Event event;
     // While nothing is moving or sounding, sleep until something happens
     // instead of redrawing a still picture at full rate. A sound still
     // ringing keeps the loop at frame rate so its tail plays without gaps.
-    if (halted() && !options_.frameLimit && mixer_.activeVoices() == 0 &&
+    // It sleeps anyway after a while, in case the audio device has stopped
+    // taking sound and a tail can never finish.
+    haltedFrames = halted() ? haltedFrames + 1 : 0;
+    if (halted() && !options_.frameLimit &&
+        (!mixer_.busy() || haltedFrames > kMaxHaltedBusyFrames) &&
         SDL_WaitEventTimeout(&event, kHaltedWaitMs)) {
       handleEvent(event);
     }
@@ -196,6 +203,8 @@ int App::run() {
     }
     wasHalted = isHalted;
 
+    // The tune plays while the game runs and rests while it stands still.
+    mixer_.setMusicPlaying(musicOn_ && !isHalted);
     if (audio_) {
       audio_->pump(mixer_);
     }
@@ -272,6 +281,8 @@ void App::handleEvent(const SDL_Event& event) {
         toggleFullscreen();
       } else if (event.key.scancode == SDL_SCANCODE_M) {
         mixer_.setMuted(!mixer_.muted());
+      } else if (event.key.scancode == SDL_SCANCODE_N) {
+        musicOn_ = !musicOn_;
       }
       break;
     default:

@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "core/Music.hpp"
+
 namespace pinball {
 
 // Every sound the game can make.
@@ -63,6 +65,13 @@ class SoundMixer {
   // Number of voices currently sounding.
   std::size_t activeVoices() const noexcept;
 
+  // The background tune, mixed under the effects. Off until asked for; it
+  // fades in and out, and resumes where it stopped.
+  void setMusicPlaying(bool playing) noexcept { music_.setPlaying(playing); }
+  bool musicPlaying() const noexcept { return music_.playing(); }
+  // True while anything at all is sounding: a voice, or the tune.
+  bool busy() const noexcept { return music_.audible() || activeVoices() > 0; }
+
   void setMuted(bool muted) noexcept { muted_ = muted; }
   bool muted() const noexcept { return muted_; }
 
@@ -85,10 +94,12 @@ class SoundMixer {
   void startSound(Sound sound) noexcept;
 
   std::array<Voice, kVoices> voices_{};
+  Music music_;
   // Samples each sound must still wait before it may start again.
   std::array<std::uint32_t, kSoundCount> holdoff_{};
   std::uint32_t noiseState_ = 0x12345678U;
   bool muted_ = false;
+  float muteGain_ = 1.0F;  // Follows muted_, 0 to 1.
 };
 
 }  // namespace pinball

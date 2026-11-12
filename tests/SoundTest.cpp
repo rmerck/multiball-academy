@@ -99,6 +99,7 @@ void testSound() {
   {  // Mute produces silence without stopping the voices' clocks.
     SoundMixer mixer;
     mixer.setMuted(true);
+    render(mixer, 480);  // The mute fades in over 5 ms.
     mixer.trigger(soundBit(Sound::Bumper));
     CHECK(render(mixer, 480).peak == 0.0F);
     mixer.setMuted(false);

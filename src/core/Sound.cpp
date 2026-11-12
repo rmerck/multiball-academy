@@ -12,6 +12,8 @@ constexpr float kMasterGain = 0.55F;
 // Fade in and out, in samples, so no voice starts or stops with a click.
 constexpr std::uint32_t kFadeIn = 96;
 constexpr std::uint32_t kFadeOut = 480;
+// Mute and unmute ramp over 5 ms.
+constexpr float kMuteStep = 1.0F / 240.0F;
 
 // Musical notes, in Hz.
 constexpr float kC5 = 523.25F;
@@ -170,7 +172,7 @@ void SoundMixer::render(float* out, std::size_t frames) noexcept {
   }
   const float rate = static_cast<float>(kSampleRate);
   for (std::size_t frame = 0; frame < frames; ++frame) {
-    float mix = 0.0F;
+    float mix = music_.next();
     for (Voice& v : voices_) {
       if (!v.active) {
         continue;
@@ -217,7 +219,10 @@ void SoundMixer::render(float* out, std::size_t frames) noexcept {
       }
     }
     // Soft limit, so many simultaneous voices cannot clip.
-    out[frame] = muted_ ? 0.0F : std::tanh(mix * kMasterGain);
+    // Mute fades over a few milliseconds, so it never cuts mid-wave.
+    muteGain_ += muted_ ? -kMuteStep : kMuteStep;
+    muteGain_ = std::clamp(muteGain_, 0.0F, 1.0F);
+    out[frame] = std::tanh(mix * kMasterGain) * muteGain_;
   }
 }
 

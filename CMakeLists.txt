@@ -37,6 +37,7 @@ add_library(pinball_core STATIC
   src/core/PngHeader.cpp
   src/core/Rules.cpp
   src/core/Sha256.cpp
+  src/core/Music.cpp
   src/core/Sound.cpp
   src/core/TableLayout.cpp
 )
@@ -136,6 +137,7 @@ if(BUILD_TESTING)
     tests/PngHeaderTest.cpp
     tests/RulesTest.cpp
     tests/Sha256Test.cpp
+    tests/MusicTest.cpp
     tests/SoundTest.cpp
     tests/TargetTest.cpp
   )

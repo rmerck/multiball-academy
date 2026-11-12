@@ -17,11 +17,11 @@ This is an independent fan project. It contains no code or assets from the origi
 | 7 | Scoring, lights, UI | Done: rules engine, lit lanes and targets, information panel with a built-in pixel font |
 | 8 | Missions and ranks | Done: 9 ranks, 36 missions, fuel |
 | 9 | Nudge and tilt | Done |
-| 10 | Audio | Done: synthesized sound effects, no audio files. No music |
+| 10 | Audio | Done: synthesized sound effects and an original background tune, no audio files |
 | 11 | High scores, polish, performance | Done: high score table, About screen, auto-pause, idle wait while paused |
 | 12 | Final playability pass | Done: full test suite under sanitizers and in Release, 10 minute simulated soak, offscreen render checks of play and About |
 
-Known approximations: the table geometry, art and sounds are original work in the style of the 1995 table, not copies of it. There is no music. Mission goals follow the original's structure with simplified conditions. Linux and Windows builds are untested.
+Known approximations: the table geometry, art and sounds are original work in the style of the 1995 table, not copies of it. The music is an original tune, not the original soundtrack. Mission goals follow the original's structure with simplified conditions. Linux and Windows builds are untested.
 
 ## Build (macOS)
 
@@ -54,7 +54,8 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 | F1 | About and high scores. On macOS the menu bar's About item opens the same screen | Done |
 | F3 | Pause. The game also pauses by itself when its window loses focus or is minimised | Done |
 | F4 | Fullscreen | Done |
-| M | Mute | Done |
+| M | Mute all sound | Done |
+| N | Music on and off | Done |
 
 ## Design priorities
 
@@ -120,9 +121,9 @@ A game that makes the table asks for initials: type letters, or use Up and Down 
 
 Every sound is synthesized at run time from sine, square and triangle oscillators and noise (`src/core/Sound`), so the game ships no audio files and has nothing extra to verify. Twenty effects cover flippers, launch, bumpers, targets, lanes, holes, drains, awards, missions, tilt and game over.
 
-The mixer is plain arithmetic with no device access and is unit tested: output is always finite and within [-1, 1], every sound ends, and a flood of triggers cannot overrun the 24-voice pool. The platform layer pulls samples on the main thread and queues about 60 ms to the default device, so no locking is needed. If no audio device opens, the game runs silent.
+The mixer is plain arithmetic with no device access and is unit tested: output is always finite and within [-1, 1], every sound ends, and a flood of triggers cannot overrun the 24-voice pool. The platform layer pulls samples on the main thread and queues about 40 ms to the default device, so no locking is needed. If no audio device opens, the game runs silent.
 
-There is no music.
+The background tune (`src/core/Music`) is an original eight-bar loop for bass, arpeggio and lead, synthesized the same way and mixed under the effects. N turns it on and off. It rests while the game is paused and picks up where it stopped. It is not the original game's music.
 
 ## Physics notes
 
@@ -189,6 +190,10 @@ What this does not cover: the hashes live in the executable, so someone able to 
 The game only opens files inside the `assets` directory next to the executable. Files over 16 MB or images over 4096 pixels on an edge are refused before decoding.
 
 Assets are exported with all metadata off. `tools/check_assets.py` (run by `ctest`) fails the build if a PNG carries EXIF, text, timestamp, profile or thumbnail chunks.
+
+## How this was made
+
+This is a learning project. It was built with Claude, Anthropic's AI coding assistant: I set the requirements, priorities and workflow, and Claude wrote the code, tests and art scripts through reviewed pull requests. Treat it as an experiment in AI-assisted development, not as hand-written reference code.
 
 ## License
 
