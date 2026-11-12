@@ -12,11 +12,11 @@
 # from tools/gimp/sources/backglass.png, which was made in Canva (see the
 # README, "Assets").
 # Everything else on the panel is drawn by this script.
-import json
 import math
 import random
 
-exec(open(REPO + "/tools/gimp/common.py").read())
+with open(REPO + "/tools/gimp/common.py", encoding="utf-8") as _f:
+    exec(_f.read())
 
 S = 2
 REPLACE = Gimp.ChannelOps.REPLACE
@@ -36,16 +36,12 @@ HEADER = 150.0  # Height of the title area above the first window.
 
 
 def make_panel(repo, layout_path):
-    with open(layout_path) as f:
-        p = json.load(f)["panel"]
+    p = load_layout(layout_path)["panel"]
     left = p["left"]
     W, H = int(p["width"] * S), int(p["height"] * S)
     PW, PH = p["width"], p["height"]
     rng = random.Random(1984)
-    img = Gimp.Image.new(W, H, Gimp.ImageBaseType.RGB)
-    Gimp.context_set_antialias(True)
-    Gimp.context_set_feather(False)
-    Gimp.context_set_interpolation(Gimp.InterpolationType.CUBIC)
+    img = work_image(W, H)
 
     def c3(rgb, a=1.0, k=1.0):
         return color(min(1.0, rgb[0] * k), min(1.0, rgb[1] * k), min(1.0, rgb[2] * k), a)
@@ -81,6 +77,27 @@ def make_panel(repo, layout_path):
     img.select_ellipse(REPLACE, 30 * S, 22 * S, (PW - 60) * S, 112 * S)
     Gimp.context_set_feather(False)
     fill_selection(shade, color(0.03, 0.0, 0.10))
+    select_none(img)
+    # A clean dark band right behind the subtitle, with a neon rule above and
+    # below, so the small lettering never sits on the busy skyline.
+    band = new_layer(img, "title-band")
+    Gimp.context_set_feather(True)
+    Gimp.context_set_feather_radius(10.0, 10.0)
+    rrect(PW / 2.0 - 122, 87, 244, 38, 8)
+    Gimp.context_set_feather(False)
+    fill_selection(band, color(0.03, 0.0, 0.10, 0.90))
+    for y, rgb in ((88.0, PINK), (124.0, CYAN)):
+        rect(PW / 2.0 - 104, y - 0.6, 208, 1.2)
+        fill_selection(band, c3(rgb, 0.85))
+    select_none(img)
+    bloom(img, band, [(4.0, 60)])
+    # And a broader, quieter shade behind the big title line.
+    shade2 = new_layer(img, "title-shade-2", opacity=62)
+    Gimp.context_set_feather(True)
+    Gimp.context_set_feather_radius(34.0, 34.0)
+    rrect(34, 26, PW - 68, 60, 14)
+    Gimp.context_set_feather(False)
+    fill_selection(shade2, color(0.03, 0.0, 0.10))
     select_none(img)
 
     # --- Lower panel: a faint grid running off to a horizon ----------------
@@ -136,10 +153,10 @@ def make_panel(repo, layout_path):
             y += 76.0
             k += 1
     # A dark plate behind the controls legend, with a rule above and below.
-    rrect(20, 877, PW - 40, 70, 6)
-    fill_selection(accents, color(0.03, 0.0, 0.09, 0.82))
-    for y, rgb in ((875.0, PINK), (949.0, CYAN)):
-        rect(24, y - 0.6, PW - 48, 1.2)
+    rrect(14, 874, PW - 28, 78, 6)
+    fill_selection(accents, color(0.02, 0.0, 0.07, 0.97))
+    for y, rgb in ((874.0, PINK), (952.0, CYAN)):
+        rect(20, y - 0.6, PW - 40, 1.2)
         fill_selection(accents, c3(rgb, 0.9))
     select_none(img)
     bloom(img, accents, [(4.0, 80)])
@@ -208,9 +225,7 @@ def make_panel(repo, layout_path):
     apply_filter(grain, "gegl:saturation", scale=0.0)
 
     img.flatten()
-    path = export_png(img, repo + "/assets/ui/panel.png")
-    img.delete()
-    return path
+    return export_png(img, repo + "/assets/ui/panel.png")
 
 
-print(make_panel(REPO, LAYOUT))
+print(run_script(lambda: make_panel(REPO, LAYOUT)))

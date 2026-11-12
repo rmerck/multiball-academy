@@ -1,16 +1,15 @@
 # Generates assets/sprites/ball.png: a bright chrome ball reflecting a neon
 # sky above a dark horizon. Run inside GIMP 3.x (Python console or MCP):
 #   REPO = "/path/to/repo"; exec(open(REPO + "/tools/gimp/make_ball.py").read())
-exec(open(REPO + "/tools/gimp/common.py").read())
+with open(REPO + "/tools/gimp/common.py", encoding="utf-8") as _f:
+    exec(_f.read())
 
 SIZE = 96          # pixels; drawn at 24 logical pixels, so 4x for high-DPI
 MARGIN = 4
 
 
 def make_ball(repo):
-    img = Gimp.Image.new(SIZE, SIZE, Gimp.ImageBaseType.RGB)
-    Gimp.context_set_antialias(True)
-    Gimp.context_set_feather(False)
+    img = work_image(SIZE, SIZE)
     REPLACE = Gimp.ChannelOps.REPLACE
     INTERSECT = Gimp.ChannelOps.INTERSECT
     SUBTRACT = Gimp.ChannelOps.SUBTRACT
@@ -69,9 +68,7 @@ def make_ball(repo):
     select_none(img)
 
     img.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
-    path = export_png(img, repo + "/assets/sprites/ball.png")
-    img.delete()
-    return path
+    return export_png(img, repo + "/assets/sprites/ball.png")
 
 
-print(make_ball(REPO))
+print(run_script(lambda: make_ball(REPO)))

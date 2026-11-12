@@ -6,9 +6,10 @@
 #
 # Sprites are drawn at 4x. Sizes come from the table geometry so they match
 # the physics shapes. White sprites are tinted by the game at draw time.
-import json
+import math
 
-exec(open(REPO + "/tools/gimp/common.py").read())
+with open(REPO + "/tools/gimp/common.py", encoding="utf-8") as _f:
+    exec(_f.read())
 
 S = 4
 REPLACE = Gimp.ChannelOps.REPLACE
@@ -17,25 +18,22 @@ SUBTRACT = Gimp.ChannelOps.SUBTRACT
 
 
 def new_image(width, height):
-    img = Gimp.Image.new(int(width * S), int(height * S), Gimp.ImageBaseType.RGB)
-    Gimp.context_set_antialias(True)
-    Gimp.context_set_feather(False)
-    return img
+    return work_image(width * S, height * S)
 
 
 def finish(img, repo, name):
     select_none(img)
     img.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
-    path = export_png(img, repo + "/assets/sprites/" + name)
-    img.delete()
-    return path
+    return export_png(img, repo + "/assets/sprites/" + name)
 
 
 def make_flipper(repo, d):
     """Bat lying along +x. The pivot is at (MARGIN + base radius, height / 2).
-    Hot pink to violet body inside a white-hot cyan tube, with a chrome hub."""
+    Hot pink to violet body inside a white-hot cyan tube, with a chrome hub.
+    A dark halo under a cyan glow lifts it off the bright grid. MARGIN must
+    match kFlipperSpriteMargin in src/platform/TableRenderer.cpp."""
     f = d["flipper"]
-    margin = 3.0
+    margin = 9.0
     base, tip, length = f["baseRadius"], f["tipRadius"], f["length"]
     width = margin * 2 + base + length + tip
     height = margin * 2 + base * 2
@@ -48,18 +46,26 @@ def make_flipper(repo, d):
         select_circle(img, (px, py), base + grow, S, ADD)
         select_circle(img, (px + length, py), tip + grow, S, ADD)
 
-    halo = new_layer(img, "halo")
-    bat_selection(2.2)
-    fill_selection(halo, color(0.10, 0.85, 1.0, 0.55))
+    dark = new_layer(img, "dark-halo")
+    bat_selection(4.0)
+    fill_selection(dark, color(0.02, 0.0, 0.07, 0.85))
     select_none(img)
-    blur(halo, 3.0)
+    blur(dark, 9.0)
+
+    halo = new_layer(img, "halo")
+    bat_selection(2.6)
+    fill_selection(halo, color(0.10, 0.85, 1.0, 0.95))
+    select_none(img)
+    blur(halo, 7.0)
 
     tube = new_layer(img, "tube")
-    bat_selection(0.6)
-    fill_selection(tube, color(0.70, 1.0, 1.0))
+    bat_selection(1.2)
+    fill_selection(tube, color(0.25, 0.92, 1.0))
+    bat_selection(0.5)
+    fill_selection(tube, color(0.88, 1.0, 1.0))
 
     body = new_layer(img, "body")
-    bat_selection(-1.4)
+    bat_selection(-1.3)
     linear_gradient(body, color(1.0, 0.30, 0.72), color(0.42, 0.06, 0.70),
                     0, (py - base) * S, 0, (py + base) * S)
 
@@ -91,7 +97,6 @@ def make_flipper(repo, d):
 def make_bumper(repo):
     """White starburst cap, tinted per bumper group by the game. 64 px
     logical. Greys only: the tint multiplies them."""
-    import math
     size = 64.0
     c = (size / 2, size / 2)
     img = new_image(size, size)
@@ -102,7 +107,9 @@ def make_bumper(repo):
     select_circle(img, c, 28.5, S)
     fill_selection(skirt, color(1.0, 1.0, 1.0))
     select_circle(img, c, 26.5, S)
-    radial_gradient(skirt, color(0.96, 0.96, 0.98), color(0.70, 0.70, 0.76),
+    # A dark skirt: the bright wedges, rim and dome stand out against it even
+    # at the idle tint.
+    radial_gradient(skirt, color(0.42, 0.42, 0.48), color(0.20, 0.20, 0.26),
                     (c[0] - 8) * S, (c[1] - 9) * S, (c[0] + 28) * S, (c[1] + 28) * S)
 
     # Sixteen alternating wedges: the classic pop bumper starburst.
@@ -115,7 +122,7 @@ def make_bumper(repo):
         op = ADD
     select_circle(img, c, 25.5, S, Gimp.ChannelOps.INTERSECT)
     select_circle(img, c, 15.5, S, SUBTRACT)
-    fill_selection(burst, color(1.0, 1.0, 1.0, 0.92))
+    fill_selection(burst, color(1.0, 1.0, 1.0, 1.0))
 
     ring = new_layer(img, "ring")
     select_circle(img, c, 16.5, S)
@@ -130,7 +137,7 @@ def make_bumper(repo):
     select_polygon(img, [(c[0] - 9, c[1]), (c[0] - 1.6, c[1] - 1.6), (c[0], c[1] - 9),
                          (c[0] + 1.6, c[1] - 1.6), (c[0] + 9, c[1]), (c[0] + 1.6, c[1] + 1.6),
                          (c[0], c[1] + 9), (c[0] - 1.6, c[1] + 1.6)], S)
-    fill_selection(cap, color(0.20, 0.20, 0.26, 0.8))
+    fill_selection(cap, color(0.14, 0.14, 0.20, 0.9))
 
     spec = new_layer(img, "specular", opacity=90)
     Gimp.context_set_feather(True)
@@ -155,7 +162,8 @@ def make_glow(repo):
 
 def make_bar(repo, d):
     """White neon bar for stand-up target faces, lying along +x. Tinted by
-    the game: a dark edge, a bright face and a white-hot core."""
+    the game: a dark edge, a bright outline tube, a quieter face and a
+    white-hot core. The outline keeps an unlit (dimmed) bar visible."""
     length, radius, margin = 34.0, 5.0, 2.0
     width = length + 2 * radius + 2 * margin
     height = 2 * radius + 2 * margin
@@ -166,8 +174,10 @@ def make_bar(repo, d):
     select_capsule(img, a, b, radius + 1.0, S)
     fill_selection(edge, color(0.06, 0.04, 0.12))
     face = new_layer(img, "face")
-    select_capsule(img, a, b, radius - 0.5, S)
-    linear_gradient(face, color(0.95, 0.95, 0.97), color(0.68, 0.68, 0.74),
+    select_capsule(img, a, b, radius - 0.3, S)
+    fill_selection(face, color(1.0, 1.0, 1.0))
+    select_capsule(img, a, b, radius - 1.9, S)
+    linear_gradient(face, color(0.66, 0.66, 0.70), color(0.40, 0.40, 0.46),
                     0, (height / 2 - radius) * S, 0, (height / 2 + radius) * S)
     core = new_layer(img, "core")
     select_capsule(img, (a[0] + 1, a[1] - 1.0), (b[0] - 1, b[1] - 1.0), 1.5, S)
@@ -209,10 +219,11 @@ def make_plunger(repo, d):
     return finish(img, repo, "plunger.png")
 
 
-with open(LAYOUT) as _f:
-    _d = json.load(_f)
-print(make_flipper(REPO, _d))
-print(make_bumper(REPO))
-print(make_glow(REPO))
-print(make_bar(REPO, _d))
-print(make_plunger(REPO, _d))
+def make_sprites(repo, layout_path):
+    d = load_layout(layout_path)
+    return [make_flipper(repo, d), make_bumper(repo), make_glow(repo), make_bar(repo, d),
+            make_plunger(repo, d)]
+
+
+for _path in run_script(lambda: make_sprites(REPO, LAYOUT)):
+    print(_path)

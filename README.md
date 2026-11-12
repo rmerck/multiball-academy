@@ -198,7 +198,7 @@ The background tune (`src/core/Music`) is an original eight-bar loop for bass, a
 
 ## Assets
 
-The game wears a 1980s neon arcade look: a slatted sun setting behind a mountain ridge, a city skyline and palm silhouettes, a perspective grid for a floor, neon tube rails with bloom, a starfield with nebula clouds, Memphis confetti on the cabinet, and faint CRT raster lines and grain over everything. Each part of the table has its own motif and colour: a hot pink starburst diamond under the attack bumpers, a cyan delta and dial round the engine bumpers, yellow orbits round the satellite bumper, spiral wormholes, an accretion disc for the black hole, nested diamonds for hyperspace, and orange rails that sweep from the launch ramp round the arch.
+The game wears a 1980s neon arcade look: a slatted sun setting behind a mountain ridge, a city skyline and palm silhouettes, a perspective grid for a floor, neon tube rails with bloom, a starfield with nebula clouds, Memphis confetti on the cabinet, and faint CRT raster lines and grain over everything. Each part of the table has its own motif and colour: a hot pink starburst diamond under the attack bumpers, a cyan delta and dial round the engine bumpers, yellow orbits round the satellite bumper, spiral wormholes, an accretion disc for the black hole, nested diamonds for hyperspace, and an orange ramp: a flared scoop at the ramp's mouth with chevrons along the line of the shot from the right flipper, and rails that climb from it past the wormhole and round the arch to the exit. The mouth is drawn from `rampMouth` in the layout, so it is exactly as wide as the strip the physics tests.
 
 All art is original. It is generated in GIMP 3 by the scripts in `tools/gimp`, with one exception described below. The table art is drawn from the same geometry the physics uses: `pinball_layout` prints `src/core/TableLayout.hpp` and `src/core/PanelLayout.hpp` as JSON and the scripts read it. To regenerate everything, build the project, then in GIMP's Python console run:
 
@@ -209,20 +209,20 @@ for script in ("make_ball", "make_table", "make_sprites", "make_panel"):
     exec(open(REPO + "/tools/gimp/" + script + ".py").read())
 ```
 
-`make_table.py` takes a couple of minutes: it builds about forty layers and several blur passes at 1536x1920.
+`make_table.py` takes a couple of minutes: it builds about forty layers and several blur passes at 1536x1920. `tools/gimp/common.py` holds the shared helpers. Each script refuses to run without the layout file, sets every GIMP context setting it depends on, and puts your context back and deletes its working image when it ends, whether or not it succeeded. The export fails loudly if GIMP lacks any of the options that switch metadata off.
 
 | Asset | Script | Notes |
 |---|---|---|
 | `table/background.png` | `make_table.py` | 1536x1920 (2x). Sky, sun, horizon, grid floor, area motifs, neon rails, islands, hole wells, unlit inserts |
 | `ui/panel.png` | `make_panel.py` | 1024x1920 (2x). Information panel beside the playfield: backglass illustration behind the title, neon-framed display windows from `src/core/PanelLayout.hpp`, grid and accents |
 | `sprites/ball.png` | `make_ball.py` | 4x. Chrome ball with a bright rim so it stays visible on any part of the art |
-| `sprites/flipper.png` | `make_sprites.py` | Rotated about its pivot; mirrored for the right flipper |
-| `sprites/bumper.png` | `make_sprites.py` | White starburst cap, tinted per bumper group |
+| `sprites/flipper.png` | `make_sprites.py` | Rotated about its pivot; mirrored for the right flipper. A dark halo under a cyan glow lifts it off the grid |
+| `sprites/bumper.png` | `make_sprites.py` | White starburst on a dark skirt, tinted per bumper group |
 | `sprites/glow.png` | `make_sprites.py` | Drawn additively and tinted for every light; also the ball's shadow and halo |
-| `sprites/bar.png` | `make_sprites.py` | Stand-up target face, tinted per bank |
+| `sprites/bar.png` | `make_sprites.py` | Stand-up target face, tinted per bank; its bright outline keeps an unlit target visible |
 | `sprites/plunger.png` | `make_sprites.py` | |
 
-Lights, lit targets, bumper flashes, the lane gate, all text and the About and initials dialogs are drawn by the game (`src/platform/TableRenderer.cpp`, `Hud.cpp`, `Text.cpp`). Their colours match the rims and inserts in the art; if you change a palette in one place, change it in the other.
+Lights, lit targets, bumper flashes, the lane gate, all text and the About and initials dialogs, with their frames, zigzags and the small sunset, are drawn by the game (`src/platform/TableRenderer.cpp`, `Hud.cpp`, `Text.cpp`). Their colours match the rims and inserts in the art; if you change a palette in one place, change it in the other.
 
 ### The Canva source
 

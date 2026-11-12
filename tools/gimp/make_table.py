@@ -8,11 +8,11 @@
 #      exec(open(REPO + "/tools/gimp/make_table.py").read())
 #
 # Everything is drawn from the same numbers the physics uses, at 2x.
-import json
 import math
 import random
 
-exec(open(REPO + "/tools/gimp/common.py").read())
+with open(REPO + "/tools/gimp/common.py", encoding="utf-8") as _f:
+    exec(_f.read())
 
 S = 2  # Art pixels per playfield pixel.
 
@@ -58,17 +58,14 @@ def col(rgb, a=1.0, k=1.0):
 
 
 def make_table(repo, layout_path):
-    with open(layout_path) as f:
-        d = json.load(f)
+    d = load_layout(layout_path)
     W, H = int(d["width"] * S), int(d["height"] * S)
     cx = d["fieldCenterX"]
     shell = [tuple(p) for p in d["shell"]]
     lane = d["lane"]
     rng = random.Random(19840612)
 
-    img = Gimp.Image.new(W, H, Gimp.ImageBaseType.RGB)
-    Gimp.context_set_antialias(True)
-    feather(False)
+    img = work_image(W, H)
 
     def clip_to_shell():
         select_polygon(img, shell, S, INTERSECT)
@@ -376,7 +373,8 @@ def make_table(repo, layout_path):
         select_circle(img, t0, 3.2, S, ADD)
         fill_selection(palms, color(0.03, 0.0, 0.08))
 
-    palm((cx - 64, HORIZON + 1), 74, -9)
+    # The left palm stands clear of the ramp mouth.
+    palm((cx - 196, HORIZON + 1), 60, -7)
     palm((cx + 70, HORIZON + 1), 62, 8)
     palm((cx + 50, HORIZON + 1), 40, -5)
     select_none(img)
@@ -522,42 +520,142 @@ def make_table(repo, layout_path):
     polyline(deco, zigzag(84, 536, 10, 4, 9, True), 1.5, col(MAGENTA, 0.55))
     polyline(deco, squiggle(630, 532, 96, 4, 4, math.pi / 2), 1.5, col(ORANGE, 0.55))
 
-    # Launch ramp: rails that sweep from the entry up around the arch to the
-    # exit. They are drawn faint: the ball travels above the playfield there.
-    ramp = [h for h in d["holes"] if h["type"] == "ramp"][0]["c"]
+    # Mission ramp. The entry is a mouth: a strip across the field that takes
+    # fast shots from the right flipper heading up and to the left. Rails run
+    # from the mouth up past the wormhole, out to the left wall and round the
+    # arch to the exit. They stay faint away from the mouth: the ball travels
+    # above the playfield there.
+    ramp = tuple([h for h in d["holes"] if h["type"] == "ramp"][0]["c"])
+    reach = d["rampMouth"]["reach"]
+    lean = d["rampMouth"]["minLeftLean"]
     rex = d["rampExit"]
     arch_c = (384.0, 300.0)
-    path = [(ramp[0], ramp[1] - 20), (ramp[0] - 8, 360.0)]
-    path += ellipse_pts(arch_c, 320, 236, 0, 30, math.pi * 1.0, math.pi * 1.385)[1:]
-    path.append((rex[0] - 18, rex[1] - 14))
-    for off, alpha in ((-9, 0.55), (9, 0.55)):
-        rail = []
-        for i, p in enumerate(path):
-            q = path[min(i + 1, len(path) - 1)]
-            o = path[max(i - 1, 0)]
+
+    def smooth(pts, rounds=3):
+        """Corner cutting: turns a few control points into a smooth curve."""
+        for _ in range(rounds):
+            out = [pts[0]]
+            for i in range(len(pts) - 1):
+                p, q = pts[i], pts[i + 1]
+                out.append((p[0] * 0.75 + q[0] * 0.25, p[1] * 0.75 + q[1] * 0.25))
+                out.append((p[0] * 0.25 + q[0] * 0.75, p[1] * 0.25 + q[1] * 0.75))
+            out.append(pts[-1])
+            pts = out
+        return pts
+
+    def offset(pts, off):
+        out = []
+        for i, p in enumerate(pts):
+            q = pts[min(i + 1, len(pts) - 1)]
+            o = pts[max(i - 1, 0)]
             tx, ty = q[0] - o[0], q[1] - o[1]
             n = math.hypot(tx, ty) or 1.0
-            rail.append((p[0] - ty / n * off, p[1] + tx / n * off))
-        polyline(deco, rail, 1.3, col(ORANGE, alpha))
+            out.append((p[0] - ty / n * off, p[1] + tx / n * off))
+        return out
+
+    throat = (ramp[0] - 3, ramp[1] - 44)
+    lead = smooth([throat, (ramp[0] - 10, ramp[1] - 82), (ramp[0] - 46, ramp[1] - 112),
+                   (ramp[0] - 96, ramp[1] - 126), (ramp[0] - 146, ramp[1] - 136),
+                   (ramp[0] - 186, ramp[1] - 172), (ramp[0] - 203, ramp[1] - 226),
+                   (64.0, 318.0)])
+    path = lead + ellipse_pts(arch_c, 320, 236, 0, 30, math.pi * 1.0, math.pi * 1.385)[1:]
+    path.append((rex[0] - 18, rex[1] - 14))
+    half = 9.0
+    n_lead = len(lead)
+    # A dark bed under the first stretch so the rails read against the sun.
+    bed = offset(lead, -half) + offset(lead, half)[::-1]
+    select_polygon(img, bed, S)
+    fill_selection(deco, color(0.03, 0.0, 0.09, 0.62))
+    for off in (-half, half):
+        rail = offset(path, off)
+        polyline(deco, rail, 1.3, col(ORANGE, 0.55))
+        # Brighter and thicker near the mouth, where the shot is aimed.
+        polyline(deco, rail[:n_lead], 2.2, col(ORANGE, 0.95))
+        polyline(deco, rail[:n_lead * 2 // 3], 0.8, col(mix(ORANGE, WHITE, 0.75), 0.95))
+    # Sleepers across the track.
     op = REPLACE
-    for i in range(1, len(path) - 1, 2):
-        p, q, o = path[i], path[i + 1], path[i - 1]
-        tx, ty = q[0] - o[0], q[1] - o[1]
-        n = math.hypot(tx, ty) or 1.0
-        select_capsule(img, (p[0] - ty / n * 9, p[1] + tx / n * 9),
-                       (p[0] + ty / n * 9, p[1] - tx / n * 9), 0.5, S, op)
+    left_rail, right_rail = offset(path, -half), offset(path, half)
+    for i in range(3, len(path) - 1):
+        if i < n_lead and i % 3:
+            continue
+        if i >= n_lead and (i - n_lead) % 2:
+            continue
+        select_capsule(img, left_rail[i], right_rail[i], 0.5, S, op)
         op = ADD
-    fill_selection(deco, col(YELLOW, 0.4))
+    fill_selection(deco, col(YELLOW, 0.5))
     ring(deco, rex, 15, 1.6, col(ORANGE, 0.8))
     ring(deco, rex, 21, 1.0, col(YELLOW, 0.4))
+
+    # The mouth: a scoop that flares from the rails to the full width of the
+    # strip the physics tests, with a lit threshold across it.
+    lip_y = ramp[1] + 9
+    ml, mr = (ramp[0] - reach, lip_y), (ramp[0] + reach, lip_y)
+    flare_l = smooth([ml, (ramp[0] - reach + 4, ramp[1] - 18), (throat[0] - half - 1, throat[1] + 12),
+                      (throat[0] - half, throat[1])], 3)
+    flare_r = smooth([mr, (ramp[0] + reach - 6, ramp[1] - 20), (throat[0] + half + 3, throat[1] + 10),
+                      (throat[0] + half, throat[1])], 3)
+    select_polygon(img, flare_l + flare_r[::-1], S)
+    fill_selection(deco, color(0.03, 0.0, 0.09, 0.80))
+    # Guide lines converging up the scoop.
     op = REPLACE
-    for k in range(3):
-        yy = ramp[1] + 28 + k * 11
-        select_polygon(img, [(ramp[0], yy), (ramp[0] + 12, yy + 10), (ramp[0] + 12, yy + 15),
-                             (ramp[0], yy + 5), (ramp[0] - 12, yy + 15), (ramp[0] - 12, yy + 10)],
-                       S, op)
+    for t in (0.25, 0.5, 0.75):
+        x0 = ml[0] + (mr[0] - ml[0]) * t
+        x1 = throat[0] - half + 2 * half * t
+        select_capsule(img, (x0, lip_y - 3), (x1, throat[1] + 4), 0.45, S, op)
         op = ADD
-    linear_gradient(deco, col(YELLOW), col(PINK), 0, (ramp[1] + 28) * S, 0, (ramp[1] + 66) * S)
+    fill_selection(deco, col(YELLOW, 0.55))
+    for flare in (flare_l, flare_r):
+        polyline(deco, flare, 3.4, col(ORANGE, 1.0))
+        polyline(deco, flare, 1.2, col(mix(ORANGE, WHITE, 0.85), 1.0))
+    for end in (ml, mr):
+        select_circle(img, end, 4.2, S)
+        fill_selection(deco, col(YELLOW, 1.0))
+        select_circle(img, end, 1.8, S)
+        fill_selection(deco, col(WHITE, 1.0))
+    # The threshold: a dashed yellow line exactly as wide as the mouth.
+    op = REPLACE
+    x = ml[0] + 8
+    while x < mr[0] - 8:
+        select_capsule(img, (x, lip_y), (min(x + 7, mr[0] - 7), lip_y), 1.1, S, op)
+        op = ADD
+        x += 12
+    fill_selection(deco, col(YELLOW, 0.95))
+    # Chevrons along the line of the shot, pointing up and left into the
+    # mouth from the right flipper.
+    fp = [f for f in d["flippers"] if f["pivot"][0] > cx][0]["pivot"]
+    aim = (fp[0] - d["flipper"]["length"] * 0.8, fp[1] - 40.0)
+    sx, sy = ramp[0] - aim[0], ramp[1] - aim[1]
+    n = math.hypot(sx, sy)
+    sx, sy = sx / n, sy / n
+    if sx > lean * sy:  # Never draw a shot the mouth would refuse.
+        sx, sy = -0.45, -0.893
+    px_, py_ = -sy, sx
+    chevrons = []
+    for k in range(3):
+        back = 30.0 + k * 21.0
+        tip = (ramp[0] - sx * back, ramp[1] - sy * back)
+        w, deep, thick = 15.0, 11.0, 6.5
+        chevrons.append([
+            tip,
+            (tip[0] - sx * deep + px_ * w, tip[1] - sy * deep + py_ * w),
+            (tip[0] - sx * (deep + thick) + px_ * w, tip[1] - sy * (deep + thick) + py_ * w),
+            (tip[0] - sx * thick, tip[1] - sy * thick),
+            (tip[0] - sx * (deep + thick) - px_ * w, tip[1] - sy * (deep + thick) - py_ * w),
+            (tip[0] - sx * deep - px_ * w, tip[1] - sy * deep - py_ * w)])
+
+    def select_chevrons():
+        op = REPLACE
+        for pts in chevrons:
+            select_polygon(img, pts, S, op)
+            op = ADD
+
+    # A dark surround keeps them clear of the skyline and the grid.
+    select_chevrons()
+    Gimp.Selection.grow(img, 3 * S)
+    fill_selection(deco, color(0.03, 0.0, 0.09, 0.85))
+    select_chevrons()
+    ys = [q[1] for pts in chevrons for q in pts]
+    linear_gradient(deco, col(YELLOW), col(ORANGE), 0, min(ys) * S, 0, max(ys) * S)
 
     # Drain: a warning glow between the flippers.
     op = REPLACE
@@ -599,15 +697,19 @@ def make_table(repo, layout_path):
         select_circle(img, center, radius + 0.6, S)
         fill_selection(inserts, color(0.02, 0.0, 0.05, 1.0))
         select_circle(img, center, radius - 1.0, S)
-        radial_gradient(inserts, col(rgb, 1.0, 0.50), col(rgb, 1.0, 0.20),
+        radial_gradient(inserts, col(rgb, 1.0, 0.36), col(rgb, 1.0, 0.12),
                         (center[0] - 2) * S, (center[1] - 2) * S, (center[0] + radius) * S,
                         (center[1] + radius) * S)
 
     n_fuel = len(d["fuelLights"]["centers"])
     fc = d["fuelLights"]["centers"]
     # A dark spine behind the fuel column keeps it readable against the sun.
+    feather(True, 10.0)
+    select_capsule(img, (fc[0][0], fc[0][1]), (fc[-1][0], fc[-1][1]), 21, S)
+    feather(False)
+    fill_selection(inserts, color(0.03, 0.0, 0.08, 0.55))
     select_capsule(img, (fc[0][0], fc[0][1]), (fc[-1][0], fc[-1][1]), 15, S)
-    fill_selection(inserts, color(0.04, 0.0, 0.10, 0.80))
+    fill_selection(inserts, color(0.03, 0.0, 0.08, 0.96))
     select_capsule(img, (fc[0][0], fc[0][1]), (fc[-1][0], fc[-1][1]), 15, S)
     select_capsule(img, (fc[0][0], fc[0][1]), (fc[-1][0], fc[-1][1]), 13.6, S, SUBTRACT)
     fill_selection(inserts, col(YELLOW, 0.8))
@@ -645,6 +747,8 @@ def make_table(repo, layout_path):
     wells = new_layer(img, "wells")
     seen = {}
     for h in d["holes"]:
+        if h["type"] == "ramp":
+            continue  # The ramp's entry is a mouth, drawn with the rails.
         palette = HOLE_COLORS[h["type"]]
         rgb = palette[seen.get(h["type"], 0) % len(palette)]
         seen[h["type"]] = seen.get(h["type"], 0) + 1
@@ -745,11 +849,15 @@ def make_table(repo, layout_path):
     for t in d["targets"]:
         rgb = BANK_COLORS[t["bank"]]
         sh = t["shape"]
-        select_capsule(img, sh["a"], sh["b"], sh["r"] + 3.0, S)
-        fill_selection(plates, col(rgb, 1.0, 0.75))
-        select_capsule(img, sh["a"], sh["b"], sh["r"] + 1.6, S)
-        fill_selection(plates, col(rgb, 1.0, 0.18))
+        select_capsule(img, sh["a"], sh["b"], sh["r"] + 3.4, S)
+        fill_selection(plates, col(rgb, 1.0, 1.0))
+        select_capsule(img, sh["a"], sh["b"], sh["r"] + 2.6, S)
+        select_capsule(img, sh["a"], sh["b"], sh["r"] + 2.0, S, SUBTRACT)
+        fill_selection(plates, col(mix(rgb, WHITE, 0.7), 1.0))
+        select_capsule(img, sh["a"], sh["b"], sh["r"] + 1.4, S)
+        fill_selection(plates, col(rgb, 1.0, 0.16))
     select_none(img)
+    bloom(img, plates, [(4.0, 70)])
 
     # --- Rails -------------------------------------------------------------
     # The outer rail is dark chrome with a neon tube along its inner edge.
@@ -806,9 +914,7 @@ def make_table(repo, layout_path):
     select_none(img)
 
     img.flatten()
-    path = export_png(img, repo + "/assets/table/background.png")
-    img.delete()
-    return path
+    return export_png(img, repo + "/assets/table/background.png")
 
 
-print(make_table(REPO, LAYOUT))
+print(run_script(lambda: make_table(REPO, LAYOUT)))

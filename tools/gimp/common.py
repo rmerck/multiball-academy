@@ -1,7 +1,57 @@
 # Shared helpers for the asset scripts. Loaded by each make_*.py with exec().
+import json
+import os
+
 import gi
 gi.require_version("Gimp", "3.0")
 from gi.repository import Gegl, Gimp, Gio
+
+# Images made by the running script. run_script deletes whatever is left.
+_WORK_IMAGES = []
+
+
+def work_image(width, height):
+    """A new RGB image that run_script deletes when the script ends, however
+    it ends."""
+    img = Gimp.Image.new(int(width), int(height), Gimp.ImageBaseType.RGB)
+    _WORK_IMAGES.append(img)
+    return img
+
+
+def load_layout(path):
+    """Reads the table geometry. The scripts refuse to run without it."""
+    if not os.path.isfile(path):
+        raise RuntimeError("Layout file not found: " + str(path) +
+                           " (run build/pinball_layout > build/layout.json first)")
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def run_script(work):
+    """Runs work() with a known GIMP context and puts the caller's context
+    back afterwards. Every setting the drawing depends on is set here, so the
+    result does not depend on what the user last did in GIMP."""
+    Gimp.context_push()
+    try:
+        Gimp.context_set_defaults()
+        Gimp.context_set_antialias(True)
+        Gimp.context_set_feather(False)
+        Gimp.context_set_feather_radius(0.0, 0.0)
+        Gimp.context_set_opacity(100.0)
+        Gimp.context_set_paint_mode(Gimp.LayerMode.NORMAL)
+        Gimp.context_set_interpolation(Gimp.InterpolationType.CUBIC)
+        Gimp.context_set_gradient_blend_color_space(
+            Gimp.GradientBlendColorSpace.RGB_PERCEPTUAL)
+        Gimp.context_set_gradient_reverse(False)
+        Gimp.context_set_gradient_repeat_mode(Gimp.RepeatMode.NONE)
+        Gimp.context_set_sample_merged(False)
+        return work()
+    finally:
+        while _WORK_IMAGES:
+            img = _WORK_IMAGES.pop()
+            if img.is_valid():
+                img.delete()
+        Gimp.context_pop()
 
 
 def _linear(v):
@@ -35,13 +85,17 @@ def export_png(img, path):
     cfg.set_property("image", img)
     cfg.set_property("file", Gio.File.new_for_path(path))
     names = {p.get_name() for p in cfg.list_properties()}
-    for name in ("include-exif", "include-iptc", "include-xmp", "include-color-profile",
-                 "include-thumbnail", "include-comment", "time", "bkgd", "offs", "phys",
-                 "interlaced"):
-        if name in names:
-            cfg.set_property(name, False)
-    if "compression" in names:
-        cfg.set_property("compression", 9)
+    off = ("include-exif", "include-iptc", "include-xmp", "include-color-profile",
+           "include-thumbnail", "include-comment", "time", "bkgd", "offs", "phys",
+           "interlaced")
+    # A missing option would leave some metadata switched on without a word.
+    missing = [name for name in off + ("compression",) if name not in names]
+    if missing:
+        raise RuntimeError("file-png-export has no option(s) " + ", ".join(missing) +
+                           "; cannot guarantee a metadata-free export of " + path)
+    for name in off:
+        cfg.set_property(name, False)
+    cfg.set_property("compression", 9)
     result = proc.run(cfg)
     if result.index(0) != Gimp.PDBStatusType.SUCCESS:
         raise RuntimeError("PNG export failed for " + path)
