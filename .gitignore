@@ -5,4 +5,3 @@ cmake-build-*/
 .vscode/
 .idea/
 compile_commands.json
-*.snapshot.png

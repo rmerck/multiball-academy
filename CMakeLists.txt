@@ -92,6 +92,10 @@ if(PINBALL_BUILD_TOOLS)
   set_target_properties(pinball_snapshot PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY $<TARGET_FILE_DIR:pinball>)
   add_dependencies(pinball_snapshot pinball_assets)
+
+  # Prints the table geometry as JSON for the art scripts.
+  add_executable(pinball_layout tools/layout_dump/main.cpp)
+  target_link_libraries(pinball_layout PRIVATE pinball_core)
 endif()
 
 include(CTest)
@@ -138,6 +142,14 @@ if(BUILD_TESTING)
       WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(render_snapshot PROPERTIES
       ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 60)
+  endif()
+
+  # The geometry dump must be valid JSON.
+  if(PINBALL_BUILD_TOOLS AND Python3_Interpreter_FOUND)
+    add_test(NAME layout_json
+      COMMAND Python3::Interpreter -c
+              "import json,subprocess,sys; d=json.loads(subprocess.check_output([sys.argv[1]])); assert len(d['shell'])>10 and d['bumpers'] and d['holes']"
+              $<TARGET_FILE:pinball_layout>)
   endif()
 
   set(PINBALL_HEADLESS_ENV "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")

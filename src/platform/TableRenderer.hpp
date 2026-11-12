@@ -3,7 +3,6 @@
 #include <SDL3/SDL.h>
 
 #include <memory>
-#include <vector>
 
 #include "core/Game.hpp"
 #include "platform/Assets.hpp"
@@ -17,21 +16,38 @@ class TableRenderer {
   // Loads all textures. Returns nullptr, after logging, if any is missing.
   static std::unique_ptr<TableRenderer> create(SDL_Renderer* renderer, const AssetLoader& assets);
 
-  // Draws one frame. Does not clear or present. dimmed draws the ball
-  // translucent, used while paused.
+  // Draws one frame. Does not clear or present. dimmed darkens the playfield,
+  // used while paused.
   void draw(SDL_Renderer* renderer, const Game& game, bool dimmed) const;
 
  private:
   struct Textures {
+    TexturePtr background;
     TexturePtr ball;
+    TexturePtr flipper;
+    TexturePtr bumper;
+    TexturePtr glow;
+    TexturePtr bar;
+    TexturePtr plunger;
+  };
+  struct Rgb {
+    Uint8 r;
+    Uint8 g;
+    Uint8 b;
   };
 
   explicit TableRenderer(Textures textures);
 
-  void drawOutline(SDL_Renderer* renderer, const Game& game) const;
+  // A soft additive light of the given colour and strength (0 to 1).
+  void drawGlow(SDL_Renderer* renderer, Vec2 center, float radius, Rgb color,
+                float strength) const;
+  void drawBumpers(SDL_Renderer* renderer, const Game& game) const;
+  void drawTargets(SDL_Renderer* renderer, const Game& game) const;
+  void drawPlungerAndGate(SDL_Renderer* renderer, const Game& game) const;
+  void drawFlippers(SDL_Renderer* renderer, const Game& game) const;
+  void drawBall(SDL_Renderer* renderer, const Game& game) const;
 
   Textures textures_;
-  std::vector<SDL_FPoint> outline_;
 };
 
 }  // namespace pinball

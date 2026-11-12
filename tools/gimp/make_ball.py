@@ -22,7 +22,7 @@ def make_ball(repo):
     Gimp.context_set_background(color(0.16, 0.18, 0.26))
     Gimp.context_set_gradient_fg_bg_rgb()
     cx, cy = SIZE * 0.38, SIZE * 0.34
-    layer.edit_gradient_fill(Gimp.GradientType.RADIAL, 0, False, 1, 0, True,
+    layer.edit_gradient_fill(Gimp.GradientType.RADIAL, 0, False, 1, 0, False,
                              cx, cy, SIZE * 0.95, SIZE * 0.95)
 
     # Soft reflected light along the lower-right rim.
@@ -32,7 +32,7 @@ def make_ball(repo):
     rim.fill(Gimp.FillType.TRANSPARENT)
     Gimp.context_set_foreground(color(0.45, 0.6, 1.0))
     Gimp.context_set_gradient_fg_transparent()
-    rim.edit_gradient_fill(Gimp.GradientType.RADIAL, 0, False, 1, 0, True,
+    rim.edit_gradient_fill(Gimp.GradientType.RADIAL, 0, False, 1, 0, False,
                            SIZE * 0.70, SIZE * 0.74, SIZE * 0.42, SIZE * 0.46)
 
     # Specular highlight.
