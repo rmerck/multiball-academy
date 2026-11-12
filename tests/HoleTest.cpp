@@ -96,7 +96,8 @@ void testHoles() {
     CHECK(!recaptured);
   }
 
-  {  // The ramp takes only a ball travelling up the table fast enough.
+  {  // The ramp takes only a ball shot firmly up the table and leaning left,
+     // into the mouth that faces the right flipper.
     std::size_t ramp = 0;
     for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
       if (table::kHoles[i].type == table::HoleType::Ramp) {
@@ -104,24 +105,98 @@ void testHoles() {
       }
     }
     const Vec2 entry = table::kHoles[ramp].center;
-    {
+    // A shot like the right flipper's: 1500 px/s up, leaning 0.4 to the left.
+    const Vec2 shot{-600.0F, -1500.0F};
+    // Starts 50 px below the mouth, placed so it crosses at entry.x + offset.
+    const auto shootAt = [&](float offset, Vec2 velocity) {
       PhysicsWorld world;
-      world.resetBall({entry.x, entry.y + 50.0F}, {0.0F, -900.0F});
-      const table::ElementRef captured = stepUntil(world, PhysicsEvent::Type::Capture, 60);
-      CHECK(captured.kind == table::ElementKind::Hole && captured.index == ramp);
-    }
-    {  // Falling back down through the entry: not taken.
+      const float drift = 50.0F * velocity.x / velocity.y;
+      world.resetBall({entry.x + offset + drift, entry.y + 50.0F}, velocity);
+      return stepUntil(world, PhysicsEvent::Type::Capture, 30);
+    };
+    const auto taken = [ramp](table::ElementRef e) {
+      return e.kind == table::ElementKind::Hole && e.index == ramp;
+    };
+    // Taken anywhere across the mouth, and not beside it (a wormhole lies
+    // beyond the left end, so only the ramp is ruled out there).
+    CHECK(taken(shootAt(0.0F, shot)));
+    CHECK(taken(shootAt(table::kRampMouthReach - 4.0F, shot)));
+    CHECK(taken(shootAt(-(table::kRampMouthReach - 4.0F), shot)));
+    CHECK(!taken(shootAt(table::kRampMouthReach + 4.0F, shot)));
+    CHECK(!taken(shootAt(-(table::kRampMouthReach + 4.0F), shot)));
+    // Too slow to climb it, though aimed the same way.
+    CHECK(shootAt(0.0F, {-360.0F, -900.0F}).kind == table::ElementKind::None);
+    // Fast, but straight up the table: that is the left flipper's shot.
+    CHECK(shootAt(0.0F, {-150.0F, -1700.0F}).kind == table::ElementKind::None);
+    CHECK(shootAt(0.0F, {300.0F, -1500.0F}).kind == table::ElementKind::None);
+    {  // Falling back down through the mouth: not taken.
       PhysicsWorld world;
       world.resetBall({entry.x, entry.y - 50.0F}, {0.0F, 300.0F});
       const table::ElementRef captured = stepUntil(world, PhysicsEvent::Type::Capture, 40);
       CHECK(captured.kind == table::ElementKind::None);
     }
-    {  // Creeping upward too slowly: not taken.
+    {  // The fastest ball the table allows cannot step over the mouth.
       PhysicsWorld world;
-      world.resetBall({entry.x, entry.y + 14.0F}, {0.0F, -150.0F});
-      const table::ElementRef captured = stepUntil(world, PhysicsEvent::Type::Capture, 20);
-      CHECK(captured.kind == table::ElementKind::None);
+      const float fastest = PhysicsWorld::kMaxBallSpeed * PhysicsWorld::kPixelsPerMeter;
+      world.resetBall({entry.x + 16.0F, entry.y + 43.0F}, {-0.35F * fastest, -0.93F * fastest});
+      CHECK(taken(stepUntil(world, PhysicsEvent::Type::Capture, 10)));
     }
+
+    // The shot itself. A ball rolls down an inlane onto the flipper (the
+    // natural feed) or is cradled and let go, and the flipper is triggered
+    // at every step in turn while the ball is on the bat. The ramp must be
+    // makeable over a few consecutive steps from the right flipper: a timing
+    // window of 25 ms or more, but not most of the bat. Only the width of
+    // the window is asserted; which steps it falls on depends on the solver.
+    struct Window {
+      int longest = 0;  // Most consecutive trigger steps that made the ramp.
+      int total = 0;
+    };
+    const auto sweep = [ramp](std::size_t side, bool cradled) {
+      const Vec2 inlane = side == table::kLeftFlipperIndex ? table::kLeftInlane
+                                                           : table::mirrored(table::kLeftInlane);
+      const int cradleSteps = cradled ? 360 : 0;
+      Window window;
+      int run = 0;
+      for (int trigger = 0; trigger < 240; ++trigger) {
+        PhysicsWorld world;
+        world.setLaneGateClosed(true);
+        world.resetBall(inlane, {0.0F, 0.0F});
+        const int flipAt = cradleSteps + trigger;
+        bool made = false;
+        bool lost = false;
+        // Follow the ball for a second after the flip: long enough to reach
+        // the mouth, too short for a second visit to the flippers.
+        for (int s = 0; s < flipAt + 120 && !made && !lost; ++s) {
+          const bool held = s < cradleSteps || (s >= flipAt && s < flipAt + 40);
+          world.setFlippers(side == table::kLeftFlipperIndex && held,
+                            side == table::kRightFlipperIndex && held);
+          world.step(kStep);
+          for (const PhysicsEvent& e : world.events()) {
+            if (e.type == PhysicsEvent::Type::Capture) {
+              made = s >= flipAt && e.element.index == ramp;
+              lost = !made;
+            }
+          }
+          // Rolled off the end of the bat before the flip.
+          lost = lost || (s < flipAt && world.ballPosition().y > table::kHeight);
+        }
+        run = made ? run + 1 : 0;
+        window.longest = std::max(window.longest, run);
+        window.total += made ? 1 : 0;
+      }
+      return window;
+    };
+    const Window rolling = sweep(table::kRightFlipperIndex, false);
+    CHECK(rolling.longest >= 3);
+    CHECK(rolling.longest <= 7);
+    const Window cradled = sweep(table::kRightFlipperIndex, true);
+    CHECK(cradled.longest >= 3);
+    CHECK(cradled.longest <= 9);
+    // It is the right flipper's shot. The left one drives the ball straight
+    // up through the mouth, which does not take it.
+    CHECK(sweep(table::kLeftFlipperIndex, false).total <= 1);
+    CHECK(sweep(table::kLeftFlipperIndex, true).total <= 1);
   }
 
   // Each rollover reports once per pass, however long the ball takes.
