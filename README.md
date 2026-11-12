@@ -97,15 +97,17 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 | Up | Nudge from bottom |
 | F2 | New game |
 | F1 | About and high scores. Escape or F1 closes it. On macOS the menu bar's About item opens the same screen |
-| F3 | Pause. The game also pauses by itself when its window loses focus or is minimised |
-| F4 | Fullscreen |
+| F3 | Pause. Does nothing while the About screen is open, where the change could not be seen. The game also pauses by itself when its window loses focus or is minimised |
+| F4 | Fullscreen. Works at any time, including in the initials prompt |
 | M | Mute all sound |
 | N | Music on and off |
+
+If the graphics device is reset, the textures are read and verified again from disk and the game carries on. If the device is lost for good, the game keeps a score that was waiting at the initials prompt and exits with code 1.
 
 ## Design priorities
 
 1. Secure software practices: RAII ownership with no owning raw pointers, standard-library hardening, validated input, no network access, sanitizer builds in CI.
-2. Performance: fixed 120 Hz simulation step, rendering at display refresh rate with a manual pacing fallback, 60 FPS minimum target.
+2. Performance: fixed 120 Hz simulation step, rendering at display refresh rate with a manual pacing fallback, 60 FPS minimum target. The ball and the flippers are drawn part-way between the last two steps, so their motion is smooth on a display that does not refresh at a multiple of 60 Hz; everything else shows the latest step.
 3. Faithfulness to the original feel.
 
 The code is C++23 with compiler extensions off, kept to the parts of the language and library that GCC 13 with libstdc++, clang 18 with libstdc++ or libc++, and Xcode 16 all provide. That rules out `std::expected`, `std::print` and explicit object parameters for now. Every file includes the header for each standard name it uses, because libc++ in C++23 no longer brings them in through other headers. Warnings are errors in CI with all three compilers.
@@ -123,10 +125,10 @@ Three balls per game. Everything a table feature awards is multiplied by the fie
 | Re-entry lanes | 5,000 each and the lane lights. All three lit: 10,000 and the attack bumpers upgrade. Flipper buttons rotate the lit lanes |
 | Booster bank (right wall) | 5,000 per completion. Then in turn: booster online, jackpot lit, bonus lanes lit, extra ball |
 | Medal bank (centre) | 10,000, then 50,000, then 100,000 and an extra ball |
-| Multiplier bank (upper left) | 5,000 per completion and the field multiplier steps 2x, 3x, 5x, 10x. Resets each ball |
+| Multiplier bank (upper left) | 5,000 per completion and the field multiplier steps 2x, 3x, 5x, 10x. At 10x a completion still pays 5,000 and the display reads FIELD MULTIPLIER AT MAXIMUM. Resets each ball |
 | Wormholes | 2,000 and the ball leaves the next wormhole |
 | Black hole | 20,000 |
-| Hyperspace chute | 10,000, then the 500,000 jackpot if lit (else 20,000), then 30,000, then an extra ball |
+| Hyperspace chute | 10,000, then the 500,000 jackpot if lit (else 20,000), then 30,000, then an extra ball (30,000 instead when five are already held) |
 | Launch ramp | 5,000 |
 | Reflex shot | 25,000 for repeating the ramp or the chute within 5 seconds |
 | Return lanes | Inlane 5,000. Outlane 20,000 when the bonus lanes are lit |
@@ -141,7 +143,7 @@ Each nudge adds tilt heat, which cools over 2.5 seconds. Two quick nudges show a
 ### Missions and ranks
 
 1. Hit a mission target on the left wall to select a mission: top, middle or bottom picks one of the rank's three missions. Lighting all three selects the rank's special mission. The mission targets are ignored while a mission is active, and the hit that completes a mission does not select the next one.
-2. Shoot the launch ramp to accept it. The fuel gauge fills. The ramp is a timed shot from the right flipper.
+2. Shoot the launch ramp to accept it. The fuel gauge fills and the mission targets' lights go out: until the mission ends they score without lighting, so the special mission always needs all three hit afresh. The ramp is a timed shot: a firm one off the right flipper, or a falling ball caught late by the left one.
 3. Do what the display asks. Some missions have two stages.
 4. Fuel lasts 90 seconds and burns only while a ball is in play. The ramp refuels. If it runs out the mission is aborted.
 5. Completing a mission pays its award (500,000 at Cadet up to 10,000,000 for the last special mission), plus the jackpot if lit, and fills the rank gauge: 6 of 18 for a normal mission, 9 for a special. A full gauge is a promotion.
@@ -179,12 +181,12 @@ The background tune (`src/core/Music`) is an original eight-bar loop for bass, a
 - The ball is a Box2D bullet body with continuous collision, and its speed is capped at 30 m/s.
 - The outer shell is one closed chain shape, which avoids ghost collisions at segment joints.
 - Flippers are kinematic bodies driven to an absolute target angle each step (13.5 rad/s up, 12 rad/s down, 60 degree stroke). They cannot overshoot or be pushed back by the ball.
-- The plunger is a kinematic block. Holding Space draws it back over one second; on release it drives forward at 3 to 12.5 m/s depending on the draw, and the ball leaves about 1.3 times faster. A full draw clears the arch; a tap does not leave the lane.
+- The plunger is a kinematic block. Holding Space draws it back over one second; on release it drives forward at 3 to 12.5 m/s depending on the draw, and the ball leaves about 1.3 times faster. A full draw clears the arch; a tap does not leave the lane. The launch sound plays on release when the plunger was drawn back by more than 4 pixels, and never on a tilted or finished table.
 - A one-way gate at the top of the lane is modelled as a wall that is switched on once the launched ball is clear, and off again for the next serve.
 - Bumpers and slingshot faces add a fixed kick on top of the solver's bounce. Elements are tagged in Box2D shape user data with a packed integer, never a pointer, and validated on the way out.
 - Rollovers and holes are detected by ball position every slice, not by Box2D sensors, so the result is exact and deterministic. A rollover is a switch across the whole width of its lane, wider than its drawn light, so a ball running down the lane's wall still trips it.
 - Holes take the ball off the table (its body is disabled) for 0.9 s and return it: wormholes pass it round a ring of three, the black hole and hyperspace chute return it from themselves.
-- The launch ramp's mouth is a strip 74 pixels wide in the left of the lower field, facing the right flipper. It takes only a ball travelling up the table at 11 m/s or more that is also heading left by at least a quarter of that speed: a firm shot off the right flipper, with a timing window of three to five steps. A slower ball, or one driven straight up by the left flipper, rolls over it. A real ramp lifts the ball above the playfield; here the ball is drawn riding over the table from where it entered and is dropped into the top of the field.
+- The launch ramp's mouth is a strip 74 pixels wide in the left of the lower field, facing the right flipper. It takes only a ball travelling up the table at 11 m/s or more that is also heading left by at least a quarter of that speed: a firm shot off the right flipper, with a timing window of three to five steps, or a falling ball met late in the stroke by the outer half of the left flipper. A slower ball, or one rolling or cradled on the left flipper and driven straight up, rolls over it. A real ramp lifts the ball above the playfield; here the ball is drawn riding over the table from where it entered and is dropped into the top of the field.
 - `src/core/TableLayout.hpp` is the single source of table geometry for physics, drawing and art.
 
 ## Layout
@@ -260,10 +262,10 @@ Assets are exported with all metadata off. `tools/check_assets.py` (run by `ctes
 
 Minor findings from review that were looked at and left as they are:
 
-- The ball is drawn at its latest 120 Hz step, with no interpolation between steps. On a display that is not 60 or 120 Hz (75, 144, 165 Hz) its motion can judder by up to one step.
-- If the fail-safe that returns a lost ball to the plunger ever fired, the rules would still count that ball as in play until it is launched again. It did not fire in 40 million soak-test steps.
+- Only the ball and the flippers are drawn between steps. The plunger, the nudge jolt and the lights show the latest 120 Hz step, and the picture is up to one step (8 ms) behind the simulation.
+- The fail-safe that returns a lost ball to the plunger cannot be reached through the game's public interface, so the game has no test of it; the rule it calls is unit tested. It did not fire in 40 million soak-test steps.
 - The flippers and plunger are commanded on every physics slice, even at rest (about a tenth of the 8 microseconds a step takes).
-- HUD text is redrawn as rectangles every frame, and target angles are recomputed every frame. On SDL's software renderer the About, initials and pause screens take 15 to 24 ms a frame; the loop sleeps while they are up.
+- HUD text is redrawn as rectangles every frame. On SDL's software renderer the About, initials and pause screens take 15 to 24 ms a frame; the loop sleeps while they are up.
 - `clang-tidy` is not run in CI. A configuration is in `.clang-tidy`.
 - Windows is untested, and the link and permission protections of the score file are POSIX only.
 
