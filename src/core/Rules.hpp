@@ -125,6 +125,9 @@ class Rules {
   void addBonus() noexcept;
   void say(std::string_view text) noexcept;
   void cue(Sound sound) noexcept { sounds_ |= soundBit(sound); }
+  // A mission announcement. It is not replaced by lesser messages from the
+  // same event (the bank award that the completing hit also earned, say).
+  void sayMission(std::string_view text) noexcept;
   void awardExtraBall() noexcept;
   void completeBank(table::TargetBank bank) noexcept;
   void resetBall() noexcept;
@@ -153,6 +156,11 @@ class Rules {
   bool bonusLaneLit_ = false;
 
   std::uint32_t ballSaveSteps_ = 0;
+  // The save is offered once per ball, not after every saved ball.
+  bool ballSaveUsed_ = false;
+  // Between entering play and draining. Mission fuel only burns then.
+  bool ballInPlay_ = false;
+  bool missionMessageThisStep_ = false;
   std::uint32_t rampReflexSteps_ = 0;
   std::uint32_t hyperspaceReflexSteps_ = 0;
   std::uint32_t messageSteps_ = 0;

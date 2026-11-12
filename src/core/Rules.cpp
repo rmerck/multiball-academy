@@ -36,6 +36,8 @@ void Rules::startGame() noexcept {
   laneLit_.fill(false);
   missions_.reset();
   sounds_ = 0;
+  ballInPlay_ = false;
+  missionMessageThisStep_ = false;
   resetBall();
   say("PULL THE PLUNGER TO LAUNCH");
 }
@@ -45,13 +47,24 @@ void Rules::resetBall() noexcept {
   bonus_ = 0;
   multiplierLevel_ = 0;
   ballSaveSteps_ = 0;
+  ballSaveUsed_ = false;
   rampReflexSteps_ = 0;
   hyperspaceReflexSteps_ = 0;
   tilted_ = false;
   tiltHeat_ = 0.0;
 }
 
+void Rules::sayMission(std::string_view text) noexcept {
+  missionMessageThisStep_ = false;
+  say(text);
+  missionMessageThisStep_ = true;
+}
+
 void Rules::say(std::string_view text) noexcept {
+  // While tilted the display says so and nothing else.
+  if (missionMessageThisStep_ || (tilted_ && text != "TILT")) {
+    return;
+  }
   message_ = text;
   messageSteps_ = stepsFor(kMessageSeconds);
 }
@@ -70,9 +83,10 @@ void Rules::addBonus() noexcept {
 }
 
 void Rules::awardExtraBall() noexcept {
-  if (extraBalls_ < kMaxExtraBalls) {
-    ++extraBalls_;
+  if (extraBalls_ >= kMaxExtraBalls) {
+    return;  // Already holding the most allowed: nothing to announce.
   }
+  ++extraBalls_;
   say("EXTRA BALL");
   cue(Sound::ExtraBall);
 }
@@ -87,25 +101,25 @@ void Rules::handleMission(const MissionControl::Outcome& outcome) noexcept {
       addScore(points::kJackpot);
       jackpotLit_ = false;
     }
-    say(outcome.promoted ? "MISSION COMPLETE  PROMOTED" : "MISSION COMPLETE");
+    sayMission(outcome.promoted ? "MISSION COMPLETE  PROMOTED" : "MISSION COMPLETE");
     cue(Sound::MissionComplete);
     if (outcome.promoted) {
       cue(Sound::Promotion);
     }
   } else if (outcome.aborted) {
-    say("OUT OF FUEL  MISSION ABORTED");
+    sayMission("OUT OF FUEL  MISSION ABORTED");
     cue(Sound::TiltWarning);
   } else if (outcome.stageCompleted) {
-    say("STAGE COMPLETE");
+    sayMission("STAGE COMPLETE");
     cue(Sound::BankComplete);
   } else if (outcome.accepted) {
-    say("MISSION ACCEPTED");
+    sayMission("MISSION ACCEPTED");
     cue(Sound::MissionAccept);
   } else if (outcome.selected) {
-    say("MISSION SELECTED  SHOOT THE RAMP");
+    sayMission("MISSION SELECTED  SHOOT THE RAMP");
     cue(Sound::MissionSelect);
   } else if (outcome.refueled) {
-    say("REFUELED");
+    sayMission("REFUELED");
     cue(Sound::MissionSelect);
   }
 }
@@ -331,22 +345,31 @@ void Rules::onBallInPlay() noexcept {
   if (gameOver_) {
     return;
   }
-  ballSaveSteps_ = stepsFor(kBallSaveSeconds);
+  ballInPlay_ = true;
+  if (!ballSaveUsed_) {
+    ballSaveSteps_ = stepsFor(kBallSaveSeconds);
+  }
 }
 
 Rules::DrainResult Rules::onDrain() noexcept {
+  ballInPlay_ = false;
   if (gameOver_) {
     return DrainResult::GameOver;
   }
-  if (ballSaveSteps_ > 0) {
+  // A tilt ends with the ball, whatever happens next.
+  const bool wasTilted = tilted_;
+  tilted_ = false;
+  tiltHeat_ = 0.0;
+  if (ballSaveSteps_ > 0 && !wasTilted) {
     ballSaveSteps_ = 0;
+    ballSaveUsed_ = true;
     say("RE-DEPLOY");
     cue(Sound::BallSaved);
     return DrainResult::BallSaved;
   }
 
   // End-of-ball bonus, multiplied once here. A tilt forfeits it.
-  if (!tilted_) {
+  if (!wasTilted) {
     addScore(bonus_ * static_cast<std::uint64_t>(fieldMultiplier()));
   }
   resetBall();
@@ -369,7 +392,10 @@ Rules::DrainResult Rules::onDrain() noexcept {
 }
 
 bool Rules::onNudge() noexcept {
-  if (gameOver_ || tilted_) {
+  // Only a ball in play can be nudged or tilted. A tilt with the ball still
+  // on the plunger would lock the table: the plunger would be dead and the
+  // ball could never drain to clear it.
+  if (gameOver_ || tilted_ || !ballInPlay_) {
     return false;
   }
   tiltHeat_ += 1.0;
@@ -411,9 +437,11 @@ void Rules::tick() noexcept {
   if (!tilted_) {
     tiltHeat_ = std::max(0.0, tiltHeat_ - stepSeconds_ / kTiltCoolSeconds);
   }
-  if (!gameOver_) {
+  // Fuel burns only while a ball is in play, not while one waits on the plunger.
+  if (!gameOver_ && ballInPlay_) {
     handleMission(missions_.tick());
   }
+  missionMessageThisStep_ = false;
   if (messageSteps_ > 0 && --messageSteps_ == 0 && !gameOver_ && !tilted_) {
     message_ = {};
   }

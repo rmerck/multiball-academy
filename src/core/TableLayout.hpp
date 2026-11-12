@@ -78,7 +78,9 @@ inline constexpr Capsule kLeftGuideLower{{90.0F, 743.2F}, {247.0F, 844.8F}, kWal
 // Hangs from the top of the arch, left of centre. A launched ball riding the
 // arch strikes it and drops into the top of the field instead of orbiting
 // all the way round to the left wall.
-inline constexpr Capsule kArchDeflector{{250.0F, 58.0F}, {258.0F, 98.0F}, kWallRadius};
+// Placed so that its tip stays more than a ball's width from the nearest
+// lane post; closer, the two made a pocket.
+inline constexpr Capsule kArchDeflector{{228.0F, 66.0F}, {238.0F, 104.0F}, kWallRadius};
 
 // Posts separating the three re-entry lanes at the top of the field.
 inline constexpr float kLanePitch = 55.5F;
@@ -166,7 +168,9 @@ inline constexpr std::array<Bumper, 8> kBumpers{{
     {{{kFieldCenterX, 232.0F}, 24.0F}, BumperGroup::Attack},
     {{{kFieldCenterX - 72.5F, 292.0F}, 24.0F}, BumperGroup::Attack},
     {{{kFieldCenterX + 72.5F, 292.0F}, 24.0F}, BumperGroup::Attack},
-    {{{kFieldCenterX, 352.0F}, 24.0F}, BumperGroup::Attack},
+    // One pixel off the centre line: directly below the top bumper, a ball
+    // could bounce straight up and down between the two for ever.
+    {{{kFieldCenterX + 1.0F, 352.0F}, 24.0F}, BumperGroup::Attack},
     // Engine bumpers: a triangle on the left.
     {{{150.0F, 340.0F}, 22.0F}, BumperGroup::Engine},
     {{{232.0F, 372.0F}, 22.0F}, BumperGroup::Engine},
@@ -178,6 +182,8 @@ inline constexpr std::array<Bumper, 8> kBumpers{{
 // Stand-up targets: short rubber-faced bars that register a hit.
 enum class TargetBank : std::uint8_t { Booster, Medal, Mission, Multiplier };
 inline constexpr std::size_t kTargetBankCount = 4;
+static_assert(static_cast<std::size_t>(TargetBank::Multiplier) + 1 == kTargetBankCount,
+              "kTargetBankCount must match the TargetBank enumeration");
 struct Target {
   Capsule shape;
   TargetBank bank;
@@ -185,7 +191,10 @@ struct Target {
 
 inline constexpr float kTargetRadius = 5.0F;
 // Wall-mounted banks sit just inside the side walls, above the lane guides.
-inline constexpr float kWallTargetX = 52.0F;
+// The centre line sits one target radius off the wall, so the bar is flush
+// against it. Further out, its top end and the wall formed a ledge that a
+// ball could rest on.
+inline constexpr float kWallTargetX = kWallLeft + kTargetRadius;
 inline constexpr Capsule kWallTargetTop{{kWallTargetX, 528.0F}, {kWallTargetX, 560.0F},
                                         kTargetRadius};
 inline constexpr Capsule kWallTargetMiddle{{kWallTargetX, 566.0F}, {kWallTargetX, 598.0F},
@@ -279,7 +288,8 @@ inline constexpr std::array<Hole, 6> kHoles{{
     {kWormholeB, HoleType::Wormhole, kWormholeC, {-120.0F, 300.0F}},
     {kWormholeC, HoleType::Wormhole, kWormholeA, {120.0F, 300.0F}},
     {kBlackHole, HoleType::BlackHole, kBlackHole, {-220.0F, 420.0F}},
-    {kHyperspace, HoleType::Hyperspace, kHyperspace, {-380.0F, 260.0F}},
+    // Lobbed across the table to land on the middle of the left flipper.
+    {kHyperspace, HoleType::Hyperspace, kHyperspace, {-420.0F, 100.0F}},
     {kRampEntry, HoleType::Ramp, kRampExit, {90.0F, 260.0F}},
 }};
 
