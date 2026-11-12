@@ -102,7 +102,8 @@ App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, 
       window_(window),
       renderer_(renderer),
       table_(std::move(table)),
-      vsync_(vsync) {}
+      vsync_(vsync),
+      audio_(AudioOutput::open()) {}
 
 App::~App() {
   table_.reset();
@@ -142,6 +143,7 @@ int App::run() {
       const int steps = timestep_.advance(frameSeconds);
       for (int i = 0; i < steps; ++i) {
         game_.step(input_);
+        mixer_.trigger(game_.sounds());
       }
       if (steps > 0) {
         // The simulation has seen every latched press at least once.
@@ -150,6 +152,10 @@ int App::run() {
     }
 
     // The accumulator is frozen while paused, so alpha is stable and nothing snaps.
+    if (audio_) {
+      audio_->pump(mixer_);
+    }
+
     render(timestep_.alpha());
 
     // Presenting normally blocks until vblank. When it will not (no vsync,
@@ -192,6 +198,8 @@ void App::handleEvent(const SDL_Event& event) {
         latched_ = InputState{};
       } else if (event.key.key == SDLK_F4) {
         toggleFullscreen();
+      } else if (event.key.key == SDLK_M) {
+        mixer_.setMuted(!mixer_.muted());
       }
       break;
     default:

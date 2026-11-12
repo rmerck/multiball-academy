@@ -7,6 +7,7 @@
 #include "core/Input.hpp"
 #include "core/Physics.hpp"
 #include "core/Rules.hpp"
+#include "core/Sound.hpp"
 #include "core/TableLayout.hpp"
 #include "core/Vec2.hpp"
 
@@ -81,6 +82,9 @@ class Game {
   // zero after a nudge.
   Vec2 shake() const noexcept { return shake_; }
 
+  // Sounds started by the most recent step.
+  SoundSet sounds() const noexcept { return sounds_; }
+
   // Score, lights, balls and messages.
   const Rules& rules() const noexcept { return rules_; }
   bool gameOver() const noexcept { return rules_.gameOver(); }
@@ -121,6 +125,7 @@ class Game {
   std::uint32_t stillSteps_ = 0;
   std::uint32_t ballSearchCount_ = 0;
   Vec2 shake_{};
+  SoundSet sounds_ = 0;
 };
 
 }  // namespace pinball

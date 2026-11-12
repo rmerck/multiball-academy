@@ -17,7 +17,7 @@ This is an independent fan project. It contains no code or assets from the origi
 | 7 | Scoring, lights, UI | Done: rules engine, lit lanes and targets, information panel with a built-in pixel font |
 | 8 | Missions and ranks | Done: 9 ranks, 36 missions, fuel |
 | 9 | Nudge and tilt | Done |
-| 10 | Audio | Planned |
+| 10 | Audio | Done: synthesized sound effects, no audio files. No music |
 | 11 | High scores, polish, performance | Planned |
 | 12 | Final playability pass | Planned |
 
@@ -51,6 +51,7 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 | F2 | New game | Done |
 | F3 | Pause | Done |
 | F4 | Fullscreen | Done |
+| M | Mute | Done |
 
 ## Design priorities
 
@@ -101,6 +102,14 @@ The mission structure follows the original (select with the mission targets, acc
 A ball that drains within 6 seconds of entering play is returned free. The rules live in `src/core/Rules` with no dependency on physics, and are unit tested event by event.
 
 Differences from the original are deliberate simplifications: awards do not time out, and there is no replay score.
+
+## Sound
+
+Every sound is synthesized at run time from sine, square and triangle oscillators and noise (`src/core/Sound`), so the game ships no audio files and has nothing extra to verify. Twenty effects cover flippers, launch, bumpers, targets, lanes, holes, drains, awards, missions, tilt and game over.
+
+The mixer is plain arithmetic with no device access and is unit tested: output is always finite and within [-1, 1], every sound ends, and a flood of triggers cannot overrun the 24-voice pool. The platform layer pulls samples on the main thread and queues about 60 ms to the default device, so no locking is needed. If no audio device opens, the game runs silent.
+
+There is no music.
 
 ## Physics notes
 

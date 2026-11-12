@@ -20,6 +20,7 @@ int main() {
   testPngHeader();
   testRules();
   testSha256();
+  testSound();
   testTargets();
 
   if (pinball_test::failures() == 0) {

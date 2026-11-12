@@ -53,6 +53,7 @@ void Game::handleNudges(const InputState& input) {
     const bool helps = rules_.onNudge();
     if (!wasTilted && !rules_.gameOver()) {
       shake_ = shake_ + nudge.tableShift;
+      sounds_ |= soundBit(Sound::Nudge);
     }
     if (helps) {
       physics_.pushBall(nudge.ballKick);
@@ -69,6 +70,7 @@ void Game::handleDrain() {
 }
 
 void Game::step(const InputState& input) {
+  sounds_ = 0;
   // Controls act on the press, not for as long as the key is held.
   if (input.newGame && !previousInput_.newGame) {
     startNewGame();
@@ -77,9 +79,15 @@ void Game::step(const InputState& input) {
   const bool playable = !rules_.gameOver() && !rules_.tilted();
   if (playable && input.leftFlipper && !previousInput_.leftFlipper) {
     rules_.onFlipper(true);
+    sounds_ |= soundBit(Sound::Flipper);
   }
   if (playable && input.rightFlipper && !previousInput_.rightFlipper) {
     rules_.onFlipper(false);
+    sounds_ |= soundBit(Sound::Flipper);
+  }
+  // The plunger lets go: a launch sound if it was drawn back at all.
+  if (playable && !input.plunger && previousInput_.plunger && physics_.plungerPull() > 4.0F) {
+    sounds_ |= soundBit(Sound::Launch);
   }
 
   physics_.setFlippers(playable && input.leftFlipper, playable && input.rightFlipper);
@@ -104,6 +112,7 @@ void Game::step(const InputState& input) {
     rules_.onBallInPlay();
   }
 
+  sounds_ |= rules_.takeSounds();
   ++stepCount_;
   previousInput_ = input;
 }
@@ -128,23 +137,28 @@ void Game::handleEvents() {
       case table::ElementKind::Bumper:
         bumperFlash_[index] = 1.0F;
         ++bumperHits_;
+        sounds_ |= soundBit(Sound::Bumper);
         rules_.onBumper(index);
         break;
       case table::ElementKind::Slingshot:
         slingshotFlash_[index] = 1.0F;
+        sounds_ |= soundBit(Sound::Slingshot);
         rules_.onSlingshot(index);
         break;
       case table::ElementKind::Target:
+        sounds_ |= soundBit(Sound::Target);
         rules_.onTarget(index);
         break;
       case table::ElementKind::Rollover:
         ++rolloverCounts_[index];
+        sounds_ |= soundBit(Sound::Rollover);
         rules_.onRollover(index);
         break;
       case table::ElementKind::Hole:
         ++holeCounts_[index];
         heldBy_ = index;
         heldSteps_ = 0;
+        sounds_ |= soundBit(Sound::HoleIn);
         rules_.onHole(index);
         break;
       case table::ElementKind::None:
@@ -161,6 +175,7 @@ void Game::updateHeldBall() {
   if (static_cast<double>(heldSteps_) * kStepSeconds >= kHoleHoldSeconds) {
     const table::Hole& hole = table::kHoles[heldBy_];
     physics_.releaseBall(hole.exitPosition, hole.exitVelocity);
+    sounds_ |= soundBit(Sound::HoleOut);
   }
 }
 

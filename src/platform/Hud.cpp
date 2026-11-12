@@ -178,7 +178,7 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game) {
   // Controls.
   drawText(r, "Z AND / FLIP   SPACE LAUNCH   X . UP NUDGE", middle, 892.0F, kLabelSize, kDim,
            TextAlign::Center);
-  drawText(r, "F2 NEW GAME   F3 PAUSE   F4 FULL SCREEN", middle, 916.0F, kLabelSize, kDim,
+  drawText(r, "F2 NEW  F3 PAUSE  F4 FULL SCREEN  M MUTE", middle, 916.0F, kLabelSize, kDim,
            TextAlign::Center);
 }
 
