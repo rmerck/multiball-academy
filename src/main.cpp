@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <string_view>
 
 #include "core/Args.hpp"
@@ -36,11 +37,15 @@ int main(int argc, char* argv[]) {
   }
 
   int exitCode = EXIT_FAILURE;
-  {
+  try {
     const auto app = pinball::App::create(options);
     if (app) {
       exitCode = app->run();
     }
+  } catch (const std::exception& e) {
+    // No exception may leave main: report and exit cleanly.
+    std::fprintf(stderr, "Fatal: %s\n", e.what());
+    exitCode = EXIT_FAILURE;
   }
   SDL_Quit();
   return exitCode;

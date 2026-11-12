@@ -41,8 +41,12 @@ inline constexpr float kPlungerTravel = 40.0F;
 // A new ball is placed resting on the plunger.
 inline constexpr Vec2 kBallStart{kLaneCenterX, kPlungerRestTopY - kBallRadius};
 
-// The main playfield is symmetric about this x.
-inline constexpr float kFieldCenterX = (kWallLeft + kLaneWallX) * 0.5F;
+// Half thickness of interior walls and guides.
+inline constexpr float kWallRadius = 5.0F;
+
+// The main playfield is symmetric about this x: midway between the left wall
+// and the near face of the launch lane wall.
+inline constexpr float kFieldCenterX = (kWallLeft + kLaneWallX - kWallRadius) * 0.5F;
 
 // A thick line with round ends. Used for interior walls and guides.
 struct Capsule {
@@ -60,8 +64,6 @@ constexpr Vec2 mirrored(Vec2 p) noexcept { return {2.0F * kFieldCenterX - p.x, p
 constexpr Capsule mirrored(const Capsule& c) noexcept {
   return {mirrored(c.a), mirrored(c.b), c.radius};
 }
-
-inline constexpr float kWallRadius = 5.0F;
 
 inline constexpr Capsule kLeftGuideUpper{{90.0F, 640.0F}, {90.0F, 795.0F}, kWallRadius};
 inline constexpr Capsule kLeftGuideLower{{90.0F, 795.0F}, {236.0F, 842.0F}, kWallRadius};

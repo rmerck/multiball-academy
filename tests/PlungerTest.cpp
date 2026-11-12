@@ -86,10 +86,11 @@ void testPlunger() {
     CHECK(full.highest < table::kArchCenterY - 150.0F);
     CHECK(full.leftmost < table::kFieldCenterX);
 
-    // And lands near the commanded speed, without wild overshoot.
+    // The ball leaves somewhat faster than the plunger face (it rebounds off
+    // it), but not wildly so.
     const float commanded = PhysicsWorld::kPlungerMaxSpeed * PhysicsWorld::kPixelsPerMeter;
-    CHECK(full.peakSpeed > commanded * 0.8F);
-    CHECK(full.peakSpeed < commanded * 1.3F);
+    CHECK(full.peakSpeed > commanded);
+    CHECK(full.peakSpeed < commanded * 1.45F);
   }
 
   {  // In a game: the ball is served at rest, launches with the plunger, the

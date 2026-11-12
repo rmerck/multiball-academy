@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 #include <vector>
 
 #include "core/TableLayout.hpp"
@@ -15,9 +16,9 @@ namespace {
 constexpr int kSubSteps = 4;
 
 constexpr float kWallFriction = 0.1F;
-constexpr float kWallRestitution = 0.3F;
+constexpr float kWallRestitution = 0.45F;
 constexpr float kBallFriction = 0.1F;
-constexpr float kBallRestitution = 0.25F;
+constexpr float kBallRestitution = 0.3F;
 constexpr float kBallDensity = 8.0F;
 
 // Flipper rubber: grippy and a little lively.
@@ -50,6 +51,11 @@ PhysicsWorld::PhysicsWorld() {
   def.maximumLinearSpeed = kMaxBallSpeed;
   def.enableContinuous = true;
   world_ = b2CreateWorld(&def);
+  // Box2D returns a null id when its world table is full. Every later call
+  // would dereference it, so stop here.
+  if (!b2World_IsValid(world_)) {
+    throw std::runtime_error("could not create the physics world");
+  }
 
   buildTable();
   buildBall();
@@ -109,6 +115,8 @@ void PhysicsWorld::buildBall() {
   b2BodyDef bodyDef = b2DefaultBodyDef();
   bodyDef.type = b2_dynamicBody;
   bodyDef.position = b2ToPos(toMeters(table::kBallStart));
+  // The ball is free to spin. A rolling disc accelerates down a slope at 2/3
+  // of the sliding rate, close to the 5/7 of a real rolling sphere.
   // Continuous collision against everything, so a fast ball cannot tunnel.
   bodyDef.isBullet = true;
   bodyDef.enableSleep = false;
@@ -201,7 +209,8 @@ void PhysicsWorld::buildPlunger() {
 
   b2ShapeDef shapeDef = b2DefaultShapeDef();
   shapeDef.material.friction = 0.4F;
-  // No bounce: the launch speed should come from the stroke alone.
+  // Box2D takes the larger restitution of the two shapes, so the ball's own
+  // value governs the rebound whatever is set here.
   shapeDef.material.restitution = 0.0F;
   const float halfWidth = toMeters(table::kPlungerWidth) * 0.5F;
   const float halfHeight = toMeters(table::kPlungerHeight) * 0.5F;
@@ -253,7 +262,7 @@ void PhysicsWorld::drivePlunger(float stepSeconds) {
 }
 
 void PhysicsWorld::step(float stepSeconds) {
-  if (!std::isfinite(stepSeconds) || stepSeconds <= 0.0F) {
+  if (!std::isfinite(stepSeconds) || stepSeconds <= 0.0F || stepSeconds > kMaxStepSeconds) {
     return;
   }
   driveFlippers(stepSeconds);

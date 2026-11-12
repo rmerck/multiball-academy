@@ -16,9 +16,13 @@ class PhysicsWorld {
   static constexpr float kPixelsPerMeter = 100.0F;
   // In-plane gravity of the inclined table, in m/s^2.
   static constexpr float kGravity = 9.5F;
-  // Hard cap on ball speed in m/s. Keeps continuous collision reliable.
-  static constexpr float kMaxBallSpeed = 40.0F;
+  // Hard cap on ball speed in m/s. Keeps continuous collision reliable: at
+  // 120 Hz this is 25 px per step, about one ball diameter.
+  static constexpr float kMaxBallSpeed = 30.0F;
+  // Longest step accepted, in seconds. Larger values make the solver diverge.
+  static constexpr float kMaxStepSeconds = 0.1F;
 
+  // Throws std::runtime_error if the Box2D world cannot be created.
   PhysicsWorld();
   ~PhysicsWorld();
   PhysicsWorld(const PhysicsWorld&) = delete;
@@ -37,8 +41,10 @@ class PhysicsWorld {
   // Plunger. While held it draws back over kPlungerChargeSeconds; on release
   // it drives forward at a speed set by how far it was drawn back.
   static constexpr float kPlungerChargeSeconds = 1.0F;
-  static constexpr float kPlungerMinSpeed = 3.0F;   // m/s, lightest tap.
-  static constexpr float kPlungerMaxSpeed = 17.0F;  // m/s, full draw.
+  // These are plunger speeds in m/s. The ball leaves about 1.3 times faster,
+  // because it rebounds off the moving face with its own restitution.
+  static constexpr float kPlungerMinSpeed = 3.0F;   // Lightest tap.
+  static constexpr float kPlungerMaxSpeed = 12.5F;  // Full draw.
 
   void setPlunger(bool held) noexcept;
   // How far the plunger is drawn back, in pixels: 0 at rest.
@@ -48,7 +54,7 @@ class PhysicsWorld {
   void setLaneGateClosed(bool closed);
   bool laneGateClosed() const noexcept { return laneGateClosed_; }
 
-  // Advances by one fixed step of stepSeconds.
+  // Advances by one fixed step. Ignored unless 0 < stepSeconds <= kMaxStepSeconds.
   void step(float stepSeconds);
 
   Vec2 ballPosition() const;
