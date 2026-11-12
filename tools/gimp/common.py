@@ -39,3 +39,76 @@ def export_png(img, path):
     if result.index(0) != Gimp.PDBStatusType.SUCCESS:
         raise RuntimeError("PNG export failed for " + path)
     return path
+
+
+# ---- Drawing helpers shared by the table and sprite scripts ----
+
+def set_fg(c):
+    Gimp.context_set_foreground(c)
+
+
+def select_none(img):
+    Gimp.Selection.none(img)
+
+
+def select_polygon(img, points, scale, op=Gimp.ChannelOps.REPLACE):
+    flat = []
+    for x, y in points:
+        flat.extend([x * scale, y * scale])
+    img.select_polygon(op, flat)
+
+
+def select_circle(img, center, radius, scale, op=Gimp.ChannelOps.REPLACE):
+    x, y = center
+    img.select_ellipse(op, (x - radius) * scale, (y - radius) * scale,
+                       2 * radius * scale, 2 * radius * scale)
+
+
+def select_capsule(img, a, b, radius, scale, op=Gimp.ChannelOps.REPLACE):
+    """A thick line with round ends: a quad plus a circle at each end."""
+    import math
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / length * radius, dx / length * radius
+    quad = [(a[0] + nx, a[1] + ny), (b[0] + nx, b[1] + ny),
+            (b[0] - nx, b[1] - ny), (a[0] - nx, a[1] - ny)]
+    select_polygon(img, quad, scale, op)
+    select_circle(img, a, radius, scale, Gimp.ChannelOps.ADD)
+    select_circle(img, b, radius, scale, Gimp.ChannelOps.ADD)
+
+
+def fill_selection(layer, c):
+    set_fg(c)
+    layer.edit_fill(Gimp.FillType.FOREGROUND)
+
+
+def linear_gradient(layer, c1, c2, x1, y1, x2, y2):
+    Gimp.context_set_foreground(c1)
+    Gimp.context_set_background(c2)
+    Gimp.context_set_gradient_fg_bg_rgb()
+    layer.edit_gradient_fill(Gimp.GradientType.LINEAR, 0, False, 1, 0, True, x1, y1, x2, y2)
+
+
+def radial_gradient(layer, c1, c2, cx, cy, ex, ey):
+    Gimp.context_set_foreground(c1)
+    Gimp.context_set_background(c2)
+    Gimp.context_set_gradient_fg_bg_rgb()
+    layer.edit_gradient_fill(Gimp.GradientType.RADIAL, 0, False, 1, 0, True, cx, cy, ex, ey)
+
+
+def apply_filter(layer, operation, **props):
+    """Applies a GEGL filter destructively. Property names use dashes."""
+    f = Gimp.DrawableFilter.new(layer, operation, operation)
+    cfg = f.get_config()
+    for key, value in props.items():
+        cfg.set_property(key.replace("_", "-"), value)
+    layer.merge_filter(f)
+
+
+def blur(layer, radius):
+    apply_filter(layer, "gegl:gaussian-blur", std_dev_x=float(radius), std_dev_y=float(radius))
+
+
+def drop_shadow(layer, x, y, radius, opacity):
+    apply_filter(layer, "gegl:dropshadow", x=float(x), y=float(y), radius=float(radius),
+                 opacity=float(opacity))

@@ -283,6 +283,13 @@ inline constexpr std::array<Hole, 6> kHoles{{
     {kRampEntry, HoleType::Ramp, kRampExit, {90.0F, 260.0F}},
 }};
 
+// Fuel gauge: a column of lights down the centre of the field, top is full.
+inline constexpr std::size_t kFuelLightCount = 6;
+inline constexpr float kFuelLightRadius = 8.0F;
+constexpr Vec2 fuelLight(std::size_t index) noexcept {
+  return {kFieldCenterX, 500.0F + 22.0F * static_cast<float>(index)};
+}
+
 // Identifies one interactive element of the table. Stored in physics shapes
 // and carried by events.
 enum class ElementKind : std::uint8_t { None, Bumper, Slingshot, Target, Rollover, Hole };

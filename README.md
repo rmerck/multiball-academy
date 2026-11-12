@@ -9,7 +9,7 @@ This is an independent fan project. It contains no code or assets from the origi
 | Phase | Feature | State |
 |---|---|---|
 | 1 | Project skeleton, window, fixed-step loop, CI | Done |
-| 2 | Asset loading and rendering | In progress: loader and ball sprite done, table art pending |
+| 2 | Asset loading and rendering | Done: verified loader, table art and sprites generated in GIMP from the table geometry |
 | 3 | Physics foundation | Done: Box2D world, table shell, ball, drain |
 | 4 | Flippers | Done |
 | 5 | Plunger and launch lane | Done |
@@ -85,12 +85,26 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 
 ## Assets
 
-All art is original and generated in GIMP 3 by the scripts in `tools/gimp`. To regenerate one, open GIMP's Python console and run:
+All art is original and generated in GIMP 3 by the scripts in `tools/gimp`. The table art is drawn from the same geometry the physics uses: `pinball_layout` prints `src/core/TableLayout.hpp` as JSON and the scripts read it. To regenerate everything, build the project, then in GIMP's Python console run:
 
 ```python
 REPO = "/path/to/space-cadet-pinball"
-exec(open(REPO + "/tools/gimp/make_ball.py").read())
+LAYOUT = "/tmp/layout.json"   # from: build/pinball_layout > /tmp/layout.json
+for script in ("make_ball", "make_table", "make_sprites"):
+    exec(open(REPO + "/tools/gimp/" + script + ".py").read())
 ```
+
+| Asset | Script | Notes |
+|---|---|---|
+| `table/background.png` | `make_table.py` | 1536x1920 (2x). Space backdrop, steel rails, islands, hole wells, unlit inserts |
+| `sprites/ball.png` | `make_ball.py` | 4x |
+| `sprites/flipper.png` | `make_sprites.py` | Rotated about its pivot; mirrored for the right flipper |
+| `sprites/bumper.png` | `make_sprites.py` | White cap, tinted per bumper group |
+| `sprites/glow.png` | `make_sprites.py` | Drawn additively and tinted for every light; also the ball's shadow |
+| `sprites/bar.png` | `make_sprites.py` | Stand-up target face, tinted per bank |
+| `sprites/plunger.png` | `make_sprites.py` | |
+
+To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png`.
 
 ### Integrity
 
