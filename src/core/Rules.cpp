@@ -85,13 +85,22 @@ void Rules::addBonus() noexcept {
   bonus_ = std::min<std::uint64_t>(bonus_ + points::kBonusPerHit, 1'000'000);
 }
 
-void Rules::awardExtraBall() noexcept {
+bool Rules::awardExtraBall() noexcept {
   if (extraBalls_ >= kMaxExtraBalls) {
-    return;  // Already holding the most allowed: nothing to announce.
+    return false;  // Already holding the most allowed: nothing to announce.
   }
   ++extraBalls_;
   say("EXTRA BALL");
   cue(Sound::ExtraBall);
+  return true;
+}
+
+void Rules::clearBank(table::TargetBank bank) noexcept {
+  for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
+    if (table::kTargets[i].bank == bank) {
+      targetLit_[i] = false;
+    }
+  }
 }
 
 void Rules::report(GoalSet goals) noexcept { handleMission(missions_.onEvent(goals)); }
@@ -162,9 +171,14 @@ void Rules::onTarget(std::size_t index) noexcept {
   }
   award(points::kTarget);
   addBonus();
-  targetLit_[index] = true;
 
   const table::TargetBank bank = table::kTargets[index].bank;
+  const bool missionWasActive = missions_.phase() == MissionControl::Phase::Active;
+  // The mission bank is dark during a mission: its targets still score, but
+  // lights collected then would hand over the next special mission early.
+  if (bank != table::TargetBank::Mission || !missionWasActive) {
+    targetLit_[index] = true;
+  }
   bool bankComplete = true;
   std::size_t positionInBank = 0;
   for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
@@ -186,7 +200,6 @@ void Rules::onTarget(std::size_t index) noexcept {
   } else if (bank == table::TargetBank::Multiplier) {
     goals |= goalBit(Goal::MultiplierTargets);
   }
-  const bool missionWasActive = missions_.phase() == MissionControl::Phase::Active;
   report(goals);
   if (bank == table::TargetBank::Mission && !missionWasActive) {
     // Each mission target picks a mission; lighting all three picks the
@@ -200,11 +213,7 @@ void Rules::onTarget(std::size_t index) noexcept {
     return;
   }
   // The whole bank is lit: pay it out and reset it.
-  for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
-    if (table::kTargets[i].bank == bank) {
-      targetLit_[i] = false;
-    }
-  }
+  clearBank(bank);
   completeBank(bank);
 }
 
@@ -245,8 +254,10 @@ void Rules::completeBank(table::TargetBank bank) noexcept {
       award(points::kMultiplierBank);
       if (multiplierLevel_ + 1 < kFieldMultipliers.size()) {
         ++multiplierLevel_;
+        say("FIELD MULTIPLIER RAISED");
+      } else {
+        say("FIELD MULTIPLIER AT MAXIMUM");
       }
-      say("FIELD MULTIPLIER RAISED");
       break;
     case table::TargetBank::Mission:
       // Selection is handled where the target is hit.
@@ -313,7 +324,12 @@ void Rules::onHole(std::size_t index) noexcept {
       // Each shot climbs one rung: bonus, jackpot (if lit) or bonus, bonus,
       // extra ball, then back to the bottom.
       if (hyperspaceLevel_ == 3) {
-        awardExtraBall();
+        if (!awardExtraBall()) {
+          // No room for another ball: the rung pays the top bonus instead of
+          // nothing at all.
+          award(points::kHyperspace[2]);
+          say("HYPERSPACE BONUS");
+        }
         hyperspaceLevel_ = 0;
       } else {
         if (hyperspaceLevel_ == 1 && jackpotLit_) {
@@ -333,7 +349,7 @@ void Rules::onHole(std::size_t index) noexcept {
       report(goalBit(Goal::Hyperspace));
       break;
     }
-    case table::HoleType::Ramp:
+    case table::HoleType::Ramp: {
       award(points::kRamp);
       if (rampReflexSteps_ > 0) {
         award(points::kReflexShot);
@@ -343,8 +359,14 @@ void Rules::onHole(std::size_t index) noexcept {
       }
       rampReflexSteps_ = stepsFor(kReflexSeconds);
       // Accepts a selected mission, or refuels and advances an active one.
-      handleMission(missions_.onRamp());
+      const MissionControl::Outcome outcome = missions_.onRamp();
+      if (outcome.accepted) {
+        // The selection is spent: the next special needs all three again.
+        clearBank(table::TargetBank::Mission);
+      }
+      handleMission(outcome);
       break;
+    }
   }
 }
 

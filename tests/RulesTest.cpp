@@ -359,6 +359,62 @@ void testRules() {
     }
   }
 
+  {  // At the 10x cap the multiplier bank still pays, but does not claim to
+     // have raised anything.
+    Rules rules(kStep);
+    for (int i = 0; i < 3; ++i) {
+      hitBank(rules, table::TargetBank::Multiplier);
+      CHECK(rules.message() == std::string_view("FIELD MULTIPLIER RAISED"));
+    }
+    hitBank(rules, table::TargetBank::Multiplier);
+    CHECK(rules.fieldMultiplier() == 10);
+    CHECK(rules.message() == std::string_view("FIELD MULTIPLIER RAISED"));
+    const std::uint64_t before = rules.score();
+    hitBank(rules, table::TargetBank::Multiplier);
+    CHECK(rules.fieldMultiplier() == 10);
+    CHECK(rules.message() == std::string_view("FIELD MULTIPLIER AT MAXIMUM"));
+    std::uint64_t targets = 0;
+    for (const table::Target& target : table::kTargets) {
+      targets += target.bank == table::TargetBank::Multiplier ? 1U : 0U;
+    }
+    CHECK(rules.score() == before + 10 * (targets * points::kTarget + points::kMultiplierBank));
+  }
+
+  {  // The extra-ball rung of the hyperspace ladder with no room for another
+     // ball pays the top bonus and says so, instead of doing nothing.
+    Rules rules(kStep);
+    for (int i = 0; i < 60; ++i) {
+      hitBank(rules, table::TargetBank::Medal);
+    }
+    CHECK(rules.extraBalls() == Rules::kMaxExtraBalls);
+    const std::size_t hyper = firstHole(table::HoleType::Hyperspace);
+    for (int i = 0; i < 3; ++i) {
+      rules.onHole(hyper);
+      wait(rules, Rules::kReflexSeconds);
+    }
+    CHECK(rules.hyperspaceLevel() == 3);
+    CHECK(rules.message().empty());
+    const std::uint64_t before = rules.score();
+    rules.takeSounds();
+    rules.onHole(hyper);
+    CHECK(rules.extraBalls() == Rules::kMaxExtraBalls);
+    CHECK(rules.hyperspaceLevel() == 0);
+    CHECK(rules.score() == before + points::kHyperspace[2]);
+    CHECK(rules.message() == std::string_view("HYPERSPACE BONUS"));
+    CHECK((rules.takeSounds() & pinball::soundBit(pinball::Sound::ExtraBall)) == 0U);
+    // With room, the same rung is the extra ball and pays no points.
+    Rules roomy(kStep);
+    for (int i = 0; i < 3; ++i) {
+      roomy.onHole(hyper);
+      wait(roomy, Rules::kReflexSeconds);
+    }
+    const std::uint64_t roomyBefore = roomy.score();
+    roomy.onHole(hyper);
+    CHECK(roomy.extraBalls() == 1);
+    CHECK(roomy.score() == roomyBefore);
+    CHECK(roomy.message() == std::string_view("EXTRA BALL"));
+  }
+
   {  // Through the game: a full game ends after three balls and F2 restarts.
     pinball::Game game;
     int steps = 0;

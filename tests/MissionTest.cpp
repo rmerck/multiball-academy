@@ -82,6 +82,52 @@ void testMissions() {
     CHECK(rules.missions().phase() == MissionControl::Phase::Selected);
   }
 
+  {  // The mission bank cannot be loaded during a mission. Accepting one
+     // puts its lights out and they stay out until the mission is over, so
+     // the next special mission needs all three targets again.
+    Rules rules(kStep);
+    rules.onBallInPlay();
+    rules.onTarget(missionTarget(0));
+    rules.onTarget(missionTarget(1));
+    CHECK(rules.targetLit(missionTarget(0)) && rules.targetLit(missionTarget(1)));
+    CHECK(rules.missions().missionIndex() == 1);
+    rules.onHole(hole(table::HoleType::Ramp));
+    CHECK(rules.missions().phase() == MissionControl::Phase::Active);
+    for (std::size_t i = 0; i < 3; ++i) {
+      CHECK(!rules.targetLit(missionTarget(i)));
+    }
+    // Mission targets still score during the mission but do not light.
+    const std::uint64_t before = rules.score();
+    rules.onTarget(missionTarget(0));
+    rules.onTarget(missionTarget(2));
+    CHECK(rules.score() == before + 2 * points::kTarget);
+    for (std::size_t i = 0; i < 3; ++i) {
+      CHECK(!rules.targetLit(missionTarget(i)));
+    }
+    // Other banks light as usual.
+    for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
+      if (table::kTargets[i].bank == table::TargetBank::Medal) {
+        rules.onTarget(i);
+        CHECK(rules.targetLit(i));
+        break;
+      }
+    }
+    // Out of fuel: the mission ends with the bank still empty.
+    for (int i = 0; i < static_cast<int>(MissionControl::kFuelSeconds / kStep) + 2; ++i) {
+      rules.tick();
+    }
+    CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
+    // One target now selects its own mission, not the special.
+    rules.onTarget(missionTarget(1));
+    CHECK(rules.missions().phase() == MissionControl::Phase::Selected);
+    CHECK(rules.missions().missionIndex() == 1);
+    CHECK(rules.targetLit(missionTarget(1)) && !rules.targetLit(missionTarget(0)));
+    rules.onTarget(missionTarget(0));
+    CHECK(rules.missions().missionIndex() == 0);
+    rules.onTarget(missionTarget(2));
+    CHECK(rules.missions().missionIndex() == pinball::kSpecialMission);
+  }
+
   {  // A tilt or a drain in the same step as a mission announcement still
      // gets its own message.
     Rules rules(kStep);

@@ -128,7 +128,9 @@ class Rules {
   // A mission announcement. It is not replaced by lesser messages from the
   // same event (the bank award that the completing hit also earned, say).
   void sayMission(std::string_view text) noexcept;
-  void awardExtraBall() noexcept;
+  // False if the most allowed are already held.
+  bool awardExtraBall() noexcept;
+  void clearBank(table::TargetBank bank) noexcept;
   void completeBank(table::TargetBank bank) noexcept;
   void resetBall() noexcept;
   void report(GoalSet goals) noexcept;
