@@ -28,5 +28,13 @@ void testAssetName() {
   CHECK(!isSafeAssetName("c:/ball.png"));
   CHECK(!isSafeAssetName("~/ball.png"));
   CHECK(!isSafeAssetName(std::string("sprites/ball.png\0.png", 20)));
+  CHECK(!isSafeAssetName("nul.png"));
+  CHECK(!isSafeAssetName("con.png"));
+  CHECK(!isSafeAssetName("aux/ball.png"));
+  CHECK(!isSafeAssetName("sprites/com1.png"));
+  CHECK(!isSafeAssetName("sprites/lpt9.extra.png"));
+  CHECK(!isSafeAssetName("sprites./ball.png"));
+  CHECK(isSafeAssetName("sprites/console.png"));
+  CHECK(isSafeAssetName("sprites/com10.png"));
   CHECK(!isSafeAssetName(std::string(200, 'a') + ".png"));
 }

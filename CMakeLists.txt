@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.26)
 project(SpaceCadetPinball VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -24,6 +24,7 @@ add_library(pinball_core STATIC
   src/core/Args.cpp
   src/core/AssetName.cpp
   src/core/Game.cpp
+  src/core/PngHeader.cpp
 )
 target_include_directories(pinball_core PUBLIC src)
 # PUBLIC so the same warnings, hardening and sanitizer flags reach every consumer.
@@ -37,10 +38,13 @@ add_executable(pinball
 target_link_libraries(pinball PRIVATE pinball_core SDL3::SDL3)
 
 # The game loads assets from an "assets" directory next to the executable.
-add_custom_command(TARGET pinball POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+# Mirrored on every build (not only on relink), so edited and deleted assets
+# never go stale in the build tree.
+add_custom_target(pinball_assets ALL
+  COMMAND ${CMAKE_COMMAND} -E rm -rf $<TARGET_FILE_DIR:pinball>/assets
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
           ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:pinball>/assets
-  COMMENT "Copying assets"
+  COMMENT "Mirroring assets"
   VERBATIM)
 
 include(CTest)
@@ -51,9 +55,18 @@ if(BUILD_TESTING)
     tests/AssetNameTest.cpp
     tests/FixedTimestepTest.cpp
     tests/GameTest.cpp
+    tests/PngHeaderTest.cpp
   )
   target_link_libraries(core_tests PRIVATE pinball_core)
   add_test(NAME core_tests COMMAND core_tests)
+
+  # Assets must be well-formed PNGs with no metadata.
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME assets_clean
+      COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tools/check_assets.py
+              ${CMAKE_SOURCE_DIR}/assets)
+  endif()
 
   set(PINBALL_HEADLESS_ENV "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 

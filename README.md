@@ -74,7 +74,9 @@ REPO = "/path/to/space-cadet-pinball"
 exec(open(REPO + "/tools/gimp/make_ball.py").read())
 ```
 
-The game only opens files inside the `assets` directory next to the executable. Asset names are validated, and images larger than 4096 pixels on an edge are refused.
+The game only opens files inside the `assets` directory next to the executable. Asset names are validated, and files over 16 MB or images over 4096 pixels on an edge are refused before decoding.
+
+Assets are exported with all metadata off. `tools/check_assets.py` (run by `ctest`) fails the build if a PNG carries EXIF, text, timestamp, profile or thumbnail chunks.
 
 ## License
 
