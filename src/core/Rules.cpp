@@ -467,9 +467,9 @@ void Rules::onFlipper(bool left) noexcept {
     return;
   }
   if (left) {
-    std::rotate(laneLit_.begin(), laneLit_.begin() + 1, laneLit_.end());
+    std::ranges::rotate(laneLit_, laneLit_.begin() + 1);
   } else {
-    std::rotate(laneLit_.rbegin(), laneLit_.rbegin() + 1, laneLit_.rend());
+    std::ranges::rotate(laneLit_, laneLit_.end() - 1);
   }
 }
 

@@ -36,18 +36,18 @@ class HighScores {
   std::uint64_t best() const noexcept { return count_ > 0 ? entries_[0].score : 0; }
 
   // True if score would enter the table.
-  bool qualifies(std::uint64_t score) const noexcept;
+  [[nodiscard]] bool qualifies(std::uint64_t score) const noexcept;
   // Adds an entry if it qualifies, keeping the table sorted. Returns its
   // position, or kCapacity if it did not make the table. Zero never does.
   std::size_t submit(HighScore entry) noexcept;
 
   // Text form: a header line then one "score rank initials" line per entry.
-  std::string serialize() const;
+  [[nodiscard]] std::string serialize() const;
   // Replaces the table with what text describes. Also reads the first file
   // format, which had no initials. Anything malformed, out of
   // range or out of order makes the whole text invalid: the table is left
   // empty and false is returned. Never trusts the input.
-  bool parse(std::string_view text) noexcept;
+  [[nodiscard]] bool parse(std::string_view text) noexcept;
 
  private:
   std::array<HighScore, kCapacity> entries_{};
