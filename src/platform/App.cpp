@@ -273,7 +273,8 @@ void App::handleEvent(const SDL_Event& event) {
       } else if (event.key.key == SDLK_ESCAPE && aboutOpen_) {
         aboutOpen_ = false;
         latched_ = InputState{};
-      } else if (event.key.key == SDLK_F3) {
+      } else if (event.key.key == SDLK_F3 && !aboutOpen_) {
+        // Not behind the About screen, where the change could not be seen.
         paused_ = !paused_;
         // Nothing pressed during a pause carries into play.
         latched_ = InputState{};
@@ -358,11 +359,19 @@ void App::handleEntryKey(SDL_Keycode key, SDL_Keymod modifiers) {
   if (!entry_) {
     return;
   }
+  // Shortcuts such as Cmd+H are not typing.
+  if ((modifiers & (SDL_KMOD_GUI | SDL_KMOD_CTRL | SDL_KMOD_ALT)) != 0) {
+    return;
+  }
+  // Not typing either, so it does not wait for the guard below.
+  if (key == SDLK_F4) {
+    toggleFullscreen();
+    return;
+  }
   // The prompt appears the moment the last ball drains, while fingers are
   // still on the flipper keys. Presses in the first moments are play, not
-  // typing. Shortcuts such as Cmd+H are not typing either.
-  if (SDL_GetTicks() - entryOpenedMs_ < kEntryGuardMs ||
-      (modifiers & (SDL_KMOD_GUI | SDL_KMOD_CTRL | SDL_KMOD_ALT)) != 0) {
+  // typing.
+  if (SDL_GetTicks() - entryOpenedMs_ < kEntryGuardMs) {
     return;
   }
   // Letters are matched by what the key types, so they follow the layout.
@@ -394,9 +403,6 @@ void App::handleEntryKey(SDL_Keycode key, SDL_Keymod modifiers) {
     case SDLK_ESCAPE:
       // Accept the letters as they stand.
       commitInitials();
-      break;
-    case SDLK_F4:
-      toggleFullscreen();
       break;
     default:
       break;
