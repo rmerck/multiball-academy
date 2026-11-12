@@ -336,7 +336,14 @@ MoveResult renameNoReplace(const std::string& from, const std::string& to) {
   // the name is taken, then the first name is dropped. Without
   // AT_SYMLINK_FOLLOW a link at from is given the new name itself.
   if (::linkat(AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), 0) != 0) {
-    return errno == EEXIST ? MoveResult::Exists : MoveResult::Error;
+    if (errno == EEXIST) {
+      return MoveResult::Exists;
+    }
+    // Systems differ in which error they report first when the source cannot
+    // be linked (a directory) and the name is also taken. A taken name is the
+    // answer the caller needs, so look for it; nothing has been changed.
+    struct stat taken {};
+    return ::lstat(to.c_str(), &taken) == 0 ? MoveResult::Exists : MoveResult::Error;
   }
   if (::unlink(from.c_str()) != 0) {
     // Still there under both names: take the new one away again.
