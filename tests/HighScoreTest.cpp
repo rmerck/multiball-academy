@@ -56,6 +56,24 @@ void testHighScores() {
     CHECK(scores.serialize().size() <= HighScores::kMaxTextBytes);
   }
 
+  {  // Limits: the largest score and the largest text are accepted, one more is not.
+    const std::string top = std::to_string(pinball::points::kMaxScore);
+    const std::string over = std::to_string(pinball::points::kMaxScore + 1);
+    HighScores scores;
+    CHECK(scores.parse(header + top + " 0\n"));
+    CHECK(scores.best() == pinball::points::kMaxScore);
+    CHECK(!scores.parse(header + over + " 0\n"));
+    CHECK(!scores.parse(std::string(HighScores::kMaxTextBytes + 1, ' ')));
+
+    // A full table of top scores turns away another, however large.
+    HighScores full;
+    for (std::size_t i = 0; i < HighScores::kCapacity; ++i) {
+      CHECK(full.submit({pinball::points::kMaxScore, 0}) == i);
+    }
+    CHECK(full.submit({UINT64_MAX, 0}) == HighScores::kCapacity);
+    CHECK(full.size() == HighScores::kCapacity);
+  }
+
   {  // Valid text.
     HighScores scores;
     CHECK(scores.parse(header));

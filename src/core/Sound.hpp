@@ -30,6 +30,9 @@ enum class Sound : std::uint8_t {
   Nudge,
 };
 inline constexpr std::size_t kSoundCount = 20;
+static_assert(static_cast<std::size_t>(Sound::Nudge) + 1 == kSoundCount,
+              "kSoundCount must follow the last Sound enumerator");
+static_assert(kSoundCount <= 32, "SoundSet holds one bit per sound");
 
 // A set of sounds, one bit each. A sound plays at most once per step.
 using SoundSet = std::uint32_t;
@@ -44,9 +47,13 @@ class SoundMixer {
  public:
   static constexpr int kSampleRate = 48000;
   static constexpr std::size_t kVoices = 24;
+  // Shortest gap between two starts of the same sound: 30 ms.
+  static constexpr std::uint32_t kRetriggerSamples = 1440;
 
-  // Starts every sound in the set. If all voices are busy the quietest
-  // sounds are dropped.
+  // Starts every sound in the set. A sound that started within the last
+  // kRetriggerSamples is skipped, so one event repeated in quick succession
+  // cannot stack copies of itself. If all voices are busy the voice with the
+  // least left to play is replaced.
   void trigger(SoundSet sounds) noexcept;
 
   // Writes frames mono samples in [-1, 1] to out. out may be null only when
@@ -78,6 +85,8 @@ class SoundMixer {
   void startSound(Sound sound) noexcept;
 
   std::array<Voice, kVoices> voices_{};
+  // Samples each sound must still wait before it may start again.
+  std::array<std::uint32_t, kSoundCount> holdoff_{};
   std::uint32_t noiseState_ = 0x12345678U;
   bool muted_ = false;
 };

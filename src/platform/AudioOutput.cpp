@@ -8,9 +8,11 @@ namespace pinball {
 
 namespace {
 
-// Keep about this much sound queued. Enough to ride out a slow frame, short
-// enough that a sound follows its cause without a noticeable delay.
-constexpr int kTargetQueuedFrames = SoundMixer::kSampleRate * 60 / 1000;
+// Keep about this much sound queued: two 60 Hz frames plus a margin. Enough
+// to ride out a slow frame, short enough that a flipper click follows the
+// key press without a noticeable delay.
+constexpr int kQueueMilliseconds = 40;
+constexpr int kTargetQueuedFrames = SoundMixer::kSampleRate * kQueueMilliseconds / 1000;
 constexpr std::size_t kMaxFramesPerPump = 4096;
 
 }  // namespace
