@@ -44,7 +44,10 @@ void drawText(SDL_Renderer* renderer, std::string_view text, float x, float y, f
     x -= textWidth(text, pixelSize);
   }
 
-  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+  // Opaque text needs no blending: the pixels come out the same, and a
+  // software renderer fills them several times faster without it.
+  SDL_SetRenderDrawBlendMode(renderer, color.a == SDL_ALPHA_OPAQUE ? SDL_BLENDMODE_NONE
+                                                                   : SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
 
   // Lit pixels are collected and drawn in batches.

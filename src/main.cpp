@@ -46,6 +46,9 @@ int main(int argc, char* argv[]) {
     // No exception may leave main: report and exit cleanly.
     std::fprintf(stderr, "Fatal: %s\n", e.what());
     exitCode = EXIT_FAILURE;
+  } catch (...) {
+    std::fputs("Fatal: unknown error\n", stderr);
+    exitCode = EXIT_FAILURE;
   }
   SDL_Quit();
   return exitCode;

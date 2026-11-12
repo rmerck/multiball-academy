@@ -88,6 +88,7 @@ class App {
   bool musicOn_ = true;
   Game game_;
   // Best games on this machine, loaded at start and saved when a game ends.
+  // A timed automated run starts with an empty table and saves nothing.
   HighScores highScores_;
   // Event type the system menu's About item sends, or 0 if none could be
   // registered.
