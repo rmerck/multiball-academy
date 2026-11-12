@@ -120,6 +120,7 @@ void testPhysics() {
       input.plunger = (i % 2400) < 150;
       input.leftFlipper = (i / 37) % 3 == 0;
       input.rightFlipper = (i / 53) % 3 == 1;
+      input.newGame = a.gameOver();
       a.step(input);
       b.step(input);
       const Vec2 pa = a.ball().position;

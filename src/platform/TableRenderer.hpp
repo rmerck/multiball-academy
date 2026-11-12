@@ -29,6 +29,7 @@ class TableRenderer {
     TexturePtr glow;
     TexturePtr bar;
     TexturePtr plunger;
+    TexturePtr panel;
   };
   struct Rgb {
     Uint8 r;
@@ -41,6 +42,7 @@ class TableRenderer {
   // A soft additive light of the given colour and strength (0 to 1).
   void drawGlow(SDL_Renderer* renderer, Vec2 center, float radius, Rgb color,
                 float strength) const;
+  void drawLights(SDL_Renderer* renderer, const Game& game) const;
   void drawBumpers(SDL_Renderer* renderer, const Game& game) const;
   void drawTargets(SDL_Renderer* renderer, const Game& game) const;
   void drawPlungerAndGate(SDL_Renderer* renderer, const Game& game) const;

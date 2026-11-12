@@ -10,11 +10,13 @@ int main() {
   testBumpers();
   testFixedTimestep();
   testFlippers();
+  testFormat();
   testGame();
   testHoles();
   testPhysics();
   testPlunger();
   testPngHeader();
+  testRules();
   testSha256();
   testTargets();
 

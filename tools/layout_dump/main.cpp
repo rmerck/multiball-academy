@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "core/PanelLayout.hpp"
 #include "core/TableLayout.hpp"
 
 namespace {
@@ -119,6 +120,18 @@ int main() {
   for (std::size_t i = 0; i < table::kFuelLightCount; ++i) {
     point(table::fuelLight(i));
     std::printf(i + 1 < table::kFuelLightCount ? ", " : "");
+  }
+  std::printf("]},\n");
+  std::printf("  \"panel\": {\"left\": %.1f, \"width\": %.1f, \"height\": %.1f, \"wells\": [",
+              static_cast<double>(panel::kLeft), static_cast<double>(panel::kWidth),
+              static_cast<double>(panel::kHeight));
+  {
+    bool first = true;
+    for (const panel::Rect& w : panel::kWells) {
+      std::printf("%s[%.1f, %.1f, %.1f, %.1f]", first ? "" : ", ", static_cast<double>(w.x),
+                  static_cast<double>(w.y), static_cast<double>(w.w), static_cast<double>(w.h));
+      first = false;
+    }
   }
   std::printf("]},\n");
   std::printf("  \"rampExit\": ");

@@ -260,6 +260,7 @@ void testHoles() {
       input.plunger = (i % 900) < 100 + (i / 900) % 60;
       input.leftFlipper = (i / 29) % 2 == 0;
       input.rightFlipper = (i / 41) % 2 == 0;
+      input.newGame = game.gameOver();
       game.step(input);
 
       const pinball::BallView ball = game.ball();

@@ -146,6 +146,7 @@ void testBumpers() {
       input.plunger = (i % 1200) < 150;
       input.leftFlipper = (i / 31) % 2 == 0;
       input.rightFlipper = (i / 43) % 2 == 0;
+      input.newGame = game.gameOver();
       game.step(input);
       for (std::size_t b = 0; b < table::kBumpers.size(); ++b) {
         const float flash = game.bumperFlash(b);

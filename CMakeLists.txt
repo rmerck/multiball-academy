@@ -29,9 +29,11 @@ add_library(pinball_core STATIC
   src/core/Args.cpp
   src/core/AssetManifest.cpp
   src/core/AssetName.cpp
+  src/core/Format.cpp
   src/core/Game.cpp
   src/core/Physics.cpp
   src/core/PngHeader.cpp
+  src/core/Rules.cpp
   src/core/Sha256.cpp
   src/core/TableLayout.cpp
 )
@@ -45,7 +47,9 @@ add_library(pinball_platform STATIC
   src/platform/App.cpp
   src/platform/Assets.cpp
   src/platform/EmbeddedManifest.cpp
+  src/platform/Hud.cpp
   src/platform/TableRenderer.cpp
+  src/platform/Text.cpp
 )
 target_link_libraries(pinball_platform PUBLIC pinball_core SDL3::SDL3)
 
@@ -107,11 +111,13 @@ if(BUILD_TESTING)
     tests/BumperTest.cpp
     tests/FixedTimestepTest.cpp
     tests/FlipperTest.cpp
+    tests/FormatTest.cpp
     tests/GameTest.cpp
     tests/HoleTest.cpp
     tests/PhysicsTest.cpp
     tests/PlungerTest.cpp
     tests/PngHeaderTest.cpp
+    tests/RulesTest.cpp
     tests/Sha256Test.cpp
     tests/TargetTest.cpp
   )
