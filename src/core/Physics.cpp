@@ -51,6 +51,9 @@ PhysicsWorld::PhysicsWorld() {
   def.gravity = {0.0F, kGravity};
   def.maximumLinearSpeed = kMaxBallSpeed;
   def.enableContinuous = true;
+  // Contacts closing slower than this do not bounce. Keeps a ball rolling
+  // from the inlane guide onto the flipper from hopping off the pivot.
+  def.restitutionThreshold = 1.5F;
   world_ = b2CreateWorld(&def);
   // Box2D returns a null id when its world table is full. Every later call
   // would dereference it, so stop here.
