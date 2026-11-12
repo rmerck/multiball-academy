@@ -85,7 +85,19 @@ REPO = "/path/to/space-cadet-pinball"
 exec(open(REPO + "/tools/gimp/make_ball.py").read())
 ```
 
-The game only opens files inside the `assets` directory next to the executable. Asset names are validated, and files over 16 MB or images over 4096 pixels on an edge are refused before decoding.
+### Integrity
+
+Assets are external files, so the game checks them before it runs:
+
+- At build time CMake records the size and SHA-256 of every PNG under `assets/`, applying the same name and size rules the game enforces, and compiles that manifest into the executable (`cmake/GenerateAssetManifest.cmake`).
+- At startup every listed asset is read into memory and compared with the manifest. Any missing, resized or altered file, or anything that is not a regular file, stops the game with exit code 1 before a window opens.
+- Each image is then decoded from the same bytes that were hashed, so a file cannot be swapped between the check and the use.
+- The manifest is also the allowlist. A file that is not in it is never opened.
+- `ctest` runs `tools/test_asset_integrity.py`, which flips a bit, appends, truncates, empties and deletes each asset and confirms every case is refused.
+
+What this does not cover: the hashes live in the executable, so someone able to replace the executable can replace them too. That is the job of code signing at release time (`codesign` and notarisation on macOS), which protects the executable and with it the manifest.
+
+The game only opens files inside the `assets` directory next to the executable. Files over 16 MB or images over 4096 pixels on an edge are refused before decoding.
 
 Assets are exported with all metadata off. `tools/check_assets.py` (run by `ctest`) fails the build if a PNG carries EXIF, text, timestamp, profile or thumbnail chunks.
 

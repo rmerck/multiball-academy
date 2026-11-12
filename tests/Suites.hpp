@@ -10,3 +10,4 @@ void testFlippers();
 void testGame();
 void testPhysics();
 void testPngHeader();
+void testSha256();

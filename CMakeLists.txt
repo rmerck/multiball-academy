@@ -27,10 +27,12 @@ find_package(box2d 3.2 REQUIRED CONFIG)
 # Platform-independent game logic. No SDL dependency so it is unit-testable headless.
 add_library(pinball_core STATIC
   src/core/Args.cpp
+  src/core/AssetManifest.cpp
   src/core/AssetName.cpp
   src/core/Game.cpp
   src/core/Physics.cpp
   src/core/PngHeader.cpp
+  src/core/Sha256.cpp
   src/core/TableLayout.cpp
 )
 target_include_directories(pinball_core PUBLIC src)
@@ -42,8 +44,26 @@ add_executable(pinball
   src/main.cpp
   src/platform/App.cpp
   src/platform/Assets.cpp
+  src/platform/EmbeddedManifest.cpp
 )
 target_link_libraries(pinball PRIVATE pinball_core SDL3::SDL3)
+
+# Asset integrity: the size and SHA-256 of every asset are compiled into the
+# executable, which checks the files against them before it starts. The
+# manifest is regenerated on every build and rewritten only when it changes.
+set(PINBALL_MANIFEST_DIR ${CMAKE_BINARY_DIR}/generated)
+set(PINBALL_MANIFEST ${PINBALL_MANIFEST_DIR}/AssetManifest.inc)
+file(MAKE_DIRECTORY ${PINBALL_MANIFEST_DIR})
+add_custom_target(pinball_manifest
+  COMMAND ${CMAKE_COMMAND} -DASSETS_DIR=${CMAKE_SOURCE_DIR}/assets -DOUTPUT=${PINBALL_MANIFEST}
+          -P ${CMAKE_SOURCE_DIR}/cmake/GenerateAssetManifest.cmake
+  BYPRODUCTS ${PINBALL_MANIFEST}
+  COMMENT "Hashing assets"
+  VERBATIM)
+add_dependencies(pinball pinball_manifest)
+target_include_directories(pinball PRIVATE ${PINBALL_MANIFEST_DIR})
+set_source_files_properties(src/platform/EmbeddedManifest.cpp PROPERTIES
+  OBJECT_DEPENDS ${PINBALL_MANIFEST})
 
 # The game loads assets from an "assets" directory next to the executable.
 # Copied by a target that runs on every build (not only on relink), so an
@@ -69,6 +89,7 @@ if(BUILD_TESTING)
     tests/GameTest.cpp
     tests/PhysicsTest.cpp
     tests/PngHeaderTest.cpp
+    tests/Sha256Test.cpp
   )
   target_link_libraries(core_tests PRIVATE pinball_core)
   add_test(NAME core_tests COMMAND core_tests)
@@ -79,6 +100,14 @@ if(BUILD_TESTING)
     add_test(NAME assets_clean
       COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tools/check_assets.py
               ${CMAKE_SOURCE_DIR}/assets)
+  endif()
+
+  # The built game must refuse to start if any asset is altered.
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME asset_integrity
+      COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tools/test_asset_integrity.py
+              $<TARGET_FILE:pinball> ${CMAKE_BINARY_DIR}/asset_integrity_scratch)
+    set_tests_properties(asset_integrity PROPERTIES TIMEOUT 120)
   endif()
 
   set(PINBALL_HEADLESS_ENV "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
