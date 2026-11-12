@@ -83,14 +83,19 @@ void TableRenderer::drawLights(SDL_Renderer* r, const Game& game) const {
     const int rank = static_cast<int>(table::kFuelLightCount - i);
     if (rank <= fuel) {
       const float t = static_cast<float>(i) / static_cast<float>(table::kFuelLightCount - 1);
-      drawGlow(r, table::fuelLight(i), 22.0F,
-               {255, static_cast<Uint8>(215.0F - 150.0F * t), 40}, 0.95F);
+      // Laser yellow at the top of the column, hot pink at the bottom.
+      const Vec2 at = table::fuelLight(i);
+      drawGlow(r, at, 24.0F,
+               {255, static_cast<Uint8>(235.0F - 190.0F * t), static_cast<Uint8>(60.0F + 95.0F * t)},
+               0.95F);
+      drawGlow(r, at, 10.0F, {255, 255, 255}, 0.6F);
     }
   }
 
   // A selected mission waits on the ramp: pulse its entry.
   if (missions.phase() == MissionControl::Phase::Selected && blinkOn) {
-    drawGlow(r, table::kRampEntry, 46.0F, {255, 160, 60}, 0.9F);
+    drawGlow(r, table::kRampEntry, 48.0F, {255, 140, 40}, 0.9F);
+    drawGlow(r, table::kRampEntry, 20.0F, {255, 240, 200}, 0.6F);
   }
 
   std::size_t lane = 0;
@@ -98,13 +103,15 @@ void TableRenderer::drawLights(SDL_Renderer* r, const Game& game) const {
     switch (rollover.group) {
       case table::RolloverGroup::ReEntry:
         if (rules.laneLit(lane)) {
-          drawGlow(r, rollover.zone.center, 26.0F, {110, 255, 150}, 0.95F);
+          drawGlow(r, rollover.zone.center, 28.0F, {77, 255, 178}, 0.95F);
+          drawGlow(r, rollover.zone.center, 11.0F, {255, 255, 255}, 0.55F);
         }
         ++lane;
         break;
       case table::RolloverGroup::Outlane:
         if (rules.bonusLaneLit()) {
-          drawGlow(r, rollover.zone.center, 26.0F, {255, 110, 90}, 0.95F);
+          drawGlow(r, rollover.zone.center, 28.0F, {255, 41, 153}, 0.95F);
+          drawGlow(r, rollover.zone.center, 11.0F, {255, 255, 255}, 0.55F);
         }
         break;
       case table::RolloverGroup::Inlane:
@@ -117,11 +124,13 @@ void TableRenderer::drawBumpers(SDL_Renderer* r, const Game& game) const {
   SDL_Texture* const cap = textures_.bumper.get();
   for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
     const table::Bumper& bumper = table::kBumpers[i];
-    Rgb color{255, 110, 95};
+    // Hot pink attack bumpers, cyan engines, a laser yellow satellite. These
+    // match the rims drawn by tools/gimp/make_table.py.
+    Rgb color{255, 50, 160};
     if (bumper.group == table::BumperGroup::Engine) {
-      color = {100, 190, 255};
+      color = {40, 232, 255};
     } else if (bumper.group == table::BumperGroup::Satellite) {
-      color = {160, 255, 130};
+      color = {255, 235, 60};
     }
     const float flash = game.bumperFlash(i);
 
@@ -131,12 +140,14 @@ void TableRenderer::drawBumpers(SDL_Renderer* r, const Game& game) const {
     const SDL_FRect dst{bumper.shape.center.x - half, bumper.shape.center.y - half, half * 2.0F,
                         half * 2.0F};
     // Dim when idle, full colour when lit.
-    const float level = 0.82F + 0.18F * flash;
+    const float level = 0.80F + 0.20F * flash;
     SDL_SetTextureColorMod(cap, toByte(static_cast<float>(color.r) / 255.0F * level),
                            toByte(static_cast<float>(color.g) / 255.0F * level),
                            toByte(static_cast<float>(color.b) / 255.0F * level));
     SDL_RenderTexture(r, cap, nullptr, &dst);
-    drawGlow(r, bumper.shape.center, bumper.shape.radius * 2.6F, color, flash * 0.9F);
+    // A struck bumper blooms: a wide halo in its colour and a white-hot core.
+    drawGlow(r, bumper.shape.center, bumper.shape.radius * 3.0F, color, flash * 0.9F);
+    drawGlow(r, bumper.shape.center, bumper.shape.radius * 1.3F, {255, 255, 255}, flash * 0.7F);
   }
 }
 
@@ -145,16 +156,16 @@ void TableRenderer::drawTargets(SDL_Renderer* r, const Game& game) const {
   std::size_t missionTargetsSeen = 0;
   for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
     const table::Target& target = table::kTargets[i];
-    Rgb color{255, 180, 50};  // Booster.
+    Rgb color{255, 150, 40};  // Booster: orange.
     switch (target.bank) {
       case table::TargetBank::Medal:
-        color = {100, 205, 255};
+        color = {40, 235, 255};  // Cyan.
         break;
       case table::TargetBank::Mission:
-        color = {255, 90, 90};
+        color = {255, 50, 230};  // Magenta.
         break;
       case table::TargetBank::Multiplier:
-        color = {130, 255, 130};
+        color = {77, 255, 178};  // Mint.
         break;
       case table::TargetBank::Booster:
         break;
@@ -173,7 +184,7 @@ void TableRenderer::drawTargets(SDL_Renderer* r, const Game& game) const {
       }
       ++missionTargetsSeen;
     }
-    const float level = lit ? 1.0F : 0.38F;
+    const float level = lit ? 1.0F : 0.32F;
 
     const Vec2 a = target.shape.a;
     const Vec2 b = target.shape.b;
@@ -193,7 +204,8 @@ void TableRenderer::drawTargets(SDL_Renderer* r, const Game& game) const {
     SDL_RenderTextureRotated(r, bar, nullptr, &dst, static_cast<double>(angle), nullptr,
                              SDL_FLIP_NONE);
     if (lit) {
-      drawGlow(r, mid, length * 0.9F, color, 0.55F);
+      drawGlow(r, mid, length * 1.0F, color, 0.7F);
+      drawGlow(r, mid, length * 0.4F, {255, 255, 255}, 0.4F);
     }
   }
 }
@@ -205,13 +217,20 @@ void TableRenderer::drawPlungerAndGate(SDL_Renderer* r, const Game& game) const 
   SDL_RenderTexture(r, textures_.plunger.get(), nullptr, &plunger);
 
   if (game.laneGateClosed()) {
-    // A thin steel flap across the top of the lane.
+    // A laser yellow tube across the top of the lane, with a white core.
     const table::Capsule& gate = table::kLaneGate;
-    SDL_SetRenderDrawColor(r, 200, 210, 230, SDL_ALPHA_OPAQUE);
-    for (int offset = -1; offset <= 1; ++offset) {
+    for (int offset = -2; offset <= 2; ++offset) {
       const float dx = static_cast<float>(offset);
+      if (offset == 0) {
+        SDL_SetRenderDrawColor(r, 255, 255, 235, SDL_ALPHA_OPAQUE);
+      } else if (offset == -1 || offset == 1) {
+        SDL_SetRenderDrawColor(r, 255, 232, 60, SDL_ALPHA_OPAQUE);
+      } else {
+        SDL_SetRenderDrawColor(r, 150, 110, 20, SDL_ALPHA_OPAQUE);
+      }
       SDL_RenderLine(r, gate.a.x + dx, gate.a.y, gate.b.x + dx, gate.b.y);
     }
+    drawGlow(r, (gate.a + gate.b) * 0.5F, 44.0F, {255, 232, 60}, 0.35F);
   }
 }
 
@@ -252,6 +271,9 @@ void TableRenderer::drawBall(SDL_Renderer* r, const Game& game) const {
                          shadowRadius * 2.0F};
   SDL_RenderTexture(r, glow, nullptr, &shadow);
 
+  // A cool halo keeps the chrome ball easy to follow over the busy art.
+  drawGlow(r, ball.position, radius * 2.3F, {150, 225, 255}, 0.45F);
+
   const SDL_FRect dst{ball.position.x - radius, ball.position.y - radius, radius * 2.0F,
                       radius * 2.0F};
   SDL_RenderTexture(r, textures_.ball.get(), nullptr, &dst);
@@ -282,7 +304,7 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed,
 
   if (dimmed) {
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(r, 0, 0, 10, 130);
+    SDL_SetRenderDrawColor(r, 10, 0, 26, 140);
     SDL_RenderFillRect(r, &playfield);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
   }

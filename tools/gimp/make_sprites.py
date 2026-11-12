@@ -32,7 +32,8 @@ def finish(img, repo, name):
 
 
 def make_flipper(repo, d):
-    """Bat lying along +x. The pivot is at (MARGIN + base radius, height / 2)."""
+    """Bat lying along +x. The pivot is at (MARGIN + base radius, height / 2).
+    Hot pink to violet body inside a white-hot cyan tube, with a chrome hub."""
     f = d["flipper"]
     margin = 3.0
     base, tip, length = f["baseRadius"], f["tipRadius"], f["length"]
@@ -41,63 +42,100 @@ def make_flipper(repo, d):
     img = new_image(width, height)
     px, py = margin + base, height / 2
 
-    def bat_selection(grow):
+    def bat_selection(grow, op=REPLACE):
         select_polygon(img, [(px, py - base - grow), (px + length, py - tip - grow),
-                             (px + length, py + tip + grow), (px, py + base + grow)], S)
+                             (px + length, py + tip + grow), (px, py + base + grow)], S, op)
         select_circle(img, (px, py), base + grow, S, ADD)
         select_circle(img, (px + length, py), tip + grow, S, ADD)
 
-    shadow = new_layer(img, "outline")
-    bat_selection(1.5)
-    fill_selection(shadow, color(0.25, 0.04, 0.02))
+    halo = new_layer(img, "halo")
+    bat_selection(2.2)
+    fill_selection(halo, color(0.10, 0.85, 1.0, 0.55))
+    select_none(img)
+    blur(halo, 3.0)
+
+    tube = new_layer(img, "tube")
+    bat_selection(0.6)
+    fill_selection(tube, color(0.70, 1.0, 1.0))
 
     body = new_layer(img, "body")
-    bat_selection(0.0)
-    linear_gradient(body, color(1.0, 0.55, 0.25), color(0.62, 0.10, 0.05),
+    bat_selection(-1.4)
+    linear_gradient(body, color(1.0, 0.30, 0.72), color(0.42, 0.06, 0.70),
                     0, (py - base) * S, 0, (py + base) * S)
 
-    shine = new_layer(img, "shine", opacity=55, mode=Gimp.LayerMode.SCREEN)
+    # A laser yellow flash down the middle, tapering with the bat.
+    flash = new_layer(img, "flash")
+    select_polygon(img, [(px + 14, py - 2.2), (px + length - 2, py - 0.9),
+                         (px + length - 2, py + 0.9), (px + 14, py + 2.2)], S)
+    fill_selection(flash, color(1.0, 0.93, 0.25))
+
+    shine = new_layer(img, "shine", opacity=70, mode=Gimp.LayerMode.SCREEN)
     Gimp.context_set_feather(True)
-    Gimp.context_set_feather_radius(5.0, 5.0)
-    select_polygon(img, [(px + 4, py - base * 0.62), (px + length - 2, py - tip * 0.62),
-                         (px + length - 2, py - tip * 0.15), (px + 4, py - base * 0.15)], S)
+    Gimp.context_set_feather_radius(4.0, 4.0)
+    select_polygon(img, [(px + 4, py - base * 0.70), (px + length - 2, py - tip * 0.70),
+                         (px + length - 2, py - tip * 0.30), (px + 4, py - base * 0.30)], S)
     Gimp.context_set_feather(False)
-    fill_selection(shine, color(1.0, 0.95, 0.85))
+    fill_selection(shine, color(1.0, 0.90, 1.0))
 
     hub = new_layer(img, "hub")
-    select_circle(img, (px, py), base * 0.5, S)
-    radial_gradient(hub, color(0.95, 0.96, 1.0), color(0.35, 0.38, 0.5),
+    select_circle(img, (px, py), base * 0.62, S)
+    fill_selection(hub, color(0.08, 0.02, 0.18))
+    select_circle(img, (px, py), base * 0.50, S)
+    radial_gradient(hub, color(1.0, 1.0, 1.0), color(0.35, 0.45, 0.75),
                     (px - 2) * S, (py - 2) * S, (px + base * 0.6) * S, (py + base * 0.6) * S)
+    select_circle(img, (px, py), base * 0.16, S)
+    fill_selection(hub, color(0.08, 0.02, 0.18))
     return finish(img, repo, "flipper.png")
 
 
 def make_bumper(repo):
-    """White domed cap, tinted per bumper group by the game. 64 px logical."""
+    """White starburst cap, tinted per bumper group by the game. 64 px
+    logical. Greys only: the tint multiplies them."""
+    import math
     size = 64.0
     c = (size / 2, size / 2)
     img = new_image(size, size)
 
     skirt = new_layer(img, "skirt")
     select_circle(img, c, 30, S)
-    fill_selection(skirt, color(0.20, 0.20, 0.24))
-    select_circle(img, c, 28, S)
-    radial_gradient(skirt, color(1.0, 1.0, 1.0), color(0.50, 0.50, 0.56),
+    fill_selection(skirt, color(0.10, 0.10, 0.14))
+    select_circle(img, c, 28.5, S)
+    fill_selection(skirt, color(1.0, 1.0, 1.0))
+    select_circle(img, c, 26.5, S)
+    radial_gradient(skirt, color(0.92, 0.92, 0.95), color(0.60, 0.60, 0.66),
                     (c[0] - 8) * S, (c[1] - 9) * S, (c[0] + 28) * S, (c[1] + 28) * S)
 
+    # Sixteen alternating wedges: the classic pop bumper starburst.
+    burst = new_layer(img, "burst")
+    op = REPLACE
+    for i in range(0, 16, 2):
+        a0, a1 = i * math.pi / 8, (i + 1) * math.pi / 8
+        select_polygon(img, [c, (c[0] + 40 * math.cos(a0), c[1] + 40 * math.sin(a0)),
+                             (c[0] + 40 * math.cos(a1), c[1] + 40 * math.sin(a1))], S, op)
+        op = ADD
+    select_circle(img, c, 25.5, S, Gimp.ChannelOps.INTERSECT)
+    select_circle(img, c, 15.5, S, SUBTRACT)
+    fill_selection(burst, color(1.0, 1.0, 1.0, 0.92))
+
     ring = new_layer(img, "ring")
-    select_circle(img, c, 20, S)
-    select_circle(img, c, 17.5, S, SUBTRACT)
-    fill_selection(ring, color(0.30, 0.30, 0.36, 0.9))
+    select_circle(img, c, 16.5, S)
+    select_circle(img, c, 14.5, S, SUBTRACT)
+    fill_selection(ring, color(0.08, 0.08, 0.12))
 
     cap = new_layer(img, "cap")
-    select_circle(img, c, 13, S)
-    radial_gradient(cap, color(1.0, 1.0, 1.0), color(0.62, 0.62, 0.70),
-                    (c[0] - 4) * S, (c[1] - 5) * S, (c[0] + 13) * S, (c[1] + 13) * S)
+    select_circle(img, c, 14.5, S)
+    radial_gradient(cap, color(1.0, 1.0, 1.0), color(0.82, 0.82, 0.88),
+                    (c[0] - 4) * S, (c[1] - 5) * S, (c[0] + 14) * S, (c[1] + 14) * S)
+    # A four-point star on the dome.
+    select_polygon(img, [(c[0] - 9, c[1]), (c[0] - 1.6, c[1] - 1.6), (c[0], c[1] - 9),
+                         (c[0] + 1.6, c[1] - 1.6), (c[0] + 9, c[1]), (c[0] + 1.6, c[1] + 1.6),
+                         (c[0], c[1] + 9), (c[0] - 1.6, c[1] + 1.6)], S)
+    fill_selection(cap, color(0.20, 0.20, 0.26, 0.8))
 
-    spec = new_layer(img, "specular", opacity=85)
+    spec = new_layer(img, "specular", opacity=90)
     Gimp.context_set_feather(True)
-    Gimp.context_set_feather_radius(7.0, 7.0)
-    img.select_ellipse(REPLACE, (c[0] - 15) * S, (c[1] - 19) * S, 14 * S, 9 * S)
+    Gimp.context_set_feather_radius(6.0, 6.0)
+    img.select_ellipse(REPLACE, (c[0] - 12) * S, (c[1] - 13) * S, 10 * S, 6 * S)
     Gimp.context_set_feather(False)
     fill_selection(spec, color(1.0, 1.0, 1.0))
     return finish(img, repo, "bumper.png")
@@ -116,7 +154,8 @@ def make_glow(repo):
 
 
 def make_bar(repo, d):
-    """White rounded bar for stand-up target faces, lying along +x."""
+    """White neon bar for stand-up target faces, lying along +x. Tinted by
+    the game: a dark edge, a bright face and a white-hot core."""
     length, radius, margin = 34.0, 5.0, 2.0
     width = length + 2 * radius + 2 * margin
     height = 2 * radius + 2 * margin
@@ -125,35 +164,48 @@ def make_bar(repo, d):
     b = (margin + radius + length, height / 2)
     edge = new_layer(img, "edge")
     select_capsule(img, a, b, radius + 1.0, S)
-    fill_selection(edge, color(0.15, 0.15, 0.18))
+    fill_selection(edge, color(0.06, 0.04, 0.12))
     face = new_layer(img, "face")
     select_capsule(img, a, b, radius - 0.5, S)
-    linear_gradient(face, color(1.0, 1.0, 1.0), color(0.55, 0.55, 0.60),
+    linear_gradient(face, color(0.95, 0.95, 0.97), color(0.68, 0.68, 0.74),
                     0, (height / 2 - radius) * S, 0, (height / 2 + radius) * S)
+    core = new_layer(img, "core")
+    select_capsule(img, (a[0] + 1, a[1] - 1.0), (b[0] - 1, b[1] - 1.0), 1.5, S)
+    fill_selection(core, color(1.0, 1.0, 1.0))
     return finish(img, repo, "bar.png")
 
 
 def make_plunger(repo, d):
+    """Chrome rod, hot pink spring and a yellow-to-pink striker."""
     p = d["plunger"]
     width, height = p["width"], p["height"]
     img = new_image(width, height)
     rod = new_layer(img, "rod")
     img.select_rectangle(REPLACE, (width / 2 - 6) * S, 10 * S, 12 * S, (height - 10) * S)
-    linear_gradient(rod, color(0.85, 0.87, 0.95), color(0.30, 0.32, 0.42),
-                    (width / 2 - 6) * S, 0, (width / 2 + 6) * S, 0)
+    linear_gradient(rod, color(0.20, 0.25, 0.50), color(0.95, 0.98, 1.0),
+                    (width / 2 - 6) * S, 0, (width / 2 - 1) * S, 0)
+    img.select_rectangle(REPLACE, (width / 2 - 1) * S, 10 * S, 7 * S, (height - 10) * S)
+    linear_gradient(rod, color(0.95, 0.98, 1.0), color(0.25, 0.10, 0.45),
+                    (width / 2 - 1) * S, 0, (width / 2 + 6) * S, 0)
     # Spring coils.
     coils = new_layer(img, "coils")
     first = True
     y = 20.0
     while y < height - 4:
-        img.select_rectangle(REPLACE if first else ADD, (width / 2 - 10) * S, y * S, 20 * S,
-                             3 * S)
+        select_polygon(img, [(width / 2 - 11, y + 2), (width / 2 + 11, y - 1),
+                             (width / 2 + 11, y + 2), (width / 2 - 11, y + 5)], S,
+                       REPLACE if first else ADD)
         first = False
         y += 8.0
-    fill_selection(coils, color(0.55, 0.58, 0.68))
+    linear_gradient(coils, color(1.0, 0.45, 0.80), color(0.55, 0.05, 0.40),
+                    (width / 2 - 11) * S, 0, (width / 2 + 11) * S, 0)
     head = new_layer(img, "head")
     img.select_round_rectangle(REPLACE, 1 * S, 0, (width - 2) * S, 14 * S, 5 * S, 5 * S)
-    linear_gradient(head, color(1.0, 0.45, 0.30), color(0.55, 0.10, 0.08), 0, 0, 0, 14 * S)
+    fill_selection(head, color(0.06, 0.02, 0.14))
+    img.select_round_rectangle(REPLACE, 2.2 * S, 1.2 * S, (width - 4.4) * S, 11.6 * S, 4 * S, 4 * S)
+    linear_gradient(head, color(1.0, 0.95, 0.30), color(1.0, 0.20, 0.60), 0, 0, 0, 14 * S)
+    img.select_round_rectangle(REPLACE, 5 * S, 2.4 * S, (width - 10) * S, 2.2 * S, 1 * S, 1 * S)
+    fill_selection(head, color(1.0, 1.0, 0.85, 0.9))
     return finish(img, repo, "plunger.png")
 
 

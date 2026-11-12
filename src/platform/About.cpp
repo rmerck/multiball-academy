@@ -14,10 +14,12 @@ namespace pinball {
 
 namespace {
 
-constexpr SDL_Color kAmber{255, 190, 70, 255};
-constexpr SDL_Color kCyan{110, 220, 255, 255};
-constexpr SDL_Color kWhite{235, 240, 255, 255};
-constexpr SDL_Color kDim{130, 145, 180, 255};
+// Neon palette shared with the panel: laser yellow, cyan, hot pink.
+constexpr SDL_Color kAmber{255, 225, 70, 255};
+constexpr SDL_Color kCyan{70, 235, 255, 255};
+constexpr SDL_Color kWhite{248, 240, 255, 255};
+constexpr SDL_Color kDim{176, 150, 226, 255};
+constexpr SDL_Color kPink{255, 60, 170, 255};
 
 // Where the source lives. The screen names no person.
 constexpr std::string_view kSource = "GITHUB.COM/RMERCK";
@@ -30,24 +32,20 @@ void drawAbout(SDL_Renderer* r, const HighScores& scores) {
   }
   // Dim everything behind.
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  SDL_SetRenderDrawColor(r, 0, 0, 12, 215);
+  SDL_SetRenderDrawColor(r, 10, 0, 26, 205);
   const SDL_FRect whole{0.0F, 0.0F, static_cast<float>(kCanvasWidth),
                         static_cast<float>(kCanvasHeight)};
   SDL_RenderFillRect(r, &whole);
 
   // The dialog: a bordered box in the middle of the canvas.
   const SDL_FRect box{190.0F, 90.0F, 900.0F, 780.0F};
-  SDL_SetRenderDrawColor(r, 110, 220, 255, 255);
-  SDL_RenderFillRect(r, &box);
-  const SDL_FRect inner{box.x + 4.0F, box.y + 4.0F, box.w - 8.0F, box.h - 8.0F};
-  SDL_SetRenderDrawColor(r, 10, 14, 34, 255);
-  SDL_RenderFillRect(r, &inner);
-  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+  drawNeonFrame(r, box);
 
   const float middle = box.x + box.w * 0.5F;
   float y = box.y + 36.0F;
 
-  drawText(r, "SPACE CADET PINBALL", middle, y, 6.0F, kCyan, TextAlign::Center);
+  drawNeonText(r, "SPACE CADET PINBALL", middle, y, 6.0F, kAmber, kPink, {120, 30, 200, 255},
+               TextAlign::Center);
   y += 64.0F;
   std::array<char, 32> version{};
   drawText(r, formatText(version.data(), version.size(), "VERSION %s", kGameVersion), middle, y,
@@ -59,7 +57,8 @@ void drawAbout(SDL_Renderer* r, const HighScores& scores) {
   drawText(r, kSource, middle, y, 3.0F, kAmber, TextAlign::Center);
   y += 96.0F;
 
-  drawText(r, "HIGH SCORES", middle, y, 3.0F, kCyan, TextAlign::Center);
+  drawNeonText(r, "HIGH SCORES", middle, y, 3.0F, kWhite, kCyan, {200, 40, 150, 255},
+               TextAlign::Center);
   y += 38.0F;
   if (scores.size() == 0) {
     drawText(r, "NO GAMES FINISHED YET", middle, y, 2.0F, kDim, TextAlign::Center);
@@ -73,7 +72,7 @@ void drawAbout(SDL_Renderer* r, const HighScores& scores) {
     drawText(r, formatText(place.data(), place.size(), "%u.", static_cast<unsigned>(i + 1)),
              middle - 330.0F, y, 3.0F, kDim);
     drawText(r, std::string_view(entry.initials.data(), entry.initials.size()), middle - 285.0F,
-             y, 3.0F, kCyan);
+             y, 3.0F, kPink);
     drawText(r, score, middle + 60.0F, y, 3.0F, kWhite, TextAlign::Right);
     drawText(r, rankName(entry.rank), middle + 100.0F, y, 3.0F, kAmber);
     y += 36.0F;

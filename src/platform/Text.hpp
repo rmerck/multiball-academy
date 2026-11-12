@@ -18,6 +18,17 @@ float textWidth(std::string_view text, float pixelSize) noexcept;
 void drawText(SDL_Renderer* renderer, std::string_view text, float x, float y, float pixelSize,
               SDL_Color color, TextAlign align = TextAlign::Left);
 
+// Display lettering for titles: a dark drop shadow, an offset edge in a
+// second colour, and a face shaded from top to bottom down the seven rows of
+// the font, like chrome arcade lettering. Arguments as for drawText.
+void drawNeonText(SDL_Renderer* renderer, std::string_view text, float x, float y,
+                  float pixelSize, SDL_Color top, SDL_Color bottom, SDL_Color edge,
+                  TextAlign align = TextAlign::Left);
+
+// The frame shared by the overlay dialogs: a glowing double neon border round
+// a dark, faintly rastered face.
+void drawNeonFrame(SDL_Renderer* renderer, const SDL_FRect& box);
+
 inline constexpr std::size_t kMaxTextLength = 96;
 
 }  // namespace pinball

@@ -11,10 +11,12 @@ namespace pinball {
 
 namespace {
 
-constexpr SDL_Color kAmber{255, 190, 70, 255};
-constexpr SDL_Color kCyan{110, 220, 255, 255};
-constexpr SDL_Color kWhite{235, 240, 255, 255};
-constexpr SDL_Color kDim{130, 145, 180, 255};
+// Neon palette shared with the panel: laser yellow, cyan, hot pink.
+constexpr SDL_Color kAmber{255, 225, 70, 255};
+constexpr SDL_Color kCyan{70, 235, 255, 255};
+constexpr SDL_Color kWhite{248, 240, 255, 255};
+constexpr SDL_Color kDim{176, 150, 226, 255};
+constexpr SDL_Color kPink{255, 60, 170, 255};
 
 constexpr float kLetterSize = 14.0F;    // Canvas pixels per font pixel.
 constexpr float kLetterPitch = 120.0F;  // Distance between letter centres.
@@ -28,21 +30,17 @@ void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_
   }
   // Dim everything behind.
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  SDL_SetRenderDrawColor(r, 0, 0, 12, 215);
+  SDL_SetRenderDrawColor(r, 10, 0, 26, 205);
   const SDL_FRect whole{0.0F, 0.0F, static_cast<float>(kCanvasWidth),
                         static_cast<float>(kCanvasHeight)};
   SDL_RenderFillRect(r, &whole);
 
   const SDL_FRect box{290.0F, 250.0F, 700.0F, 460.0F};
-  SDL_SetRenderDrawColor(r, kCyan.r, kCyan.g, kCyan.b, 255);
-  SDL_RenderFillRect(r, &box);
-  const SDL_FRect inner{box.x + 4.0F, box.y + 4.0F, box.w - 8.0F, box.h - 8.0F};
-  SDL_SetRenderDrawColor(r, 10, 14, 34, 255);
-  SDL_RenderFillRect(r, &inner);
-  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+  drawNeonFrame(r, box);
 
   const float middle = box.x + box.w * 0.5F;
-  drawText(r, "NEW HIGH SCORE", middle, box.y + 36.0F, 5.0F, kCyan, TextAlign::Center);
+  drawNeonText(r, "NEW HIGH SCORE", middle, box.y + 36.0F, 5.0F, kAmber, kPink,
+               {120, 30, 200, 255}, TextAlign::Center);
   ScoreText scoreBuffer{};
   drawText(r, formatScore(score, scoreBuffer), middle, box.y + 96.0F, 4.0F, kWhite,
            TextAlign::Center);
@@ -53,8 +51,13 @@ void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_
   for (std::size_t i = 0; i < letters.size(); ++i) {
     const float centre = middle + (static_cast<float>(i) - 1.0F) * kLetterPitch;
     const bool current = i == entry.cursor();
-    drawText(r, std::string_view(&letters[i], 1), centre, lettersTop, kLetterSize,
-             current ? kAmber : kWhite, TextAlign::Center);
+    if (current) {
+      drawNeonText(r, std::string_view(&letters[i], 1), centre, lettersTop, kLetterSize, kWhite,
+                   kAmber, kPink, TextAlign::Center);
+    } else {
+      drawNeonText(r, std::string_view(&letters[i], 1), centre, lettersTop, kLetterSize, kWhite,
+                   kCyan, {60, 40, 160, 255}, TextAlign::Center);
+    }
     if (current && cursorLit) {
       const SDL_FRect marker{centre - 40.0F, lettersTop + 7.0F * kLetterSize + 12.0F, 80.0F, 8.0F};
       SDL_SetRenderDrawColor(r, kAmber.r, kAmber.g, kAmber.b, 255);

@@ -4,9 +4,16 @@ gi.require_version("Gimp", "3.0")
 from gi.repository import Gegl, Gimp, Gio
 
 
+def _linear(v):
+    return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+
 def color(r, g, b, a=1.0):
+    """A colour from sRGB components in 0..1, as a colour picker shows them.
+    Gegl.Color.set_rgba takes linear light, so the components are converted;
+    passing sRGB numbers straight in gives washed-out pastels."""
     c = Gegl.Color.new("black")
-    c.set_rgba(r, g, b, a)
+    c.set_rgba(_linear(r), _linear(g), _linear(b), a)
     return c
 
 
@@ -78,8 +85,12 @@ def select_capsule(img, a, b, radius, scale, op=Gimp.ChannelOps.REPLACE):
 
 
 def fill_selection(layer, c):
+    """Fills the selection with c. A fill ignores the alpha of the foreground
+    colour, so the colour's alpha is applied as the fill opacity instead."""
     set_fg(c)
+    Gimp.context_set_opacity(c.get_rgba()[3] * 100.0)
     layer.edit_fill(Gimp.FillType.FOREGROUND)
+    Gimp.context_set_opacity(100.0)
 
 
 # Gradients are drawn without dithering. GIMP seeds its dither from an
@@ -89,6 +100,16 @@ def linear_gradient(layer, c1, c2, x1, y1, x2, y2):
     Gimp.context_set_background(c2)
     Gimp.context_set_gradient_fg_bg_rgb()
     layer.edit_gradient_fill(Gimp.GradientType.LINEAR, 0, False, 1, 0, False, x1, y1, x2, y2)
+
+
+def alpha_gradient(layer, c, x1, y1, x2, y2):
+    """Linear fade from c at (x1, y1) to fully transparent at (x2, y2). The
+    two-colour gradients above ignore alpha; this is the way to fade out."""
+    Gimp.context_set_foreground(c)
+    Gimp.context_set_gradient_fg_transparent()
+    Gimp.context_set_opacity(c.get_rgba()[3] * 100.0)
+    layer.edit_gradient_fill(Gimp.GradientType.LINEAR, 0, False, 1, 0, False, x1, y1, x2, y2)
+    Gimp.context_set_opacity(100.0)
 
 
 def radial_gradient(layer, c1, c2, cx, cy, ex, ey):
@@ -114,3 +135,53 @@ def blur(layer, radius):
 def drop_shadow(layer, x, y, radius, opacity):
     apply_filter(layer, "gegl:dropshadow", x=float(x), y=float(y), radius=float(radius),
                  opacity=float(opacity))
+
+
+# ---- Neon helpers ----
+
+def bloom(img, layer, passes):
+    """Adds blurred additive copies of a layer directly above it, which reads
+    as the glow around a neon tube. passes is a list of (radius, opacity)."""
+    made = []
+    for radius, opacity in passes:
+        g = layer.copy()
+        img.insert_layer(g, None, img.get_item_position(layer))
+        blur(g, radius)
+        g.set_mode(Gimp.LayerMode.ADDITION)
+        g.set_opacity(float(opacity))
+        made.append(g)
+    return made
+
+
+def select_ring(img, center, outer, inner, scale, op=Gimp.ChannelOps.REPLACE):
+    select_circle(img, center, outer, scale, op)
+    select_circle(img, center, inner, scale, Gimp.ChannelOps.SUBTRACT)
+
+
+def select_polyline(img, points, radius, scale, op=Gimp.ChannelOps.REPLACE):
+    """A run of capsules through the points. Leaves the union selected."""
+    first = op
+    for i in range(len(points) - 1):
+        select_capsule(img, points[i], points[i + 1], radius, scale, first)
+        first = Gimp.ChannelOps.ADD
+
+
+def scanlines(img, layer, period, thickness, c):
+    """Horizontal lines across the whole image: a CRT raster."""
+    w, h = img.get_width(), img.get_height()
+    op = Gimp.ChannelOps.REPLACE
+    y = 0
+    while y < h:
+        img.select_rectangle(op, 0, y, w, thickness)
+        op = Gimp.ChannelOps.ADD
+        y += period
+    fill_selection(layer, c)
+    select_none(img)
+
+
+def load_layer(img, path, name):
+    """Loads an image file as a new top layer of img (at its own size)."""
+    layer = Gimp.file_load_layer(Gimp.RunMode.NONINTERACTIVE, img, Gio.File.new_for_path(path))
+    layer.set_name(name)
+    img.insert_layer(layer, None, 0)
+    return layer
