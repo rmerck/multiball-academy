@@ -27,6 +27,7 @@
 #include "platform/Assets.hpp"
 #include "platform/Canvas.hpp"
 #include "platform/InitialsScreen.hpp"
+#include "platform/SafeFile.hpp"
 #include "platform/TableRenderer.hpp"
 
 namespace {
@@ -36,6 +37,9 @@ struct SurfaceDeleter {
 };
 struct RendererDeleter {
   void operator()(SDL_Renderer* r) const noexcept { SDL_DestroyRenderer(r); }
+};
+struct IoCloser {
+  void operator()(SDL_IOStream* io) const noexcept { SDL_CloseIO(io); }
 };
 
 // The output is always a plain file name in the current directory: lower-case
@@ -150,17 +154,25 @@ int run(std::uint32_t steps, const std::string& outputName, Overlay overlay) {
     std::fputs("rendered frame is blank\n", stderr);
     return EXIT_FAILURE;
   }
-  // Never write through whatever already has this name: remove it first, so
-  // a symbolic link is replaced rather than followed.
-  SDL_PathInfo existing{};
-  if (SDL_GetPathInfo(outputName.c_str(), &existing)) {
-    if (existing.type == SDL_PATHTYPE_DIRECTORY || !SDL_RemovePath(outputName.c_str())) {
-      std::fprintf(stderr, "cannot replace existing %s\n", outputName.c_str());
-      return EXIT_FAILURE;
-    }
+  // Never write through whatever already has this name, be it a file, a
+  // link to one or a link that points nowhere: the picture is encoded in
+  // memory and put in place by replaceFile, which writes a new file beside
+  // the name and renames it over. (Asking first whether the name is taken
+  // would follow a link, and call a dangling one free.)
+  const std::unique_ptr<SDL_IOStream, IoCloser> encoded(SDL_IOFromDynamicMem());
+  if (!encoded || !SDL_SavePNG_IO(surface.get(), encoded.get(), false)) {
+    std::fprintf(stderr, "SDL_SavePNG_IO failed: %s\n", SDL_GetError());
+    return EXIT_FAILURE;
   }
-  if (!SDL_SavePNG(surface.get(), outputName.c_str())) {
-    std::fprintf(stderr, "SDL_SavePNG failed: %s\n", SDL_GetError());
+  const auto* const data = static_cast<const char*>(SDL_GetPointerProperty(
+      SDL_GetIOProperties(encoded.get()), SDL_PROP_IOSTREAM_DYNAMIC_MEMORY_POINTER, nullptr));
+  const Sint64 size = SDL_GetIOSize(encoded.get());
+  if (data == nullptr || size <= 0) {
+    std::fputs("encoding the PNG produced nothing\n", stderr);
+    return EXIT_FAILURE;
+  }
+  if (!pinball::replaceFile(outputName, std::string_view(data, static_cast<std::size_t>(size)))) {
+    std::fprintf(stderr, "cannot write %s\n", outputName.c_str());
     return EXIT_FAILURE;
   }
   std::printf("wrote %s after %u steps\n", outputName.c_str(), static_cast<unsigned>(steps));
