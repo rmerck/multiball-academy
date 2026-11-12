@@ -29,7 +29,12 @@ constexpr float kBarSpriteRadius = 5.0F;
 constexpr float kBarSpriteMargin = 2.0F;
 
 Uint8 toByte(float unit) noexcept {
-  return static_cast<Uint8>(std::clamp(unit, 0.0F, 1.0F) * 255.0F + 0.5F);
+  // Written so that not-a-number takes the first branch: std::clamp would
+  // pass it through, and converting it to an integer is undefined.
+  if (!(unit > 0.0F)) {
+    return 0;
+  }
+  return static_cast<Uint8>(std::min(unit, 1.0F) * 255.0F + 0.5F);
 }
 
 // Where a target's bar sprite goes. The targets never move, so this is worked

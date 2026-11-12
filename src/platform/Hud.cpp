@@ -106,10 +106,10 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game, const Hud
     for (int i = 0; i < kProgressPerRank; ++i) {
       const SDL_FRect box{panel::kRankWell.x + kPad + static_cast<float>(i) * (segment + gap),
                           panel::kRankWell.y + panel::kRankWell.h - 18.0F, segment, 8.0F};
-      if (i < missions.progress()) {
-        SDL_SetRenderDrawColor(r, kAmber.r, kAmber.g, kAmber.b, SDL_ALPHA_OPAQUE);
-      } else {
-        SDL_SetRenderDrawColor(r, kUnlit.r, kUnlit.g, kUnlit.b, SDL_ALPHA_OPAQUE);
+      // The colour changes at most twice along the gauge: set it only then.
+      if (i == 0 || i == missions.progress()) {
+        const SDL_Color c = i < missions.progress() ? kAmber : kUnlit;
+        SDL_SetRenderDrawColor(r, c.r, c.g, c.b, SDL_ALPHA_OPAQUE);
       }
       SDL_RenderFillRect(r, &box);
     }
