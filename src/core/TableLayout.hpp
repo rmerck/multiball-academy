@@ -272,15 +272,30 @@ inline constexpr float kHoleCaptureRadius = 9.0F;
 inline constexpr float kHoleRadius = 15.0F;
 // After returning a ball, a hole ignores it until it has moved this far away.
 inline constexpr float kHoleRearmDistance = 34.0F;
-// The ramp only takes a ball travelling up the table at least this fast.
-inline constexpr float kRampMinUpwardSpeed = 300.0F;
+// The ramp only takes a ball shot firmly up the table, at least this fast.
+// A flipper shot arrives at 1150 px/s or more; a ball knocked upward by a
+// slingshot, a bumper or a weak flip is slower and rolls on over the mouth.
+inline constexpr float kRampMinUpwardSpeed = 1100.0F;
+// The ramp's mouth is a strip across the field, not a point: the ball's
+// centre may pass this far either side of the entry. Each flipper trigger
+// step (1/120 s) moves a shot 20 to 30 px sideways at the entry, so this
+// width is what gives the shot a timing window of three to five steps.
+inline constexpr float kRampMouthReach = 37.0F;
+// The mouth faces the right flipper: the ball must also be heading left, by
+// at least this fraction of its upward speed (about 14 degrees off straight
+// up). Shots off the right bat lean 0.3 or more; a ball driven straight up
+// the table by the left flipper leans under 0.2 and is not taken.
+inline constexpr float kRampMinLeftLean = 0.25F;
 
 inline constexpr Vec2 kWormholeA{215.0F, 560.0F};
 inline constexpr Vec2 kWormholeB{490.0F, 200.0F};
 inline constexpr Vec2 kWormholeC = mirrored(kWormholeA);
 inline constexpr Vec2 kBlackHole{600.0F, 250.0F};
 inline constexpr Vec2 kHyperspace{636.0F, 455.0F};
-inline constexpr Vec2 kRampEntry{75.0F, 470.0F};
+// The entry faces the right flipper from the left of the open lower field,
+// about 270 px up the table from the bat. Against the left wall, where it
+// used to be, one trigger step swung the shot right across it.
+inline constexpr Vec2 kRampEntry{269.0F, 600.0F};
 // The ramp carries the ball over the playfield and drops it into the top of
 // the field, just right of the arch deflector.
 inline constexpr Vec2 kRampExit{286.0F, 100.0F};
