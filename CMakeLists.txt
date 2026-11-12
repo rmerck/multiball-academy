@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
-project(SpaceCadetPinball VERSION 0.1.0 LANGUAGES CXX)
+project(SpaceCadetPinball VERSION 1.0.0 LANGUAGES CXX)
 
 if(CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
   message(FATAL_ERROR "In-source builds are not supported. Use: cmake -S . -B build")
@@ -47,6 +47,7 @@ pinball_apply_hardening(pinball_core PUBLIC)
 
 # SDL-facing code shared by the game and the snapshot tool.
 add_library(pinball_platform STATIC
+  src/platform/About.cpp
   src/platform/App.cpp
   src/platform/Assets.cpp
   src/platform/AudioOutput.cpp
@@ -155,6 +156,11 @@ if(BUILD_TESTING)
     add_test(NAME render_snapshot
       COMMAND pinball_snapshot 1200 render_snapshot.png
       WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    add_test(NAME render_about
+      COMMAND pinball_snapshot 60 render_about.png about
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_tests_properties(render_about PROPERTIES
+      ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 60)
     set_tests_properties(render_snapshot PROPERTIES
       ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 60)
   endif()

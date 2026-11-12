@@ -2,7 +2,7 @@
 // rendered frame to a PNG in the current directory. No window is opened.
 // Used to review art and layout, and by ctest as a rendering smoke test.
 //
-// Usage: pinball_snapshot <steps> <name.png>
+// Usage: pinball_snapshot <steps> <name.png> [about]
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
@@ -16,6 +16,8 @@
 
 #include "core/Args.hpp"
 #include "core/Game.hpp"
+#include "core/HighScores.hpp"
+#include "platform/About.hpp"
 #include "platform/Assets.hpp"
 #include "platform/Canvas.hpp"
 #include "platform/TableRenderer.hpp"
@@ -77,7 +79,7 @@ bool hasContent(SDL_Surface* surface) {
   return varied;
 }
 
-int run(std::uint32_t steps, const std::string& outputName) {
+int run(std::uint32_t steps, const std::string& outputName, bool showAbout) {
   const pinball::AssetLoader assets = pinball::AssetLoader::fromExecutableLocation();
   if (!assets.verifyAll()) {
     std::fputs("asset integrity check failed\n", stderr);
@@ -113,6 +115,14 @@ int run(std::uint32_t steps, const std::string& outputName) {
     SDL_SetRenderDrawColor(renderer.get(), 0, 0, 0, SDL_ALPHA_OPAQUE);
     SDL_RenderClear(renderer.get());
     table->draw(renderer.get(), game, false);
+    if (showAbout) {
+      // With a sample table, so the layout of a full list can be checked.
+      pinball::HighScores sample;
+      sample.submit({12'345'678, 4});
+      sample.submit({3'250'000, 2});
+      sample.submit({987'500, 1});
+      pinball::drawAbout(renderer.get(), sample);
+    }
     SDL_RenderPresent(renderer.get());
   }
 
@@ -131,20 +141,21 @@ int run(std::uint32_t steps, const std::string& outputName) {
 }  // namespace
 
 int main(int argc, char* argv[]) {
-  if (argc != 3) {
-    std::fputs("Usage: pinball_snapshot <steps 1..1000000> <name.png>\n", stderr);
+  const bool showAbout = argc == 4 && std::string_view(argv[3]) == "about";
+  if (argc != 3 && !showAbout) {
+    std::fputs("Usage: pinball_snapshot <steps 1..1000000> <name.png> [about]\n", stderr);
     return EXIT_FAILURE;
   }
   const auto steps = pinball::parseFrameLimit(argv[1]);
   const std::string_view name = argv[2];
   if (!steps || !isPlainPngName(name)) {
-    std::fputs("Usage: pinball_snapshot <steps 1..1000000> <name.png>\n", stderr);
+    std::fputs("Usage: pinball_snapshot <steps 1..1000000> <name.png> [about]\n", stderr);
     return EXIT_FAILURE;
   }
 
   int exitCode = EXIT_FAILURE;
   try {
-    exitCode = run(*steps, std::string(name));
+    exitCode = run(*steps, std::string(name), showAbout);
   } catch (const std::exception& e) {
     std::fprintf(stderr, "Fatal: %s\n", e.what());
   }

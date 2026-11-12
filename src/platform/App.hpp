@@ -66,6 +66,8 @@ class App {
   bool vsync_ = false;
   bool running_ = true;
   bool paused_ = false;
+  // The About screen is up. The game stands still behind it.
+  bool aboutOpen_ = false;
   // Null when no audio device could be opened: the game then runs silent.
   std::unique_ptr<AudioOutput> audio_;
   SoundMixer mixer_;
