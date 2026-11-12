@@ -288,12 +288,28 @@ void App::drawTableOutline() {
   for (const table::Capsule& wall : table::kWalls) {
     SDL_RenderLine(r, wall.a.x, wall.a.y, wall.b.x, wall.b.y);
   }
-  for (const table::Triangle& sling : table::kSlingshots) {
+  const auto drawTriangle = [r](const table::Triangle& triangle) {
     for (std::size_t i = 0; i < 3; ++i) {
-      const Vec2 a = sling.points[i];
-      const Vec2 b = sling.points[(i + 1) % 3];
+      const Vec2 a = triangle.points[i];
+      const Vec2 b = triangle.points[(i + 1) % 3];
       SDL_RenderLine(r, a.x, a.y, b.x, b.y);
     }
+  };
+  for (const table::Triangle& sling : table::kSlingshots) {
+    drawTriangle(sling);
+  }
+  drawTriangle(table::kMedalIsland);
+
+  // Targets: bright when lit.
+  for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
+    const table::Capsule& c = table::kTargets[i].shape;
+    if (game_.targetLit(i)) {
+      SDL_SetRenderDrawColor(r, 255, 230, 90, SDL_ALPHA_OPAQUE);
+    } else {
+      SDL_SetRenderDrawColor(r, 150, 90, 40, SDL_ALPHA_OPAQUE);
+    }
+    SDL_RenderLine(r, c.a.x, c.a.y, c.b.x, c.b.y);
+    SDL_RenderLine(r, c.a.x + 1.0F, c.a.y + 1.0F, c.b.x + 1.0F, c.b.y + 1.0F);
   }
 }
 

@@ -54,10 +54,10 @@ void testBumpers() {
     for (int step = 0; step < 40; ++step) {
       world.step(kStep);
       for (const PhysicsEvent& e : world.events()) {
-        CHECK(e.type == PhysicsEvent::Type::Hit);
-        CHECK(e.element.kind == table::ElementKind::Bumper);
         CHECK(e.speed >= 0.0F);
-        if (e.element.index == i) {
+        // The kicked ball may go on to strike something else; only this
+        // bumper's own reports are counted.
+        if (e.element.kind == table::ElementKind::Bumper && e.element.index == i) {
           ++hitsOnThis;
         }
       }

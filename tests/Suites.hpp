@@ -13,3 +13,4 @@ void testPhysics();
 void testPlunger();
 void testPngHeader();
 void testSha256();
+void testTargets();

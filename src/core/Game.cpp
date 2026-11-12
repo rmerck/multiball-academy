@@ -44,11 +44,46 @@ void Game::handleEvents() {
     flash = std::max(flash - fade, 0.0F);
   }
 
+  for (float& flash : slingshotFlash_) {
+    flash = std::max(flash - fade, 0.0F);
+  }
+
   for (const PhysicsEvent& event : physics_.events()) {
-    if (event.element.kind == table::ElementKind::Bumper &&
-        event.element.index < bumperFlash_.size()) {
-      bumperFlash_[event.element.index] = 1.0F;
-      ++bumperHits_;
+    if (!table::isValid(event.element)) {
+      continue;
+    }
+    const std::size_t index = event.element.index;
+    switch (event.element.kind) {
+      case table::ElementKind::Bumper:
+        bumperFlash_[index] = 1.0F;
+        ++bumperHits_;
+        break;
+      case table::ElementKind::Slingshot:
+        slingshotFlash_[index] = 1.0F;
+        break;
+      case table::ElementKind::Target:
+        lightTarget(index);
+        break;
+      case table::ElementKind::None:
+        break;
+    }
+  }
+}
+
+void Game::lightTarget(std::size_t index) {
+  targetLit_[index] = true;
+  const table::TargetBank bank = table::kTargets[index].bank;
+
+  // When the whole bank is lit, count it and reset the bank.
+  for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
+    if (table::kTargets[i].bank == bank && !targetLit_[i]) {
+      return;
+    }
+  }
+  ++bankCompletions_[static_cast<std::size_t>(bank)];
+  for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
+    if (table::kTargets[i].bank == bank) {
+      targetLit_[i] = false;
     }
   }
 }

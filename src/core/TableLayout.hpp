@@ -157,9 +157,60 @@ inline constexpr std::array<Bumper, 8> kBumpers{{
     {{{560.0F, 380.0F}, 24.0F}, BumperGroup::Satellite},
 }};
 
+// Stand-up targets: short rubber-faced bars that register a hit.
+enum class TargetBank : std::uint8_t { Booster, Medal, Mission, Multiplier };
+inline constexpr std::size_t kTargetBankCount = 4;
+static_assert(static_cast<std::size_t>(TargetBank::Multiplier) + 1 == kTargetBankCount,
+              "kTargetBankCount must match the TargetBank enumeration");
+struct Target {
+  Capsule shape;
+  TargetBank bank;
+};
+
+inline constexpr float kTargetRadius = 5.0F;
+// Wall-mounted banks sit just inside the side walls, above the lane guides.
+// The centre line sits one target radius off the wall, so the bar is flush
+// against it. Further out, its top end and the wall formed a ledge that a
+// ball could rest on.
+inline constexpr float kWallTargetX = kWallLeft + kTargetRadius;
+inline constexpr Capsule kWallTargetTop{{kWallTargetX, 528.0F}, {kWallTargetX, 560.0F},
+                                        kTargetRadius};
+inline constexpr Capsule kWallTargetMiddle{{kWallTargetX, 566.0F}, {kWallTargetX, 598.0F},
+                                           kTargetRadius};
+inline constexpr Capsule kWallTargetBottom{{kWallTargetX, 604.0F}, {kWallTargetX, 636.0F},
+                                           kTargetRadius};
+
+// The medal bank hangs under a roofed island in the centre. The roof slopes
+// so a ball landing on it rolls off instead of resting there.
+inline constexpr float kMedalBankY = 458.0F;
+inline constexpr Triangle kMedalIsland{
+    {{{kFieldCenterX, 416.0F}, {kFieldCenterX - 66.0F, 450.0F}, {kFieldCenterX + 66.0F, 450.0F}}},
+    3.0F};
+
+inline constexpr std::array<Target, 11> kTargets{{
+    // Mission targets on the left wall, top to bottom.
+    {kWallTargetTop, TargetBank::Mission},
+    {kWallTargetMiddle, TargetBank::Mission},
+    {kWallTargetBottom, TargetBank::Mission},
+    // Booster targets on the right wall, top to bottom.
+    {mirrored(kWallTargetTop), TargetBank::Booster},
+    {mirrored(kWallTargetMiddle), TargetBank::Booster},
+    {mirrored(kWallTargetBottom), TargetBank::Booster},
+    // Medal targets, left to right.
+    {{{kFieldCenterX - 58.0F, kMedalBankY}, {kFieldCenterX - 24.0F, kMedalBankY}, kTargetRadius},
+     TargetBank::Medal},
+    {{{kFieldCenterX - 17.0F, kMedalBankY}, {kFieldCenterX + 17.0F, kMedalBankY}, kTargetRadius},
+     TargetBank::Medal},
+    {{{kFieldCenterX + 24.0F, kMedalBankY}, {kFieldCenterX + 58.0F, kMedalBankY}, kTargetRadius},
+     TargetBank::Medal},
+    // Field multiplier targets on the upper left flank.
+    {{{118.0F, 235.0F}, {140.0F, 208.0F}, kTargetRadius}, TargetBank::Multiplier},
+    {{{146.0F, 201.0F}, {168.0F, 174.0F}, kTargetRadius}, TargetBank::Multiplier},
+}};
+
 // Identifies one interactive element of the table. Stored in physics shapes
 // and carried by events.
-enum class ElementKind : std::uint8_t { None, Bumper };
+enum class ElementKind : std::uint8_t { None, Bumper, Slingshot, Target };
 struct ElementRef {
   ElementKind kind = ElementKind::None;
   std::uint8_t index = 0;
@@ -167,6 +218,22 @@ struct ElementRef {
 constexpr bool operator==(ElementRef a, ElementRef b) noexcept {
   return a.kind == b.kind && a.index == b.index;
 }
+
+// Number of elements of a kind; 0 for None or an unknown kind.
+constexpr std::size_t elementCount(ElementKind kind) noexcept {
+  switch (kind) {
+    case ElementKind::Bumper:
+      return kBumpers.size();
+    case ElementKind::Slingshot:
+      return kSlingshots.size();
+    case ElementKind::Target:
+      return kTargets.size();
+    case ElementKind::None:
+      break;
+  }
+  return 0;
+}
+constexpr bool isValid(ElementRef ref) noexcept { return ref.index < elementCount(ref.kind); }
 
 // Outer shell as a closed loop, ordered counter-clockwise on screen so the
 // one-sided collision normals point into the table.

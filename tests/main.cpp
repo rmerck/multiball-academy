@@ -15,6 +15,7 @@ int main() {
   testPlunger();
   testPngHeader();
   testSha256();
+  testTargets();
 
   if (pinball_test::failures() == 0) {
     std::puts("core_tests: all passed");
