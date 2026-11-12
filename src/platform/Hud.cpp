@@ -144,7 +144,7 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game, const Hud
     }
   } else {
     drawText(r, "NO MISSION", missionX, missionY, 3.0F, kDim);
-    drawText(r, "HIT A MISSION TARGET ON THE LEFT WALL", missionX, missionY + 34.0F, kLabelSize,
+    drawText(r, "HIT A MISSION TARGET, LEFT WALL", missionX, missionY + 34.0F, kLabelSize,
              kDim);
   }
   // Lit awards along the bottom of the mission window.
