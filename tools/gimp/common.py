@@ -82,18 +82,20 @@ def fill_selection(layer, c):
     layer.edit_fill(Gimp.FillType.FOREGROUND)
 
 
+# Gradients are drawn without dithering. GIMP seeds its dither from an
+# unseeded random source, which would make every regeneration differ.
 def linear_gradient(layer, c1, c2, x1, y1, x2, y2):
     Gimp.context_set_foreground(c1)
     Gimp.context_set_background(c2)
     Gimp.context_set_gradient_fg_bg_rgb()
-    layer.edit_gradient_fill(Gimp.GradientType.LINEAR, 0, False, 1, 0, True, x1, y1, x2, y2)
+    layer.edit_gradient_fill(Gimp.GradientType.LINEAR, 0, False, 1, 0, False, x1, y1, x2, y2)
 
 
 def radial_gradient(layer, c1, c2, cx, cy, ex, ey):
     Gimp.context_set_foreground(c1)
     Gimp.context_set_background(c2)
     Gimp.context_set_gradient_fg_bg_rgb()
-    layer.edit_gradient_fill(Gimp.GradientType.RADIAL, 0, False, 1, 0, True, cx, cy, ex, ey)
+    layer.edit_gradient_fill(Gimp.GradientType.RADIAL, 0, False, 1, 0, False, cx, cy, ex, ey)
 
 
 def apply_filter(layer, operation, **props):

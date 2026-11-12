@@ -251,8 +251,11 @@ void testRules() {
     CHECK(rules.ballSaveActive());
     CHECK(rules.onDrain() == Rules::DrainResult::BallSaved);
     CHECK(rules.ball() == 1);
-    // The save is spent: it is not re-armed until the ball is in play again.
+    // One save per ball: the returned ball is not saved a second time.
+    rules.onBallInPlay();
+    CHECK(!rules.ballSaveActive());
     CHECK(rules.onDrain() == Rules::DrainResult::NextBall);
+    // The next ball gets its own.
     rules.onBallInPlay();
     wait(rules, Rules::kBallSaveSeconds);
     CHECK(!rules.ballSaveActive());

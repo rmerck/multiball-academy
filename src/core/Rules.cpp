@@ -44,6 +44,7 @@ void Rules::resetBall() noexcept {
   bonus_ = 0;
   multiplierLevel_ = 0;
   ballSaveSteps_ = 0;
+  ballSaveUsed_ = false;
   rampReflexSteps_ = 0;
   hyperspaceReflexSteps_ = 0;
 }
@@ -67,9 +68,10 @@ void Rules::addBonus() noexcept {
 }
 
 void Rules::awardExtraBall() noexcept {
-  if (extraBalls_ < kMaxExtraBalls) {
-    ++extraBalls_;
+  if (extraBalls_ >= kMaxExtraBalls) {
+    return;  // Already holding the most allowed: nothing to announce.
   }
+  ++extraBalls_;
   say("EXTRA BALL");
 }
 
@@ -314,7 +316,9 @@ void Rules::onBallInPlay() noexcept {
   if (gameOver_) {
     return;
   }
-  ballSaveSteps_ = stepsFor(kBallSaveSeconds);
+  if (!ballSaveUsed_) {
+    ballSaveSteps_ = stepsFor(kBallSaveSeconds);
+  }
 }
 
 Rules::DrainResult Rules::onDrain() noexcept {
@@ -323,6 +327,7 @@ Rules::DrainResult Rules::onDrain() noexcept {
   }
   if (ballSaveSteps_ > 0) {
     ballSaveSteps_ = 0;
+    ballSaveUsed_ = true;
     say("RE-DEPLOY");
     return DrainResult::BallSaved;
   }
