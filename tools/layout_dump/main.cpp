@@ -136,6 +136,11 @@ int main() {
   std::printf("]},\n");
   std::printf("  \"rampExit\": ");
   point(table::kRampExit);
+  // The ramp's mouth: a strip this far either side of the ramp hole's
+  // centre, facing down and to the right by at least this lean (dx/dy).
+  std::printf(",\n  \"rampMouth\": {\"reach\": %.1f, \"minLeftLean\": %.2f}",
+              static_cast<double>(table::kRampMouthReach),
+              static_cast<double>(table::kRampMinLeftLean));
   std::printf(",\n  \"laneGate\": ");
   capsule(table::kLaneGate);
   std::printf(",\n  \"medalIsland\": ");

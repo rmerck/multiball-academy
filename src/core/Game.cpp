@@ -239,12 +239,14 @@ BallView Game::ball() const {
     view.visible = false;
     return view;
   }
-  // On the ramp the ball stays in sight, travelling over the table from the
-  // entry to the exit and looking larger at the top of its arc.
+  // On the ramp the ball stays in sight, travelling over the table to the
+  // exit and looking larger at the top of its arc. It starts from where it
+  // was taken (the held body stays there), which can be anywhere across the
+  // ramp's mouth.
   const float t = std::clamp(
       static_cast<float>(static_cast<double>(heldSteps_) * kStepSeconds / kHoleHoldSeconds), 0.0F,
       1.0F);
-  view.position = hole.center + (hole.exitPosition - hole.center) * t;
+  view.position = view.position + (hole.exitPosition - view.position) * t;
   view.scale = 1.0F + 0.35F * 4.0F * t * (1.0F - t);
   return view;
 }

@@ -468,10 +468,18 @@ void PhysicsWorld::checkZones() {
       holeArmed_[i] = distance > table::kHoleRearmDistance;
       continue;
     }
-    if (distance >= table::kHoleCaptureRadius) {
-      continue;
-    }
-    if (hole.type == table::HoleType::Ramp && v.y > -table::kRampMinUpwardSpeed) {
+    if (hole.type == table::HoleType::Ramp) {
+      // The mouth is a strip across the ball's path. As deep as a hole, so
+      // the fastest ball (about 6 px per slice) cannot step over it.
+      const bool inMouth = std::fabs(p.x - hole.center.x) < table::kRampMouthReach &&
+                           std::fabs(p.y - hole.center.y) < table::kHoleCaptureRadius;
+      // Fast enough up the table, and leaning left into the mouth.
+      const bool shotIn =
+          v.y <= -table::kRampMinUpwardSpeed && v.x <= table::kRampMinLeftLean * v.y;
+      if (!inMouth || !shotIn) {
+        continue;
+      }
+    } else if (distance >= table::kHoleCaptureRadius) {
       continue;
     }
     // Take the ball off the table. Disabling the body removes it from
