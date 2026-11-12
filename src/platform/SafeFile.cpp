@@ -158,6 +158,22 @@ constexpr bool flushIsUnsupported(int error) noexcept {
   return error == EINVAL || error == ENOTSUP;
 }
 
+// The permission bits for a file made with the given access. mkstemp ignores
+// the umask, so Shared applies it here. There is no call that only reads the
+// umask: it is set to owner-only and put straight back, so if another
+// thread makes a file in that instant, the file comes out stricter, never
+// looser.
+mode_t modeFor(FileAccess access) noexcept {
+  if (access == FileAccess::OwnerOnly) {
+    return S_IRUSR | S_IWUSR;
+  }
+  const mode_t mask = ::umask(S_IRWXG | S_IRWXO);
+  ::umask(mask);
+  const mode_t shared = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+  // The owner's own bits are kept: the file is still ours to replace.
+  return static_cast<mode_t>(shared & ~(mask & (S_IRWXG | S_IRWXO)));
+}
+
 // Pushes a file's data to the disk itself, not only to the drive's cache.
 // Succeeds, having done what can be done, where there is no flush to ask for.
 bool syncToDisk(int fd) noexcept {
@@ -248,7 +264,7 @@ ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
   return ReadResult::Ok;
 }
 
-bool replaceFile(const std::string& path, std::string_view text) {
+bool replaceFile(const std::string& path, std::string_view text, FileAccess access) {
   // A fresh, uniquely named file beside the target, created exclusively and
   // for its owner only. Nothing already at any name is opened, and two
   // programs saving at once cannot disturb each other's file.
@@ -256,6 +272,16 @@ bool replaceFile(const std::string& path, std::string_view text) {
   Descriptor file(::mkostemp(temporary.data(), O_CLOEXEC));
   if (!file.ok()) {
     return false;
+  }
+  // The final permissions go on while the file still has its temporary
+  // name. mkstemp has made it 0600 (less under an odd umask), so for
+  // OwnerOnly there is normally nothing to change. A refusal does not stop
+  // the save: a file system that keeps no permissions (FAT, say) refuses,
+  // and shows the same ones whatever is asked.
+  const mode_t wanted = modeFor(access);
+  struct stat made {};
+  if (::fstat(file.get(), &made) != 0 || (made.st_mode & 07777) != wanted) {
+    (void)::fchmod(file.get(), wanted);
   }
   // The data must be on disk before the rename makes it the real file.
   bool ok = writeAll(file.get(), text);
@@ -363,7 +389,7 @@ ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
   return ReadResult::Ok;
 }
 
-bool replaceFile(const std::string& path, std::string_view text) {
+bool replaceFile(const std::string& path, std::string_view text, FileAccess /*access*/) {
   const std::string temporary = path + ".tmp";
   SDL_RemovePath(temporary.c_str());
   SDL_IOStream* const stream = SDL_IOFromFile(temporary.c_str(), "wb");

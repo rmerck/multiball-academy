@@ -163,6 +163,44 @@ int main(int argc, char* argv[]) {
   CHECK(slurp(victim) == "untouched");
 #endif
 
+#if defined(PINBALL_POSIX_TESTS)
+  // Permissions of the result: owner-only unless asked, under any umask;
+  // Shared is 0644 less the umask, and never less than the owner's own.
+  {
+    using pinball::FileAccess;
+    const fs::path sub = dir / "modes";
+    fs::create_directory(sub, error);
+    const std::string secret = (sub / "scores.txt").string();
+    const std::string picture = (sub / "frame.png").string();
+    const auto modeOf = [](const std::string& path) {
+      struct stat status {};
+      return ::stat(path.c_str(), &status) == 0 ? static_cast<unsigned>(status.st_mode & 07777U)
+                                                : 07777U + 1U;
+    };
+    const mode_t original = ::umask(022);
+    for (const unsigned mask : {022U, 002U, 027U, 077U, 0U, 0377U, 0777U}) {
+      ::umask(static_cast<mode_t>(mask));
+      const bool savedSecret = pinball::replaceFile(secret, "s");
+      const bool savedDefault = pinball::replaceFile(secret, "secret", FileAccess::OwnerOnly);
+      const bool savedPicture = pinball::replaceFile(picture, "picture", FileAccess::Shared);
+      // The call leaves the umask as it found it.
+      const auto after = static_cast<unsigned>(::umask(022));
+      CHECK(savedSecret && savedDefault && savedPicture);
+      CHECK(after == mask);
+      CHECK(modeOf(secret) == 0600U);
+      CHECK(modeOf(picture) == (0644U & ~(mask & 0077U)));
+      CHECK(slurp(secret) == "secret" && slurp(picture) == "picture");
+    }
+    // The mode asked for wins over the mode of the file replaced, both ways.
+    ::umask(022);
+    CHECK(pinball::replaceFile(secret, "open", FileAccess::Shared) && modeOf(secret) == 0644U);
+    CHECK(pinball::replaceFile(picture, "shut") && modeOf(picture) == 0600U);
+    CHECK(::chmod(picture.c_str(), 0666) == 0);
+    CHECK(pinball::replaceFile(picture, "shut again") && modeOf(picture) == 0600U);
+    ::umask(original);
+  }
+#endif
+
 #if defined(PINBALL_FSYNC_TESTS)
   // A file system with no flush to offer does not stop a save; a flush that
   // failed does, and leaves the old file and no temporary behind.

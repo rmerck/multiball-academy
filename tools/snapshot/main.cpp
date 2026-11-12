@@ -171,7 +171,10 @@ int run(std::uint32_t steps, const std::string& outputName, Overlay overlay) {
     std::fputs("encoding the PNG produced nothing\n", stderr);
     return EXIT_FAILURE;
   }
-  if (!pinball::replaceFile(outputName, std::string_view(data, static_cast<std::size_t>(size)))) {
+  // A picture is for opening and attaching: ordinary permissions, not the
+  // score file's owner-only ones.
+  if (!pinball::replaceFile(outputName, std::string_view(data, static_cast<std::size_t>(size)),
+                            pinball::FileAccess::Shared)) {
     std::fprintf(stderr, "cannot write %s\n", outputName.c_str());
     return EXIT_FAILURE;
   }

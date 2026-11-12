@@ -28,17 +28,34 @@ enum class ReadResult {
 [[nodiscard]] ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
                                          std::vector<std::uint8_t>& out);
 
+// Who may read a file that replaceFile puts in place.
+enum class FileAccess {
+  OwnerOnly,  // Read and write for the owner, nothing for anyone else (0600).
+  Shared,     // What a newly made file normally gets: 0644 less the umask.
+};
+
 // Replaces the file at path with text, all or nothing. Returns false,
 // leaving any existing file untouched, on failure.
 //
 // On POSIX systems the text goes to a new, uniquely named, owner-only file
 // beside the target, is flushed to disk, and is renamed into place. No
 // existing file or link is ever written through, and a link at path itself
-// is replaced, not followed. The result is readable by its owner only.
-// A file system that has no flush to offer (some network and FUSE mounts)
-// does not fail the save; a flush that was tried and failed does.
-// Elsewhere a fixed temporary name and plain SDL file calls are used.
-[[nodiscard]] bool replaceFile(const std::string& path, std::string_view text);
+// is replaced, not followed. A file system that has no flush to offer (some
+// network and FUSE mounts) does not fail the save; a flush that was tried
+// and failed does.
+//
+// access sets the permissions of the result, whatever the replaced file had.
+// OwnerOnly, the default, is exactly 0600 under any umask. Shared is 0644
+// with the bits in the process umask taken away, as for a file made by any
+// other program, so a umask of 077 still gives 0600; the owner always keeps
+// read and write. The permissions are set on the temporary file before it
+// is renamed, so the result is never open wider, even for a moment, than
+// asked. (A file system that keeps no permissions shows its own regardless;
+// that does not fail the save.)
+// Elsewhere a fixed temporary name and plain SDL file calls are used, and
+// access has no effect.
+[[nodiscard]] bool replaceFile(const std::string& path, std::string_view text,
+                               FileAccess access = FileAccess::OwnerOnly);
 
 enum class MoveResult {
   Moved,
