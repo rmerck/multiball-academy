@@ -18,6 +18,11 @@ function(pinball_apply_hardening target scope)
     -Wnon-virtual-dtor -Wold-style-cast -Wcast-align -Woverloaded-virtual
     -Wnull-dereference -Wformat=2 -Wimplicit-fallthrough
     -fstack-protector-strong)
+  # Keep the builder's directory names out of the binary: file names in
+  # assertions and debug information are recorded relative to the source tree.
+  target_compile_options(${target} ${scope}
+    -ffile-prefix-map=${CMAKE_BINARY_DIR}=build
+    -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.)
   # Bounds and precondition checks in the standard library.
   target_compile_definitions(${target} ${scope}
     _LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST

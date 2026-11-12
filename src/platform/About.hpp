@@ -6,8 +6,8 @@
 
 namespace pinball {
 
-// Draws the About screen over the whole canvas: who made the game, where the
-// source is, and the high score table.
+// Draws the About screen over the whole canvas: the game's title and version,
+// where the source is, and the high score table.
 void drawAbout(SDL_Renderer* renderer, const HighScores& scores);
 
 }  // namespace pinball

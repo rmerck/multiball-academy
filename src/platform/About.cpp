@@ -19,9 +19,7 @@ constexpr SDL_Color kCyan{110, 220, 255, 255};
 constexpr SDL_Color kWhite{235, 240, 255, 255};
 constexpr SDL_Color kDim{130, 145, 180, 255};
 
-// Attribution. The game is credited to its author and to no one else, with
-// one place to find the source.
-constexpr std::string_view kAuthor = "rmerck";
+// Where the source lives. The screen names no person.
 constexpr std::string_view kSource = "GITHUB.COM/RMERCK";
 
 }  // namespace
@@ -56,12 +54,10 @@ void drawAbout(SDL_Renderer* r, const HighScores& scores) {
            2.0F, kDim, TextAlign::Center);
   y += 54.0F;
 
-  drawText(r, "CREATED BY", middle, y, 2.0F, kDim, TextAlign::Center);
+  drawText(r, "SOURCE", middle, y, 2.0F, kDim, TextAlign::Center);
   y += 26.0F;
-  drawText(r, kAuthor, middle, y, 5.0F, kAmber, TextAlign::Center);
-  y += 56.0F;
-  drawText(r, kSource, middle, y, 2.0F, kDim, TextAlign::Center);
-  y += 80.0F;
+  drawText(r, kSource, middle, y, 3.0F, kAmber, TextAlign::Center);
+  y += 96.0F;
 
   drawText(r, "HIGH SCORES", middle, y, 3.0F, kCyan, TextAlign::Center);
   y += 38.0F;
