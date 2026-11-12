@@ -62,6 +62,11 @@ class App {
   void recordFinishedGame();
   void latchKey(SDL_Scancode scancode);
   void render(double alpha);
+  // Notes a failed renderer call, logging the first one only.
+  void noteRenderFailure(const char* call);
+  // Loads every texture again after the graphics device was reset. Keeps the
+  // old ones, and logs, if that fails.
+  void reloadTextures();
   void toggleFullscreen();
   // True when presenting will not block, so the loop must sleep on its own.
   bool needsManualPacing() const;
@@ -75,6 +80,12 @@ class App {
   std::unique_ptr<TableRenderer> table_;
   FixedTimestep timestep_{Game::kStepSeconds, 8};
   bool vsync_ = false;
+  // The last frame was presented. When it was not, presenting did not wait
+  // for the display either.
+  bool presented_ = true;
+  bool renderFailureLogged_ = false;
+  // The graphics device is gone for good; the loop ends with an error.
+  bool deviceLost_ = false;
   bool running_ = true;
   bool paused_ = false;
   // Paused because the window lost focus or was minimised. Kept apart from

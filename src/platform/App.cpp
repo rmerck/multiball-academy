@@ -1,10 +1,13 @@
 #include "platform/App.hpp"
 
+#include <cstdint>
+#include <memory>
 #include <utility>
 
 #include "core/LoopPolicy.hpp"
 #include "core/Version.hpp"
 #include "platform/About.hpp"
+#include "platform/Assets.hpp"
 #include "platform/Canvas.hpp"
 #include "platform/InitialsScreen.hpp"
 #include "platform/MacMenu.hpp"
@@ -132,7 +135,7 @@ App::~App() {
 }
 
 bool App::needsManualPacing() const {
-  if (!vsync_) {
+  if (!vsync_ || !presented_) {
     return true;
   }
   const SDL_WindowFlags hidden =
@@ -229,6 +232,10 @@ int App::run() {
   // Quitting at the initials prompt keeps the score, under the letters shown.
   commitInitials();
 
+  if (deviceLost_) {
+    return 1;
+  }
+
   // Self-check for automated runs: a long enough run must have simulated.
   if (options_.frameLimit && *options_.frameLimit >= 30 && game_.stepCount() == 0) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "No simulation steps ran in %u frames",
@@ -257,6 +264,18 @@ void App::handleEvent(const SDL_Event& event) {
       latched_ = InputState{};
       break;
     }
+    case SDL_EVENT_RENDER_DEVICE_RESET:
+      // Every texture died with the old device. (Render targets, which have
+      // their own event, are not used.)
+      reloadTextures();
+      break;
+    case SDL_EVENT_RENDER_DEVICE_LOST:
+      // Nothing can be drawn again. Leave through the normal exit, so a score
+      // waiting at the initials prompt is still kept.
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "The graphics device was lost; exiting");
+      deviceLost_ = true;
+      running_ = false;
+      break;
     case SDL_EVENT_KEY_DOWN:
       if (event.key.repeat) {
         break;
@@ -456,12 +475,38 @@ void App::toggleFullscreen() {
   }
 }
 
+void App::noteRenderFailure(const char* call) {
+  // Once: a renderer that fails tends to fail every frame. The game keeps
+  // running, since a device reset or a restored window can bring it back.
+  if (!renderFailureLogged_) {
+    renderFailureLogged_ = true;
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s failed: %s", call, SDL_GetError());
+  }
+}
+
+void App::reloadTextures() {
+  // Read and verified again from disk: the bytes checked at start were freed.
+  AssetLoader assets = AssetLoader::fromExecutableLocation();
+  std::unique_ptr<TableRenderer> table;
+  if (assets.verifyAll()) {
+    table = TableRenderer::create(renderer_.get(), assets);
+  }
+  if (!table) {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                 "Could not reload the textures after a graphics device reset");
+    return;
+  }
+  table_ = std::move(table);
+}
+
 void App::render(double /*alpha*/) {
   SDL_Renderer* r = renderer_.get();
 
   // Letterbox bars.
   SDL_SetRenderDrawColor(r, 0, 0, 0, SDL_ALPHA_OPAQUE);
-  SDL_RenderClear(r);
+  if (!SDL_RenderClear(r)) {
+    noteRenderFailure("SDL_RenderClear");
+  }
 
   const bool showPaused = paused_ || autoPaused_;
   table_->draw(r, game_, showPaused, HudExtras{highScores_.best(), newHighScore_});
@@ -476,7 +521,10 @@ void App::render(double /*alpha*/) {
     drawInitialsEntry(r, *entry_, pending_.score, (SDL_GetTicks() / kCursorBlinkMs) % 2U == 0U);
   }
 
-  SDL_RenderPresent(r);
+  presented_ = SDL_RenderPresent(r);
+  if (!presented_) {
+    noteRenderFailure("SDL_RenderPresent");
+  }
 }
 
 }  // namespace pinball
