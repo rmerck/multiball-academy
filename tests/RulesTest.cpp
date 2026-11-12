@@ -343,6 +343,22 @@ void testRules() {
     CHECK(rules.ballSaveActive());
   }
 
+  {  // Extreme step lengths still give every timer a sane, non-zero length:
+     // a message always expires and a ball save is always offered.
+    for (const double step : {1e-300, 1e-12, 100.0, 1e300}) {
+      Rules rules(step);
+      rules.onBallInPlay();
+      CHECK(rules.ballSaveActive());
+      rules.onHole(firstHole(table::HoleType::BlackHole));
+      CHECK(rules.message() == std::string_view("BLACK HOLE"));
+      if (step >= 1.0) {
+        rules.tick();
+        CHECK(rules.message().empty());
+        CHECK(!rules.ballSaveActive());
+      }
+    }
+  }
+
   {  // Through the game: a full game ends after three balls and F2 restarts.
     pinball::Game game;
     int steps = 0;
