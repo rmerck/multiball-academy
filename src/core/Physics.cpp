@@ -40,6 +40,9 @@ void* packElement(table::ElementRef ref) noexcept {
 
 table::ElementRef unpackElement(const void* data) noexcept {
   const auto value = reinterpret_cast<std::uintptr_t>(data);  // NOLINT: integer tag.
+  if ((value >> 16U) != 0U) {
+    return {};  // Not one of our tags.
+  }
   const auto kindValue = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
   const auto index = static_cast<std::uint8_t>(value & 0xFFU);
   // Validate before trusting: only known kinds with in-range indices pass.
@@ -360,6 +363,35 @@ void PhysicsWorld::kickFromBumper(const table::Bumper& bumper) {
   b2Body_SetLinearVelocity(ball_, v);
 }
 
+void PhysicsWorld::checkBumpers() {
+  // A bumper fires when the ball actually reaches it, and not again until
+  // the ball has moved clear.
+  constexpr float kContactSlack = 0.75F;  // Pixels.
+  constexpr float kClearDistance = 4.0F;
+  const Vec2 p = ballPosition();
+  for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
+    const table::Circle& c = table::kBumpers[i].shape;
+    const float dx = p.x - c.center.x;
+    const float dy = p.y - c.center.y;
+    const float gap = std::sqrt(dx * dx + dy * dy) - c.radius - table::kBallRadius;
+    if (touchingBumper_[i]) {
+      touchingBumper_[i] = gap < kClearDistance;
+      continue;
+    }
+    if (gap > kContactSlack) {
+      continue;
+    }
+    touchingBumper_[i] = true;
+    const b2Vec2 v = b2Body_GetLinearVelocity(ball_);
+    const float speed = toPixels(std::sqrt(v.x * v.x + v.y * v.y));
+    kickFromBumper(table::kBumpers[i]);
+    if (events_.size() < kMaxEventsPerStep) {
+      events_.push_back({PhysicsEvent::Type::Hit,
+                         {table::ElementKind::Bumper, static_cast<std::uint8_t>(i)}, speed});
+    }
+  }
+}
+
 void PhysicsWorld::collectEvents() {
   const b2ContactEvents contacts = b2World_GetContactEvents(world_);
   for (int i = 0; i < contacts.beginCount; ++i) {
@@ -382,8 +414,12 @@ void PhysicsWorld::collectEvents() {
     const b2Vec2 v = b2Body_GetLinearVelocity(ball_);
     const float speed = toPixels(std::sqrt(v.x * v.x + v.y * v.y));
     if (element.kind == table::ElementKind::Bumper) {
-      kickFromBumper(table::kBumpers[element.index]);
-    } else if (element.kind == table::ElementKind::Slingshot) {
+      // Bumpers are handled by checkBumpers, on real contact. Box2D reports
+      // a touch up to two pixels early, which would kick a ball that was
+      // only passing close by.
+      continue;
+    }
+    if (element.kind == table::ElementKind::Slingshot) {
       // A touch on a passive edge of the slingshot is not an event.
       if (!kickFromSlingshot(table::kSlingshots[element.index])) {
         continue;
@@ -496,16 +532,18 @@ void PhysicsWorld::drivePlunger(float stepSeconds) {
 }
 
 void PhysicsWorld::step(float stepSeconds) {
+  // Cleared first, so a rejected step never leaves old events behind.
+  events_.clear();
   if (!std::isfinite(stepSeconds) || stepSeconds <= 0.0F || stepSeconds > kMaxStepSeconds) {
     return;
   }
-  events_.clear();
   const float slice = stepSeconds / static_cast<float>(kSlicesPerStep);
   for (int i = 0; i < kSlicesPerStep; ++i) {
     driveFlippers(slice);
     drivePlunger(slice);
     b2World_Step(world_, slice, kSubSteps);
     collectEvents();
+    checkBumpers();
     clampBallSpeed();
     checkZones();
   }
