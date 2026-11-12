@@ -43,8 +43,10 @@ class PhysicsWorld {
   PhysicsWorld& operator=(const PhysicsWorld&) = delete;
 
   // Flipper stroke speeds in radians per second. A real flipper completes its
-  // stroke in roughly 60 ms and falls back more slowly.
-  static constexpr float kFlipperUpSpeed = 17.0F;
+  // stroke in 60 to 80 ms and falls back more slowly. The up speed sets how
+  // hard shots are: at this value a ball struck near the pivot reaches the
+  // middle of the table and one struck from mid-bat outward reaches the top.
+  static constexpr float kFlipperUpSpeed = 13.5F;
   static constexpr float kFlipperDownSpeed = 12.0F;
 
   // Sets which flipper buttons are held. Applied on the next step.
