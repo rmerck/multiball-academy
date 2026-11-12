@@ -14,7 +14,7 @@ This is an independent fan project. It contains no code or assets from the origi
 | 4 | Flippers | Done |
 | 5 | Plunger and launch lane | Done |
 | 6 | Bumpers, targets, ramps, table geometry | Done: 8 bumpers, slingshots, 4 target banks, 7 rollovers, wormholes, black hole, hyperspace, launch ramp |
-| 7 | Scoring, lights, UI | Planned |
+| 7 | Scoring, lights, UI | Done: rules engine, lit lanes and targets, information panel with a built-in pixel font |
 | 8 | Missions and ranks | Planned |
 | 9 | Nudge and tilt | Planned |
 | 10 | Audio | Planned |
@@ -48,7 +48,7 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 | X | Nudge left | Planned |
 | . | Nudge right | Planned |
 | Up | Nudge from bottom | Planned |
-| F2 | New game | Planned |
+| F2 | New game | Done |
 | F3 | Pause | Done |
 | F4 | Fullscreen | Done |
 
@@ -57,6 +57,32 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 1. Secure software practices: RAII ownership with no owning raw pointers, standard-library hardening, validated input, no network access, sanitizer builds in CI.
 2. Performance: fixed 120 Hz simulation step, rendering at display refresh rate with a manual pacing fallback, 60 FPS minimum target.
 3. Faithfulness to the original feel.
+
+## Rules
+
+Three balls per game. Everything a feature awards is multiplied by the field multiplier.
+
+| Feature | Award |
+|---|---|
+| Attack bumpers | 500, rising to 1,000, 1,500 and 2,000 as they are upgraded |
+| Engine bumpers, satellite bumper | 1,500 and 1,000 |
+| Slingshots | 500 |
+| Any target | 750 |
+| Re-entry lanes | 5,000 each and the lane lights. All three lit: 10,000 and the attack bumpers upgrade. Flipper buttons rotate the lit lanes |
+| Booster bank (right wall) | 5,000 per completion. Then in turn: booster online, jackpot lit, bonus lanes lit, extra ball |
+| Medal bank (centre) | 10,000, then 50,000, then 100,000 and an extra ball |
+| Multiplier bank (upper left) | Field multiplier steps 2x, 3x, 5x, 10x. Resets each ball |
+| Wormholes | 2,000 and the ball leaves the next wormhole |
+| Black hole | 20,000 |
+| Hyperspace chute | 10,000, then the 500,000 jackpot if lit (else 20,000), then 30,000, then an extra ball |
+| Launch ramp | 5,000 |
+| Reflex shot | 25,000 for repeating the ramp or the chute within 5 seconds |
+| Return lanes | Inlane 5,000. Outlane 20,000 when the bonus lanes are lit |
+| End of ball | 250 per bumper or target hit that ball, times the multiplier |
+
+A ball that drains within 6 seconds of entering play is returned free. The rules live in `src/core/Rules` with no dependency on physics, and are unit tested event by event.
+
+Differences from the original are deliberate simplifications: awards do not time out, and there is no replay score.
 
 ## Physics notes
 

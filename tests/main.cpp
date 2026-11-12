@@ -10,6 +10,7 @@ int main() {
   testBumpers();
   testFixedTimestep();
   testFlippers();
+  testFormat();
   testGame();
   testHoles();
   testPhysics();

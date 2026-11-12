@@ -8,6 +8,7 @@ void testAssetName();
 void testBumpers();
 void testFixedTimestep();
 void testFlippers();
+void testFormat();
 void testGame();
 void testHoles();
 void testPhysics();

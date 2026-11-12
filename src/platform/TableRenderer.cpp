@@ -6,7 +6,7 @@
 #include <utility>
 
 #include "core/TableLayout.hpp"
-#include "platform/Canvas.hpp"
+#include "platform/Hud.hpp"
 
 namespace pinball {
 
@@ -45,11 +45,14 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   t.glow = assets.loadTexture(renderer, "sprites/glow.png");
   t.bar = assets.loadTexture(renderer, "sprites/bar.png");
   t.plunger = assets.loadTexture(renderer, "sprites/plunger.png");
-  if (!t.background || !t.ball || !t.flipper || !t.bumper || !t.glow || !t.bar || !t.plunger) {
+  t.panel = assets.loadTexture(renderer, "ui/panel.png");
+  if (!t.background || !t.ball || !t.flipper || !t.bumper || !t.glow || !t.bar || !t.plunger ||
+      !t.panel) {
     return nullptr;
   }
   // The background is opaque: skip blending for the largest draw of the frame.
   SDL_SetTextureBlendMode(t.background.get(), SDL_BLENDMODE_NONE);
+  SDL_SetTextureBlendMode(t.panel.get(), SDL_BLENDMODE_NONE);
   return std::unique_ptr<TableRenderer>(new TableRenderer(std::move(t)));
 }
 
@@ -66,6 +69,28 @@ void TableRenderer::drawGlow(SDL_Renderer* r, Vec2 center, float radius, Rgb col
   SDL_SetTextureAlphaMod(glow, toByte(strength));
   const SDL_FRect dst{center.x - radius, center.y - radius, radius * 2.0F, radius * 2.0F};
   SDL_RenderTexture(r, glow, nullptr, &dst);
+}
+
+void TableRenderer::drawLights(SDL_Renderer* r, const Game& game) const {
+  const Rules& rules = game.rules();
+  std::size_t lane = 0;
+  for (const table::Rollover& rollover : table::kRollovers) {
+    switch (rollover.group) {
+      case table::RolloverGroup::ReEntry:
+        if (rules.laneLit(lane)) {
+          drawGlow(r, rollover.zone.center, 26.0F, {110, 255, 150}, 0.95F);
+        }
+        ++lane;
+        break;
+      case table::RolloverGroup::Outlane:
+        if (rules.bonusLaneLit()) {
+          drawGlow(r, rollover.zone.center, 26.0F, {255, 110, 90}, 0.95F);
+        }
+        break;
+      case table::RolloverGroup::Inlane:
+        break;
+    }
+  }
 }
 
 void TableRenderer::drawBumpers(SDL_Renderer* r, const Game& game) const {
@@ -203,14 +228,13 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed) const {
     return;
   }
   const SDL_FRect playfield{0.0F, 0.0F, table::kWidth, table::kHeight};
-  const SDL_FRect panel{table::kWidth, 0.0F, static_cast<float>(kCanvasWidth) - table::kWidth,
-                        static_cast<float>(kCanvasHeight)};
 
   // Nothing drawn for the playfield may spill onto the panel.
   const SDL_Rect clip{0, 0, static_cast<int>(table::kWidth), static_cast<int>(table::kHeight)};
   SDL_SetRenderClipRect(r, &clip);
 
   SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
+  drawLights(r, game);
   drawTargets(r, game);
   drawBumpers(r, game);
   drawPlungerAndGate(r, game);
@@ -225,8 +249,7 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed) const {
   }
   SDL_SetRenderClipRect(r, nullptr);
 
-  SDL_SetRenderDrawColor(r, 24, 24, 30, SDL_ALPHA_OPAQUE);
-  SDL_RenderFillRect(r, &panel);
+  drawHud(r, textures_.panel.get(), game);
 }
 
 }  // namespace pinball
