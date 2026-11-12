@@ -110,7 +110,7 @@ def make_glow(repo):
     layer = new_layer(img, "glow")
     Gimp.context_set_foreground(color(1.0, 1.0, 1.0))
     Gimp.context_set_gradient_fg_transparent()
-    layer.edit_gradient_fill(Gimp.GradientType.RADIAL, 0, False, 1, 0, True,
+    layer.edit_gradient_fill(Gimp.GradientType.RADIAL, 0, False, 1, 0, False,
                              size / 2 * S, size / 2 * S, size * S * 0.98, size / 2 * S)
     return finish(img, repo, "glow.png")
 

@@ -148,6 +148,8 @@ for script in ("make_ball", "make_table", "make_sprites"):
 | `sprites/bar.png` | `make_sprites.py` | Stand-up target face, tinted per bank |
 | `sprites/plunger.png` | `make_sprites.py` | |
 
+Regeneration is reproducible: gradients are drawn without dithering (GIMP's dither is randomly seeded), noise and stars use fixed seeds, and exports carry no timestamps. Running the scripts twice gives byte-identical files, so the hashes in the asset manifest only change when the art does.
+
 To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png`.
 
 ### Integrity
