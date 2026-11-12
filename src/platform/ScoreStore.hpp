@@ -19,9 +19,9 @@ class ScoreStore {
   bool save(const HighScores& scores) const;
 
  private:
-  // Set when the score file exists but the last load could not read it.
-  // Saving is then refused, so a table that may be perfectly good is not
-  // replaced.
+  // Set when the score file exists but the last load could not read it, or
+  // found it unusable and could not set it aside. Saving is then refused, so
+  // a table that may be perfectly good is not replaced.
   bool saveBlocked_ = false;
 };
 

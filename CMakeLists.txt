@@ -46,6 +46,9 @@ option(PINBALL_SANITIZE "Build with AddressSanitizer and UBSan" OFF)
 option(PINBALL_WERROR "Treat warnings as errors" OFF)
 option(PINBALL_FETCH_DEPS "Build pinned SDL3 and Box2D from source and link them statically" OFF)
 option(PINBALL_FUZZ "Build only the parser fuzzer (clang with libFuzzer)" OFF)
+option(PINBALL_REQUIRE_ALL_TESTS
+  "Stop the configuration if a test cannot be registered (no Python 3, or the tools left out)"
+  OFF)
 
 include(cmake/Hardening.cmake)
 
@@ -257,10 +260,17 @@ if(BUILD_TESTING)
               $<TARGET_FILE:pinball> ${PINBALL_TEST_DIR}/asset_integrity_scratch)
     set_tests_properties(asset_integrity PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 120)
+  elseif(PINBALL_REQUIRE_ALL_TESTS)
+    message(FATAL_ERROR "Python 3 not found, and PINBALL_REQUIRE_ALL_TESTS is ON: the "
+                        "assets_clean, asset_integrity and layout_json tests need it")
   else()
     # Say so: a run without these would otherwise look complete.
     message(WARNING "Python 3 not found: the assets_clean, asset_integrity and "
                     "layout_json tests are not registered")
+  endif()
+  if(PINBALL_REQUIRE_ALL_TESTS AND NOT PINBALL_BUILD_TOOLS)
+    message(FATAL_ERROR "PINBALL_BUILD_TOOLS is OFF, and PINBALL_REQUIRE_ALL_TESTS is ON: the "
+                        "render and layout tests need the tools")
   endif()
 
   # Rendering smoke test: play ten seconds headless and draw a frame. The
@@ -281,6 +291,17 @@ if(BUILD_TESTING)
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
     set_tests_properties(render_snapshot PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
+    # The tool must replace a link at its output name, never write through
+    # it, even one that points nowhere. (Not on Windows, where making a link
+    # needs a privilege.)
+    if(UNIX)
+      add_test(NAME snapshot_replaces_link
+        COMMAND ${CMAKE_COMMAND} -DSNAPSHOT=$<TARGET_FILE:pinball_snapshot>
+                -DSCRATCH=${PINBALL_TEST_DIR}/snapshot_link_scratch
+                -P ${CMAKE_SOURCE_DIR}/tests/SnapshotReplacesLink.cmake)
+      set_tests_properties(snapshot_replaces_link PROPERTIES
+        ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
+    endif()
   endif()
 
   # The geometry dump must be valid JSON.

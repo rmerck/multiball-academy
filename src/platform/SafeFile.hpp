@@ -35,8 +35,39 @@ enum class ReadResult {
 // beside the target, is flushed to disk, and is renamed into place. No
 // existing file or link is ever written through, and a link at path itself
 // is replaced, not followed. The result is readable by its owner only.
+// A file system that has no flush to offer (some network and FUSE mounts)
+// does not fail the save; a flush that was tried and failed does.
 // Elsewhere a fixed temporary name and plain SDL file calls are used.
 [[nodiscard]] bool replaceFile(const std::string& path, std::string_view text);
+
+enum class MoveResult {
+  Moved,
+  Exists,  // Something already has the new name; nothing was changed.
+  Error,   // Could not be moved; nothing was changed.
+};
+
+// Gives the file, link or directory at from the name to, in the same
+// directory or file system, only if nothing has that name. Whatever is at to,
+// even a link that points nowhere, is never replaced or followed, and a link
+// at from is moved itself, not what it points at.
+//
+// On Linux and macOS the system makes the check and the move one step
+// (renameat2 with RENAME_NOREPLACE, renamex_np with RENAME_EXCL). Where the
+// file system or an older system refuses that call, and on other POSIX
+// systems, a second name is made with link(), which fails if the name is
+// taken, and the first is then removed: still never an overwrite, but a
+// directory cannot be moved that way and is an Error. Elsewhere the name is
+// checked and then renamed with plain SDL calls, which leaves a moment
+// between the two in which another program could take the name.
+[[nodiscard]] MoveResult renameNoReplace(const std::string& from, const std::string& to);
+
+// Moves path out of the way under the first free name among path + suffix,
+// path + suffix + ".1" ... path + suffix + "." + maxNumbered, so that
+// something set aside earlier is never lost. Returns the name used, or an
+// empty string, with path untouched, if every name is taken or the move
+// failed.
+[[nodiscard]] std::string setAside(const std::string& path, std::string_view suffix = ".bad",
+                                   unsigned maxNumbered = 9);
 
 // Removes temporary files that a replaceFile(path, ...) cut short by a crash
 // left beside path. Only regular files that carry replaceFile's own temporary

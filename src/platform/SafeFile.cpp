@@ -80,6 +80,24 @@ std::size_t removeStaleTemporaries(std::string_view path, long long minAgeSecond
   return removed;
 }
 
+std::string setAside(const std::string& path, std::string_view suffix, unsigned maxNumbered) {
+  for (unsigned number = 0; number <= maxNumbered; ++number) {
+    std::string name = path + std::string(suffix);
+    if (number > 0) {
+      name += "." + std::to_string(number);
+    }
+    switch (renameNoReplace(path, name)) {
+      case MoveResult::Moved:
+        return name;
+      case MoveResult::Exists:
+        break;  // Taken: try the next name.
+      case MoveResult::Error:
+        return {};
+    }
+  }
+  return {};
+}
+
 #if defined(PINBALL_POSIX_FILES)
 
 namespace {
@@ -126,7 +144,22 @@ bool writeAll(int fd, std::string_view text) noexcept {
   return true;
 }
 
+// True if a failed flush means "this file system has no flush", not "the
+// data did not reach the disk". Home directories on some network and FUSE
+// mounts answer this way; the write itself has already succeeded there.
+// Real failures (EIO, ENOSPC, EDQUOT, EROFS and the rest) are not in this
+// list.
+constexpr bool flushIsUnsupported(int error) noexcept {
+#if defined(EOPNOTSUPP) && EOPNOTSUPP != ENOTSUP
+  if (error == EOPNOTSUPP) {
+    return true;
+  }
+#endif
+  return error == EINVAL || error == ENOTSUP;
+}
+
 // Pushes a file's data to the disk itself, not only to the drive's cache.
+// Succeeds, having done what can be done, where there is no flush to ask for.
 bool syncToDisk(int fd) noexcept {
 #if defined(__APPLE__) && defined(F_FULLFSYNC)
   // On macOS plain fsync stops at the drive. Not every volume supports the
@@ -139,7 +172,7 @@ bool syncToDisk(int fd) noexcept {
   do {
     synced = ::fsync(fd);
   } while (synced != 0 && errno == EINTR);
-  return synced == 0;
+  return synced == 0 || flushIsUnsupported(errno);
 }
 
 }  // namespace
@@ -246,6 +279,47 @@ bool replaceFile(const std::string& path, std::string_view text) {
   return true;
 }
 
+MoveResult renameNoReplace(const std::string& from, const std::string& to) {
+  // PINBALL_NO_ATOMIC_NOREPLACE exists to build the fallback on a system
+  // that has the single call, so that it can be tested there.
+#if !defined(PINBALL_NO_ATOMIC_NOREPLACE)
+#if defined(__linux__) && defined(RENAME_NOREPLACE)
+  if (::renameat2(AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), RENAME_NOREPLACE) == 0) {
+    return MoveResult::Moved;
+  }
+  if (errno == EEXIST) {
+    return MoveResult::Exists;
+  }
+  // An old kernel, or a file system without the flag: use the fallback.
+  if (errno != ENOSYS && errno != EINVAL && errno != ENOTSUP) {
+    return MoveResult::Error;
+  }
+#elif defined(__APPLE__) && defined(RENAME_EXCL)
+  if (::renamex_np(from.c_str(), to.c_str(), RENAME_EXCL) == 0) {
+    return MoveResult::Moved;
+  }
+  if (errno == EEXIST) {
+    return MoveResult::Exists;
+  }
+  if (errno != ENOTSUP && errno != EINVAL) {
+    return MoveResult::Error;
+  }
+#endif
+#endif
+  // A second name for the same file, which the system refuses to make if
+  // the name is taken, then the first name is dropped. Without
+  // AT_SYMLINK_FOLLOW a link at from is given the new name itself.
+  if (::linkat(AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), 0) != 0) {
+    return errno == EEXIST ? MoveResult::Exists : MoveResult::Error;
+  }
+  if (::unlink(from.c_str()) != 0) {
+    // Still there under both names: take the new one away again.
+    ::unlink(to.c_str());
+    return MoveResult::Error;
+  }
+  return MoveResult::Moved;
+}
+
 #else  // Other platforms: the portable SDL calls, with the same checks.
 
 ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
@@ -304,6 +378,14 @@ bool replaceFile(const std::string& path, std::string_view text) {
     SDL_RemovePath(temporary.c_str());
   }
   return ok;
+}
+
+MoveResult renameNoReplace(const std::string& from, const std::string& to) {
+  // Checked, then renamed: two steps, as the header says.
+  if (SDL_GetPathInfo(to.c_str(), nullptr)) {
+    return MoveResult::Exists;
+  }
+  return SDL_RenamePath(from.c_str(), to.c_str()) ? MoveResult::Moved : MoveResult::Error;
 }
 
 #endif

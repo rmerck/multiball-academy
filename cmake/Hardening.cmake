@@ -42,7 +42,11 @@ function(pinball_apply_hardening target scope)
     target_compile_options(${target} ${scope} -fstack-clash-protection)
     target_link_options(${target} ${scope} -Wl,-z,relro,-z,now)
     if(NOT PINBALL_SANITIZE)
-      target_compile_options(${target} ${scope} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3)
+      # Not in a Debug build: the checks need the optimiser, and without it
+      # the definition silently does nothing.
+      target_compile_options(${target} ${scope}
+        $<$<NOT:$<CONFIG:Debug>>:-U_FORTIFY_SOURCE>
+        $<$<NOT:$<CONFIG:Debug>>:-D_FORTIFY_SOURCE=3>)
     endif()
     # Control-flow protection where the compiler and processor have it.
     include(CheckCXXCompilerFlag)
@@ -66,9 +70,13 @@ function(pinball_apply_hardening target scope)
   endif()
 endfunction()
 
-# The protective flags alone, for every target in the current directory and
-# below. Used for dependencies built from source, which must not inherit the
-# project's warning settings.
+# The protective flags alone, without the project's warning settings, which
+# dependencies built from source must not inherit. They are set on the
+# directory that calls this, so they reach every target made there or below
+# it afterwards. cmake/PinnedDeps.cmake is included from the top directory:
+# that means the dependencies and the game's own targets alike. The game's
+# targets get the same flags again from pinball_apply_hardening(), which
+# changes nothing.
 function(pinball_dependency_hardening)
   if(MSVC)
     add_compile_options(/guard:cf)
@@ -82,7 +90,10 @@ function(pinball_dependency_hardening)
     add_compile_options(-fstack-clash-protection)
     add_link_options(-Wl,-z,relro,-z,now)
     if(NOT PINBALL_SANITIZE)
-      add_compile_options(-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3)
+      # Not in a Debug build, where it does nothing (see above).
+      add_compile_options(
+        $<$<NOT:$<CONFIG:Debug>>:-U_FORTIFY_SOURCE>
+        $<$<NOT:$<CONFIG:Debug>>:-D_FORTIFY_SOURCE=3>)
     endif()
     include(CheckCXXCompilerFlag)
     check_cxx_compiler_flag(-fcf-protection=full PINBALL_HAS_CF_PROTECTION)

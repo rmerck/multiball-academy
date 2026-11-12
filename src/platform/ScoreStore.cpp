@@ -64,17 +64,20 @@ HighScores ScoreStore::load() {
   if (result != ReadResult::Ok || !scores.parse(text)) {
     // Not a plain file, too large, or not valid. Keep it for inspection
     // instead of letting the next save replace it: it may come from a newer
-    // version. Renaming moves a link itself, never what it points at.
-    const std::string rejected = path + ".bad";
-    if (SDL_RenamePath(path.c_str(), rejected.c_str())) {
+    // version. It goes to the first free name among .bad, .bad.1 ... .bad.9,
+    // so a file set aside earlier is never replaced by this one. The move
+    // takes a link itself, never what it points at.
+    const std::string rejected = setAside(path);
+    if (!rejected.empty()) {
       SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "High score file is not usable; set aside as %s",
                   rejected.c_str());
     } else {
+      // Every name is taken, or the move failed. The file stays where it is
+      // and must not be overwritten.
       saveBlocked_ = true;
       SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                  "High score file is not usable and could not be set aside (%s); scores will "
-                  "not be saved this run",
-                  SDL_GetError());
+                  "High score file is not usable and could not be set aside; scores will not "
+                  "be saved this run");
     }
     return HighScores{};
   }
