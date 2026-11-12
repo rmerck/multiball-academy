@@ -30,20 +30,21 @@ constexpr float kOverallGain = Music::kPeak / (kBassGain + kArpeggioGain + kLead
 // Notes are MIDI numbers: 69 is the A above middle C, 12 to the octave.
 constexpr int kOctave = 12;
 
-// One chord per bar: A minor, F, C, G, A minor, F, D minor, E.
+// One chord per bar: A minor, F, C, G, A minor, F, D minor, E. The bass sits
+// high enough (82 Hz and up) to be heard on small speakers.
 struct Chord {
   int bass;
   std::array<int, 3> tones;
 };
 constexpr std::array<Chord, Music::kBars> kChords{{
-    {33, {57, 60, 64}},
-    {29, {53, 57, 60}},
-    {36, {55, 60, 64}},
-    {31, {55, 59, 62}},
-    {33, {57, 60, 64}},
-    {29, {53, 57, 60}},
-    {38, {57, 62, 65}},
-    {28, {56, 59, 64}},
+    {45, {57, 60, 64}},
+    {41, {53, 57, 60}},
+    {48, {55, 60, 64}},
+    {43, {55, 59, 62}},
+    {45, {57, 60, 64}},
+    {41, {53, 57, 60}},
+    {50, {57, 62, 65}},
+    {40, {56, 59, 64}},
 }};
 
 // Bass rhythm over the sixteen steps of a bar: 0 rest, 1 root, 2 root an

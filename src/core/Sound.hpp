@@ -99,6 +99,7 @@ class SoundMixer {
   std::array<std::uint32_t, kSoundCount> holdoff_{};
   std::uint32_t noiseState_ = 0x12345678U;
   bool muted_ = false;
+  float muteGain_ = 1.0F;  // Follows muted_, 0 to 1.
 };
 
 }  // namespace pinball

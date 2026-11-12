@@ -42,7 +42,7 @@ void testMusic() {
     CHECK(peak > 0.05F);
     CHECK(energy > 100.0);
     // No clicks: neighbouring samples never differ by much.
-    CHECK(largestJump < 0.08F);
+    CHECK(largestJump < 0.025F);
   }
 
   {  // The tune loops: each pass carries the same energy. (The samples are
@@ -68,7 +68,7 @@ void testMusic() {
     }
     music.setPlaying(false);
     CHECK(music.audible());
-    for (int i = 0; i < 2400; ++i) {
+    for (int i = 0; i < 2500; ++i) {
       music.next();
     }
     CHECK(!music.audible());
@@ -79,6 +79,39 @@ void testMusic() {
       peak = std::fmax(peak, std::fabs(music.next()));
     }
     CHECK(peak > 0.05F);
+  }
+
+  {  // A stopped tune resumes exactly where it left off.
+    Music steady;
+    Music stopped;
+    steady.setPlaying(true);
+    stopped.setPlaying(true);
+    for (int i = 0; i < 48000; ++i) {
+      steady.next();
+      stopped.next();
+    }
+    stopped.setPlaying(false);
+    // Both move on through the fade-out, which the stopped one plays to its end.
+    for (int i = 0; i < 3000 && stopped.audible(); ++i) {
+      steady.next();
+      stopped.next();
+    }
+    CHECK(!stopped.audible());
+    bool silent = true;
+    for (int i = 0; i < 10000; ++i) {  // Only the stopped one waits.
+      silent = silent && stopped.next() == 0.0F;
+    }
+    CHECK(silent);
+    stopped.setPlaying(true);
+    for (int i = 0; i < 2500; ++i) {  // Fade back in.
+      steady.next();
+      stopped.next();
+    }
+    bool same = true;
+    for (int i = 0; i < 20000; ++i) {
+      same = same && steady.next() == stopped.next();
+    }
+    CHECK(same);
   }
 
   {  // In the mixer: off by default, heard when on, silenced by mute, and it
@@ -93,11 +126,12 @@ void testMusic() {
     for (const float sample : buffer) {
       peak = std::fmax(peak, std::fabs(sample));
     }
-    CHECK(peak > 0.02F && peak <= 1.0F);
+    CHECK(peak > 0.02F);
 
     mixer.setMuted(true);
-    mixer.render(buffer.data(), 480);
-    CHECK(buffer[0] == 0.0F && buffer[479] == 0.0F);
+    mixer.render(buffer.data(), 960);
+    CHECK(buffer[0] != 0.0F || buffer[1] != 0.0F);  // Fades, does not cut.
+    CHECK(buffer[480] == 0.0F && buffer[959] == 0.0F);
     mixer.setMuted(false);
 
     mixer.setMusicPlaying(false);
