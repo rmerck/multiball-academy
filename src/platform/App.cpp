@@ -1,7 +1,9 @@
 #include "platform/App.hpp"
 
-#include <cmath>
+#include <cstddef>
 #include <utility>
+
+#include "core/TableLayout.hpp"
 
 namespace pinball {
 
@@ -93,7 +95,17 @@ App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, 
       window_(window),
       renderer_(renderer),
       textures_(std::move(textures)),
-      vsync_(vsync) {}
+      vsync_(vsync) {
+  // Built once: the shell outline as a closed strip for debug drawing.
+  const std::vector<Vec2> shell = table::outerBoundary();
+  outline_.reserve(shell.size() + 1U);
+  for (const Vec2 p : shell) {
+    outline_.push_back({p.x, p.y});
+  }
+  if (!shell.empty()) {
+    outline_.push_back({shell.front().x, shell.front().y});
+  }
+}
 
 App::~App() {
   textures_ = Textures{};
@@ -190,6 +202,27 @@ void App::toggleFullscreen() {
   }
 }
 
+void App::drawTableOutline() {
+  SDL_Renderer* r = renderer_.get();
+  SDL_SetRenderDrawColor(r, 120, 150, 230, SDL_ALPHA_OPAQUE);
+
+  // Outer shell, closed.
+  if (outline_.size() >= 2) {
+    SDL_RenderLines(r, outline_.data(), static_cast<int>(outline_.size()));
+  }
+  // Interior walls as their centre lines.
+  for (const table::Capsule& wall : table::kWalls) {
+    SDL_RenderLine(r, wall.a.x, wall.a.y, wall.b.x, wall.b.y);
+  }
+  for (const table::Triangle& sling : table::kSlingshots) {
+    for (std::size_t i = 0; i < 3; ++i) {
+      const Vec2 a = sling.points[i];
+      const Vec2 b = sling.points[(i + 1) % 3];
+      SDL_RenderLine(r, a.x, a.y, b.x, b.y);
+    }
+  }
+}
+
 void App::render(double /*alpha*/) {
   SDL_Renderer* r = renderer_.get();
 
@@ -197,24 +230,26 @@ void App::render(double /*alpha*/) {
   SDL_SetRenderDrawColor(r, 0, 0, 0, SDL_ALPHA_OPAQUE);
   SDL_RenderClear(r);
 
-  // Placeholder layout: playfield on the left, info panel on the right.
-  const float w = static_cast<float>(kLogicalWidth);
-  const float h = static_cast<float>(kLogicalHeight);
-  const SDL_FRect playfield{0.0F, 0.0F, w * 0.6F, h};
-  const SDL_FRect panel{w * 0.6F, 0.0F, w * 0.4F, h};
+  // Playfield on the left at 1:1 with table coordinates, info panel on the right.
+  const SDL_FRect playfield{0.0F, 0.0F, table::kWidth, table::kHeight};
+  const SDL_FRect panel{table::kWidth, 0.0F, static_cast<float>(kLogicalWidth) - table::kWidth,
+                        static_cast<float>(kLogicalHeight)};
   SDL_SetRenderDrawColor(r, 10, 14, 40, SDL_ALPHA_OPAQUE);
   SDL_RenderFillRect(r, &playfield);
+
+  // Placeholder outline until the table art lands.
+  drawTableOutline();
+
+  const BallView ball = game_.ball();
+  const float radius = table::kBallRadius;
+  const SDL_FRect ballRect{ball.position.x - radius, ball.position.y - radius, radius * 2.0F,
+                           radius * 2.0F};
+  SDL_SetTextureAlphaMod(textures_.ball.get(), paused_ ? 128 : 255);
+  SDL_RenderTexture(r, textures_.ball.get(), nullptr, &ballRect);
+
+  // Drawn last so nothing on the playfield can spill over the panel.
   SDL_SetRenderDrawColor(r, 24, 24, 30, SDL_ALPHA_OPAQUE);
   SDL_RenderFillRect(r, &panel);
-
-  // Placeholder motion until physics lands: the ball sweeps across with
-  // simulated time, proving the fixed-step loop and the sprite path.
-  const float t = static_cast<float>(std::fmod(game_.simTime(), 2.0) / 2.0);
-  const float diameter = 24.0F;
-  const SDL_FRect ball{playfield.w * t - diameter * 0.5F, h * 0.5F - diameter * 0.5F, diameter,
-                       diameter};
-  SDL_SetTextureAlphaMod(textures_.ball.get(), paused_ ? 128 : 255);
-  SDL_RenderTexture(r, textures_.ball.get(), nullptr, &ball);
 
   SDL_RenderPresent(r);
 }

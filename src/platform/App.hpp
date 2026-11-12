@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "core/FixedTimestep.hpp"
 #include "core/Game.hpp"
@@ -53,6 +54,7 @@ class App {
 
   void handleEvent(const SDL_Event& event);
   void render(double alpha);
+  void drawTableOutline();
   void toggleFullscreen();
   // True when presenting will not block, so the loop must sleep on its own.
   bool needsManualPacing() const;
@@ -68,6 +70,7 @@ class App {
   bool vsync_ = false;
   bool running_ = true;
   bool paused_ = false;
+  std::vector<SDL_FPoint> outline_;
   Game game_;
   InputState input_;
 };

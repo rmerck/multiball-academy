@@ -18,15 +18,19 @@ include(cmake/Hardening.cmake)
 
 # 3.4 is the first release with the built-in PNG loader used for assets.
 find_package(SDL3 3.4 REQUIRED CONFIG)
+find_package(box2d 3.2 REQUIRED CONFIG)
 
 # Platform-independent game logic. No SDL dependency so it is unit-testable headless.
 add_library(pinball_core STATIC
   src/core/Args.cpp
   src/core/AssetName.cpp
   src/core/Game.cpp
+  src/core/Physics.cpp
   src/core/PngHeader.cpp
+  src/core/TableLayout.cpp
 )
 target_include_directories(pinball_core PUBLIC src)
+target_link_libraries(pinball_core PUBLIC box2d::box2d)
 # PUBLIC so the same warnings, hardening and sanitizer flags reach every consumer.
 pinball_apply_hardening(pinball_core PUBLIC)
 
@@ -55,6 +59,7 @@ if(BUILD_TESTING)
     tests/AssetNameTest.cpp
     tests/FixedTimestepTest.cpp
     tests/GameTest.cpp
+    tests/PhysicsTest.cpp
     tests/PngHeaderTest.cpp
   )
   target_link_libraries(core_tests PRIVATE pinball_core)

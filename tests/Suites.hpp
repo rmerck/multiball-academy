@@ -7,4 +7,5 @@ void testArgs();
 void testAssetName();
 void testFixedTimestep();
 void testGame();
+void testPhysics();
 void testPngHeader();
