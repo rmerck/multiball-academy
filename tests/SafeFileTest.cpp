@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -19,6 +20,29 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #define PINBALL_POSIX_TESTS 1
+#endif
+
+#if defined(__linux__)
+#include <sys/syscall.h>
+
+#include <cerrno>
+#define PINBALL_FSYNC_TESTS 1
+
+namespace {
+// When not zero, the next flushes fail with this error.
+int forcedFsyncError = 0;
+}  // namespace
+
+// Stands in for the C library's fsync in this program, so that a file system
+// that refuses or fails a flush can be imitated. (Linux only: on macOS the
+// save asks for a full flush through fcntl first.)
+extern "C" int fsync(int fd) {
+  if (forcedFsyncError != 0) {
+    errno = forcedFsyncError;
+    return -1;
+  }
+  return static_cast<int>(::syscall(SYS_fsync, fd));
+}
 #endif
 
 namespace {
@@ -138,6 +162,106 @@ int main(int argc, char* argv[]) {
   CHECK(!fs::is_symlink(target) && slurp(target) == "four\n");
   CHECK(slurp(victim) == "untouched");
 #endif
+
+#if defined(PINBALL_FSYNC_TESTS)
+  // A file system with no flush to offer does not stop a save; a flush that
+  // failed does, and leaves the old file and no temporary behind.
+  {
+    const fs::path sub = dir / "flush";
+    fs::create_directory(sub, error);
+    const fs::path saved = sub / "scores.txt";
+    for (const int unsupported : {EINVAL, ENOTSUP, EOPNOTSUPP}) {
+      forcedFsyncError = unsupported;
+      CHECK(pinball::replaceFile(saved.string(), "kept\n"));
+      CHECK(slurp(saved) == "kept\n");
+    }
+    for (const int failed : {EIO, ENOSPC, EDQUOT, EROFS, EBADF}) {
+      forcedFsyncError = failed;
+      CHECK(!pinball::replaceFile(saved.string(), "lost\n"));
+      CHECK(slurp(saved) == "kept\n");
+    }
+    forcedFsyncError = 0;
+    CHECK(pinball::replaceFile(saved.string(), "again\n"));
+    CHECK(slurp(saved) == "again\n");
+    std::size_t left = 0;
+    for (const auto& entry : fs::directory_iterator(sub)) {
+      (void)entry;
+      ++left;
+    }
+    CHECK(left == 1);
+  }
+#endif
+
+  // Moving without replacing, and setting a file aside under a free name.
+  {
+    using pinball::MoveResult;
+    const fs::path sub = dir / "aside";
+    fs::create_directory(sub, error);
+    const std::string from = (sub / "from.txt").string();
+    const std::string to = (sub / "to.txt").string();
+    spit(from, "moved");
+    CHECK(pinball::renameNoReplace(from, to) == MoveResult::Moved);
+    CHECK(!fs::exists(from) && slurp(to) == "moved");
+    // A taken name is refused, and both files are as they were.
+    spit(from, "second");
+    CHECK(pinball::renameNoReplace(from, to) == MoveResult::Exists);
+    CHECK(slurp(from) == "second" && slurp(to) == "moved");
+    // Nothing to move.
+    CHECK(pinball::renameNoReplace((sub / "absent").string(), (sub / "new").string()) ==
+          MoveResult::Error);
+    CHECK(!fs::exists(sub / "new"));
+#if defined(PINBALL_POSIX_TESTS)
+    // A link that points nowhere still holds its name: not replaced, and
+    // nothing appears where it points.
+    const fs::path hole = sub / "hole";
+    fs::create_symlink(hole, sub / "dangling");
+    CHECK(pinball::renameNoReplace(from, (sub / "dangling").string()) == MoveResult::Exists);
+    CHECK(slurp(from) == "second" && fs::is_symlink(sub / "dangling") && !fs::exists(hole));
+    // A link is moved itself; what it points at stays.
+    fs::create_symlink(to, sub / "link");
+    CHECK(pinball::renameNoReplace((sub / "link").string(), (sub / "link2").string()) ==
+          MoveResult::Moved);
+    CHECK(fs::is_symlink(sub / "link2") && !fs::is_symlink(to) && slurp(to) == "moved");
+#endif
+
+    // Setting aside: an earlier .bad is kept, and each later one gets the
+    // next number.
+    const std::string scores = (sub / "scores.txt").string();
+    spit(scores, "newer format");
+    CHECK(pinball::setAside(scores) == scores + ".bad");
+    spit(scores, "garbage");
+    CHECK(pinball::setAside(scores) == scores + ".bad.1");
+    CHECK(slurp(scores + ".bad") == "newer format" && slurp(scores + ".bad.1") == "garbage");
+    CHECK(!fs::exists(scores));
+    // A gap is filled first.
+    spit(scores + ".bad.3", "three");
+    spit(scores, "two");
+    CHECK(pinball::setAside(scores) == scores + ".bad.2");
+    // With every name taken the file stays and nothing set aside changes.
+    for (int number = 4; number <= 9; ++number) {
+      spit(scores + ".bad." + std::to_string(number), "old");
+    }
+    spit(scores, "eleventh");
+    CHECK(pinball::setAside(scores).empty());
+    CHECK(slurp(scores) == "eleventh");
+    CHECK(slurp(scores + ".bad") == "newer format" && slurp(scores + ".bad.1") == "garbage");
+    CHECK(slurp(scores + ".bad.2") == "two" && slurp(scores + ".bad.3") == "three");
+    CHECK(slurp(scores + ".bad.9") == "old" && !fs::exists(scores + ".bad.10"));
+    // A smaller cap, and another suffix.
+    CHECK(pinball::setAside(scores, ".old", 0) == scores + ".old");
+    spit(scores, "twelfth");
+    CHECK(pinball::setAside(scores, ".old", 0).empty() && slurp(scores) == "twelfth");
+    // Nothing there to set aside.
+    CHECK(pinball::setAside((sub / "absent.txt").string()).empty());
+    CHECK(!fs::exists(sub / "absent.txt.bad"));
+#if defined(PINBALL_POSIX_TESTS)
+    // A link in the score file's place is set aside as a link.
+    fs::remove(scores);
+    fs::create_symlink(to, scores);
+    CHECK(pinball::setAside(scores, ".link") == scores + ".link");
+    CHECK(fs::is_symlink(scores + ".link") && slurp(to) == "moved");
+#endif
+  }
 
   // Sweeping up after an interrupted save removes only old temporaries of
   // that one target. (Suffixes here are the six characters mkstemp adds.)
