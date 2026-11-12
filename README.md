@@ -138,14 +138,14 @@ Three balls per game. Everything a table feature awards is multiplied by the fie
 
 X bumps the table from the left and sends the ball right, `.` does the opposite, and Up bumps from the bottom and sends the ball up the table. The drawn table jolts and settles.
 
-Each nudge adds tilt heat, which cools over 2.5 seconds. Two quick nudges show a warning. Three inside about a second tilt the table: the flippers and plunger go dead, nothing scores, the end-of-ball bonus is lost and no ball save applies, until the ball drains. The next ball starts clean.
+Each nudge adds tilt heat, which cools over 2.5 seconds. Two quick nudges show a warning. Three inside about a second tilt the table: the flippers and plunger go dead, nothing scores, the bumpers, slingshots, targets, lanes and holes neither light nor sound (the ball still bounces off them and the holes still return it), the end-of-ball bonus is lost and no ball save applies, until the ball drains. The next ball starts clean.
 
 ### Missions and ranks
 
-1. Hit a mission target on the left wall to select a mission: top, middle or bottom picks one of the rank's three missions. Lighting all three selects the rank's special mission. The mission targets are ignored while a mission is active, and the hit that completes a mission does not select the next one.
+1. Hit a mission target on the left wall to select a mission: top, middle or bottom picks one of the rank's three missions. Lighting all three selects the rank's special mission, and it stays selected: the three lights stay on until the ramp accepts it, and further hits on the mission targets do not swap it for an ordinary mission. The mission targets are ignored while a mission is active, and the hit that completes a mission does not select the next one.
 2. Shoot the launch ramp to accept it. The fuel gauge fills and the mission targets' lights go out: until the mission ends they score without lighting, so the special mission always needs all three hit afresh. The ramp is a timed shot: a firm one off the right flipper, or a falling ball caught late by the left one.
 3. Do what the display asks. Some missions have two stages.
-4. Fuel lasts 90 seconds and burns only while a ball is in play. The ramp refuels. If it runs out the mission is aborted.
+4. Fuel lasts 90 seconds and burns only while a ball is in play. The ramp refuels. If it runs out the mission is aborted. On a tilted table the display keeps saying TILT, so the abort is reported with the message that follows the drain.
 5. Completing a mission pays its award (500,000 at Cadet up to 10,000,000 for the last special mission), plus the jackpot if lit, and fills the rank gauge: 6 of 18 for a normal mission, 9 for a special. A full gauge is a promotion.
 
 Ranks: Cadet, Ensign, Lieutenant, Captain, Lt Commander, Commander, Commodore, Admiral, Fleet Admiral. Each rank has its own four missions with larger counts and awards. Missions carry over from ball to ball. The mission table is in `src/core/Missions.cpp`.
@@ -182,7 +182,7 @@ The background tune (`src/core/Music`) is an original eight-bar loop for bass, a
 - The outer shell is one closed chain shape, which avoids ghost collisions at segment joints.
 - Flippers are kinematic bodies driven to an absolute target angle each step (13.5 rad/s up, 12 rad/s down, 60 degree stroke). They cannot overshoot or be pushed back by the ball.
 - The plunger is a kinematic block. Holding Space draws it back over one second; on release it drives forward at 3 to 12.5 m/s depending on the draw, and the ball leaves about 1.3 times faster. A full draw clears the arch; a tap does not leave the lane. The launch sound plays on release when the plunger was drawn back by more than 4 pixels, and never on a tilted or finished table.
-- A one-way gate at the top of the lane is modelled as a wall that is switched on once the launched ball is clear, and off again for the next serve.
+- A one-way gate at the top of the lane is modelled as a wall that is switched on once the launched ball is clear, and off again for the next serve. The ball counts as in play (ball save, fuel, nudges) from the moment it is on the playfield: past the top of the arch, anywhere left of the lane wall below its top, or at its first hit or capture.
 - Bumpers and slingshot faces add a fixed kick on top of the solver's bounce. Elements are tagged in Box2D shape user data with a packed integer, never a pointer, and validated on the way out.
 - Rollovers and holes are detected by ball position every slice, not by Box2D sensors, so the result is exact and deterministic. A rollover is a switch across the whole width of its lane, wider than its drawn light, so a ball running down the lane's wall still trips it.
 - Holes take the ball off the table (its body is disabled) for 0.9 s and return it: wormholes pass it round a ring of three, the black hole and hyperspace chute return it from themselves.
