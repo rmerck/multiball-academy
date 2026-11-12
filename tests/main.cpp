@@ -13,6 +13,7 @@ int main() {
   testFormat();
   testGame();
   testHoles();
+  testMissions();
   testPhysics();
   testPlunger();
   testPngHeader();

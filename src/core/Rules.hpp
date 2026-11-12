@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string_view>
 
+#include "core/Missions.hpp"
 #include "core/TableLayout.hpp"
 
 namespace pinball {
@@ -91,6 +92,9 @@ class Rules {
   bool laneLit(std::size_t index) const noexcept {
     return index < laneLit_.size() && laneLit_[index];
   }
+  // Rank, mission and fuel.
+  const MissionControl& missions() const noexcept { return missions_; }
+
   // Text for the message display. Empty when there is nothing to say.
   std::string_view message() const noexcept { return message_; }
 
@@ -99,12 +103,18 @@ class Rules {
   void addScore(std::uint64_t amount) noexcept;
   void addBonus() noexcept;
   void say(std::string_view text) noexcept;
+  // A mission announcement. It is not replaced by lesser messages from the
+  // same event (the bank award that the completing hit also earned, say).
+  void sayMission(std::string_view text) noexcept;
   void awardExtraBall() noexcept;
   void completeBank(table::TargetBank bank) noexcept;
   void resetBall() noexcept;
+  void report(GoalSet goals) noexcept;
+  void handleMission(const MissionControl::Outcome& outcome) noexcept;
   std::uint32_t stepsFor(double seconds) const noexcept;
 
   double stepSeconds_;
+  MissionControl missions_;
   std::uint64_t score_ = 0;
   std::uint64_t bonus_ = 0;
   int ball_ = 1;
@@ -124,6 +134,9 @@ class Rules {
   std::uint32_t ballSaveSteps_ = 0;
   // The save is offered once per ball, not after every saved ball.
   bool ballSaveUsed_ = false;
+  // Between entering play and draining. Mission fuel only burns then.
+  bool ballInPlay_ = false;
+  bool missionMessageThisStep_ = false;
   std::uint32_t rampReflexSteps_ = 0;
   std::uint32_t hyperspaceReflexSteps_ = 0;
   std::uint32_t messageSteps_ = 0;
