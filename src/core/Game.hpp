@@ -52,6 +52,12 @@ class Game {
   float bumperFlash(std::size_t index) const noexcept {
     return index < bumperFlash_.size() ? bumperFlash_[index] : 0.0F;
   }
+  // Ball search: if a ball in play has not moved for this long, the table
+  // gives it a shove, as a real machine fires its coils to free a stuck ball.
+  static constexpr double kBallSearchSeconds = 4.0;
+  // Times the ball search has fired.
+  std::uint32_t ballSearchCount() const noexcept { return ballSearchCount_; }
+
   // How long a hole keeps the ball, in seconds.
   static constexpr double kHoleHoldSeconds = 0.9;
 
@@ -88,6 +94,7 @@ class Game {
   void handleEvents();
   void lightTarget(std::size_t index);
   void updateHeldBall();
+  void updateBallSearch(const InputState& input);
 
   PhysicsWorld physics_;
   std::uint64_t stepCount_ = 0;
@@ -103,6 +110,10 @@ class Game {
   // The hole holding the ball, and for how many steps so far.
   std::size_t heldBy_ = 0;
   std::uint32_t heldSteps_ = 0;
+  // Ball search state.
+  Vec2 searchAnchor_{};
+  std::uint32_t stillSteps_ = 0;
+  std::uint32_t ballSearchCount_ = 0;
 };
 
 }  // namespace pinball
