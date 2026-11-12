@@ -15,6 +15,16 @@ concurrency:
 
 # Every job builds SDL3 and Box2D from pinned, hash-checked sources
 # (cmake/PinnedDeps.cmake), not from whatever a package manager has today.
+#
+# Their build tree (build/_deps: sources, objects and libraries) is cached,
+# because compiling SDL is most of each job. The key names the runner image
+# (and so the compiler), the job's configuration and the hash of the build
+# files, with no fallback key: any change there builds from source again.
+# Every run may restore. Only a push to main saves, and GitHub keeps a cache
+# written by a pull request run visible to that pull request alone, so
+# nothing a pull request does can change what main or another pull request
+# links. Make still compares the restored objects with their sources and
+# flags, and rebuilds whatever differs.
 jobs:
   macos:
     runs-on: macos-15
@@ -27,6 +37,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Runner image
+        id: image
+        run: echo "id=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Restore the dependency build
+        id: deps
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/_deps
+          key: deps-${{ steps.image.outputs.id }}-${{ runner.arch }}-RelWithDebInfo-san${{ matrix.sanitize }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
       - name: Configure
         env:
           SANITIZE: ${{ matrix.sanitize }}
@@ -38,6 +57,12 @@ jobs:
           -DPINBALL_SANITIZE="$SANITIZE"
       - name: Build
         run: cmake --build build --parallel
+      - name: Save the dependency build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/_deps
+          key: ${{ steps.deps.outputs.cache-primary-key }}
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
@@ -50,6 +75,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Runner image
+        id: image
+        run: echo "id=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Restore the dependency build
+        id: deps
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/_deps
+          key: deps-${{ steps.image.outputs.id }}-${{ runner.arch }}-Release-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
       - name: Configure
         run: >
           cmake -S . -B build
@@ -58,6 +92,12 @@ jobs:
           -DPINBALL_WERROR=ON
       - name: Build
         run: cmake --build build --parallel
+      - name: Save the dependency build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/_deps
+          key: ${{ steps.deps.outputs.cache-primary-key }}
       - name: Test
         run: ctest --test-dir build --output-on-failure
       - name: No build paths in the binary
@@ -94,6 +134,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Runner image
+        id: image
+        run: echo "id=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Restore the dependency build
+        id: deps
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/_deps
+          key: deps-${{ steps.image.outputs.id }}-${{ runner.arch }}-${{ matrix.cxx }}-${{ matrix.build }}-san${{ matrix.sanitize }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
       - name: Install build headers
         run: |
           sudo apt-get update
@@ -115,6 +164,12 @@ jobs:
           -DPINBALL_SANITIZE="$SANITIZE"
       - name: Build
         run: cmake --build build --parallel
+      - name: Save the dependency build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/_deps
+          key: ${{ steps.deps.outputs.cache-primary-key }}
       - name: Test
         run: ctest --test-dir build --output-on-failure
       - name: Hardening is present in the Release binary
@@ -156,3 +211,14 @@ jobs:
           mkdir found
           ./build/pinball_fuzz -max_total_time=120 -max_len=1024 -print_final_stats=1 \
             -dict=tests/fuzz/parsers.dict found tests/fuzz/corpus
+      - name: Keep what the fuzzer found
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-findings
+          path: |
+            crash-*
+            leak-*
+            oom-*
+            timeout-*
+          if-no-files-found: ignore

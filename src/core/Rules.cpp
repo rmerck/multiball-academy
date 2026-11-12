@@ -18,7 +18,10 @@ Rules::Rules(double stepSeconds) noexcept
 }
 
 std::uint32_t Rules::stepsFor(double seconds) const noexcept {
-  return static_cast<std::uint32_t>(std::lround(seconds / stepSeconds_));
+  // Clamped before converting: an extreme step length must not ask for a
+  // count outside the integer's range, and a timer always lasts one step.
+  const double steps = std::round(seconds / stepSeconds_);
+  return static_cast<std::uint32_t>(std::clamp(steps, 1.0, 4.0e9));
 }
 
 void Rules::startGame() noexcept {
@@ -183,9 +186,13 @@ void Rules::onTarget(std::size_t index) noexcept {
   } else if (bank == table::TargetBank::Multiplier) {
     goals |= goalBit(Goal::MultiplierTargets);
   }
+  const bool missionWasActive = missions_.phase() == MissionControl::Phase::Active;
   report(goals);
-  if (bank == table::TargetBank::Mission) {
-    // Each mission target picks a mission; lighting all three picks the special.
+  if (bank == table::TargetBank::Mission && !missionWasActive) {
+    // Each mission target picks a mission; lighting all three picks the
+    // special. Not while a mission is active, and not with the hit that just
+    // completed one: that hit belongs to the finished mission, and selecting
+    // with it would replace the completion message.
     handleMission(missions_.onMissionTarget(positionInBank, bankComplete));
   }
 
@@ -356,6 +363,9 @@ Rules::DrainResult Rules::onDrain() noexcept {
   if (gameOver_) {
     return DrainResult::GameOver;
   }
+  // The drain is its own event: what it says is not a lesser message of a
+  // mission announcement made earlier in the step.
+  missionMessageThisStep_ = false;
   // A tilt ends with the ball, whatever happens next.
   const bool wasTilted = tilted_;
   tilted_ = false;
@@ -405,6 +415,7 @@ bool Rules::onNudge() noexcept {
     tilted_ = true;
     tiltHeat_ = kTiltLimit;
     ballSaveSteps_ = 0;  // A tilted ball is not returned.
+    missionMessageThisStep_ = false;  // Nothing outranks the tilt.
     say("TILT");
     cue(Sound::Tilt);
     return false;

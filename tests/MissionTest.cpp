@@ -55,6 +55,59 @@ std::size_t hole(table::HoleType type) {
 }  // namespace
 
 void testMissions() {
+  {  // The hit that completes a mission does not also select the next one,
+     // so the completion is what the display shows.
+    Rules rules(kStep);
+    for (std::size_t i = 0; i < 3; ++i) {
+      rules.onTarget(missionTarget(i));
+    }
+    // Science Mission: nine targets of any kind.
+    CHECK(rules.missions().missionIndex() == pinball::kSpecialMission);
+    rules.onHole(hole(table::HoleType::Ramp));
+    CHECK(rules.missions().phase() == MissionControl::Phase::Active);
+    CHECK(rules.missions().stage()->goal == Goal::AnyTarget);
+    while (rules.missions().remaining() > 1) {
+      rules.onTarget(missionTarget(0));
+    }
+    rules.takeSounds();
+    rules.onTarget(missionTarget(1));
+    CHECK(rules.missions().completedMissions() == 1);
+    CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
+    CHECK(rules.message() == std::string_view("MISSION COMPLETE"));
+    const pinball::SoundSet sounds = rules.takeSounds();
+    CHECK((sounds & pinball::soundBit(pinball::Sound::MissionComplete)) != 0U);
+    CHECK((sounds & pinball::soundBit(pinball::Sound::MissionSelect)) == 0U);
+    // The next mission target selects as usual.
+    rules.onTarget(missionTarget(2));
+    CHECK(rules.missions().phase() == MissionControl::Phase::Selected);
+  }
+
+  {  // A tilt or a drain in the same step as a mission announcement still
+     // gets its own message.
+    Rules rules(kStep);
+    rules.onBallInPlay();
+    rules.onTarget(missionTarget(0));
+    CHECK(rules.message() == std::string_view("MISSION SELECTED  SHOOT THE RAMP"));
+    rules.onNudge();
+    rules.onNudge();
+    rules.onTarget(missionTarget(1));
+    rules.onNudge();
+    CHECK(rules.tilted());
+    CHECK(rules.message() == std::string_view("TILT"));
+
+    Rules last(kStep);
+    for (int ball = 1; ball < Rules::kBallsPerGame; ++ball) {
+      last.onDrain();
+    }
+    last.onTarget(missionTarget(0));
+    CHECK(last.onDrain() == Rules::DrainResult::GameOver);
+    CHECK(last.message() == std::string_view("GAME OVER   PRESS F2"));
+    for (int i = 0; i < 120 * 10; ++i) {
+      last.tick();
+    }
+    CHECK(last.message() == std::string_view("GAME OVER   PRESS F2"));
+  }
+
   {  // The mission table is well formed: every mission has a name that fits
      // the display, a first stage, a positive award, and awards never fall
      // as rank rises.

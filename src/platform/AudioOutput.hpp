@@ -27,6 +27,9 @@ class AudioOutput {
   explicit AudioOutput(SDL_AudioStream* stream) : stream_(stream) {}
 
   SDL_AudioStream* stream_;
+  // Frames to keep queued, worked out from the device's buffer size.
+  int targetFrames_ = 0;
+  int pumpsUntilDeviceCheck_ = 0;
 };
 
 }  // namespace pinball

@@ -97,7 +97,7 @@ bool hasContent(SDL_Surface* surface) {
 enum class Overlay { None, About, Initials };
 
 int run(std::uint32_t steps, const std::string& outputName, Overlay overlay) {
-  const pinball::AssetLoader assets = pinball::AssetLoader::fromExecutableLocation();
+  pinball::AssetLoader assets = pinball::AssetLoader::fromExecutableLocation();
   if (!assets.verifyAll()) {
     std::fputs("asset integrity check failed\n", stderr);
     return EXIT_FAILURE;
@@ -195,6 +195,8 @@ int main(int argc, char* argv[]) {
     exitCode = run(*steps, std::string(name), overlay);
   } catch (const std::exception& e) {
     std::fprintf(stderr, "Fatal: %s\n", e.what());
+  } catch (...) {
+    std::fputs("Fatal: unknown error\n", stderr);
   }
   SDL_Quit();
   return exitCode;

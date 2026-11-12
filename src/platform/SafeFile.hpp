@@ -38,4 +38,12 @@ ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
 // Elsewhere a fixed temporary name and plain SDL file calls are used.
 bool replaceFile(const std::string& path, std::string_view text);
 
+// Removes temporary files that a replaceFile(path, ...) cut short by a crash
+// left beside path. Only regular files that carry replaceFile's own temporary
+// name and have not been written for minAgeSeconds are removed: a file of the
+// user's with a similar name is not ours to delete, and a fresh temporary may
+// be another running copy's save in progress. Returns how many were removed.
+// File system errors are not reported; whatever could not be removed stays.
+std::size_t removeStaleTemporaries(const std::string& path, long long minAgeSeconds = 60);
+
 }  // namespace pinball

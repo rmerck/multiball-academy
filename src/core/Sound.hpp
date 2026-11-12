@@ -55,7 +55,8 @@ class SoundMixer {
   // Starts every sound in the set. A sound that started within the last
   // kRetriggerSamples is skipped, so one event repeated in quick succession
   // cannot stack copies of itself. If all voices are busy the voice with the
-  // least left to play is replaced.
+  // least left to play is replaced, never one of the same sound's own, and
+  // what it was playing dies away over a few milliseconds instead of cutting.
   void trigger(SoundSet sounds) noexcept;
 
   // Writes frames mono samples in [-1, 1] to out. out may be null only when
@@ -80,24 +81,34 @@ class SoundMixer {
   struct Voice {
     bool active = false;
     Wave wave = Wave::Sine;
-    float startHz = 0.0F;
-    float endHz = 0.0F;
+    // Pitch in cycles per sample: startStep at the first sample, gliding by
+    // stepGlide in all over the length. Noise has no pitch.
+    float startStep = 0.0F;
+    float stepGlide = 0.0F;
     float gain = 0.0F;
     std::uint32_t delay = 0;     // Samples to wait before starting.
     std::uint32_t length = 0;    // Samples of sound.
     std::uint32_t position = 0;  // Samples played so far.
+    float perLength = 0.0F;      // 1 / length.
     float phase = 0.0F;          // Cycles, 0 to 1.
+    float last = 0.0F;           // The latest sample this voice added to the mix.
+    std::uint32_t batch = 0;     // Which startSound call began it.
   };
 
   void start(Wave wave, float startHz, float endHz, float seconds, float gain,
              float delaySeconds = 0.0F) noexcept;
   void startSound(Sound sound) noexcept;
+  // White noise has no pitch, so it takes none.
+  void startNoise(float seconds, float gain) noexcept;
 
   std::array<Voice, kVoices> voices_{};
   Music music_;
   // Samples each sound must still wait before it may start again.
   std::array<std::uint32_t, kSoundCount> holdoff_{};
   std::uint32_t noiseState_ = 0x12345678U;
+  std::uint32_t batch_ = 0;
+  // What replaced voices were playing when they were cut off, dying away.
+  float cutTail_ = 0.0F;
   bool muted_ = false;
   float muteGain_ = 1.0F;  // Follows muted_, 0 to 1.
 };

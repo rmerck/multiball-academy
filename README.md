@@ -4,26 +4,24 @@ A 2D recreation of the Space Cadet pinball table in C++17, SDL3 and Box2D, with 
 
 This is an independent fan project. It contains no code or assets from the original game and is not affiliated with Microsoft, Maxis or Cinematronics.
 
-## Status
+## What is in it
 
-| Phase | Feature | State |
-|---|---|---|
-| 1 | Project skeleton, window, fixed-step loop, CI | Done |
-| 2 | Asset loading and rendering | Done: verified loader, table art and sprites generated in GIMP from the table geometry |
-| 3 | Physics foundation | Done: Box2D world, table shell, ball, drain |
-| 4 | Flippers | Done |
-| 5 | Plunger and launch lane | Done |
-| 6 | Bumpers, targets, ramps, table geometry | Done: 8 bumpers, slingshots, 4 target banks, 7 rollovers, wormholes, black hole, hyperspace, launch ramp |
-| 7 | Scoring, lights, UI | Done: rules engine, lit lanes and targets, information panel with a built-in pixel font |
-| 8 | Missions and ranks | Done: 9 ranks, 36 missions, fuel |
-| 9 | Nudge and tilt | Done |
-| 10 | Audio | Done: synthesized sound effects and an original background tune, no audio files |
-| 11 | High scores, polish, performance | Done: high score table, About screen, auto-pause, idle wait while paused |
-| 12 | Final playability pass | Done: full test suite under sanitizers and in Release, 10 minute simulated soak, offscreen render checks of play and About |
+- A full table: 8 bumpers, 2 slingshots, 4 target banks (11 targets), 7 rollovers, 3 wormholes, a black hole, a hyperspace chute and a launch ramp, with flippers, a plunger and launch lane, nudge and tilt.
+- A rules engine with lit lanes and targets, 9 ranks, 36 missions and fuel, and an information panel drawn with a built-in pixel font.
+- Synthesized sound effects and an original background tune. There are no audio files.
+- A high score table with initials, an About screen, auto-pause, and an idle wait while paused.
+- Art generated in GIMP from the same table geometry the physics uses, loaded through a verifying loader.
+- A test suite that runs under sanitizers and in Release, including a 10 minute simulated soak and offscreen render checks of play, the About screen and the initials prompt.
 
-Known approximations: the table geometry, art and sounds are original work in the style of the 1995 table, not copies of it. The music is an original tune, not the original soundtrack. Mission goals follow the original's structure with simplified conditions. Windows builds are untested.
+Known approximations: the table geometry, art and sounds are original work in the style of the 1995 table, not copies of it. The music is an original tune, not the original soundtrack. Mission goals follow the original's structure with simplified conditions.
 
-## Build (macOS)
+Platforms: macOS and Linux build and pass the tests in CI. Windows is untested.
+
+## Build
+
+Needs CMake 3.26 or newer and a C++17 compiler. Python 3 is optional: without it CMake warns and three of the tests (`assets_clean`, `asset_integrity`, `layout_json`) are left out. In-source builds are refused.
+
+macOS, with the libraries from Homebrew:
 
 ```sh
 brew install cmake sdl3 box2d
@@ -33,14 +31,34 @@ ctest --test-dir build --output-on-failure
 ./build/pinball
 ```
 
-Options:
+Linux: the same `cmake` and `ctest` commands work where SDL3 3.4 or newer and Box2D 3.2 or newer are installed as CMake packages. Few distributions have both yet, so the usual way is to let the build fetch them (`-DPINBALL_FETCH_DEPS=ON`, below), which needs the headers SDL builds against. On Ubuntu 24.04, as CI does:
+
+```sh
+sudo apt-get install -y --no-install-recommends \
+  libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+  libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev \
+  libgl1-mesa-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
+cmake -S . -B build -DPINBALL_FETCH_DEPS=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+./build/pinball
+```
+
+The default build type is RelWithDebInfo. Options:
 
 - `-DPINBALL_SANITIZE=ON` builds with AddressSanitizer and UBSan.
 - `-DPINBALL_WERROR=ON` treats warnings as errors. CI uses this.
-- `-DPINBALL_FETCH_DEPS=ON` needs no Homebrew libraries: it downloads SDL3 3.4.20 (release archive, checked by SHA-256) and Box2D 3.2.0 (fixed by commit), builds them with the same protective compiler flags as the game, and links them statically. CI uses this. On macOS a Release build is also signed ad hoc with the hardened runtime. `tools/check_pins.sh` reports when either has a newer release; a weekly workflow runs it.
+- `-DPINBALL_FETCH_DEPS=ON` needs no installed SDL or Box2D: it downloads SDL3 3.4.20 (release archive, checked by SHA-256) and Box2D 3.2.0 (fixed by commit), builds them with the same protective compiler flags as the game, and links them statically. CI uses this. `tools/check_pins.sh` reports when either has a newer release; a weekly workflow runs it.
+- `-DPINBALL_HARDENED_RUNTIME=OFF` (macOS, only with `PINBALL_FETCH_DEPS` and without sanitizers) skips the ad hoc signing with the hardened runtime that a Release build otherwise gets.
+- `-DPINBALL_BUILD_TOOLS=OFF` leaves out the development tools `pinball_snapshot` and `pinball_layout`, and with them the render and layout tests.
+- `-DBUILD_TESTING=OFF` leaves out the tests.
 - `-DPINBALL_FUZZ=ON` (clang with libFuzzer, not Apple clang) builds only `pinball_fuzz`, which fuzzes the score file, PNG header, asset name and argument parsers.
 
-A build to give to someone else:
+There are no install rules: the game runs from the build directory, with its `assets` directory next to the executable.
+
+`pinball --frames N` (1 to 1,000,000) exits after N frames and leaves the high score file alone. The tests use it; the game takes no other arguments.
+
+### A build to give to someone else
 
 ```sh
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DPINBALL_FETCH_DEPS=ON
@@ -51,26 +69,36 @@ On macOS that binary is optimised, links only system libraries, carries no path 
 
 On Linux the same build is a position-independent executable with full RELRO, stack protection, fortified library calls and control-flow protection. SDL still opens the system's display and audio libraries at run time, as every SDL program does.
 
-Linux builds and passes the tests in CI with GCC and clang, with sanitizers and as an optimised Release build. Windows is untested.
+### Tests and CI
+
+`ctest` runs 15 tests: the core unit tests (`core_tests`, no display needed), the file handling tests, two asset checks, three offscreen render checks, the layout dump check, a headless run of the real game, and six rejected command lines. They need no display or audio device, and scratch files stay in the build directory. A timed run (`--frames`) never opens the high score file, and on Linux the tests also point the per-user preferences directory into the build tree.
+
+Every pull request must pass seven CI jobs, all with warnings as errors. The first six build SDL3 and Box2D from the pinned sources; that dependency build is cached between runs, and only runs on `main` write the cache.
+
+- macOS, with and without sanitizers.
+- macOS Release, checked for build paths in the binary, system-only libraries and the hardened runtime.
+- Linux with GCC and with clang, both under sanitizers.
+- Linux Release with GCC, with the hardening checked by `readelf`.
+- A two minute libFuzzer run over the parsers.
 
 ## Controls
 
-Keys are read by physical position (scancode), so they sit where Z and / are on a US keyboard whatever the layout. The function keys and Escape are matched by name. Escape or F1 closes the About screen.
+Keys are read by physical position (scancode), so they sit where Z and / are on a US keyboard whatever the layout. F1, F3, F4 and Escape are matched by name.
 
-| Key | Action | State |
-|---|---|---|
-| Z | Left flipper | Done |
-| / | Right flipper | Done |
-| Space | Plunger, hold for power | Done |
-| X | Nudge left | Done |
-| . | Nudge right | Done |
-| Up | Nudge from bottom | Done |
-| F2 | New game | Done |
-| F1 | About and high scores. On macOS the menu bar's About item opens the same screen | Done |
-| F3 | Pause. The game also pauses by itself when its window loses focus or is minimised | Done |
-| F4 | Fullscreen | Done |
-| M | Mute all sound | Done |
-| N | Music on and off | Done |
+| Key | Action |
+|---|---|
+| Z | Left flipper |
+| / | Right flipper |
+| Space | Plunger, hold for power |
+| X | Nudge left |
+| . | Nudge right |
+| Up | Nudge from bottom |
+| F2 | New game |
+| F1 | About and high scores. Escape or F1 closes it. On macOS the menu bar's About item opens the same screen |
+| F3 | Pause. The game also pauses by itself when its window loses focus or is minimised |
+| F4 | Fullscreen |
+| M | Mute all sound |
+| N | Music on and off |
 
 ## Design priorities
 
@@ -80,7 +108,7 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 
 ## Rules
 
-Three balls per game. Everything a feature awards is multiplied by the field multiplier.
+Three balls per game. Everything a table feature awards is multiplied by the field multiplier. Mission awards, and the jackpot when a mission collects it, are paid as stated. At most five extra balls are held at once.
 
 | Feature | Award |
 |---|---|
@@ -91,14 +119,14 @@ Three balls per game. Everything a feature awards is multiplied by the field mul
 | Re-entry lanes | 5,000 each and the lane lights. All three lit: 10,000 and the attack bumpers upgrade. Flipper buttons rotate the lit lanes |
 | Booster bank (right wall) | 5,000 per completion. Then in turn: booster online, jackpot lit, bonus lanes lit, extra ball |
 | Medal bank (centre) | 10,000, then 50,000, then 100,000 and an extra ball |
-| Multiplier bank (upper left) | Field multiplier steps 2x, 3x, 5x, 10x. Resets each ball |
+| Multiplier bank (upper left) | 5,000 per completion and the field multiplier steps 2x, 3x, 5x, 10x. Resets each ball |
 | Wormholes | 2,000 and the ball leaves the next wormhole |
 | Black hole | 20,000 |
 | Hyperspace chute | 10,000, then the 500,000 jackpot if lit (else 20,000), then 30,000, then an extra ball |
 | Launch ramp | 5,000 |
 | Reflex shot | 25,000 for repeating the ramp or the chute within 5 seconds |
 | Return lanes | Inlane 5,000. Outlane 20,000 when the bonus lanes are lit |
-| End of ball | 250 per bumper or target hit that ball, times the multiplier |
+| End of ball | 250 per bumper or target hit that ball (1,000,000 at most), times the multiplier |
 
 ### Nudge and tilt
 
@@ -108,27 +136,27 @@ Each nudge adds tilt heat, which cools over 2.5 seconds. Two quick nudges show a
 
 ### Missions and ranks
 
-1. Hit a mission target on the left wall to select a mission: top, middle or bottom picks one of the rank's three missions. Lighting all three selects the rank's special mission.
+1. Hit a mission target on the left wall to select a mission: top, middle or bottom picks one of the rank's three missions. Lighting all three selects the rank's special mission. The mission targets are ignored while a mission is active.
 2. Shoot the launch ramp to accept it. The fuel gauge fills.
 3. Do what the display asks. Some missions have two stages.
-4. Fuel lasts 90 seconds. The ramp refuels. If it runs out the mission is aborted.
+4. Fuel lasts 90 seconds and burns only while a ball is in play. The ramp refuels. If it runs out the mission is aborted.
 5. Completing a mission pays its award (500,000 at Cadet up to 10,000,000 for the last special mission), plus the jackpot if lit, and fills the rank gauge: 6 of 18 for a normal mission, 9 for a special. A full gauge is a promotion.
 
 Ranks: Cadet, Ensign, Lieutenant, Captain, Lt Commander, Commander, Commodore, Admiral, Fleet Admiral. Each rank has its own four missions with larger counts and awards. Missions carry over from ball to ball. The mission table is in `src/core/Missions.cpp`.
 
 The mission structure follows the original (select with the mission targets, accept on the ramp, fuel, rank lights). The individual missions, their counts and awards are this project's own.
 
-A ball that drains within 6 seconds of entering play is returned free. The rules live in `src/core/Rules` with no dependency on physics, and are unit tested event by event.
+A ball that drains within 6 seconds of entering play is returned free, once per ball. The rules live in `src/core/Rules` with no dependency on physics, and are unit tested event by event.
 
 Differences from the original are deliberate simplifications: awards do not time out, and there is no replay score.
 
 ## High scores
 
-The five best games are kept in a small text file in the per-user preferences directory (on macOS, `~/Library/Application Support/space-cadet-pinball/Space Cadet Pinball/highscores.txt`), with the score, the rank reached and the player's three initials. This is the only file the game ever writes.
+The five best games are kept in a small text file in the per-user preferences directory (`~/Library/Application Support/space-cadet-pinball/Space Cadet Pinball/highscores.txt` on macOS, `~/.local/share/space-cadet-pinball/Space Cadet Pinball/highscores.txt` on Linux unless `XDG_DATA_HOME` says otherwise), with the score, the rank reached and the player's three initials. This is the only file the game ever writes.
 
-A game that makes the table asks for initials: type letters, or use Up and Down to change one, Enter to confirm each, Backspace to go back, Escape to accept as shown. The last initials entered are offered again.
+A game that makes the table asks for initials: type letters, or use Up and Down to change one, Enter to confirm each, Left or Backspace to go back, Right to move on, Escape to accept as shown. The last initials entered are offered again.
 
-- It is written to a new, uniquely named, owner-only temporary file, flushed to disk and renamed into place, so a crash cannot leave half a table and no existing file or link is ever written through. (These link and permission protections are POSIX; other platforms use plain SDL file calls with the same size limit.)
+- It is written to a new, uniquely named, owner-only temporary file, flushed to disk and renamed into place, so a crash cannot leave half a table and no existing file or link is ever written through. A temporary file left by an interrupted save is removed at a later start. (These link and permission protections are POSIX; other platforms use plain SDL file calls with the same size limit.)
 - On load it must be a regular file, not a link, of at most 512 bytes and every line is validated strictly (digits only, in range, in order, initials A to Z or dashes). Anything else is set aside as `highscores.txt.bad` and the table starts empty; it is never partly trusted.
 - Files from before initials were added are still read; their entries show dashes.
 
@@ -136,7 +164,7 @@ A game that makes the table asks for initials: type letters, or use Up and Down 
 
 Every sound is synthesized at run time from sine, square and triangle oscillators and noise (`src/core/Sound`), so the game ships no audio files and has nothing extra to verify. Twenty effects cover flippers, launch, bumpers, targets, lanes, holes, drains, awards, missions, tilt and game over.
 
-The mixer is plain arithmetic with no device access and is unit tested: output is always finite and within [-1, 1], every sound ends, and a flood of triggers cannot overrun the 24-voice pool. The platform layer pulls samples on the main thread and queues about 40 ms to the default device, so no locking is needed. If no audio device opens, the game runs silent.
+The mixer is plain arithmetic with no device access and is unit tested: output is always finite and within [-1, 1], every sound ends, and a flood of triggers cannot overrun the 24-voice pool. The platform layer pulls samples on the main thread and queues about 40 to 50 ms to the default device, so no locking is needed. If no audio device opens, the game runs silent.
 
 The background tune (`src/core/Music`) is an original eight-bar loop for bass, arpeggio and lead, synthesized the same way and mixed under the effects. N turns it on and off. It rests while the game is paused and picks up where it stopped. It is not the original game's music.
 
@@ -161,9 +189,12 @@ The background tune (`src/core/Music`) is an original eight-bar loop for bass, a
 - `src/platform` SDL window, input, asset loading and rendering, as a static library shared by the game and the snapshot tool. `TableRenderer` draws the game; `App` owns the window and the loop.
 - `assets` PNG art, copied next to the executable at build time. Sprites are authored at 4x.
 - `tools/gimp` GIMP 3 Python scripts that generate every asset, so art is reproducible.
-- `tools/snapshot` development tool that plays the game headless with scripted input and writes one rendered frame to a PNG, with no window. `ctest` uses it as a rendering smoke test.
-- `tests` unit tests and headless smoke tests, run by `ctest`.
-- `cmake` shared build settings.
+- `tools/snapshot` development tool (`pinball_snapshot`) that plays the game headless with scripted input and writes one rendered frame to a PNG, with no window. `ctest` uses it as a rendering smoke test.
+- `tools/layout_dump` development tool (`pinball_layout`) that prints the table geometry as JSON for the art scripts.
+- `tools/check_assets.py`, `tools/test_asset_integrity.py` asset checks run by `ctest`. `tools/make_font.py` regenerates the pixel font header. `tools/check_pins.sh` compares the pinned dependencies with upstream.
+- `tests` unit tests and headless smoke tests, run by `ctest`. `tests/fuzz` holds the fuzzer, its seed corpus and dictionary.
+- `cmake` hardening flags, the pinned dependencies and the asset manifest generator.
+- `.github/workflows` CI and the weekly dependency pin check.
 
 ## Assets
 
@@ -183,7 +214,7 @@ for script in ("make_ball", "make_table", "make_sprites", "make_panel"):
 | Asset | Script | Notes |
 |---|---|---|
 | `table/background.png` | `make_table.py` | 1536x1920 (2x). Sky, sun, horizon, grid floor, area motifs, neon rails, islands, hole wells, unlit inserts |
-| `ui/panel.png` | `make_panel.py` | 1024x1920 (2x). Backglass illustration behind the title, neon-framed display windows, grid and accents |
+| `ui/panel.png` | `make_panel.py` | 1024x1920 (2x). Information panel beside the playfield: backglass illustration behind the title, neon-framed display windows from `src/core/PanelLayout.hpp`, grid and accents |
 | `sprites/ball.png` | `make_ball.py` | 4x. Chrome ball with a bright rim so it stays visible on any part of the art |
 | `sprites/flipper.png` | `make_sprites.py` | Rotated about its pivot; mirrored for the right flipper |
 | `sprites/bumper.png` | `make_sprites.py` | White starburst cap, tinted per bumper group |
@@ -203,7 +234,7 @@ Regeneration is reproducible: two-colour gradients are drawn without dithering (
 
 Two GIMP behaviours the helpers in `tools/gimp/common.py` work around: a selection fill ignores the alpha of the foreground colour (`fill_selection` applies it as the fill opacity), and a two-colour gradient ignores alpha altogether (`alpha_gradient` fades to transparent instead).
 
-To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png` (add `about` or `initials` for the dialogs).
+To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png` plays 1200 steps (ten seconds) and writes the frame to the current directory. A third argument, `about` or `initials`, draws that screen instead.
 
 ### Integrity
 
@@ -213,13 +244,13 @@ Assets are external files, so the game checks them before it runs:
 - At startup every listed asset is read into memory and compared with the manifest. Any missing, resized or altered file, or anything that is not a regular file, stops the game with exit code 1 before a window opens.
 - Each image is then decoded from the same bytes that were hashed, so a file cannot be swapped between the check and the use.
 - The manifest is also the allowlist. A file that is not in it is never opened.
-- `ctest` runs `tools/test_asset_integrity.py`, which flips a bit, appends, truncates, empties and deletes each asset and confirms every case is refused.
+- `ctest` runs `tools/test_asset_integrity.py`, which flips a bit, appends, truncates, empties and deletes each asset, and replaces it with a FIFO, a symbolic link to a genuine copy and a directory, and confirms every case is refused.
 
 What this does not cover: the hashes live in the executable, so someone able to replace the executable can replace them too. That is the job of code signing at release time (`codesign` and notarisation on macOS), which protects the executable and with it the manifest.
 
 The game only opens files inside the `assets` directory next to the executable. Files over 16 MB or images over 4096 pixels on an edge are refused before decoding.
 
-Assets are exported with all metadata off. `tools/check_assets.py` (run by `ctest`) fails the build if a PNG carries EXIF, text, timestamp, profile or thumbnail chunks.
+Assets are exported with all metadata off. `tools/check_assets.py` (run by `ctest`) fails if a PNG carries EXIF, text, timestamp, profile or thumbnail chunks, is malformed, or if anything but a regular `.png` file is in `assets`.
 
 ## How this was made
 

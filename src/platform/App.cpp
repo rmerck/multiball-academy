@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "core/LoopPolicy.hpp"
 #include "core/Version.hpp"
 #include "platform/About.hpp"
 #include "platform/Canvas.hpp"
@@ -54,7 +55,7 @@ std::unique_ptr<App> App::create(const AppOptions& options) {
 
   // Refuse to start unless every asset matches the build. Done first, before
   // any window exists.
-  const AssetLoader assets = AssetLoader::fromExecutableLocation();
+  AssetLoader assets = AssetLoader::fromExecutableLocation();
   if (!assets.verifyAll()) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                  "Asset integrity check failed; reinstall or rebuild the game");
@@ -115,7 +116,9 @@ App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, 
       table_(std::move(table)),
       vsync_(vsync),
       audio_(AudioOutput::open()),
-      highScores_(loadHighScores()),
+      // A timed automated run leaves the player's score file alone: it is
+      // neither read (which can also set a bad file aside) nor written.
+      highScores_(options.frameLimit ? HighScores{} : loadHighScores()),
       aboutEvent_(SDL_RegisterEvents(1)) {
   const bool routed = routeAboutMenu(aboutEvent_);
   SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "About menu item routed to the game: %s",
@@ -141,14 +144,12 @@ bool App::needsManualPacing() const {
 namespace {
 // How long a halted loop sleeps between redraws.
 constexpr Sint32 kHaltedWaitMs = 100;
-// Longest a halted loop stays awake for sound: beyond any effect's tail.
-constexpr std::uint32_t kMaxHaltedBusyFrames = 600;
 }  // namespace
 
 int App::run() {
   std::uint64_t previous = SDL_GetTicksNS();
   std::uint32_t frames = 0;
-  bool wasHalted = false;
+  PauseClock clock;
   std::uint32_t haltedFrames = 0;
 
   while (running_) {
@@ -157,10 +158,11 @@ int App::run() {
     // instead of redrawing a still picture at full rate. A sound still
     // ringing keeps the loop at frame rate so its tail plays without gaps.
     // It sleeps anyway after a while, in case the audio device has stopped
-    // taking sound and a tail can never finish.
+    // taking sound and a tail can never finish. With no audio device nothing
+    // drains the mixer, so its voices never end and do not count.
     haltedFrames = halted() ? haltedFrames + 1 : 0;
-    if (halted() && !options_.frameLimit &&
-        (!mixer_.busy() || haltedFrames > kMaxHaltedBusyFrames) &&
+    if (sleepsWhileHalted(halted(), options_.frameLimit.has_value(),
+                          audio_ != nullptr && mixer_.busy(), haltedFrames) &&
         SDL_WaitEventTimeout(&event, kHaltedWaitMs)) {
       handleEvent(event);
     }
@@ -174,12 +176,12 @@ int App::run() {
 
     readInput();
 
-    // While halted the clock keeps moving but nothing accumulates. The first
-    // frame after a halt adds no time either: its interval covers the wait,
-    // and would otherwise arrive as a burst of catch-up steps.
+    // While halted the clock keeps moving but nothing accumulates, and the
+    // first frame after a halt adds no time either (see PauseClock).
     const bool isHalted = halted();
+    const double simSeconds = clock.simulated(frameSeconds, isHalted);
     if (!isHalted) {
-      const int steps = timestep_.advance(wasHalted ? 0.0 : frameSeconds);
+      const int steps = timestep_.advance(simSeconds);
       // Sounds from every step of the frame start together, once each.
       SoundSet sounds = 0;
       for (int i = 0; i < steps; ++i) {
@@ -200,7 +202,6 @@ int App::run() {
         latched_ = InputState{};
       }
     }
-    wasHalted = isHalted;
 
     // The tune plays while the game runs and rests while it stands still.
     mixer_.setMusicPlaying(musicOn_ && !isHalted);
@@ -419,17 +420,15 @@ void App::commitInitials() {
 void App::recordFinishedGame() {
   const bool over = game_.gameOver();
   if (over && !wasGameOver_) {
-    // The game has just ended: enter it in the table and save if it made it.
+    // The game has just ended: enter it in the table if it made it.
     const HighScore entry{game_.rules().score(),
                           static_cast<std::uint8_t>(game_.rules().missions().rank())};
     if (!highScores_.qualifies(entry.score)) {
       newHighScore_ = false;
     } else if (options_.frameLimit) {
-      // A timed automated run has no one to type: record it without initials.
+      // A timed automated run has no one to type: enter it without initials,
+      // for this run only. Nothing is saved.
       newHighScore_ = highScores_.submit(entry) < HighScores::kCapacity;
-      if (newHighScore_) {
-        saveHighScores(highScores_);
-      }
     } else {
       // Ask for initials. The entry is made when they are confirmed.
       pending_ = entry;

@@ -47,7 +47,10 @@ void drawRows(SDL_Renderer* renderer, std::string_view text, float x, float y, f
     x -= textWidth(text, pixelSize);
   }
 
-  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+  // Opaque text needs no blending: the pixels come out the same, and a
+  // software renderer fills them several times faster without it.
+  SDL_SetRenderDrawBlendMode(renderer, color.a == SDL_ALPHA_OPAQUE ? SDL_BLENDMODE_NONE
+                                                                   : SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
 
   // Lit pixels are collected and drawn in batches.
@@ -133,7 +136,8 @@ void drawNeonFrame(SDL_Renderer* renderer, const SDL_FRect& box) {
     SDL_SetRenderDrawColor(renderer, 255, 40, 170, static_cast<Uint8>(30 - i * 3));
     fillRect(renderer, box.x - grow, box.y - grow, box.w + grow * 2.0F, box.h + grow * 2.0F);
   }
-  // The hot pink tube with a white-hot core.
+  // The hot pink tube with a white-hot core. Opaque fills need no blending.
+  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
   SDL_SetRenderDrawColor(renderer, 255, 50, 170, 255);
   fillRect(renderer, box.x, box.y, box.w, box.h);
   SDL_SetRenderDrawColor(renderer, 255, 215, 240, 255);
@@ -155,11 +159,13 @@ void drawNeonFrame(SDL_Renderer* renderer, const SDL_FRect& box) {
     fillRect(renderer, faceX, faceY + top, faceW, bandH);
   }
   // A faint raster.
+  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(renderer, 0, 0, 0, 34);
   for (float y = faceY; y < faceY + faceH - 1.0F; y += 4.0F) {
     fillRect(renderer, faceX, y, faceW, 1.0F);
   }
   // The inner cyan line, broken at the corners by yellow studs.
+  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
   const float inset = 9.0F;
   const float lx = box.x + inset;
   const float ly = box.y + inset;
@@ -183,6 +189,7 @@ void drawNeonRule(SDL_Renderer* renderer, float centerX, float y, float halfWidt
     return;
   }
   constexpr SDL_Color kBars[] = {{255, 225, 70, 255}, {255, 140, 110, 255}, {255, 60, 170, 255}};
+  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
   float half = halfWidth;
   for (const SDL_Color& c : kBars) {
     SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, c.a);

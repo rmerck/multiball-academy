@@ -69,13 +69,16 @@ bool AssetLoader::readVerified(const AssetEntry& entry, std::vector<std::uint8_t
   return true;
 }
 
-bool AssetLoader::verifyAll() const {
+bool AssetLoader::verifyAll() {
   const AssetEntry* const entries = embeddedAssets();
   const std::size_t count = embeddedAssetCount();
   bool ok = count > 0;
-  std::vector<std::uint8_t> bytes;
+  verified_.assign(count, {});
   for (std::size_t i = 0; i < count; ++i) {
-    ok = readVerified(entries[i], bytes) && ok;
+    ok = readVerified(entries[i], verified_[i]) && ok;
+  }
+  if (!ok) {
+    verified_.clear();
   }
   return ok;
 }
@@ -91,10 +94,14 @@ TexturePtr AssetLoader::loadTexture(SDL_Renderer* renderer, std::string_view nam
     return nullptr;
   }
 
-  std::vector<std::uint8_t> bytes;
-  if (!readVerified(*entry, bytes)) {
+  // Use what verifyAll already read and checked; otherwise do both now.
+  std::vector<std::uint8_t> ownBytes;
+  const auto index = static_cast<std::size_t>(entry - embeddedAssets());
+  const bool kept = index < verified_.size() && !verified_[index].empty();
+  if (!kept && !readVerified(*entry, ownBytes)) {
     return nullptr;
   }
+  const std::vector<std::uint8_t>& bytes = kept ? verified_[index] : ownBytes;
 
   // Check the declared image size before decoding.
   const auto declared = parsePngHeader(bytes.data(), bytes.size());

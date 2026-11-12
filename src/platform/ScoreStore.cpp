@@ -4,10 +4,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <vector>
 
 #include "platform/SafeFile.hpp"
@@ -38,24 +36,6 @@ std::string scoreFilePath() {
 // then refused, so a table that may be perfectly good is not replaced.
 bool saveBlocked = false;
 
-// Removes temporary files that a save interrupted by a crash left behind:
-// regular files named like the score file plus the six-character suffix.
-void removeStaleTemporaries(const std::string& scorePath) {
-  namespace fs = std::filesystem;
-  std::error_code error;
-  const fs::path score(scorePath);
-  const std::string prefix = score.filename().string() + ".";
-  constexpr std::size_t kSuffixLength = 6;
-  for (fs::directory_iterator it(score.parent_path(), error), end; !error && it != end;
-       it.increment(error)) {
-    const std::string name = it->path().filename().string();
-    if (name.size() == prefix.size() + kSuffixLength && name.compare(0, prefix.size(), prefix) == 0 &&
-        it->symlink_status(error).type() == fs::file_type::regular) {
-      fs::remove(it->path(), error);
-    }
-  }
-}
-
 }  // namespace
 
 HighScores loadHighScores() {
@@ -65,6 +45,7 @@ HighScores loadHighScores() {
   if (path.empty()) {
     return scores;
   }
+  // Left by a save that a crash interrupted.
   removeStaleTemporaries(path);
 
   std::vector<std::uint8_t> bytes;

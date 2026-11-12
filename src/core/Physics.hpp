@@ -38,6 +38,9 @@ class PhysicsWorld {
   static constexpr int kSlicesPerStep = 4;
   // Longest step accepted, in seconds. Larger values make the solver diverge.
   static constexpr float kMaxStepSeconds = 0.1F;
+  // Shortest step accepted. Box2D divides by the slice length, and for a
+  // vanishingly small one that quotient overflows and poisons the world.
+  static constexpr float kMinStepSeconds = 1.0e-4F;
 
   // Throws std::runtime_error if the Box2D world cannot be created.
   PhysicsWorld();
@@ -83,7 +86,8 @@ class PhysicsWorld {
   // Events from the most recent step. Cleared at the start of each step.
   const std::vector<PhysicsEvent>& events() const noexcept { return events_; }
 
-  // Advances by one fixed step. Ignored unless 0 < stepSeconds <= kMaxStepSeconds.
+  // Advances by one fixed step. Ignored unless stepSeconds is within
+  // [kMinStepSeconds, kMaxStepSeconds].
   void step(float stepSeconds);
 
   Vec2 ballPosition() const;
@@ -99,11 +103,12 @@ class PhysicsWorld {
   void releaseBall(Vec2 position, Vec2 velocity);
 
   // Teleports the ball and sets its velocity (pixels and pixels per second).
-  // Non-finite input is ignored.
+  // Non-finite input is ignored. The velocity is held to the speed cap.
   void resetBall(Vec2 position, Vec2 velocity);
 
   // Adds velocity (pixels per second) to a ball in play. Ignored while the
-  // ball is held or if the value is not finite.
+  // ball is held or if the value is not finite. The result is held to the
+  // speed cap.
   void pushBall(Vec2 velocityChange);
 
   // False if the ball has left the table shell or its state is not finite.

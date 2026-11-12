@@ -207,28 +207,42 @@ if(BUILD_TESTING)
   target_link_libraries(core_tests PRIVATE pinball_core)
   add_test(NAME core_tests COMMAND core_tests)
 
+  # Scratch and output files go next to the binaries under test, so with a
+  # multi-config generator each configuration has its own.
+  set(PINBALL_TEST_DIR $<TARGET_FILE_DIR:pinball>)
+  # Whatever a test starts gets a per-user preferences directory inside the
+  # build tree, so a test run cannot touch the player's real high score file.
+  # XDG_DATA_HOME is how SDL is told on Linux; macOS has no such switch.
+  set(PINBALL_HEADLESS_ENV
+    "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;XDG_DATA_HOME=${CMAKE_BINARY_DIR}/test_prefs")
+
   # File handling: bounded reads, refusal of links and pipes, atomic saves.
   add_executable(safefile_tests tests/SafeFileTest.cpp)
   target_link_libraries(safefile_tests PRIVATE pinball_platform)
   add_test(NAME safe_files
     COMMAND ${CMAKE_COMMAND} -DTEST=$<TARGET_FILE:safefile_tests>
-            -DSCRATCH=${CMAKE_BINARY_DIR}/safefile_scratch
+            -DSCRATCH=$<TARGET_FILE_DIR:safefile_tests>/safefile_scratch
             -P ${CMAKE_SOURCE_DIR}/tests/RunInScratch.cmake)
 
-  # Assets must be well-formed PNGs with no metadata.
+  # Python runs isolated (-I): no user site directory, no PYTHON* variables
+  # and no import from the script's or the current directory.
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_Interpreter_FOUND)
+    # Assets must be well-formed PNGs with no metadata.
     add_test(NAME assets_clean
-      COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tools/check_assets.py
+      COMMAND Python3::Interpreter -I ${CMAKE_SOURCE_DIR}/tools/check_assets.py
               ${CMAKE_SOURCE_DIR}/assets)
-  endif()
 
-  # The built game must refuse to start if any asset is altered.
-  if(Python3_Interpreter_FOUND)
+    # The built game must refuse to start if any asset is altered.
     add_test(NAME asset_integrity
-      COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tools/test_asset_integrity.py
-              $<TARGET_FILE:pinball> ${CMAKE_BINARY_DIR}/asset_integrity_scratch)
-    set_tests_properties(asset_integrity PROPERTIES TIMEOUT 120)
+      COMMAND Python3::Interpreter -I ${CMAKE_SOURCE_DIR}/tools/test_asset_integrity.py
+              $<TARGET_FILE:pinball> ${PINBALL_TEST_DIR}/asset_integrity_scratch)
+    set_tests_properties(asset_integrity PROPERTIES
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 120)
+  else()
+    # Say so: a run without these would otherwise look complete.
+    message(WARNING "Python 3 not found: the assets_clean, asset_integrity and "
+                    "layout_json tests are not registered")
   endif()
 
   # Rendering smoke test: play ten seconds headless and draw a frame. The
@@ -236,30 +250,28 @@ if(BUILD_TESTING)
   if(PINBALL_BUILD_TOOLS)
     add_test(NAME render_snapshot
       COMMAND pinball_snapshot 1200 render_snapshot.png
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
     add_test(NAME render_about
       COMMAND pinball_snapshot 60 render_about.png about
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
     set_tests_properties(render_about PROPERTIES
-      ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 60)
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
     add_test(NAME render_initials
       COMMAND pinball_snapshot 60 render_initials.png initials
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
     set_tests_properties(render_initials PROPERTIES
-      ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 60)
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
     set_tests_properties(render_snapshot PROPERTIES
-      ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 60)
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
   endif()
 
   # The geometry dump must be valid JSON.
   if(PINBALL_BUILD_TOOLS AND Python3_Interpreter_FOUND)
     add_test(NAME layout_json
-      COMMAND Python3::Interpreter -c
+      COMMAND Python3::Interpreter -I -c
               "import json,subprocess,sys; d=json.loads(subprocess.check_output([sys.argv[1]])); assert len(d['shell'])>10 and d['bumpers'] and d['holes']"
               $<TARGET_FILE:pinball_layout>)
   endif()
-
-  set(PINBALL_HEADLESS_ENV "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 
   # Headless smoke test: run the real binary with no display. The binary itself
   # fails if no simulation step ran.
