@@ -149,6 +149,10 @@ int App::run() {
       for (int i = 0; i < steps; ++i) {
         game_.step(input_);
       }
+      if (steps > 0) {
+        // The simulation has seen every latched press at least once.
+        latched_ = InputState{};
+      }
     }
 
     // The accumulator is frozen while paused, so alpha is stable and nothing snaps.
@@ -187,6 +191,7 @@ void App::handleEvent(const SDL_Event& event) {
       if (event.key.repeat) {
         break;
       }
+      latchKey(event.key.scancode);
       if (event.key.key == SDLK_F3) {
         paused_ = !paused_;
       } else if (event.key.key == SDLK_F4) {
@@ -198,21 +203,55 @@ void App::handleEvent(const SDL_Event& event) {
   }
 }
 
-void App::readInput() {
-  // Scancodes are physical key positions, so the controls sit under the same
-  // fingers on every keyboard layout. Positions match the original defaults.
-  const bool* keys = SDL_GetKeyboardState(nullptr);
-  if (keys == nullptr) {
-    input_ = InputState{};
-    return;
+namespace {
+
+// Maps a physical key to the control it drives, or nullptr. Scancodes are
+// key positions, so the controls sit under the same fingers on every
+// keyboard layout. Positions match the original defaults.
+bool InputState::* controlFor(SDL_Scancode scancode) noexcept {
+  switch (scancode) {
+    case SDL_SCANCODE_Z:
+      return &InputState::leftFlipper;
+    case SDL_SCANCODE_SLASH:
+      return &InputState::rightFlipper;
+    case SDL_SCANCODE_SPACE:
+      return &InputState::plunger;
+    case SDL_SCANCODE_X:
+      return &InputState::nudgeLeft;
+    case SDL_SCANCODE_PERIOD:
+      return &InputState::nudgeRight;
+    case SDL_SCANCODE_UP:
+      return &InputState::nudgeUp;
+    case SDL_SCANCODE_F2:
+      return &InputState::newGame;
+    default:
+      return nullptr;
   }
-  input_.leftFlipper = keys[SDL_SCANCODE_Z];
-  input_.rightFlipper = keys[SDL_SCANCODE_SLASH];
-  input_.plunger = keys[SDL_SCANCODE_SPACE];
-  input_.nudgeLeft = keys[SDL_SCANCODE_X];
-  input_.nudgeRight = keys[SDL_SCANCODE_PERIOD];
-  input_.nudgeUp = keys[SDL_SCANCODE_UP];
-  input_.newGame = keys[SDL_SCANCODE_F2];
+}
+
+constexpr SDL_Scancode kControlKeys[] = {
+    SDL_SCANCODE_Z, SDL_SCANCODE_SLASH, SDL_SCANCODE_SPACE, SDL_SCANCODE_X,
+    SDL_SCANCODE_PERIOD, SDL_SCANCODE_UP, SDL_SCANCODE_F2};
+
+}  // namespace
+
+void App::latchKey(SDL_Scancode scancode) {
+  if (bool InputState::* const control = controlFor(scancode)) {
+    latched_.*control = true;
+  }
+}
+
+void App::readInput() {
+  int keyCount = 0;
+  const bool* keys = SDL_GetKeyboardState(&keyCount);
+  input_ = InputState{};
+  for (const SDL_Scancode scancode : kControlKeys) {
+    bool InputState::* const control = controlFor(scancode);
+    const bool held = keys != nullptr && static_cast<int>(scancode) < keyCount &&
+                      keys[static_cast<int>(scancode)];
+    // Held now, or pressed and released since the last simulation step.
+    input_.*control = held || latched_.*control;
+  }
 }
 
 void App::toggleFullscreen() {

@@ -60,11 +60,11 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 
 ## Physics notes
 
-- Box2D 3.2 runs in metres at 100 playfield pixels per metre, stepped at a fixed 120 Hz with 4 sub-steps.
+- Box2D 3.2 runs in metres at 100 playfield pixels per metre, stepped at a fixed 120 Hz. Each step is run as 4 slices (480 Hz) so a swinging flipper cannot pass through the ball.
 - Playfield space has y pointing down, so table gravity is +9.5 m/s^2 in y. This stands in for the incline of a real table.
-- The ball is a Box2D bullet body with continuous collision, and its speed is capped at 40 m/s.
+- The ball is a Box2D bullet body with continuous collision, and its speed is capped at 30 m/s.
 - The outer shell is one closed chain shape, which avoids ghost collisions at segment joints.
-- Flippers are kinematic bodies driven to an absolute target angle each step (22 rad/s up, 12 rad/s down, 60 degree stroke). They cannot overshoot or be pushed back by the ball.
+- Flippers are kinematic bodies driven to an absolute target angle each step (17 rad/s up, 12 rad/s down, 60 degree stroke). They cannot overshoot or be pushed back by the ball.
 - The plunger is a kinematic block. Holding Space draws it back over one second; on release it drives forward at 3 to 12.5 m/s depending on the draw, and the ball leaves about 1.3 times faster. A full draw clears the arch; a tap does not leave the lane.
 - A one-way gate at the top of the lane is modelled as a wall that is switched on once the launched ball is clear, and off again for the next serve.
 - `src/core/TableLayout.hpp` is the single source of table geometry for physics, drawing and art.

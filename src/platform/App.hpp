@@ -54,6 +54,7 @@ class App {
 
   void handleEvent(const SDL_Event& event);
   void readInput();
+  void latchKey(SDL_Scancode scancode);
   void render(double alpha);
   void drawTableOutline();
   void toggleFullscreen();
@@ -74,6 +75,9 @@ class App {
   std::vector<SDL_FPoint> outline_;
   Game game_;
   InputState input_;
+  // Keys that went down since the last simulation step, held until a step
+  // has consumed them.
+  InputState latched_;
 };
 
 }  // namespace pinball
