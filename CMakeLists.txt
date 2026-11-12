@@ -5,6 +5,12 @@ if(CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
   message(FATAL_ERROR "In-source builds are not supported. Use: cmake -S . -B build")
 endif()
 
+if(APPLE)
+  # For the menu bar hook (src/platform/MacMenu.mm). Enabled here, before any
+  # dependency is added, so every directory of the build knows the language.
+  enable_language(OBJCXX)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -20,12 +26,37 @@ endif()
 
 option(PINBALL_SANITIZE "Build with AddressSanitizer and UBSan" OFF)
 option(PINBALL_WERROR "Treat warnings as errors" OFF)
+option(PINBALL_FETCH_DEPS "Build pinned SDL3 and Box2D from source and link them statically" OFF)
+option(PINBALL_FUZZ "Build only the parser fuzzer (clang with libFuzzer)" OFF)
 
 include(cmake/Hardening.cmake)
 
-# 3.4 is the first release with the built-in PNG loader used for assets.
-find_package(SDL3 3.4 REQUIRED CONFIG)
-find_package(box2d 3.2 REQUIRED CONFIG)
+if(PINBALL_FUZZ)
+  # The fuzzer exercises the core parsers alone: no SDL, no window.
+  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    message(FATAL_ERROR "PINBALL_FUZZ needs clang with libFuzzer (not Apple clang)")
+  endif()
+  add_library(pinball_fuzz_core STATIC
+    src/core/Args.cpp
+    src/core/AssetName.cpp
+    src/core/HighScores.cpp
+    src/core/PngHeader.cpp)
+  target_include_directories(pinball_fuzz_core PUBLIC src)
+  pinball_apply_hardening(pinball_fuzz_core PUBLIC)
+  target_compile_options(pinball_fuzz_core PUBLIC -fsanitize=fuzzer-no-link)
+  add_executable(pinball_fuzz tests/fuzz/FuzzParsers.cpp)
+  target_link_libraries(pinball_fuzz PRIVATE pinball_fuzz_core)
+  target_link_options(pinball_fuzz PRIVATE -fsanitize=fuzzer)
+  return()
+endif()
+
+if(PINBALL_FETCH_DEPS)
+  include(cmake/PinnedDeps.cmake)
+else()
+  # 3.4 is the first release with the built-in PNG loader used for assets.
+  find_package(SDL3 3.4 REQUIRED CONFIG)
+  find_package(box2d 3.2 REQUIRED CONFIG)
+endif()
 
 # Platform-independent game logic. No SDL dependency so it is unit-testable headless.
 add_library(pinball_core STATIC
@@ -66,7 +97,6 @@ add_library(pinball_platform STATIC
 target_link_libraries(pinball_platform PUBLIC pinball_core SDL3::SDL3)
 if(APPLE)
   # The menu bar's About item is routed to the game's own About screen.
-  enable_language(OBJCXX)
   target_sources(pinball_platform PRIVATE src/platform/MacMenu.mm)
   set_source_files_properties(src/platform/MacMenu.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
   target_link_libraries(pinball_platform PRIVATE "-framework Cocoa")
@@ -78,6 +108,21 @@ target_link_libraries(pinball PRIVATE pinball_platform)
 # machine that built it.
 if(NOT MSVC)
   target_link_options(pinball PRIVATE $<$<CONFIG:Release>:-Wl,-S>)
+endif()
+
+# macOS hardened runtime: the system then ignores DYLD_INSERT_LIBRARIES and
+# refuses to load any library that is not Apple's. That needs the game to be
+# self-contained, so it is tied to the statically linked pinned dependencies.
+# The signature is ad hoc: it turns the protections on but does not identify
+# a publisher, which takes a Developer ID certificate and notarisation.
+if(APPLE AND PINBALL_FETCH_DEPS AND NOT PINBALL_SANITIZE)
+  option(PINBALL_HARDENED_RUNTIME "Ad hoc sign the game with the hardened runtime" ON)
+  if(PINBALL_HARDENED_RUNTIME)
+    add_custom_command(TARGET pinball POST_BUILD
+      COMMAND codesign --force --sign - --options runtime $<TARGET_FILE:pinball>
+      COMMENT "Signing with the hardened runtime"
+      VERBATIM)
+  endif()
 endif()
 
 # Asset integrity: the size and SHA-256 of every asset are compiled into the
