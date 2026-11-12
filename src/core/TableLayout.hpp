@@ -69,7 +69,9 @@ constexpr Capsule mirrored(const Capsule& c) noexcept {
 // top surface (the 30 degree rest angle plus the bat's 2.9 degree taper), so
 // a ball rolling down the inlane feeds onto the flipper without a bump.
 inline constexpr Capsule kLeftGuideUpper{{90.0F, 640.0F}, {90.0F, 743.2F}, kWallRadius};
-inline constexpr Capsule kLeftGuideLower{{90.0F, 743.2F}, {236.0F, 837.7F}, kWallRadius};
+// It runs on into the flipper's base circle, ending inside it, so there is
+// no notch between the two for the ball to strike.
+inline constexpr Capsule kLeftGuideLower{{90.0F, 743.2F}, {247.0F, 844.8F}, kWallRadius};
 
 // Static interior walls.
 inline constexpr std::array<Capsule, 5> kWalls{{
