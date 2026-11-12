@@ -9,6 +9,18 @@
 #include "core/Game.hpp"
 #include "core/TableLayout.hpp"
 
+// The seam Game leaves for tests: puts the ball somewhere by hand.
+struct pinball::GameTestAccess {
+  static void placeBall(Game& game, Vec2 position) {
+    game.physics_.resetBall(position, {0.0F, 0.0F});
+  }
+  // As if the ball had just left the launch lane.
+  static void putInPlay(Game& game) {
+    game.physics_.setLaneGateClosed(true);
+    game.rules_.onBallInPlay();
+  }
+};
+
 namespace {
 
 using pinball::BallView;
@@ -212,5 +224,47 @@ void testGame() {
     CHECK(rampRides >= 1);
     // Other holes were visited too, and they hide the ball.
     CHECK(captures == rampRides || hiddenSteps > 0);
+  }
+  {  // Fail safe: a ball lost outside the table goes back on the plunger, and
+     // the rules hear of it. A tilt at that moment has no drain to end it and
+     // would leave the plunger dead for good.
+    Game game;
+    InputState input;
+    pinball::GameTestAccess::placeBall(game, {300.0F, 300.0F});
+    pinball::GameTestAccess::putInPlay(game);
+    for (int i = 0; i < 3; ++i) {
+      input.nudgeLeft = true;
+      game.step(input);
+      input.nudgeLeft = false;
+      game.step(input);
+    }
+    CHECK(game.rules().tilted());
+    pinball::GameTestAccess::placeBall(game, {-500.0F, 300.0F});
+    game.step(input);
+    CHECK(distance(game.ball().position, table::kBallStart) < 2.0F);
+    CHECK(!game.laneGateClosed());
+    CHECK(!game.rules().tilted());
+    CHECK(game.drainCount() == 0);
+    CHECK(game.rules().ball() == 1);
+    // Out of play again: shoves on the plunger do not count towards a tilt.
+    for (int i = 0; i < 3; ++i) {
+      input.nudgeLeft = true;
+      game.step(input);
+      input.nudgeLeft = false;
+      game.step(input);
+    }
+    CHECK(!game.rules().tilted());
+    // And the plunger works: a full draw sends the ball out of the lane.
+    input.plunger = true;
+    for (int i = 0; i < 150; ++i) {
+      game.step(input);
+    }
+    input.plunger = false;
+    bool launched = false;
+    for (int i = 0; i < 360 && !launched; ++i) {
+      game.step(input);
+      launched = game.laneGateClosed();
+    }
+    CHECK(launched);
   }
 }

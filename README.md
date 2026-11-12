@@ -263,7 +263,6 @@ Assets are exported with all metadata off. `tools/check_assets.py` (run by `ctes
 Minor findings from review that were looked at and left as they are:
 
 - Only the ball and the flippers are drawn between steps. The plunger, the nudge jolt and the lights show the latest 120 Hz step, and the picture is up to one step (8 ms) behind the simulation.
-- The fail-safe that returns a lost ball to the plunger cannot be reached through the game's public interface, so the game has no test of it; the rule it calls is unit tested. It did not fire in 40 million soak-test steps.
 - The flippers and plunger are commanded on every physics slice, even at rest (about a tenth of the 8 microseconds a step takes).
 - HUD text is redrawn as rectangles every frame. On SDL's software renderer the About, initials and pause screens take 15 to 24 ms a frame; the loop sleeps while they are up.
 - `clang-tidy` is not run in CI. A configuration is in `.clang-tidy`.
