@@ -50,9 +50,13 @@ bool AssetLoader::readVerified(const AssetEntry& entry, std::vector<std::uint8_t
   const auto expected = static_cast<std::size_t>(entry.size);
   const ReadResult result = readRegularFile(path, expected, bytes);
   if (result != ReadResult::Ok || bytes.size() != expected) {
-    logAssetError(entry.name, result == ReadResult::Missing
-                                  ? "missing"
-                                  : "integrity check failed: not a regular file of the built size");
+    const char* reason = "integrity check failed: not a regular file of the built size";
+    if (result == ReadResult::Missing) {
+      reason = "missing";
+    } else if (result == ReadResult::Error) {
+      reason = "could not be read";
+    }
+    logAssetError(entry.name, reason);
     bytes.clear();
     return false;
   }

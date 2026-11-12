@@ -45,20 +45,21 @@ HighScores loadHighScores() {
   if (result == ReadResult::Missing) {
     return scores;  // Not there yet: first run.
   }
-  if (result == ReadResult::Error) {
-    // Unreadable right now. Leave it alone: it may be fine next time.
-    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Could not read the high score file");
-    return scores;
-  }
   const std::string_view text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
   if (result != ReadResult::Ok || !scores.parse(text)) {
-    // Keep the unusable file for inspection instead of overwriting it at
-    // the next save. It may come from a newer version.
+    // Unreadable, not a plain file, or not valid. Keep whatever is there for
+    // inspection instead of letting the next save replace it: it may come
+    // from a newer version, or be readable again later. Renaming moves a
+    // link itself, never what it points at.
     const std::string rejected = path + ".bad";
     SDL_RemovePath(rejected.c_str());
-    SDL_RenamePath(path.c_str(), rejected.c_str());
-    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "High score file is not valid; set aside as %s",
-                rejected.c_str());
+    if (SDL_RenamePath(path.c_str(), rejected.c_str())) {
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "High score file is not usable; set aside as %s",
+                  rejected.c_str());
+    } else {
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                  "High score file is not usable and could not be set aside: %s", SDL_GetError());
+    }
     return HighScores{};
   }
   return scores;

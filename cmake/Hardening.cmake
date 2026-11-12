@@ -20,8 +20,10 @@ function(pinball_apply_hardening target scope)
     -Wnon-virtual-dtor -Wold-style-cast -Wcast-align -Woverloaded-virtual
     -Wnull-dereference -Wformat=2 -Wimplicit-fallthrough
     -fstack-protector-strong)
-  # Keep the builder's directory names out of the binary: file names in
-  # assertions and debug information are recorded relative to the source tree.
+  # Keep the builder's directory names out of assertion messages and debug
+  # information: file names are recorded relative to the source tree. (On
+  # macOS a build with debug information still lists its object files by
+  # full path; Release builds, which are what is handed out, do not.)
   target_compile_options(${target} ${scope}
     -ffile-prefix-map=${CMAKE_BINARY_DIR}=build
     -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.)

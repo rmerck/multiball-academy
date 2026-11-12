@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -31,7 +32,9 @@ void check(bool ok, const char* what, int line) {
 
 std::string slurp(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
-  return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  std::ostringstream text;
+  text << in.rdbuf();
+  return text.str();
 }
 
 void spit(const std::filesystem::path& path, const std::string& text) {
