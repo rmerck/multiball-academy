@@ -1,5 +1,6 @@
 #include "platform/App.hpp"
 
+#include <cmath>
 #include <cstddef>
 #include <utility>
 
@@ -137,6 +138,8 @@ int App::run() {
     const double frameSeconds = static_cast<double>(frameStart - previous) / 1e9;
     previous = frameStart;
 
+    readInput();
+
     // While paused the clock keeps moving but nothing accumulates, so there is
     // no burst of catch-up steps on resume.
     if (!paused_) {
@@ -193,6 +196,23 @@ void App::handleEvent(const SDL_Event& event) {
   }
 }
 
+void App::readInput() {
+  // Scancodes are physical key positions, so the controls sit under the same
+  // fingers on every keyboard layout. Positions match the original defaults.
+  const bool* keys = SDL_GetKeyboardState(nullptr);
+  if (keys == nullptr) {
+    input_ = InputState{};
+    return;
+  }
+  input_.leftFlipper = keys[SDL_SCANCODE_Z];
+  input_.rightFlipper = keys[SDL_SCANCODE_SLASH];
+  input_.plunger = keys[SDL_SCANCODE_SPACE];
+  input_.nudgeLeft = keys[SDL_SCANCODE_X];
+  input_.nudgeRight = keys[SDL_SCANCODE_PERIOD];
+  input_.nudgeUp = keys[SDL_SCANCODE_UP];
+  input_.newGame = keys[SDL_SCANCODE_F2];
+}
+
 void App::toggleFullscreen() {
   // Ask the window, not a cached flag: the user can also change fullscreen
   // through the window manager.
@@ -239,6 +259,21 @@ void App::render(double /*alpha*/) {
 
   // Placeholder outline until the table art lands.
   drawTableOutline();
+
+  // Flippers as thick placeholder lines along their centre lines.
+  SDL_SetRenderDrawColor(r, 230, 120, 60, SDL_ALPHA_OPAQUE);
+  for (std::size_t i = 0; i < table::kFlippers.size(); ++i) {
+    const FlipperView flipper = game_.flipper(i);
+    const float dx = std::cos(flipper.angle);
+    const float dy = std::sin(flipper.angle);
+    for (int offset = -3; offset <= 3; ++offset) {
+      const float ox = -dy * static_cast<float>(offset);
+      const float oy = dx * static_cast<float>(offset);
+      SDL_RenderLine(r, flipper.pivot.x + ox, flipper.pivot.y + oy,
+                     flipper.pivot.x + dx * table::kFlipperLength + ox,
+                     flipper.pivot.y + dy * table::kFlipperLength + oy);
+    }
+  }
 
   const BallView ball = game_.ball();
   const float radius = table::kBallRadius;

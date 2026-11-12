@@ -11,7 +11,7 @@ This is an independent fan project. It contains no code or assets from the origi
 | 1 | Project skeleton, window, fixed-step loop, CI | Done |
 | 2 | Asset loading and rendering | In progress: loader and ball sprite done, table art pending |
 | 3 | Physics foundation | Done: Box2D world, table shell, ball, drain |
-| 4 | Flippers | Planned |
+| 4 | Flippers | Done |
 | 5 | Plunger and launch lane | Planned |
 | 6 | Bumpers, targets, ramps, table geometry | Planned |
 | 7 | Scoring, lights, UI | Planned |
@@ -38,10 +38,12 @@ Options:
 
 ## Controls
 
+Keys are read by physical position (scancode), so they sit where Z and / are on a US keyboard whatever the layout.
+
 | Key | Action | State |
 |---|---|---|
-| Z | Left flipper | Planned |
-| / | Right flipper | Planned |
+| Z | Left flipper | Done |
+| / | Right flipper | Done |
 | Space | Plunger, hold for power | Planned |
 | X | Nudge left | Planned |
 | . | Nudge right | Planned |
@@ -62,6 +64,7 @@ Options:
 - Playfield space has y pointing down, so table gravity is +9.5 m/s^2 in y. This stands in for the incline of a real table.
 - The ball is a Box2D bullet body with continuous collision, and its speed is capped at 40 m/s.
 - The outer shell is one closed chain shape, which avoids ghost collisions at segment joints.
+- Flippers are kinematic bodies driven to an absolute target angle each step (22 rad/s up, 12 rad/s down, 60 degree stroke). They cannot overshoot or be pushed back by the ball.
 - `src/core/TableLayout.hpp` is the single source of table geometry for physics, drawing and art.
 
 ## Layout

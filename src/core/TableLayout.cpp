@@ -6,7 +6,6 @@ namespace pinball::table {
 
 std::vector<Vec2> outerBoundary() {
   constexpr int kArchSegments = 48;
-  constexpr float kPi = 3.14159265358979323846F;
 
   std::vector<Vec2> points;
   points.reserve(static_cast<std::size_t>(kArchSegments) + 3U);

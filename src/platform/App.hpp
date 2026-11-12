@@ -53,6 +53,7 @@ class App {
       Textures textures);
 
   void handleEvent(const SDL_Event& event);
+  void readInput();
   void render(double alpha);
   void drawTableOutline();
   void toggleFullscreen();

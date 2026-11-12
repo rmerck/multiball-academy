@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "core/Input.hpp"
@@ -12,6 +13,12 @@ namespace pinball {
 struct BallView {
   Vec2 position;  // Playfield pixels.
   float angle = 0.0F;  // Radians.
+};
+
+// What the renderer needs to draw one flipper.
+struct FlipperView {
+  Vec2 pivot;          // Playfield pixels.
+  float angle = 0.0F;  // Radians, clockwise on screen from +x.
 };
 
 // All game state and rules. Has no dependency on SDL so it can be driven and
@@ -32,6 +39,8 @@ class Game {
   std::uint64_t stepCount() const noexcept { return stepCount_; }
 
   BallView ball() const;
+  // Index 0 is the left flipper, 1 the right.
+  FlipperView flipper(std::size_t index) const;
   // Number of balls lost down the drain so far.
   std::uint32_t drainCount() const noexcept { return drainCount_; }
 

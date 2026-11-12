@@ -8,6 +8,7 @@ int main() {
   testArgs();
   testAssetName();
   testFixedTimestep();
+  testFlippers();
   testGame();
   testPhysics();
   testPngHeader();

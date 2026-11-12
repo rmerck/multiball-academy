@@ -6,6 +6,7 @@
 void testArgs();
 void testAssetName();
 void testFixedTimestep();
+void testFlippers();
 void testGame();
 void testPhysics();
 void testPngHeader();

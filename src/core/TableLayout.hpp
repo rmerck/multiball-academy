@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <vector>
 
 #include "core/Vec2.hpp"
@@ -73,6 +74,28 @@ inline constexpr Triangle kRightSlingshot{
       mirrored(kLeftSlingshot.points[2])}},
     kLeftSlingshot.cornerRadius};
 inline constexpr std::array<Triangle, 2> kSlingshots{{kLeftSlingshot, kRightSlingshot}};
+
+// Flippers. Angles are in radians, measured from +x towards +y (clockwise on
+// screen, because y points down). The flipper extends from its pivot along
+// the direction of its angle.
+struct Flipper {
+  Vec2 pivot;
+  float restAngle;
+  float activeAngle;
+};
+
+inline constexpr float kPi = 3.14159265358979323846F;
+inline constexpr float kFlipperLength = 98.0F;      // Pivot to tip centre.
+inline constexpr float kFlipperBaseRadius = 11.0F;
+inline constexpr float kFlipperTipRadius = 6.0F;
+inline constexpr float kFlipperSwing = kPi / 6.0F;  // 30 degrees either side of level.
+
+inline constexpr Flipper kLeftFlipper{{244.0F, 850.0F}, kFlipperSwing, -kFlipperSwing};
+inline constexpr Flipper kRightFlipper{mirrored(kLeftFlipper.pivot), kPi - kFlipperSwing,
+                                       kPi + kFlipperSwing};
+inline constexpr std::array<Flipper, 2> kFlippers{{kLeftFlipper, kRightFlipper}};
+inline constexpr std::size_t kLeftFlipperIndex = 0;
+inline constexpr std::size_t kRightFlipperIndex = 1;
 
 // Outer shell as a closed loop, ordered counter-clockwise on screen so the
 // one-sided collision normals point into the table.

@@ -17,6 +17,7 @@ Game::Game() { serveBall(); }
 void Game::serveBall() { physics_.resetBall(table::kBallStart, kAutoLaunchVelocity); }
 
 void Game::step(const InputState& input) {
+  physics_.setFlippers(input.leftFlipper, input.rightFlipper);
   physics_.step(static_cast<float>(kStepSeconds));
 
   if (!physics_.ballIsSane()) {
@@ -29,6 +30,13 @@ void Game::step(const InputState& input) {
 
   ++stepCount_;
   previousInput_ = input;
+}
+
+FlipperView Game::flipper(std::size_t index) const {
+  if (index >= table::kFlippers.size()) {
+    return {};
+  }
+  return {table::kFlippers[index].pivot, physics_.flipperAngle(index)};
 }
 
 BallView Game::ball() const { return {physics_.ballPosition(), physics_.ballAngle()}; }
