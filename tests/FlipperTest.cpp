@@ -50,8 +50,8 @@ void testFlippers() {
         stepsToTop = i + 1;
       }
     }
-    // 60 degrees at 22 rad/s is about 48 ms, or 6 steps.
-    CHECK(stepsToTop >= 5 && stepsToTop <= 7);
+    // 60 degrees at 17 rad/s is about 62 ms, or 8 steps.
+    CHECK(stepsToTop >= 7 && stepsToTop <= 9);
     CHECK(std::fabs(world.flipperAngle(right) - table::kRightFlipper.restAngle) < kTolerance);
 
     // Releasing lets it fall back, more slowly, and stop exactly at rest.
@@ -66,7 +66,7 @@ void testFlippers() {
       }
     }
     CHECK(stepsToRest > stepsToTop);
-    CHECK(stepsToRest <= 12);
+    CHECK(stepsToRest <= 13);
   }
 
   {  // Rapid alternation never leaves the limits.
@@ -120,5 +120,86 @@ void testFlippers() {
       }
     }
     CHECK(!passedThrough);
+  }
+
+  {  // A ball does not tunnel through a swinging flipper either. Sweep where
+     // it lands, how fast it falls, and when the flipper fires. A ball that
+     // tunnelled ends up underneath the bat, between its ends.
+    int tunnelled = 0;
+    int runs = 0;
+    float fastest = 0.0F;
+    for (const std::size_t index : {left, right}) {
+      const table::Flipper& f = table::kFlippers[index];
+      for (int along = 2; along <= 9; ++along) {
+        for (int fall = 0; fall < 5; ++fall) {
+          for (int delay = 0; delay < 12; ++delay) {
+            ++runs;
+            PhysicsWorld world;
+            const float t = static_cast<float>(along) / 10.0F;
+            const Vec2 onBat{f.pivot.x + std::cos(f.restAngle) * table::kFlipperLength * t,
+                             f.pivot.y + std::sin(f.restAngle) * table::kFlipperLength * t};
+            world.resetBall({onBat.x, onBat.y - 90.0F},
+                            {0.0F, 200.0F + 500.0F * static_cast<float>(fall)});
+            bool under = false;
+            for (int step = 0; step < 50; ++step) {
+              const bool fire = step >= delay && step < delay + 20;
+              world.setFlippers(fire && index == left, fire && index == right);
+              world.step(kStep);
+
+              const Vec2 v = world.ballVelocity();
+              fastest = std::max(fastest, std::sqrt(v.x * v.x + v.y * v.y));
+
+              // Ball position in the flipper's current frame.
+              const float angle = world.flipperAngle(index);
+              const Vec2 rel = world.ballPosition() - f.pivot;
+              const float alongBat = rel.x * std::cos(angle) + rel.y * std::sin(angle);
+              const float across = -rel.x * std::sin(angle) + rel.y * std::cos(angle);
+              // "Below" is +across for the left flipper and -across for the
+              // right, whose frame is rotated half a turn.
+              const float below = index == left ? across : -across;
+              if (alongBat > table::kFlipperLength * 0.15F &&
+                  alongBat < table::kFlipperLength * 0.85F && below > 4.0F && below < 22.0F) {
+                under = true;
+              }
+            }
+            tunnelled += under ? 1 : 0;
+          }
+        }
+      }
+    }
+    CHECK(runs == 960);
+    CHECK(tunnelled == 0);
+    // The speed cap holds even for balls struck by a moving flipper.
+    CHECK(fastest <= PhysicsWorld::kMaxBallSpeed * PhysicsWorld::kPixelsPerMeter * 1.001F);
+  }
+
+  {  // A ball rolling down the inlane feeds onto the resting flipper smoothly:
+     // it stays in contact rather than hopping off the pivot.
+    PhysicsWorld world;
+    const table::Capsule& guide = table::kLeftGuideLower;
+    // Start resting on the guide's sloped surface, not dropped onto it.
+    const Vec2 run = guide.b - guide.a;
+    const float runLength = std::sqrt(run.x * run.x + run.y * run.y);
+    const Vec2 up{run.y / runLength, -run.x / runLength};
+    const Vec2 startOnLine = guide.a + run * 0.2F;
+    world.resetBall(startOnLine + up * (guide.radius + table::kBallRadius + 0.2F), {0.0F, 0.0F});
+    float worstGap = 0.0F;
+    const table::Flipper& f = table::kLeftFlipper;
+    for (int step = 0; step < 240; ++step) {
+      world.step(kStep);
+      const Vec2 rel = world.ballPosition() - f.pivot;
+      const float alongBat = rel.x * std::cos(f.restAngle) + rel.y * std::sin(f.restAngle);
+      const float above = rel.x * std::sin(f.restAngle) - rel.y * std::cos(f.restAngle);
+      if (alongBat > 5.0F && alongBat < table::kFlipperLength * 0.8F) {
+        // Bat half-thickness tapers from base to tip.
+        const float half = table::kFlipperBaseRadius +
+                           (table::kFlipperTipRadius - table::kFlipperBaseRadius) * alongBat /
+                               table::kFlipperLength;
+        worstGap = std::max(worstGap, above - half - table::kBallRadius);
+      }
+    }
+    // A few pixels of float remain where the guide's round end meets the
+    // pivot; anything larger is a visible hop.
+    CHECK(worstGap < 3.5F);
   }
 }

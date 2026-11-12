@@ -56,8 +56,11 @@ constexpr Capsule mirrored(const Capsule& c) noexcept {
   return {mirrored(c.a), mirrored(c.b), c.radius};
 }
 
-inline constexpr Capsule kLeftGuideUpper{{90.0F, 640.0F}, {90.0F, 795.0F}, kWallRadius};
-inline constexpr Capsule kLeftGuideLower{{90.0F, 795.0F}, {236.0F, 842.0F}, kWallRadius};
+// Lane guides. The lower run is laid along the line of a resting flipper's
+// top surface (the 30 degree rest angle plus the bat's 2.9 degree taper), so
+// a ball rolling down the inlane feeds onto the flipper without a bump.
+inline constexpr Capsule kLeftGuideUpper{{90.0F, 640.0F}, {90.0F, 743.2F}, kWallRadius};
+inline constexpr Capsule kLeftGuideLower{{90.0F, 743.2F}, {236.0F, 837.7F}, kWallRadius};
 
 // Static interior walls.
 inline constexpr std::array<Capsule, 6> kWalls{{
@@ -70,7 +73,7 @@ inline constexpr std::array<Capsule, 6> kWalls{{
 }};
 
 inline constexpr Triangle kLeftSlingshot{
-    {{{140.0F, 655.0F}, {140.0F, 770.0F}, {222.0F, 800.0F}}}, 3.0F};
+    {{{140.0F, 640.0F}, {140.0F, 730.0F}, {222.0F, 784.0F}}}, 3.0F};
 inline constexpr Triangle kRightSlingshot{
     {{mirrored(kLeftSlingshot.points[0]), mirrored(kLeftSlingshot.points[1]),
       mirrored(kLeftSlingshot.points[2])}},

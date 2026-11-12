@@ -16,9 +16,13 @@ class PhysicsWorld {
   static constexpr float kPixelsPerMeter = 100.0F;
   // In-plane gravity of the inclined table, in m/s^2.
   static constexpr float kGravity = 9.5F;
-  // Hard cap on ball speed in m/s. Keeps continuous collision reliable: at
-  // 120 Hz this is 25 px per step, about one ball diameter.
+  // Hard cap on ball speed in m/s, enforced after every slice.
   static constexpr float kMaxBallSpeed = 30.0F;
+  // Each step is simulated as this many equal slices. Box2D sweeps the fast
+  // ball but not a rotating kinematic flipper, whose tip would otherwise move
+  // most of a ball diameter per step and could pass through the ball. At four
+  // slices the tip moves about 3.5 px per slice.
+  static constexpr int kSlicesPerStep = 4;
   // Longest step accepted, in seconds. Larger values make the solver diverge.
   static constexpr float kMaxStepSeconds = 0.1F;
 
@@ -29,8 +33,8 @@ class PhysicsWorld {
   PhysicsWorld& operator=(const PhysicsWorld&) = delete;
 
   // Flipper stroke speeds in radians per second. A real flipper completes its
-  // stroke in roughly 50 ms and falls back more slowly.
-  static constexpr float kFlipperUpSpeed = 22.0F;
+  // stroke in roughly 60 ms and falls back more slowly.
+  static constexpr float kFlipperUpSpeed = 17.0F;
   static constexpr float kFlipperDownSpeed = 12.0F;
 
   // Sets which flipper buttons are held. Applied on the next step.
@@ -58,6 +62,7 @@ class PhysicsWorld {
   void buildBall();
   void buildFlippers();
   void driveFlippers(float stepSeconds);
+  void clampBallSpeed();
 
   struct FlipperState {
     b2BodyId body{};
