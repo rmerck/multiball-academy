@@ -6,6 +6,7 @@
 #include "core/AssetName.hpp"
 #include "core/PngHeader.hpp"
 #include "platform/EmbeddedManifest.hpp"
+#include "platform/SafeFile.hpp"
 
 namespace pinball {
 
@@ -14,10 +15,6 @@ namespace {
 struct SurfaceDeleter {
   void operator()(SDL_Surface* s) const noexcept { SDL_DestroySurface(s); }
 };
-struct IoDeleter {
-  void operator()(SDL_IOStream* io) const noexcept { SDL_CloseIO(io); }
-};
-using IoPtr = std::unique_ptr<SDL_IOStream, IoDeleter>;
 
 void logAssetError(std::string_view name, const char* what) {
   SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Asset %.*s: %s", static_cast<int>(name.size()),
@@ -48,41 +45,21 @@ bool AssetLoader::readVerified(const AssetEntry& entry, std::vector<std::uint8_t
   }
 
   const std::string path = root_ + std::string(entry.name);
-  // Only regular files. Opening a FIFO or device placed at the asset path
-  // could block forever or never end.
-  SDL_PathInfo info{};
-  if (!SDL_GetPathInfo(path.c_str(), &info)) {
-    logAssetError(entry.name, SDL_GetError());
-    return false;
-  }
-  if (info.type != SDL_PATHTYPE_FILE || info.size != entry.size) {
-    logAssetError(entry.name, "integrity check failed: not a regular file of the built size");
-    return false;
-  }
-  const IoPtr io(SDL_IOFromFile(path.c_str(), "rb"));
-  if (!io) {
-    logAssetError(entry.name, SDL_GetError());
-    return false;
-  }
-
-  // Read at most one byte more than expected: enough to notice a file that
-  // has grown, without ever allocating for an attacker-chosen size.
+  // Only a regular file of exactly the built size. Never more than one byte
+  // beyond that is read, so nothing is allocated for an attacker-chosen size.
   const auto expected = static_cast<std::size_t>(entry.size);
-  bytes.resize(expected + 1U);
-  std::size_t total = 0;
-  while (total < bytes.size()) {
-    const std::size_t got = SDL_ReadIO(io.get(), bytes.data() + total, bytes.size() - total);
-    if (got == 0) {
-      break;
+  const ReadResult result = readRegularFile(path, expected, bytes);
+  if (result != ReadResult::Ok || bytes.size() != expected) {
+    const char* reason = "integrity check failed: not a regular file of the built size";
+    if (result == ReadResult::Missing) {
+      reason = "missing";
+    } else if (result == ReadResult::Error) {
+      reason = "could not be read";
     }
-    total += got;
-  }
-  if (total != expected) {
-    logAssetError(entry.name, "integrity check failed: size differs from the build");
+    logAssetError(entry.name, reason);
     bytes.clear();
     return false;
   }
-  bytes.resize(expected);
 
   if (checkAsset(entry, bytes.data(), bytes.size()) != AssetCheck::Ok) {
     logAssetError(entry.name, "integrity check failed: content differs from the build");

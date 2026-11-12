@@ -106,6 +106,14 @@ def main() -> int:
             os.mkfifo(target)
             expect("%s replaced by a FIFO" % rel, False)
 
+        # A symbolic link is refused even when it points at the right bytes.
+        if os.name == "posix":
+            fresh_assets()
+            genuine = target.with_name(target.name + ".real")
+            target.rename(genuine)
+            os.symlink(genuine, target)
+            expect("%s replaced by a link to a genuine copy" % rel, False)
+
         fresh_assets()
         target.unlink()
         target.mkdir()

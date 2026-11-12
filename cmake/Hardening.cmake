@@ -3,7 +3,9 @@
 # and infinite input, and fast-math lets the compiler delete those checks.
 function(pinball_apply_hardening target scope)
   if(MSVC)
-    target_compile_options(${target} ${scope} /W4 /permissive- /sdl)
+    # Control-flow guard, and the loader protections made explicit.
+    target_compile_options(${target} ${scope} /W4 /permissive- /sdl /guard:cf)
+    target_link_options(${target} ${scope} /guard:cf /DYNAMICBASE /NXCOMPAT)
     if(PINBALL_WERROR)
       target_compile_options(${target} ${scope} /WX)
     endif()
@@ -18,8 +20,10 @@ function(pinball_apply_hardening target scope)
     -Wnon-virtual-dtor -Wold-style-cast -Wcast-align -Woverloaded-virtual
     -Wnull-dereference -Wformat=2 -Wimplicit-fallthrough
     -fstack-protector-strong)
-  # Keep the builder's directory names out of the binary: file names in
-  # assertions and debug information are recorded relative to the source tree.
+  # Keep the builder's directory names out of assertion messages and debug
+  # information: file names are recorded relative to the source tree. (On
+  # macOS a build with debug information still lists its object files by
+  # full path; Release builds, which are what is handed out, do not.)
   target_compile_options(${target} ${scope}
     -ffile-prefix-map=${CMAKE_BINARY_DIR}=build
     -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.)
@@ -31,7 +35,13 @@ function(pinball_apply_hardening target scope)
     target_compile_options(${target} ${scope} -fstack-clash-protection)
     target_link_options(${target} ${scope} -Wl,-z,relro,-z,now)
     if(NOT PINBALL_SANITIZE)
-      target_compile_options(${target} ${scope} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2)
+      target_compile_options(${target} ${scope} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3)
+    endif()
+    # Control-flow protection where the compiler and processor have it.
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag(-fcf-protection=full PINBALL_HAS_CF_PROTECTION)
+    if(PINBALL_HAS_CF_PROTECTION)
+      target_compile_options(${target} ${scope} -fcf-protection=full)
     endif()
   endif()
   if(PINBALL_WERROR)

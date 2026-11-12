@@ -10,6 +10,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# Makes executables position independent at link time too, where supported.
+include(CheckPIESupported)
+check_pie_supported(LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
@@ -55,6 +58,7 @@ add_library(pinball_platform STATIC
   src/platform/EmbeddedManifest.cpp
   src/platform/Hud.cpp
   src/platform/InitialsScreen.cpp
+  src/platform/SafeFile.cpp
   src/platform/ScoreStore.cpp
   src/platform/TableRenderer.cpp
   src/platform/Text.cpp
@@ -70,6 +74,11 @@ endif()
 
 add_executable(pinball src/main.cpp)
 target_link_libraries(pinball PRIVATE pinball_platform)
+# A Release game carries no debug map, so it names no directory of the
+# machine that built it.
+if(NOT MSVC)
+  target_link_options(pinball PRIVATE $<$<CONFIG:Release>:-Wl,-S>)
+endif()
 
 # Asset integrity: the size and SHA-256 of every asset are compiled into the
 # executable, which checks the files against them before it starts. The
@@ -143,6 +152,14 @@ if(BUILD_TESTING)
   )
   target_link_libraries(core_tests PRIVATE pinball_core)
   add_test(NAME core_tests COMMAND core_tests)
+
+  # File handling: bounded reads, refusal of links and pipes, atomic saves.
+  add_executable(safefile_tests tests/SafeFileTest.cpp)
+  target_link_libraries(safefile_tests PRIVATE pinball_platform)
+  add_test(NAME safe_files
+    COMMAND ${CMAKE_COMMAND} -DTEST=$<TARGET_FILE:safefile_tests>
+            -DSCRATCH=${CMAKE_BINARY_DIR}/safefile_scratch
+            -P ${CMAKE_SOURCE_DIR}/tests/RunInScratch.cmake)
 
   # Assets must be well-formed PNGs with no metadata.
   find_package(Python3 COMPONENTS Interpreter)

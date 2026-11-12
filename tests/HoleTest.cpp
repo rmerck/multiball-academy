@@ -203,10 +203,14 @@ void testHoles() {
     for (const float x : {252.0F, 263.0F, 268.0F, 281.0F}) {
       PhysicsWorld world;
       world.resetBall({x, 90.0F}, {0.0F, 0.0F});
-      for (int s = 0; s < 120 * 5 && !world.ballHeld(); ++s) {
+      // It must leave the area. Where it is later does not matter: a bumper
+      // may well send it back up, and that differs between platforms.
+      bool movedOn = false;
+      for (int s = 0; s < 120 * 5 && !movedOn; ++s) {
         world.step(kStep);
+        movedOn = world.ballHeld() || world.ballPosition().y > 190.0F;
       }
-      CHECK(world.ballHeld() || world.ballPosition().y > 190.0F);
+      CHECK(movedOn);
     }
   }
 
