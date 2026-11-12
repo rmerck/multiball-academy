@@ -6,6 +6,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include <cstring>
 #include <exception>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -40,16 +42,12 @@ struct RendererDeleter {
 // letters, digits and underscores, ending in ".png". No path separators.
 bool isPlainPngName(std::string_view name) noexcept {
   constexpr std::string_view kExtension = ".png";
-  if (name.size() <= kExtension.size() || name.size() > 64 ||
-      name.substr(name.size() - kExtension.size()) != kExtension) {
+  if (name.size() <= kExtension.size() || name.size() > 64 || !name.ends_with(kExtension)) {
     return false;
   }
-  for (const char c : name.substr(0, name.size() - kExtension.size())) {
-    if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) {
-      return false;
-    }
-  }
-  return true;
+  return std::ranges::all_of(name.substr(0, name.size() - kExtension.size()), [](char c) {
+    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+  });
 }
 
 // A fixed script that exercises the table: launch, then work the flippers.
@@ -81,11 +79,8 @@ bool hasContent(SDL_Surface* surface) {
     for (int x = 0; x < width && distinct < kNeeded; x += 4) {
       std::uint32_t value = 0;
       std::memcpy(&value, row + static_cast<std::size_t>(x) * 4U, sizeof value);
-      bool known = false;
-      for (std::size_t i = 0; i < distinct; ++i) {
-        known = known || seen[i] == value;
-      }
-      if (!known) {
+      const auto known = std::span(seen).first(distinct);
+      if (std::ranges::find(known, value) == known.end()) {
         seen[distinct++] = value;
       }
     }

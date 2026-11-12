@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,26 +22,20 @@ constexpr const char* kFileName = "highscores.txt";
 // Full path of the score file, or empty if there is no preferences directory.
 std::string scoreFilePath() {
   // Created if missing; the returned string is ours to free.
-  char* const directory = SDL_GetPrefPath(kOrganisation, kApplication);
-  if (directory == nullptr) {
+  const std::unique_ptr<char, decltype([](char* text) { SDL_free(text); })> directory(
+      SDL_GetPrefPath(kOrganisation, kApplication));
+  if (!directory) {
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No preferences directory: %s", SDL_GetError());
     return {};
   }
-  std::string path(directory);
-  SDL_free(directory);
-  path += kFileName;
-  return path;
+  return std::string(directory.get()) + kFileName;
 }
-
-// Set when the score file exists but could not be read this run. Saving is
-// then refused, so a table that may be perfectly good is not replaced.
-bool saveBlocked = false;
 
 }  // namespace
 
-HighScores loadHighScores() {
+HighScores ScoreStore::load() {
   HighScores scores;
-  saveBlocked = false;
+  saveBlocked_ = false;
   const std::string path = scoreFilePath();
   if (path.empty()) {
     return scores;
@@ -60,7 +55,7 @@ HighScores loadHighScores() {
   if (result == ReadResult::Error) {
     // Still unreadable. It may be a good table, so neither move nor replace
     // it: play on with an empty table and save nothing this run.
-    saveBlocked = true;
+    saveBlocked_ = true;
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "Could not read the high score file; scores will not be saved this run");
     return scores;
@@ -75,7 +70,7 @@ HighScores loadHighScores() {
       SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "High score file is not usable; set aside as %s",
                   rejected.c_str());
     } else {
-      saveBlocked = true;
+      saveBlocked_ = true;
       SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                   "High score file is not usable and could not be set aside (%s); scores will "
                   "not be saved this run",
@@ -86,8 +81,8 @@ HighScores loadHighScores() {
   return scores;
 }
 
-bool saveHighScores(const HighScores& scores) {
-  if (saveBlocked) {
+bool ScoreStore::save(const HighScores& scores) const {
+  if (saveBlocked_) {
     return false;
   }
   const std::string path = scoreFilePath();

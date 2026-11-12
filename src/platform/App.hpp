@@ -14,6 +14,7 @@
 #include "core/InitialsEntry.hpp"
 #include "core/Sound.hpp"
 #include "platform/AudioOutput.hpp"
+#include "platform/ScoreStore.hpp"
 #include "platform/TableRenderer.hpp"
 
 namespace pinball {
@@ -27,14 +28,14 @@ struct AppOptions {
 class App {
  public:
   // Returns nullptr and logs the SDL error if any resource fails to initialise.
-  static std::unique_ptr<App> create(const AppOptions& options);
+  [[nodiscard]] static std::unique_ptr<App> create(const AppOptions& options);
 
   ~App();
   App(const App&) = delete;
   App& operator=(const App&) = delete;
 
   // Runs until the user quits or the frame limit is reached. Returns exit code.
-  int run();
+  [[nodiscard]] int run();
 
  private:
   struct WindowDeleter {
@@ -61,6 +62,11 @@ class App {
   void recordFinishedGame();
   void latchKey(SDL_Scancode scancode);
   void render(double alpha);
+  // Notes a failed renderer call, logging the first one only.
+  void noteRenderFailure(const char* call);
+  // Loads every texture again after the graphics device was reset. Keeps the
+  // old ones, and logs, if that fails.
+  void reloadTextures();
   void toggleFullscreen();
   // True when presenting will not block, so the loop must sleep on its own.
   bool needsManualPacing() const;
@@ -74,6 +80,12 @@ class App {
   std::unique_ptr<TableRenderer> table_;
   FixedTimestep timestep_{Game::kStepSeconds, 8};
   bool vsync_ = false;
+  // The last frame was presented. When it was not, presenting did not wait
+  // for the display either.
+  bool presented_ = true;
+  bool renderFailureLogged_ = false;
+  // The graphics device is gone for good; the loop ends with an error.
+  bool deviceLost_ = false;
   bool running_ = true;
   bool paused_ = false;
   // Paused because the window lost focus or was minimised. Kept apart from
@@ -87,6 +99,8 @@ class App {
   // The player's choice. The tune also rests whenever the game is halted.
   bool musicOn_ = true;
   Game game_;
+  // Declared before the table it loads.
+  ScoreStore scoreStore_;
   // Best games on this machine, loaded at start and saved when a game ends.
   // A timed automated run starts with an empty table and saves nothing.
   HighScores highScores_;
