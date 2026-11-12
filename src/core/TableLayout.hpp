@@ -74,8 +74,14 @@ inline constexpr Capsule kLeftGuideUpper{{90.0F, 640.0F}, {90.0F, 743.2F}, kWall
 inline constexpr Capsule kLeftGuideLower{{90.0F, 743.2F}, {247.0F, 844.8F}, kWallRadius};
 
 // Static interior walls.
-inline constexpr std::array<Capsule, 5> kWalls{{
+// Hangs from the top of the arch, left of centre. A launched ball riding the
+// arch strikes it and drops into the top of the field instead of orbiting
+// all the way round to the left wall.
+inline constexpr Capsule kArchDeflector{{250.0F, 58.0F}, {258.0F, 98.0F}, kWallRadius};
+
+inline constexpr std::array<Capsule, 6> kWalls{{
     {{kLaneWallX, kLaneWallTopY}, {kLaneWallX, kFloorY}, kWallRadius},
+    kArchDeflector,
     kLeftGuideUpper,
     kLeftGuideLower,
     mirrored(kLeftGuideUpper),
