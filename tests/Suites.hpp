@@ -9,4 +9,5 @@ void testFixedTimestep();
 void testFlippers();
 void testGame();
 void testPhysics();
+void testPlunger();
 void testPngHeader();

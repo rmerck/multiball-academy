@@ -4,20 +4,16 @@
 
 namespace pinball {
 
-namespace {
-
-// Temporary automatic launch until the plunger exists: fast enough to clear
-// the lane and travel over the arch.
-constexpr Vec2 kAutoLaunchVelocity{0.0F, -1400.0F};
-
-}  // namespace
-
 Game::Game() { serveBall(); }
 
-void Game::serveBall() { physics_.resetBall(table::kBallStart, kAutoLaunchVelocity); }
+void Game::serveBall() {
+  physics_.resetBall(table::kBallStart, {0.0F, 0.0F});
+  physics_.setLaneGateClosed(false);
+}
 
 void Game::step(const InputState& input) {
   physics_.setFlippers(input.leftFlipper, input.rightFlipper);
+  physics_.setPlunger(input.plunger);
   physics_.step(static_cast<float>(kStepSeconds));
 
   if (!physics_.ballIsSane()) {
@@ -26,6 +22,11 @@ void Game::step(const InputState& input) {
   } else if (physics_.ballPosition().y > table::kDrainY) {
     ++drainCount_;
     serveBall();
+  }
+
+  // Once the launched ball is clear of the lane, shut the gate behind it.
+  if (!physics_.laneGateClosed() && physics_.ballPosition().x < table::kLaneGateCloseX) {
+    physics_.setLaneGateClosed(true);
   }
 
   ++stepCount_;

@@ -68,6 +68,7 @@ if(BUILD_TESTING)
     tests/FlipperTest.cpp
     tests/GameTest.cpp
     tests/PhysicsTest.cpp
+    tests/PlungerTest.cpp
     tests/PngHeaderTest.cpp
   )
   target_link_libraries(core_tests PRIVATE pinball_core)

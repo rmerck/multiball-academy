@@ -260,6 +260,17 @@ void App::render(double /*alpha*/) {
   // Placeholder outline until the table art lands.
   drawTableOutline();
 
+  // Plunger block and, when closed, the lane gate.
+  const SDL_FRect plunger{table::kLaneCenterX - table::kPlungerWidth * 0.5F,
+                          table::kPlungerRestTopY + game_.plungerPull(), table::kPlungerWidth,
+                          table::kPlungerHeight};
+  SDL_SetRenderDrawColor(r, 170, 170, 180, SDL_ALPHA_OPAQUE);
+  SDL_RenderFillRect(r, &plunger);
+  if (game_.laneGateClosed()) {
+    SDL_RenderLine(r, table::kLaneGate.a.x, table::kLaneGate.a.y, table::kLaneGate.b.x,
+                   table::kLaneGate.b.y);
+  }
+
   // Flippers as thick placeholder lines along their centre lines.
   SDL_SetRenderDrawColor(r, 230, 120, 60, SDL_ALPHA_OPAQUE);
   for (std::size_t i = 0; i < table::kFlippers.size(); ++i) {

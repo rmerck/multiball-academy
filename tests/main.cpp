@@ -11,6 +11,7 @@ int main() {
   testFlippers();
   testGame();
   testPhysics();
+  testPlunger();
   testPngHeader();
 
   if (pinball_test::failures() == 0) {

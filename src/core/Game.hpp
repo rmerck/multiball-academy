@@ -41,6 +41,9 @@ class Game {
   BallView ball() const;
   // Index 0 is the left flipper, 1 the right.
   FlipperView flipper(std::size_t index) const;
+  // How far the plunger is drawn back, in pixels.
+  float plungerPull() const noexcept { return physics_.plungerPull(); }
+  bool laneGateClosed() const noexcept { return physics_.laneGateClosed(); }
   // Number of balls lost down the drain so far.
   std::uint32_t drainCount() const noexcept { return drainCount_; }
 

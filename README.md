@@ -12,7 +12,7 @@ This is an independent fan project. It contains no code or assets from the origi
 | 2 | Asset loading and rendering | In progress: loader and ball sprite done, table art pending |
 | 3 | Physics foundation | Done: Box2D world, table shell, ball, drain |
 | 4 | Flippers | Done |
-| 5 | Plunger and launch lane | Planned |
+| 5 | Plunger and launch lane | Done |
 | 6 | Bumpers, targets, ramps, table geometry | Planned |
 | 7 | Scoring, lights, UI | Planned |
 | 8 | Missions and ranks | Planned |
@@ -44,7 +44,7 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 |---|---|---|
 | Z | Left flipper | Done |
 | / | Right flipper | Done |
-| Space | Plunger, hold for power | Planned |
+| Space | Plunger, hold for power | Done |
 | X | Nudge left | Planned |
 | . | Nudge right | Planned |
 | Up | Nudge from bottom | Planned |
@@ -65,6 +65,8 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 - The ball is a Box2D bullet body with continuous collision, and its speed is capped at 40 m/s.
 - The outer shell is one closed chain shape, which avoids ghost collisions at segment joints.
 - Flippers are kinematic bodies driven to an absolute target angle each step (22 rad/s up, 12 rad/s down, 60 degree stroke). They cannot overshoot or be pushed back by the ball.
+- The plunger is a kinematic block. Holding Space draws it back over one second; on release it drives forward at 3 to 17 m/s depending on the draw, and the ball leaves at about that speed. A full draw clears the arch; a tap does not leave the lane.
+- A one-way gate at the top of the lane is modelled as a wall that is switched on once the launched ball is clear, and off again for the next serve.
 - `src/core/TableLayout.hpp` is the single source of table geometry for physics, drawing and art.
 
 ## Layout
