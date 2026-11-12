@@ -18,7 +18,7 @@ This is an independent fan project. It contains no code or assets from the origi
 | 8 | Missions and ranks | Done: 9 ranks, 36 missions, fuel |
 | 9 | Nudge and tilt | Done |
 | 10 | Audio | Done: synthesized sound effects, no audio files. No music |
-| 11 | High scores, polish, performance | Planned |
+| 11 | High scores, polish, performance | Done: high score table, About screen, auto-pause, idle wait while paused |
 | 12 | Final playability pass | Planned |
 
 ## Build (macOS)
@@ -49,7 +49,8 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 | . | Nudge right | Done |
 | Up | Nudge from bottom | Done |
 | F2 | New game | Done |
-| F3 | Pause | Done |
+| F1 | About and high scores | Done |
+| F3 | Pause. The game also pauses by itself when its window loses focus or is minimised | Done |
 | F4 | Fullscreen | Done |
 | M | Mute | Done |
 

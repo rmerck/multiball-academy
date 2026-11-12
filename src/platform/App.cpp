@@ -6,6 +6,7 @@
 #include "platform/About.hpp"
 #include "platform/Canvas.hpp"
 #include "platform/ScoreStore.hpp"
+#include "platform/Text.hpp"
 
 namespace pinball {
 
@@ -133,6 +134,11 @@ int App::run() {
 
   while (running_) {
     SDL_Event event;
+    // While nothing is moving, sleep until something happens instead of
+    // redrawing a still picture at full rate.
+    if (halted() && !options_.frameLimit && SDL_WaitEventTimeout(&event, 100)) {
+      handleEvent(event);
+    }
     while (SDL_PollEvent(&event)) {
       handleEvent(event);
     }
@@ -145,7 +151,7 @@ int App::run() {
 
     // While paused the clock keeps moving but nothing accumulates, so there is
     // no burst of catch-up steps on resume.
-    if (!paused_ && !aboutOpen_) {
+    if (!halted()) {
       const int steps = timestep_.advance(frameSeconds);
       for (int i = 0; i < steps; ++i) {
         game_.step(input_);
@@ -193,6 +199,17 @@ void App::handleEvent(const SDL_Event& event) {
   switch (event.type) {
     case SDL_EVENT_QUIT:
       running_ = false;
+      break;
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+    case SDL_EVENT_WINDOW_MINIMIZED:
+      // Do not let the ball drain while the player is elsewhere.
+      autoPaused_ = true;
+      latched_ = InputState{};
+      break;
+    case SDL_EVENT_WINDOW_FOCUS_GAINED:
+    case SDL_EVENT_WINDOW_RESTORED:
+      autoPaused_ = false;
+      latched_ = InputState{};
       break;
     case SDL_EVENT_KEY_DOWN:
       if (event.key.repeat) {
@@ -250,7 +267,7 @@ constexpr SDL_Scancode kControlKeys[] = {
 }  // namespace
 
 void App::latchKey(SDL_Scancode scancode) {
-  if (paused_ || aboutOpen_) {
+  if (halted()) {
     return;
   }
   if (bool InputState::* const control = controlFor(scancode)) {
@@ -259,6 +276,10 @@ void App::latchKey(SDL_Scancode scancode) {
 }
 
 void App::readInput() {
+  if (halted()) {
+    input_ = InputState{};
+    return;
+  }
   int keyCount = 0;
   const bool* keys = SDL_GetKeyboardState(&keyCount);
   input_ = InputState{};
@@ -303,7 +324,13 @@ void App::render(double /*alpha*/) {
   SDL_SetRenderDrawColor(r, 0, 0, 0, SDL_ALPHA_OPAQUE);
   SDL_RenderClear(r);
 
-  table_->draw(r, game_, paused_, HudExtras{highScores_.best(), newHighScore_});
+  const bool showPaused = paused_ || autoPaused_;
+  table_->draw(r, game_, showPaused, HudExtras{highScores_.best(), newHighScore_});
+  if (showPaused && !aboutOpen_) {
+    drawText(r, "PAUSED", 384.0F, 430.0F, 9.0F, SDL_Color{235, 240, 255, 255}, TextAlign::Center);
+    drawText(r, paused_ ? "PRESS F3 TO RESUME" : "CLICK THE WINDOW TO RESUME", 384.0F, 520.0F, 3.0F,
+             SDL_Color{255, 190, 70, 255}, TextAlign::Center);
+  }
   if (aboutOpen_) {
     drawAbout(r, highScores_);
   }
