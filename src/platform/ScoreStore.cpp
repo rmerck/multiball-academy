@@ -32,15 +32,11 @@ std::string scoreFilePath() {
   return path;
 }
 
-// Set when the score file exists but could not be read this run. Saving is
-// then refused, so a table that may be perfectly good is not replaced.
-bool saveBlocked = false;
-
 }  // namespace
 
-HighScores loadHighScores() {
+HighScores ScoreStore::load() {
   HighScores scores;
-  saveBlocked = false;
+  saveBlocked_ = false;
   const std::string path = scoreFilePath();
   if (path.empty()) {
     return scores;
@@ -60,7 +56,7 @@ HighScores loadHighScores() {
   if (result == ReadResult::Error) {
     // Still unreadable. It may be a good table, so neither move nor replace
     // it: play on with an empty table and save nothing this run.
-    saveBlocked = true;
+    saveBlocked_ = true;
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "Could not read the high score file; scores will not be saved this run");
     return scores;
@@ -75,7 +71,7 @@ HighScores loadHighScores() {
       SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "High score file is not usable; set aside as %s",
                   rejected.c_str());
     } else {
-      saveBlocked = true;
+      saveBlocked_ = true;
       SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                   "High score file is not usable and could not be set aside (%s); scores will "
                   "not be saved this run",
@@ -86,8 +82,8 @@ HighScores loadHighScores() {
   return scores;
 }
 
-bool saveHighScores(const HighScores& scores) {
-  if (saveBlocked) {
+bool ScoreStore::save(const HighScores& scores) const {
+  if (saveBlocked_) {
     return false;
   }
   const std::string path = scoreFilePath();

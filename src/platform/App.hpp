@@ -14,6 +14,7 @@
 #include "core/InitialsEntry.hpp"
 #include "core/Sound.hpp"
 #include "platform/AudioOutput.hpp"
+#include "platform/ScoreStore.hpp"
 #include "platform/TableRenderer.hpp"
 
 namespace pinball {
@@ -87,6 +88,8 @@ class App {
   // The player's choice. The tune also rests whenever the game is halted.
   bool musicOn_ = true;
   Game game_;
+  // Declared before the table it loads.
+  ScoreStore scoreStore_;
   // Best games on this machine, loaded at start and saved when a game ends.
   // A timed automated run starts with an empty table and saves nothing.
   HighScores highScores_;

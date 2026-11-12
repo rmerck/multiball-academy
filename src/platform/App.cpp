@@ -8,7 +8,6 @@
 #include "platform/Canvas.hpp"
 #include "platform/InitialsScreen.hpp"
 #include "platform/MacMenu.hpp"
-#include "platform/ScoreStore.hpp"
 #include "platform/Text.hpp"
 
 namespace pinball {
@@ -118,7 +117,7 @@ App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, 
       audio_(AudioOutput::open()),
       // A timed automated run leaves the player's score file alone: it is
       // neither read (which can also set a bad file aside) nor written.
-      highScores_(options.frameLimit ? HighScores{} : loadHighScores()),
+      highScores_(options.frameLimit ? HighScores{} : scoreStore_.load()),
       aboutEvent_(SDL_RegisterEvents(1)) {
   const bool routed = routeAboutMenu(aboutEvent_);
   SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "About menu item routed to the game: %s",
@@ -419,7 +418,7 @@ void App::commitInitials() {
   latched_ = InputState{};
   newHighScore_ = highScores_.submit(pending_) < HighScores::kCapacity;
   if (newHighScore_) {
-    saveHighScores(highScores_);
+    scoreStore_.save(highScores_);
   }
 }
 
