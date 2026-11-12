@@ -4,8 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "core/TableLayout.hpp"
@@ -33,8 +35,8 @@ constexpr float kBumperRestitution = 0.6F;
 // Element references ride in Box2D's shape user data as an integer packed
 // into the pointer value. No real pointer is ever stored or dereferenced.
 void* packElement(table::ElementRef ref) noexcept {
-  const std::uintptr_t value = (static_cast<std::uintptr_t>(ref.kind) << 8U) |
-                               static_cast<std::uintptr_t>(ref.index);
+  const std::uintptr_t value =
+      (std::uintptr_t{std::to_underlying(ref.kind)} << 8U) | std::uintptr_t{ref.index};
   return reinterpret_cast<void*>(value);  // NOLINT: integer tag, not a pointer.
 }
 
@@ -49,7 +51,7 @@ table::ElementRef unpackElement(const void* data) noexcept {
   // Rollovers and holes are detected by position and are never shape tags.
   for (const table::ElementKind kind :
        {table::ElementKind::Bumper, table::ElementKind::Slingshot, table::ElementKind::Target}) {
-    if (kindValue == static_cast<std::uint8_t>(kind)) {
+    if (kindValue == std::to_underlying(kind)) {
       const table::ElementRef ref{kind, index};
       return table::isValid(ref) ? ref : table::ElementRef{};
     }

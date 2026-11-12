@@ -38,8 +38,8 @@ inline constexpr std::uint32_t kMaxHaltedBusyFrames = 600;
 //   haltedFrames  frames spent halted so far, this one included
 // A sound that outlasts kMaxHaltedBusyFrames is taken to be a device that
 // stopped accepting audio, and the loop sleeps anyway.
-constexpr bool sleepsWhileHalted(bool halted, bool timedRun, bool soundAudible,
-                                 std::uint32_t haltedFrames) noexcept {
+[[nodiscard]] constexpr bool sleepsWhileHalted(bool halted, bool timedRun, bool soundAudible,
+                                               std::uint32_t haltedFrames) noexcept {
   return halted && !timedRun && (!soundAudible || haltedFrames > kMaxHaltedBusyFrames);
 }
 

@@ -2,16 +2,37 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 #include "core/TableLayout.hpp"
 
 namespace pinball {
 
-Game::Game() { serveBall(); }
+namespace {
+
+// Guards the blend factor: outside [0, 1] is clamped, not-a-number is 1.
+float blendFactor(float alpha) noexcept {
+  return alpha >= 0.0F && alpha <= 1.0F ? alpha : (alpha < 0.0F ? 0.0F : 1.0F);
+}
+
+}  // namespace
+
+Game::Game() {
+  serveBall();
+  snapshotForDrawing();
+}
 
 void Game::serveBall() {
   physics_.resetBall(table::kBallStart, {0.0F, 0.0F});
   physics_.setLaneGateClosed(false);
+  ballPlaced_ = true;
+}
+
+void Game::snapshotForDrawing() {
+  previousBall_ = ball();
+  for (std::size_t i = 0; i < previousFlipperAngles_.size(); ++i) {
+    previousFlipperAngles_[i] = physics_.flipperAngle(i);
+  }
 }
 
 void Game::startNewGame() {
@@ -70,6 +91,8 @@ void Game::handleDrain() {
 }
 
 void Game::step(const InputState& input) {
+  snapshotForDrawing();
+  ballPlaced_ = false;
   sounds_ = 0;
   // Controls act on the press, not for as long as the key is held.
   if (input.newGame && !previousInput_.newGame) {
@@ -96,7 +119,7 @@ void Game::step(const InputState& input) {
 
   handleEvents();
   updateHeldBall();
-  updateBallSearch(input);
+  updateBallSearch(playable && input.leftFlipper, playable && input.rightFlipper);
   rules_.tick();
 
   if (!physics_.ballIsSane()) {
@@ -110,6 +133,11 @@ void Game::step(const InputState& input) {
   if (!physics_.laneGateClosed() && physics_.ballPosition().x < table::kLaneGateCloseX) {
     physics_.setLaneGateClosed(true);
     rules_.onBallInPlay();
+  }
+
+  if (ballPlaced_) {
+    // Nothing to draw between the old place and the new one.
+    previousBall_ = ball();
   }
 
   sounds_ |= rules_.takeSounds();
@@ -134,32 +162,33 @@ void Game::handleEvents() {
     }
     const std::size_t index = event.element.index;
     switch (event.element.kind) {
-      case table::ElementKind::Bumper:
+      using enum table::ElementKind;
+      case Bumper:
         bumperFlash_[index] = 1.0F;
         ++bumperHits_;
         sounds_ |= soundBit(Sound::Bumper);
         rules_.onBumper(index);
         break;
-      case table::ElementKind::Slingshot:
+      case Slingshot:
         slingshotFlash_[index] = 1.0F;
         sounds_ |= soundBit(Sound::Slingshot);
         rules_.onSlingshot(index);
         break;
-      case table::ElementKind::Target:
+      case Target:
         sounds_ |= soundBit(Sound::Target);
         rules_.onTarget(index);
         break;
-      case table::ElementKind::Rollover:
+      case Rollover:
         ++rolloverCounts_[index];
         sounds_ |= soundBit(Sound::Rollover);
         rules_.onRollover(index);
         break;
-      case table::ElementKind::Hole:
+      case Hole:
         ++holeCounts_[index];
         sounds_ |= soundBit(Sound::HoleIn);
         rules_.onHole(index);
         break;
-      case table::ElementKind::None:
+      case None:
         break;
     }
   }
@@ -181,18 +210,20 @@ void Game::updateHeldBall() {
   if (static_cast<double>(heldSteps_) * kStepSeconds >= kHoleHoldSeconds) {
     const table::Hole& hole = table::kHoles[heldBy_];
     physics_.releaseBall(hole.exitPosition, hole.exitVelocity);
+    ballPlaced_ = true;
     // So that a capture on the very next step still counts as a new one.
     wasHeld_ = false;
     sounds_ |= soundBit(Sound::HoleOut);
   }
 }
 
-void Game::updateBallSearch(const InputState& input) {
+void Game::updateBallSearch(bool leftRaised, bool rightRaised) {
   const Vec2 p = physics_.ballPosition();
   // Not stuck: off the table in a hole, waiting on the plunger, or being
   // cradled on a raised flipper.
   // A cradle means resting on a flipper that is being held up, so only a
-  // ball within reach of a held flipper counts.
+  // ball within reach of a raised flipper counts. A key held while the
+  // controls are dead (tilt, game over) raises nothing.
   const auto nearFlipper = [p](std::size_t index) {
     const Vec2 pivot = table::kFlippers[index].pivot;
     const float fx = p.x - pivot.x;
@@ -200,8 +231,8 @@ void Game::updateBallSearch(const InputState& input) {
     constexpr float kReach = table::kFlipperLength + 3.0F * table::kBallRadius;
     return fx * fx + fy * fy < kReach * kReach;
   };
-  const bool cradled = (input.leftFlipper && nearFlipper(table::kLeftFlipperIndex)) ||
-                       (input.rightFlipper && nearFlipper(table::kRightFlipperIndex));
+  const bool cradled = (leftRaised && nearFlipper(table::kLeftFlipperIndex)) ||
+                       (rightRaised && nearFlipper(table::kRightFlipperIndex));
   const bool exempt = physics_.ballHeld() || p.x > table::kLaneWallX || cradled;
   const float dx = p.x - searchAnchor_.x;
   const float dy = p.y - searchAnchor_.y;
@@ -248,6 +279,32 @@ BallView Game::ball() const {
       1.0F);
   view.position = view.position + (hole.exitPosition - view.position) * t;
   view.scale = 1.0F + 0.35F * 4.0F * t * (1.0F - t);
+  return view;
+}
+
+BallView Game::ball(float alpha) const {
+  const BallView now = ball();
+  const float t = blendFactor(alpha);
+  // A hidden ball has no place to draw from or to.
+  if (t >= 1.0F || !now.visible || !previousBall_.visible) {
+    return now;
+  }
+  BallView view = now;
+  view.position = previousBall_.position + (now.position - previousBall_.position) * t;
+  // The angle wraps at half a turn either way, so go round the short way.
+  const float turn = std::remainder(now.angle - previousBall_.angle, 2.0F * table::kPi);
+  view.angle = previousBall_.angle + turn * t;
+  view.scale = previousBall_.scale + (now.scale - previousBall_.scale) * t;
+  return view;
+}
+
+FlipperView Game::flipper(std::size_t index, float alpha) const {
+  FlipperView view = flipper(index);
+  const float t = blendFactor(alpha);
+  if (t < 1.0F && index < previousFlipperAngles_.size()) {
+    const float before = previousFlipperAngles_[index];
+    view.angle = before + (view.angle - before) * t;
+  }
   return view;
 }
 

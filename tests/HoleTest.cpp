@@ -98,12 +98,10 @@ void testHoles() {
 
   {  // The ramp takes only a ball shot firmly up the table and leaning left,
      // into the mouth that faces the right flipper.
-    std::size_t ramp = 0;
-    for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
-      if (table::kHoles[i].type == table::HoleType::Ramp) {
-        ramp = i;
-      }
-    }
+    constexpr auto ramp = static_cast<std::size_t>(
+        std::ranges::find(table::kHoles, table::HoleType::Ramp, &table::Hole::type) -
+        table::kHoles.begin());
+    static_assert(ramp < table::kHoles.size());
     const Vec2 entry = table::kHoles[ramp].center;
     // A shot like the right flipper's: 1500 px/s up, leaning 0.4 to the left.
     const Vec2 shot{-600.0F, -1500.0F};
@@ -114,7 +112,7 @@ void testHoles() {
       world.resetBall({entry.x + offset + drift, entry.y + 50.0F}, velocity);
       return stepUntil(world, PhysicsEvent::Type::Capture, 30);
     };
-    const auto taken = [ramp](table::ElementRef e) {
+    const auto taken = [](table::ElementRef e) {
       return e.kind == table::ElementKind::Hole && e.index == ramp;
     };
     // Taken anywhere across the mouth, and not beside it (a wormhole lies
@@ -152,7 +150,7 @@ void testHoles() {
       int longest = 0;  // Most consecutive trigger steps that made the ramp.
       int total = 0;
     };
-    const auto sweep = [ramp](std::size_t side, bool cradled) {
+    const auto sweep = [](std::size_t side, bool cradled) {
       const Vec2 inlane = side == table::kLeftFlipperIndex ? table::kLeftInlane
                                                            : table::mirrored(table::kLeftInlane);
       const int cradleSteps = cradled ? 360 : 0;
@@ -193,8 +191,10 @@ void testHoles() {
     const Window cradled = sweep(table::kRightFlipperIndex, true);
     CHECK(cradled.longest >= 3);
     CHECK(cradled.longest <= 9);
-    // It is the right flipper's shot. The left one drives the ball straight
-    // up through the mouth, which does not take it.
+    // From these feeds it is the right flipper's shot. The left one drives a
+    // ball that was rolling along it or cradled on it straight up through
+    // the mouth, which does not take it. (A falling ball struck late in the
+    // left flipper's stroke can go in; that is not covered here.)
     CHECK(sweep(table::kLeftFlipperIndex, false).total <= 1);
     CHECK(sweep(table::kLeftFlipperIndex, true).total <= 1);
   }
@@ -335,12 +335,10 @@ void testHoles() {
 
   {  // The hyperspace chute returns the ball to the left flipper, not down
      // the middle: released untouched, it meets the bat.
-    std::size_t chute = 0;
-    for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
-      if (table::kHoles[i].type == table::HoleType::Hyperspace) {
-        chute = i;
-      }
-    }
+    const auto chute = static_cast<std::size_t>(
+        std::ranges::find(table::kHoles, table::HoleType::Hyperspace, &table::Hole::type) -
+        table::kHoles.begin());
+    CHECK(chute < table::kHoles.size());
     PhysicsWorld world;
     // Drop it in, then let the chute return it the way the game does.
     world.resetBall(table::kHoles[chute].center, {0.0F, 0.0F});
