@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cstddef>
 #include <string_view>
 
 namespace pinball {
@@ -9,7 +10,7 @@ namespace pinball {
 enum class TextAlign { Left, Center, Right };
 
 // Width in canvas pixels of text drawn with the given font pixel size.
-float textWidth(std::string_view text, float pixelSize) noexcept;
+[[nodiscard]] float textWidth(std::string_view text, float pixelSize) noexcept;
 
 // Draws text in the built-in 5x7 font. x is the left edge, centre or right
 // edge according to align; y is the top. Lower case is shown as upper case

@@ -1,8 +1,11 @@
 #include "platform/Text.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <string_view>
 
 #include "platform/Font5x7.hpp"
 
@@ -26,7 +29,7 @@ float textWidth(std::string_view text, float pixelSize) noexcept {
   if (text.empty()) {
     return 0.0F;
   }
-  const std::size_t count = text.size() < kMaxTextLength ? text.size() : kMaxTextLength;
+  const std::size_t count = std::min(text.size(), kMaxTextLength);
   // The last character has no trailing gap.
   return (static_cast<float>(count) * static_cast<float>(font::kAdvance) - 1.0F) * pixelSize;
 }

@@ -4,6 +4,8 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <initializer_list>
+#include <memory>
 #include <utility>
 
 #include "core/TableLayout.hpp"
@@ -50,11 +52,11 @@ std::array<TargetSprite, table::kTargets.size()> makeTargetSprites() noexcept {
     const float spriteWidth = (kBarSpriteLength + 2.0F * (kBarSpriteRadius + kBarSpriteMargin)) *
                               (length / kBarSpriteLength);
     const float spriteHeight = 2.0F * (kBarSpriteRadius + kBarSpriteMargin);
-    sprites[i] = {{mid.x - spriteWidth * 0.5F, mid.y - spriteHeight * 0.5F, spriteWidth,
-                   spriteHeight},
-                  mid,
-                  length,
-                  static_cast<double>(std::atan2(b.y - a.y, b.x - a.x) * kRadiansToDegrees)};
+    sprites[i] = {
+        .dst = {mid.x - spriteWidth * 0.5F, mid.y - spriteHeight * 0.5F, spriteWidth, spriteHeight},
+        .mid = mid,
+        .length = length,
+        .angleDegrees = static_cast<double>(std::atan2(b.y - a.y, b.x - a.x) * kRadiansToDegrees)};
   }
   return sprites;
 }
@@ -137,20 +139,21 @@ void TableRenderer::drawLights(SDL_Renderer* r, const Game& game) const {
   std::size_t lane = 0;
   for (const table::Rollover& rollover : table::kRollovers) {
     switch (rollover.group) {
-      case table::RolloverGroup::ReEntry:
+      using enum table::RolloverGroup;
+      case ReEntry:
         if (rules.laneLit(lane)) {
           drawGlow(r, rollover.zone.center, 28.0F, {77, 255, 178}, 0.95F);
           drawGlow(r, rollover.zone.center, 11.0F, {255, 255, 255}, 0.55F);
         }
         ++lane;
         break;
-      case table::RolloverGroup::Outlane:
+      case Outlane:
         if (rules.bonusLaneLit()) {
           drawGlow(r, rollover.zone.center, 28.0F, {255, 41, 153}, 0.95F);
           drawGlow(r, rollover.zone.center, 11.0F, {255, 255, 255}, 0.55F);
         }
         break;
-      case table::RolloverGroup::Inlane:
+      case Inlane:
         break;
     }
   }
