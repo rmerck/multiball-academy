@@ -26,6 +26,7 @@ def check(path: Path) -> list:
     pos = len(SIGNATURE)
     seen_end = False
     first = True
+    pixel_data = b""
     while pos + 12 <= len(data):
         length, kind = struct.unpack(">I4s", data[pos:pos + 8])
         body = data[pos + 8:pos + 8 + length]
@@ -45,10 +46,19 @@ def check(path: Path) -> list:
             first = False
         if kind not in ALLOWED:
             errors.append("metadata chunk %s is not allowed" % kind.decode("latin-1"))
+        if kind == b"IDAT":
+            pixel_data += body
         pos += 12 + length
         if kind == b"IEND":
             seen_end = True
             break
+    if not pixel_data:
+        errors.append("no IDAT pixel data")
+    else:
+        try:
+            zlib.decompress(pixel_data)
+        except zlib.error as e:
+            errors.append("pixel data does not decompress: %s" % e)
     if not seen_end:
         errors.append("missing IEND")
     elif pos != len(data):
