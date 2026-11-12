@@ -13,7 +13,8 @@ namespace pinball {
 
 namespace {
 
-constexpr int kSubSteps = 4;
+// Solver sub-steps within each slice.
+constexpr int kSubSteps = 2;
 
 constexpr float kWallFriction = 0.1F;
 constexpr float kWallRestitution = 0.45F;
@@ -191,8 +192,9 @@ void PhysicsWorld::driveFlippers(float stepSeconds) {
     flipper.angle += delta;
 
     // The angle is tracked here and commanded as an absolute target every
-    // step, so it cannot drift or overshoot its limits. Box2D derives the
-    // velocity that carries the ball from the target.
+    // slice, so error cannot accumulate and the limits cannot be overshot.
+    // Box2D derives the velocity that carries the ball from the target; the
+    // body follows to within about a thousandth of a radian.
     const b2WorldTransform target{b2ToPos(toMeters(layout.pivot)), b2MakeRot(flipper.angle)};
     b2Body_SetTargetTransform(flipper.body, target, stepSeconds, true);
   }
@@ -265,9 +267,24 @@ void PhysicsWorld::step(float stepSeconds) {
   if (!std::isfinite(stepSeconds) || stepSeconds <= 0.0F || stepSeconds > kMaxStepSeconds) {
     return;
   }
-  driveFlippers(stepSeconds);
-  drivePlunger(stepSeconds);
-  b2World_Step(world_, stepSeconds, kSubSteps);
+  const float slice = stepSeconds / static_cast<float>(kSlicesPerStep);
+  for (int i = 0; i < kSlicesPerStep; ++i) {
+    driveFlippers(slice);
+    drivePlunger(slice);
+    b2World_Step(world_, slice, kSubSteps);
+    clampBallSpeed();
+  }
+}
+
+void PhysicsWorld::clampBallSpeed() {
+  // Box2D's own limit is applied inside the solver and a contact with a fast
+  // kinematic body can still leave the ball above it, so enforce it here.
+  const b2Vec2 v = b2Body_GetLinearVelocity(ball_);
+  const float speedSquared = v.x * v.x + v.y * v.y;
+  if (speedSquared > kMaxBallSpeed * kMaxBallSpeed) {
+    const float scale = kMaxBallSpeed / std::sqrt(speedSquared);
+    b2Body_SetLinearVelocity(ball_, {v.x * scale, v.y * scale});
+  }
 }
 
 Vec2 PhysicsWorld::ballPosition() const {
