@@ -32,6 +32,7 @@ add_library(pinball_core STATIC
   src/core/Game.cpp
   src/core/Physics.cpp
   src/core/PngHeader.cpp
+  src/core/Rules.cpp
   src/core/Sha256.cpp
   src/core/TableLayout.cpp
 )
@@ -112,6 +113,7 @@ if(BUILD_TESTING)
     tests/PhysicsTest.cpp
     tests/PlungerTest.cpp
     tests/PngHeaderTest.cpp
+    tests/RulesTest.cpp
     tests/Sha256Test.cpp
     tests/TargetTest.cpp
   )

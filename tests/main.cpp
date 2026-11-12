@@ -15,6 +15,7 @@ int main() {
   testPhysics();
   testPlunger();
   testPngHeader();
+  testRules();
   testSha256();
   testTargets();
 

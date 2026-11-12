@@ -126,10 +126,8 @@ void testTargets() {
     }
   }
 
-  {  // Bank logic: lighting every target of a bank counts one completion and
-     // resets the bank. Driven by real shots through the game.
+  {  // Accessors tolerate out-of-range indices.
     pinball::Game game;
-    CHECK(game.bankCompletions(table::TargetBank::Medal) == 0);
     CHECK(!game.targetLit(0));
     CHECK(!game.targetLit(999));
     CHECK(game.slingshotFlash(999) == 0.0F);

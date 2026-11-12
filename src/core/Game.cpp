@@ -13,26 +13,55 @@ void Game::serveBall() {
   physics_.setLaneGateClosed(false);
 }
 
+void Game::startNewGame() {
+  rules_.startGame();
+  bumperFlash_.fill(0.0F);
+  slingshotFlash_.fill(0.0F);
+  stillSteps_ = 0;
+  serveBall();
+}
+
+void Game::handleDrain() {
+  ++drainCount_;
+  // Whatever the outcome, a ball goes back on the plunger. After the last
+  // ball it simply waits there: the controls are off until a new game.
+  rules_.onDrain();
+  serveBall();
+}
+
 void Game::step(const InputState& input) {
-  physics_.setFlippers(input.leftFlipper, input.rightFlipper);
-  physics_.setPlunger(input.plunger);
+  // Controls act on the press, not for as long as the key is held.
+  if (input.newGame && !previousInput_.newGame) {
+    startNewGame();
+  }
+  const bool playable = !rules_.gameOver();
+  if (playable && input.leftFlipper && !previousInput_.leftFlipper) {
+    rules_.onFlipper(true);
+  }
+  if (playable && input.rightFlipper && !previousInput_.rightFlipper) {
+    rules_.onFlipper(false);
+  }
+
+  physics_.setFlippers(playable && input.leftFlipper, playable && input.rightFlipper);
+  physics_.setPlunger(playable && input.plunger);
   physics_.step(static_cast<float>(kStepSeconds));
 
   handleEvents();
   updateHeldBall();
   updateBallSearch(input);
+  rules_.tick();
 
   if (!physics_.ballIsSane()) {
     // Fail safe: a ball outside the table or with a corrupt state is put back.
     serveBall();
   } else if (physics_.ballPosition().y > table::kDrainY) {
-    ++drainCount_;
-    serveBall();
+    handleDrain();
   }
 
   // Once the launched ball is clear of the lane, shut the gate behind it.
   if (!physics_.laneGateClosed() && physics_.ballPosition().x < table::kLaneGateCloseX) {
     physics_.setLaneGateClosed(true);
+    rules_.onBallInPlay();
   }
 
   ++stepCount_;
@@ -59,20 +88,24 @@ void Game::handleEvents() {
       case table::ElementKind::Bumper:
         bumperFlash_[index] = 1.0F;
         ++bumperHits_;
+        rules_.onBumper(index);
         break;
       case table::ElementKind::Slingshot:
         slingshotFlash_[index] = 1.0F;
+        rules_.onSlingshot(index);
         break;
       case table::ElementKind::Target:
-        lightTarget(index);
+        rules_.onTarget(index);
         break;
       case table::ElementKind::Rollover:
         ++rolloverCounts_[index];
+        rules_.onRollover(index);
         break;
       case table::ElementKind::Hole:
         ++holeCounts_[index];
         heldBy_ = index;
         heldSteps_ = 0;
+        rules_.onHole(index);
         break;
       case table::ElementKind::None:
         break;
@@ -114,24 +147,6 @@ void Game::updateBallSearch(const InputState& input) {
   physics_.pushBall({towardCentre * 260.0F, -420.0F});
   ++ballSearchCount_;
   stillSteps_ = 0;
-}
-
-void Game::lightTarget(std::size_t index) {
-  targetLit_[index] = true;
-  const table::TargetBank bank = table::kTargets[index].bank;
-
-  // When the whole bank is lit, count it and reset the bank.
-  for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
-    if (table::kTargets[i].bank == bank && !targetLit_[i]) {
-      return;
-    }
-  }
-  ++bankCompletions_[static_cast<std::size_t>(bank)];
-  for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
-    if (table::kTargets[i].bank == bank) {
-      targetLit_[i] = false;
-    }
-  }
 }
 
 FlipperView Game::flipper(std::size_t index) const {

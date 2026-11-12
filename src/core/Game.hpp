@@ -6,6 +6,7 @@
 
 #include "core/Input.hpp"
 #include "core/Physics.hpp"
+#include "core/Rules.hpp"
 #include "core/TableLayout.hpp"
 #include "core/Vec2.hpp"
 
@@ -72,14 +73,10 @@ class Game {
   // Whether a hole is holding the ball right now.
   bool ballHeld() const noexcept { return physics_.ballHeld(); }
 
-  // Whether a stand-up target is currently lit.
-  bool targetLit(std::size_t index) const noexcept {
-    return index < targetLit_.size() && targetLit_[index];
-  }
-  // How many times every target in a bank has been lit.
-  std::uint32_t bankCompletions(table::TargetBank bank) const noexcept {
-    return bankCompletions_[static_cast<std::size_t>(bank)];
-  }
+  // Score, lights, balls and messages.
+  const Rules& rules() const noexcept { return rules_; }
+  bool gameOver() const noexcept { return rules_.gameOver(); }
+  bool targetLit(std::size_t index) const noexcept { return rules_.targetLit(index); }
   // 1 just after a slingshot fired, fading to 0.
   float slingshotFlash(std::size_t index) const noexcept {
     return index < slingshotFlash_.size() ? slingshotFlash_[index] : 0.0F;
@@ -92,19 +89,19 @@ class Game {
  private:
   void serveBall();
   void handleEvents();
-  void lightTarget(std::size_t index);
+  void startNewGame();
+  void handleDrain();
   void updateHeldBall();
   void updateBallSearch(const InputState& input);
 
   PhysicsWorld physics_;
+  Rules rules_{kStepSeconds};
   std::uint64_t stepCount_ = 0;
   std::uint32_t drainCount_ = 0;
   InputState previousInput_;
   std::array<float, table::kBumpers.size()> bumperFlash_{};
   std::uint32_t bumperHits_ = 0;
   std::array<float, table::kSlingshots.size()> slingshotFlash_{};
-  std::array<bool, table::kTargets.size()> targetLit_{};
-  std::array<std::uint32_t, table::kTargetBankCount> bankCompletions_{};
   std::array<std::uint32_t, table::kRollovers.size()> rolloverCounts_{};
   std::array<std::uint32_t, table::kHoles.size()> holeCounts_{};
   // The hole holding the ball, and for how many steps so far.
