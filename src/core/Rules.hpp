@@ -75,7 +75,8 @@ class Rules {
   void onTarget(std::size_t index) noexcept;
   void onRollover(std::size_t index) noexcept;
   void onHole(std::size_t index) noexcept;
-  // The launched ball has left the lane and entered play.
+  // The launched ball has left the lane and entered play. Once per ball in
+  // play: it arms the ball save.
   void onBallInPlay() noexcept;
   // The ball is back on the plunger without having drained (Game's fail-safe
   // for a lost ball). It is out of play until launched again: fuel stops
@@ -104,6 +105,8 @@ class Rules {
   int fieldMultiplier() const noexcept { return kFieldMultipliers[multiplierLevel_]; }
   std::uint64_t bonus() const noexcept { return bonus_; }
   bool ballSaveActive() const noexcept { return ballSaveSteps_ > 0; }
+  // Between entering play and draining (or being returned to the plunger).
+  bool ballInPlay() const noexcept { return ballInPlay_; }
   bool jackpotLit() const noexcept { return jackpotLit_; }
   bool bonusLaneLit() const noexcept { return bonusLaneLit_; }
   int attackBumperLevel() const noexcept { return attackLevel_; }
@@ -174,6 +177,8 @@ class Rules {
   // Between entering play and draining. Mission fuel only burns then.
   bool ballInPlay_ = false;
   bool missionMessageThisStep_ = false;
+  // A mission ran out of fuel while the display was held by TILT.
+  bool abortUnannounced_ = false;
   std::uint32_t rampReflexSteps_ = 0;
   std::uint32_t hyperspaceReflexSteps_ = 0;
   std::uint32_t messageSteps_ = 0;

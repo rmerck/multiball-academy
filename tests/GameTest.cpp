@@ -3,10 +3,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <string_view>
 
 #include "Check.hpp"
 #include "Suites.hpp"
 #include "core/Game.hpp"
+#include "core/Rules.hpp"
+#include "core/Sound.hpp"
 #include "core/TableLayout.hpp"
 
 // The seam Game leaves for tests: puts the ball somewhere by hand.
@@ -266,5 +269,141 @@ void testGame() {
       launched = game.laneGateClosed();
     }
     CHECK(launched);
+  }
+
+  {  // In play means on the playfield, wherever that is. The right-hand
+     // channel (hyperspace chute, booster targets, right outlane) lies
+     // between the lane wall and the line the gate used to wait for.
+    const Vec2 channel[] = {
+        {650.0F, 500.0F}, {table::kHyperspace.x + 4.0F, 420.0F}, {646.0F, 680.0F}};
+    for (const Vec2 place : channel) {
+      Game game;
+      const InputState input;
+      game.step(input);
+      CHECK(!game.rules().ballInPlay() && !game.laneGateClosed());
+      CHECK(place.x >= table::kLaneGateCloseX);
+      pinball::GameTestAccess::placeBall(game, place);
+      game.step(input);
+      CHECK(game.rules().ballInPlay());
+      CHECK(game.laneGateClosed());
+      CHECK(game.rules().ballSaveActive());
+    }
+  }
+
+  {  // A ball taken by the hyperspace chute straight from the launch is in
+     // play by the time it scores: the gate is shut and the ball save is on
+     // while the chute holds it.
+    Game game;
+    const InputState input;
+    pinball::GameTestAccess::placeBall(game, {table::kHyperspace.x + 5.0F, 425.0F});
+    bool taken = false;
+    for (int i = 0; i < 240 && !taken; ++i) {
+      game.step(input);
+      taken = game.ballHeld();
+      CHECK(game.rules().score() == 0 || game.rules().ballInPlay());
+    }
+    CHECK(taken);
+    CHECK(game.rules().score() > 0);
+    CHECK(game.rules().ballInPlay() && game.laneGateClosed());
+  }
+
+  {  // A right-outlane drain straight from the launch gets the ball save.
+    Game game;
+    const InputState input;
+    pinball::GameTestAccess::placeBall(game, {646.0F, 760.0F});
+    for (int i = 0; i < 600 && game.drainCount() == 0; ++i) {
+      game.step(input);
+    }
+    CHECK(game.drainCount() == 1);
+    CHECK(game.rules().ball() == 1);
+    CHECK(game.rules().message() == std::string_view("RE-DEPLOY"));
+  }
+
+  {  // A ball still in the lane, or passing the open gate, is not in play,
+     // and the gate does not shut on it.
+    const Vec2 lane[] = {table::kBallStart,
+                         {table::kLaneCenterX, 500.0F},
+                         {table::kLaneCenterX, table::kLaneWallTopY - 20.0F},
+                         {table::kLaneWallX + 2.0F, 180.0F},
+                         {table::kLaneWallX - 14.0F, table::kLaneWallTopY - 30.0F},
+                         {table::kLaneGateCloseX + 1.0F, 200.0F}};
+    for (const Vec2 place : lane) {
+      Game game;
+      const InputState input;
+      pinball::GameTestAccess::placeBall(game, place);
+      const Vec2 before = game.ball().position;
+      game.step(input);
+      CHECK(distance(before, game.ball().position) < 3.0F);
+      CHECK(!game.rules().ballInPlay());
+      CHECK(!game.laneGateClosed());
+      CHECK(!game.rules().ballSaveActive());
+    }
+    // Waiting on the plunger for a long time changes nothing.
+    Game game;
+    const InputState input;
+    for (int i = 0; i < 1200; ++i) {
+      game.step(input);
+    }
+    CHECK(!game.rules().ballInPlay() && !game.laneGateClosed());
+  }
+
+  {  // A tilted or finished table is dead: hits that do not score make no
+     // sound and light nothing, though the ball still bounces and the hits
+     // are still counted. A live table does both.
+    constexpr pinball::SoundSet kHitSounds =
+        pinball::soundBit(pinball::Sound::Bumper) | pinball::soundBit(pinball::Sound::Slingshot) |
+        pinball::soundBit(pinball::Sound::Target) | pinball::soundBit(pinball::Sound::Rollover) |
+        pinball::soundBit(pinball::Sound::HoleIn);
+    enum class State { Live, Tilted, Over };
+    for (const State state : {State::Live, State::Tilted, State::Over}) {
+      Game game;
+      InputState input;
+      if (state == State::Tilted) {
+        pinball::GameTestAccess::placeBall(game, {450.0F, 600.0F});
+        pinball::GameTestAccess::putInPlay(game);
+        for (int i = 0; i < 3; ++i) {
+          input.nudgeLeft = true;
+          game.step(input);
+          input.nudgeLeft = false;
+          game.step(input);
+        }
+        CHECK(game.rules().tilted());
+      } else if (state == State::Over) {
+        for (int i = 0; i < pinball::Rules::kBallsPerGame; ++i) {
+          pinball::GameTestAccess::placeBall(game, {300.0F, table::kDrainY + 5.0F});
+          game.step(input);
+        }
+        CHECK(game.gameOver());
+      }
+      const std::uint64_t scoreBefore = game.rules().score();
+      const std::uint32_t hitsBefore = game.bumperHits();
+      // Dropped through the middle re-entry lane onto the top attack bumper,
+      // and left to rattle around for a while.
+      pinball::GameTestAccess::placeBall(game, {table::kFieldCenterX + 3.0F, 140.0F});
+      pinball::SoundSet heard = 0;
+      float brightest = 0.0F;
+      for (int i = 0; i < 360; ++i) {
+        game.step(input);
+        heard |= game.sounds();
+        for (std::size_t b = 0; b < table::kBumpers.size(); ++b) {
+          brightest = std::max(brightest, game.bumperFlash(b));
+        }
+        for (std::size_t sling = 0; sling < table::kSlingshots.size(); ++sling) {
+          brightest = std::max(brightest, game.slingshotFlash(sling));
+        }
+      }
+      CHECK(game.bumperHits() > hitsBefore);
+      CHECK(game.rolloverCount(1) > 0);
+      if (state == State::Live) {
+        CHECK((heard & pinball::soundBit(pinball::Sound::Bumper)) != 0U);
+        CHECK((heard & pinball::soundBit(pinball::Sound::Rollover)) != 0U);
+        CHECK(brightest == 1.0F);
+        CHECK(game.rules().score() > scoreBefore);
+      } else {
+        CHECK((heard & kHitSounds) == 0U);
+        CHECK(brightest == 0.0F);
+        CHECK(game.rules().score() == scoreBefore);
+      }
+    }
   }
 }
