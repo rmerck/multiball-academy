@@ -19,5 +19,6 @@ void testPlunger();
 void testPngHeader();
 void testRules();
 void testSha256();
+void testMusic();
 void testSound();
 void testTargets();

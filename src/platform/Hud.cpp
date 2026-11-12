@@ -189,10 +189,11 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game, const Hud
   }
 
   // Controls.
-  drawText(r, "Z AND / FLIP   SPACE LAUNCH   X . UP NUDGE", middle, 892.0F, kLabelSize, kDim,
+  drawText(r, "Z / FLIP   SPACE LAUNCH   X . UP NUDGE", middle, 882.0F, kLabelSize, kDim,
            TextAlign::Center);
-  drawText(r, "F1 ABOUT  F2 NEW  F3 PAUSE  F4 FULL  M MUTE", middle, 916.0F, kLabelSize, kDim,
+  drawText(r, "F1 ABOUT  F2 NEW  F3 PAUSE  F4 FULL", middle, 904.0F, kLabelSize, kDim,
            TextAlign::Center);
+  drawText(r, "M MUTE   N MUSIC", middle, 926.0F, kLabelSize, kDim, TextAlign::Center);
 }
 
 }  // namespace pinball

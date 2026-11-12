@@ -170,7 +170,7 @@ void SoundMixer::render(float* out, std::size_t frames) noexcept {
   }
   const float rate = static_cast<float>(kSampleRate);
   for (std::size_t frame = 0; frame < frames; ++frame) {
-    float mix = 0.0F;
+    float mix = music_.next();
     for (Voice& v : voices_) {
       if (!v.active) {
         continue;

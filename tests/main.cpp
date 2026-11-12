@@ -21,6 +21,7 @@ int main() {
   testPngHeader();
   testRules();
   testSha256();
+  testMusic();
   testSound();
   testTargets();
 
