@@ -115,6 +115,51 @@ void testSound() {
     CHECK(one == 9.0F);
   }
 
+  {  // A sound that starts with every voice busy keeps all of its own parts.
+    SoundMixer mixer;
+    const SoundSet longOnes = soundBit(Sound::Promotion) | soundBit(Sound::GameOver) |
+                              soundBit(Sound::Tilt) | soundBit(Sound::HoleIn);
+    mixer.trigger(longOnes);  // 9 voices.
+    render(mixer, SoundMixer::kRetriggerSamples);
+    mixer.trigger(longOnes);  // 18.
+    render(mixer, SoundMixer::kRetriggerSamples);
+    mixer.trigger(soundBit(Sound::Promotion) | soundBit(Sound::Tilt) | soundBit(Sound::HoleIn));
+    render(mixer, SoundMixer::kRetriggerSamples);
+    mixer.trigger(soundBit(Sound::Tilt));
+    CHECK(mixer.activeVoices() == SoundMixer::kVoices);
+    // The flipper's thump and its click each replace some other voice. Both
+    // are over within 70 ms, and nothing else ends that soon.
+    mixer.trigger(soundBit(Sound::Flipper));
+    CHECK(mixer.activeVoices() == SoundMixer::kVoices);
+    render(mixer, 3360);
+    CHECK(mixer.activeVoices() == SoundMixer::kVoices - 2);
+  }
+
+  {  // Replacing a sounding voice does not make the output jump. Two copies of
+     // a mixer with a full pool; one then has voices replaced. Its next sample
+     // still matches the other's, because new voices fade in from nothing and
+     // what was cut off dies away from where it stood. Sounds with noise in
+     // them are left out: noise jumps from sample to sample by itself.
+    const SoundSet tonal =
+        ~(soundBit(Sound::Flipper) | soundBit(Sound::Launch) | soundBit(Sound::Bumper) |
+          soundBit(Sound::Slingshot) | soundBit(Sound::HoleOut));
+    SoundMixer crowded;
+    float largestCut = 0.0F;
+    for (int round = 0; round < 40; ++round) {
+      crowded.trigger(tonal);
+      render(crowded, SoundMixer::kRetriggerSamples);
+      SoundMixer before = crowded;
+      SoundMixer after = crowded;
+      after.trigger(tonal);
+      float kept = 0.0F;
+      float cut = 0.0F;
+      before.render(&kept, 1);
+      after.render(&cut, 1);
+      largestCut = std::fmax(largestCut, std::fabs(cut - kept));
+    }
+    CHECK(largestCut < 0.02F);
+  }
+
   {  // The same triggers give the same samples.
     SoundMixer a;
     SoundMixer b;

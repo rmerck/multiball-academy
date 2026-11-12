@@ -14,6 +14,13 @@ constexpr std::uint32_t kFadeIn = 96;
 constexpr std::uint32_t kFadeOut = 480;
 // Mute and unmute ramp over 5 ms.
 constexpr float kMuteStep = 1.0F / 240.0F;
+// A replaced voice's last sample dies away by this factor per sample: to a
+// thousandth in about 14 ms. Slow enough not to click, too short to hear as
+// a sound of its own.
+constexpr float kCutTailDecay = 0.99F;
+// Below this the tail is dropped, which also keeps it out of the slow
+// denormal range.
+constexpr float kCutTailSilent = 1.0e-5F;
 
 // Musical notes, in Hz.
 constexpr float kC5 = 523.25F;
@@ -28,13 +35,18 @@ constexpr float kG6 = 1568.0F;
 void SoundMixer::start(Wave wave, float startHz, float endHz, float seconds, float gain,
                        float delaySeconds) noexcept {
   // Reuse a free voice, or failing that the one with the least left to play,
-  // counting any wait before it starts.
+  // counting any wait before it starts. Voices of the sound being started
+  // are passed over, so a sound cannot replace its own first notes with its
+  // later ones.
   Voice* chosen = nullptr;
   std::uint32_t leastLeft = 0;
   for (Voice& v : voices_) {
     if (!v.active) {
       chosen = &v;
       break;
+    }
+    if (v.batch == batch_) {
+      continue;
     }
     const std::uint32_t left = v.delay + (v.length - std::min(v.position, v.length));
     if (chosen == nullptr || left < leastLeft) {
@@ -43,39 +55,52 @@ void SoundMixer::start(Wave wave, float startHz, float endHz, float seconds, flo
     }
   }
   if (chosen == nullptr) {
-    return;  // Cannot happen: the pool is never empty.
+    return;  // Only if one sound had more parts than there are voices.
   }
   const float rate = static_cast<float>(kSampleRate);
   Voice& v = *chosen;
+  if (v.active) {
+    // Carry on from the replaced voice's last sample, so the mix does not jump.
+    cutTail_ += v.last;
+  }
+  const float startStep = std::clamp(startHz, 20.0F, 12000.0F) / rate;
   v.active = true;
   v.wave = wave;
-  v.startHz = std::clamp(startHz, 20.0F, 12000.0F);
-  v.endHz = std::clamp(endHz, 20.0F, 12000.0F);
+  v.startStep = startStep;
+  v.stepGlide = std::clamp(endHz, 20.0F, 12000.0F) / rate - startStep;
   v.gain = std::clamp(gain, 0.0F, 1.0F);
   v.delay = static_cast<std::uint32_t>(std::clamp(delaySeconds, 0.0F, 5.0F) * rate);
   v.length = std::max<std::uint32_t>(
       static_cast<std::uint32_t>(std::clamp(seconds, 0.005F, 5.0F) * rate), kFadeIn + kFadeOut);
   v.position = 0;
+  v.perLength = 1.0F / static_cast<float>(v.length);
   v.phase = 0.0F;
+  v.last = 0.0F;
+  v.batch = batch_;
+}
+
+void SoundMixer::startNoise(float seconds, float gain) noexcept {
+  start(Wave::Noise, 20.0F, 20.0F, seconds, gain);
 }
 
 void SoundMixer::startSound(Sound sound) noexcept {
+  ++batch_;
   switch (sound) {
     case Sound::Flipper:
       start(Wave::Triangle, 150.0F, 70.0F, 0.06F, 0.55F);
-      start(Wave::Noise, 2000.0F, 2000.0F, 0.02F, 0.20F);
+      startNoise(0.02F, 0.20F);
       break;
     case Sound::Launch:
-      start(Wave::Noise, 900.0F, 4000.0F, 0.28F, 0.30F);
+      startNoise(0.28F, 0.30F);
       start(Wave::Sine, 110.0F, 330.0F, 0.25F, 0.35F);
       break;
     case Sound::Bumper:
       start(Wave::Sine, 620.0F, 210.0F, 0.11F, 0.60F);
-      start(Wave::Noise, 3000.0F, 3000.0F, 0.025F, 0.25F);
+      startNoise(0.025F, 0.25F);
       break;
     case Sound::Slingshot:
       start(Wave::Square, 330.0F, 160.0F, 0.07F, 0.30F);
-      start(Wave::Noise, 2500.0F, 2500.0F, 0.04F, 0.30F);
+      startNoise(0.04F, 0.30F);
       break;
     case Sound::Target:
       start(Wave::Sine, 1245.0F, 1245.0F, 0.22F, 0.40F);
@@ -89,7 +114,7 @@ void SoundMixer::startSound(Sound sound) noexcept {
       break;
     case Sound::HoleOut:
       start(Wave::Sine, 140.0F, 950.0F, 0.20F, 0.40F);
-      start(Wave::Noise, 1500.0F, 1500.0F, 0.05F, 0.20F);
+      startNoise(0.05F, 0.20F);
       break;
     case Sound::Drain:
       start(Wave::Triangle, kG5, kG5, 0.18F, 0.40F);
@@ -173,9 +198,17 @@ void SoundMixer::render(float* out, std::size_t frames) noexcept {
   for (std::uint32_t& wait : holdoff_) {
     wait = frames >= wait ? 0U : wait - static_cast<std::uint32_t>(frames);
   }
-  const float rate = static_cast<float>(kSampleRate);
+  constexpr float kPerFadeIn = 1.0F / static_cast<float>(kFadeIn);
+  constexpr float kPerFadeOut = 1.0F / static_cast<float>(kFadeOut);
   for (std::size_t frame = 0; frame < frames; ++frame) {
     float mix = music_.next();
+    if (cutTail_ != 0.0F) {
+      mix += cutTail_;
+      cutTail_ *= kCutTailDecay;
+      if (std::fabs(cutTail_) < kCutTailSilent) {
+        cutTail_ = 0.0F;
+      }
+    }
     for (Voice& v : voices_) {
       if (!v.active) {
         continue;
@@ -184,8 +217,7 @@ void SoundMixer::render(float* out, std::size_t frames) noexcept {
         --v.delay;
         continue;
       }
-      const float t = static_cast<float>(v.position) / static_cast<float>(v.length);
-      const float hz = v.startHz + (v.endHz - v.startHz) * t;
+      const float t = static_cast<float>(v.position) * v.perLength;
 
       float sample = 0.0F;
       switch (v.wave) {
@@ -203,19 +235,23 @@ void SoundMixer::render(float* out, std::size_t frames) noexcept {
           sample = static_cast<float>(noiseState_ >> 8U) / 8388608.0F - 1.0F;
           break;
       }
-      v.phase += hz / rate;
-      v.phase -= std::floor(v.phase);
+      // The step is at most a quarter cycle, so one subtraction wraps it.
+      v.phase += v.startStep + v.stepGlide * t;
+      if (v.phase >= 1.0F) {
+        v.phase -= 1.0F;
+      }
 
       // Envelope: quick fade in, decay across the note, short fade out.
       float envelope = (1.0F - t) * (1.0F - t);
       if (v.position < kFadeIn) {
-        envelope *= static_cast<float>(v.position) / static_cast<float>(kFadeIn);
+        envelope *= static_cast<float>(v.position) * kPerFadeIn;
       }
       const std::uint32_t left = v.length - v.position;
       if (left < kFadeOut) {
-        envelope *= static_cast<float>(left) / static_cast<float>(kFadeOut);
+        envelope *= static_cast<float>(left) * kPerFadeOut;
       }
-      mix += sample * envelope * v.gain;
+      v.last = sample * envelope * v.gain;
+      mix += v.last;
 
       if (++v.position >= v.length) {
         v.active = false;
