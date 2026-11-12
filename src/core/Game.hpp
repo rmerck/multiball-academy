@@ -73,6 +73,14 @@ class Game {
   // Whether a hole is holding the ball right now.
   bool ballHeld() const noexcept { return physics_.ballHeld(); }
 
+  // Nudge: speed given to the ball, in pixels per second, by a shove from
+  // the side and from the bottom of the table.
+  static constexpr float kNudgeSideSpeed = 130.0F;
+  static constexpr float kNudgeUpSpeed = 170.0F;
+  // How far the playfield is drawn displaced right now, in pixels. Decays to
+  // zero after a nudge.
+  Vec2 shake() const noexcept { return shake_; }
+
   // Score, lights, balls and messages.
   const Rules& rules() const noexcept { return rules_; }
   bool gameOver() const noexcept { return rules_.gameOver(); }
@@ -90,6 +98,7 @@ class Game {
   void serveBall();
   void handleEvents();
   void startNewGame();
+  void handleNudges(const InputState& input);
   void handleDrain();
   void updateHeldBall();
   void updateBallSearch(const InputState& input);
@@ -112,6 +121,7 @@ class Game {
   Vec2 searchAnchor_{};
   std::uint32_t stillSteps_ = 0;
   std::uint32_t ballSearchCount_ = 0;
+  Vec2 shake_{};
 };
 
 }  // namespace pinball

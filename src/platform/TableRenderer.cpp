@@ -263,9 +263,13 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed) const {
   }
   const SDL_FRect playfield{0.0F, 0.0F, table::kWidth, table::kHeight};
 
-  // Nothing drawn for the playfield may spill onto the panel.
-  const SDL_Rect clip{0, 0, static_cast<int>(table::kWidth), static_cast<int>(table::kHeight)};
-  SDL_SetRenderClipRect(r, &clip);
+  // The playfield is drawn in its own viewport, which also clips it so that
+  // nothing spills onto the panel. A nudge shifts the viewport a few pixels.
+  const Vec2 shake = game.shake();
+  const SDL_Rect view{static_cast<int>(std::lround(std::clamp(shake.x, -12.0F, 12.0F))),
+                      static_cast<int>(std::lround(std::clamp(shake.y, -12.0F, 12.0F))),
+                      static_cast<int>(table::kWidth), static_cast<int>(table::kHeight)};
+  SDL_SetRenderViewport(r, &view);
 
   SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
   drawLights(r, game);
@@ -281,7 +285,8 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, bool dimmed) const {
     SDL_RenderFillRect(r, &playfield);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
   }
-  SDL_SetRenderClipRect(r, nullptr);
+  SDL_SetRenderViewport(r, nullptr);
+  // The panel covers anything the shifted playfield drew past its right edge.
 
   drawHud(r, textures_.panel.get(), game);
 }

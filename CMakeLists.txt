@@ -116,6 +116,7 @@ if(BUILD_TESTING)
     tests/GameTest.cpp
     tests/HoleTest.cpp
     tests/MissionTest.cpp
+    tests/NudgeTest.cpp
     tests/PhysicsTest.cpp
     tests/PlungerTest.cpp
     tests/PngHeaderTest.cpp

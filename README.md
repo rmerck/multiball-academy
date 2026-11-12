@@ -16,7 +16,7 @@ This is an independent fan project. It contains no code or assets from the origi
 | 6 | Bumpers, targets, ramps, table geometry | Done: 8 bumpers, slingshots, 4 target banks, 7 rollovers, wormholes, black hole, hyperspace, launch ramp |
 | 7 | Scoring, lights, UI | Done: rules engine, lit lanes and targets, information panel with a built-in pixel font |
 | 8 | Missions and ranks | Done: 9 ranks, 36 missions, fuel |
-| 9 | Nudge and tilt | Planned |
+| 9 | Nudge and tilt | Done |
 | 10 | Audio | Planned |
 | 11 | High scores, polish, performance | Planned |
 | 12 | Final playability pass | Planned |
@@ -45,9 +45,9 @@ Keys are read by physical position (scancode), so they sit where Z and / are on 
 | Z | Left flipper | Done |
 | / | Right flipper | Done |
 | Space | Plunger, hold for power | Done |
-| X | Nudge left | Planned |
-| . | Nudge right | Planned |
-| Up | Nudge from bottom | Planned |
+| X | Nudge left | Done |
+| . | Nudge right | Done |
+| Up | Nudge from bottom | Done |
 | F2 | New game | Done |
 | F3 | Pause | Done |
 | F4 | Fullscreen | Done |
@@ -79,6 +79,12 @@ Three balls per game. Everything a feature awards is multiplied by the field mul
 | Reflex shot | 25,000 for repeating the ramp or the chute within 5 seconds |
 | Return lanes | Inlane 5,000. Outlane 20,000 when the bonus lanes are lit |
 | End of ball | 250 per bumper or target hit that ball, times the multiplier |
+
+### Nudge and tilt
+
+X bumps the table from the left and sends the ball right, `.` does the opposite, and Up bumps from the bottom and sends the ball up the table. The drawn table jolts and settles.
+
+Each nudge adds tilt heat, which cools over 2.5 seconds. Two quick nudges show a warning. Three inside about a second tilt the table: the flippers and plunger go dead, nothing scores, the end-of-ball bonus is lost and no ball save applies, until the ball drains. The next ball starts clean.
 
 ### Missions and ranks
 

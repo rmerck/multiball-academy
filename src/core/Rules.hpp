@@ -47,6 +47,12 @@ class Rules {
   // Repeating the ramp or the hyperspace chute within this window is a reflex shot.
   static constexpr double kReflexSeconds = 5.0;
   static constexpr double kMessageSeconds = 3.0;
+  // Tilt: each nudge adds one unit of heat, which cools at one unit per
+  // kTiltCoolSeconds. Reaching kTiltLimit tilts the table for the rest of
+  // the ball. The limit sits just under three so that three nudges inside
+  // about a second tilt, while occasional nudges never do.
+  static constexpr double kTiltLimit = 2.5;
+  static constexpr double kTiltCoolSeconds = 2.5;
 
   enum class DrainResult : std::uint8_t { BallSaved, ShootAgain, NextBall, GameOver };
 
@@ -68,6 +74,9 @@ class Rules {
   DrainResult onDrain() noexcept;
   // A flipper button went down: lit re-entry lanes rotate that way.
   void onFlipper(bool left) noexcept;
+  // The player shoved the table. Returns true if the shove should move the
+  // ball: false once tilted or when the game is over.
+  bool onNudge() noexcept;
   // Once per simulation step.
   void tick() noexcept;
 
@@ -76,6 +85,10 @@ class Rules {
   int ball() const noexcept { return ball_; }
   int extraBalls() const noexcept { return extraBalls_; }
   bool gameOver() const noexcept { return gameOver_; }
+  // Tilted: the controls are dead and nothing scores until the ball drains.
+  bool tilted() const noexcept { return tilted_; }
+  // Tilt heat as a fraction of the limit, 0 to 1. Drives a warning light.
+  double tiltWarning() const noexcept { return tiltHeat_ / kTiltLimit; }
   int fieldMultiplier() const noexcept { return kFieldMultipliers[multiplierLevel_]; }
   std::uint64_t bonus() const noexcept { return bonus_; }
   bool ballSaveActive() const noexcept { return ballSaveSteps_ > 0; }
@@ -120,6 +133,8 @@ class Rules {
   int ball_ = 1;
   int extraBalls_ = 0;
   bool gameOver_ = false;
+  bool tilted_ = false;
+  double tiltHeat_ = 0.0;
   std::size_t multiplierLevel_ = 0;
 
   std::array<bool, table::kTargets.size()> targetLit_{};
