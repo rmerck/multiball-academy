@@ -6,9 +6,12 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <memory>
 #include <string>
@@ -56,27 +59,37 @@ pinball::InputState scriptedInput(std::uint32_t step) noexcept {
   return input;
 }
 
-// True if the frame has more than one colour, i.e. something was drawn.
+// True if the playfield part of the frame holds a real picture: many
+// different colours, not a flat fill or a few lines. The panel area is ignored, because it
+// is filled even when nothing else draws.
 bool hasContent(SDL_Surface* surface) {
+  constexpr int kPlayfieldWidth = 768;
+  constexpr std::size_t kNeeded = 16;
   if (!SDL_LockSurface(surface)) {
     return false;
   }
+  std::array<std::uint32_t, kNeeded> seen{};
+  std::size_t distinct = 0;
   const auto* pixels = static_cast<const std::uint8_t*>(surface->pixels);
-  const std::uint32_t* first = reinterpret_cast<const std::uint32_t*>(pixels);  // NOLINT
-  bool varied = false;
-  for (int y = 0; y < surface->h && !varied; ++y) {
-    const auto* row =
-        reinterpret_cast<const std::uint32_t*>(pixels + static_cast<std::size_t>(y) *  // NOLINT
-                                                            static_cast<std::size_t>(surface->pitch));
-    for (int x = 0; x < surface->w; ++x) {
-      if (row[x] != *first) {
-        varied = true;
-        break;
+  const int width = surface->w < kPlayfieldWidth ? surface->w : kPlayfieldWidth;
+  // Sample every fourth pixel of every fourth row: plenty, and quick.
+  for (int y = 0; y < surface->h && distinct < kNeeded; y += 4) {
+    const std::uint8_t* row =
+        pixels + static_cast<std::size_t>(y) * static_cast<std::size_t>(surface->pitch);
+    for (int x = 0; x < width && distinct < kNeeded; x += 4) {
+      std::uint32_t value = 0;
+      std::memcpy(&value, row + static_cast<std::size_t>(x) * 4U, sizeof value);
+      bool known = false;
+      for (std::size_t i = 0; i < distinct; ++i) {
+        known = known || seen[i] == value;
+      }
+      if (!known) {
+        seen[distinct++] = value;
       }
     }
   }
   SDL_UnlockSurface(surface);
-  return varied;
+  return distinct >= kNeeded;
 }
 
 int run(std::uint32_t steps, const std::string& outputName, bool showAbout) {
@@ -129,6 +142,15 @@ int run(std::uint32_t steps, const std::string& outputName, bool showAbout) {
   if (!hasContent(surface.get())) {
     std::fputs("rendered frame is blank\n", stderr);
     return EXIT_FAILURE;
+  }
+  // Never write through whatever already has this name: remove it first, so
+  // a symbolic link is replaced rather than followed.
+  SDL_PathInfo existing{};
+  if (SDL_GetPathInfo(outputName.c_str(), &existing)) {
+    if (existing.type == SDL_PATHTYPE_DIRECTORY || !SDL_RemovePath(outputName.c_str())) {
+      std::fprintf(stderr, "cannot replace existing %s\n", outputName.c_str());
+      return EXIT_FAILURE;
+    }
   }
   if (!SDL_SavePNG(surface.get(), outputName.c_str())) {
     std::fprintf(stderr, "SDL_SavePNG failed: %s\n", SDL_GetError());
