@@ -173,6 +173,14 @@ target_include_directories(pinball_core PUBLIC src ${PINBALL_VERSION_DIR})
 target_link_libraries(pinball_core PUBLIC box2d::box2d)
 # PUBLIC so the same warnings, hardening and sanitizer flags reach every consumer.
 pinball_apply_hardening(pinball_core PUBLIC)
+# No fused multiply-add: a compiler may otherwise merge a multiply and an add
+# on processors that have the instruction (every arm64, x86-64 with FMA),
+# which rounds differently and sends the ball another way. With this the
+# same input gives the same game on x86-64 and arm64, and the trajectory the
+# tests record holds everywhere. Box2D is already built this way.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(pinball_core PUBLIC -ffp-contract=off)
+endif()
 if(PINBALL_IOS)
   # For the few places where the source must tell iOS from macOS.
   target_compile_definitions(pinball_core PUBLIC PINBALL_IOS=1)
