@@ -276,6 +276,40 @@ std::vector<SDL_Vertex> makePlayfieldMesh() {
   return vertices;
 }
 
+// The layout drawing as a texture of the size the art has (two pixels to a
+// table unit), drawn once: a frame then costs one copy, as it does with art,
+// and not some nine thousand triangles. A target texture loses what is in
+// it when the device is reset or the targets are; the application makes the
+// renderer again on either event.
+TexturePtr makePlayfieldTexture(SDL_Renderer* r) {
+  constexpr int kScale = 2;
+  TexturePtr texture(SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET,
+                                       static_cast<int>(table::kWidth) * kScale,
+                                       static_cast<int>(table::kHeight) * kScale));
+  SDL_Texture* const before = SDL_GetRenderTarget(r);
+  if (!texture || !SDL_SetRenderTarget(r, texture.get())) {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not make the playfield texture: %s",
+                 SDL_GetError());
+    return nullptr;
+  }
+  // A render target has its own scale, viewport and clip: nothing of the
+  // window's is disturbed.
+  const std::vector<SDL_Vertex> mesh = makePlayfieldMesh();
+  bool drawn = SDL_SetRenderScale(r, static_cast<float>(kScale), static_cast<float>(kScale));
+  drawn = SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE) && drawn;
+  drawn = SDL_SetRenderDrawColor(r, 10, 0, 26, SDL_ALPHA_OPAQUE) && drawn;
+  drawn = SDL_RenderClear(r) && drawn;
+  drawn = SDL_RenderGeometry(r, nullptr, mesh.data(), static_cast<int>(mesh.size()), nullptr, 0) &&
+          drawn;
+  drawn = SDL_SetRenderTarget(r, before) && drawn;
+  if (!drawn) {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not draw the playfield texture: %s",
+                 SDL_GetError());
+    return nullptr;
+  }
+  return texture;
+}
+
 }  // namespace
 
 std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
@@ -300,6 +334,11 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   // The playfield art belongs to one layout of the table. A build without
   // it draws the table from the layout itself.
   t.background = optional("table/background.png");
+  if (!t.background && !failed) {
+    t.background = makePlayfieldTexture(renderer);
+    failed = !t.background;
+    t.backgroundFromLayout = true;
+  }
   t.ball = assets.loadTexture(renderer, "sprites/ball.png");
   t.flipper = assets.loadTexture(renderer, "sprites/flipper.png");
   t.bumper = assets.loadTexture(renderer, "sprites/bumper.png");
@@ -327,9 +366,7 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
     }
   }
   // The background is opaque: skip blending for the largest draw of the frame.
-  if (t.background) {
-    SDL_SetTextureBlendMode(t.background.get(), SDL_BLENDMODE_NONE);
-  }
+  SDL_SetTextureBlendMode(t.background.get(), SDL_BLENDMODE_NONE);
   SDL_SetTextureBlendMode(t.panel.get(), SDL_BLENDMODE_NONE);
   // The glow is additive everywhere except the ball's shadow, which switches
   // it for one draw and switches it back.
@@ -337,20 +374,7 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   return std::unique_ptr<TableRenderer>(new TableRenderer(std::move(t)));
 }
 
-TableRenderer::TableRenderer(Textures textures) : textures_(std::move(textures)) {
-  if (!textures_.background) {
-    playfield_ = makePlayfieldMesh();
-  }
-}
-
-void TableRenderer::drawPlayfield(SDL_Renderer* r) const {
-  const SDL_FRect whole{0.0F, 0.0F, table::kWidth, table::kHeight};
-  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-  SDL_SetRenderDrawColor(r, 10, 0, 26, SDL_ALPHA_OPAQUE);
-  SDL_RenderFillRect(r, &whole);
-  SDL_RenderGeometry(r, nullptr, playfield_.data(), static_cast<int>(playfield_.size()), nullptr,
-                     0);
-}
+TableRenderer::TableRenderer(Textures textures) : textures_(std::move(textures)) {}
 
 void TableRenderer::drawGlow(SDL_Renderer* r, Vec2 center, float radius, Rgb color,
                              float strength) const {
@@ -606,10 +630,8 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
   const SDL_Rect clip{-shakeX, -shakeY, view.w, view.h};
   SDL_SetRenderClipRect(r, &clip);
 
-  if (textures_.background) {
-    SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
-  } else {
-    drawPlayfield(r);
+  SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
+  if (textures_.backgroundFromLayout) {
     drawElements(r, game);
   }
   drawTargets(r, game);

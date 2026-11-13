@@ -413,8 +413,10 @@ void App::handleEvent(const SDL_Event& event) {
       handleFocusChange(event.type);
       break;
     case SDL_EVENT_RENDER_DEVICE_RESET:
-      // Every texture died with the old device. (Render targets, which have
-      // their own event, are not used.)
+    case SDL_EVENT_RENDER_TARGETS_RESET:
+      // Every texture died with the old device; or only what was drawn
+      // into the render targets did, and the playfield may be one (it is
+      // drawn into a texture when there is no art for it).
       reloadTextures();
       break;
     case SDL_EVENT_RENDER_DEVICE_LOST:

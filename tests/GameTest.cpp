@@ -397,6 +397,26 @@ void testSeveralBalls() {
     CHECK(game.ballInPlay(0));
   }
 
+  {  // The right of the nest, under the arch, is field that inPlayArea leaves
+     // out (the launch channel crosses those coordinates). A ball there is
+     // in play, for the rules and for the game alike, from its first hit.
+    Game game;
+    const InputState input;
+    const Vec2 aboveBumper = table::kBumpers[1].shape.center + Vec2{10.0F, -40.0F};
+    CHECK(!table::inPlayArea(aboveBumper));
+    Seam::placeBall(game, aboveBumper);
+    game.step(input);
+    CHECK(!game.ballInPlay(0) && !game.rules().ballInPlay());
+    int steps = 0;
+    while (game.bumperHits() == 0 && steps < 240) {
+      game.step(input);
+      ++steps;
+    }
+    CHECK(game.bumperHits() == 1);
+    CHECK(!table::inPlayArea(game.ball().position));
+    CHECK(game.ballInPlay(0) && game.rules().ballInPlay());
+  }
+
   {  // The last ball in play drains on the very step a new ball arrives on
      // the plunger. That ball, now the only ball, is not in play until it
      // has been launched.

@@ -28,9 +28,18 @@ add_executable(pinball_acceptance
 target_include_directories(pinball_acceptance PRIVATE tests)
 target_link_libraries(pinball_acceptance PRIVATE pinball_core)
 
-# No table of the layout is made with the C library's mathematics.
+# No table of the layout is made with the C library's mathematics, and
+# nothing that moves the ball calls its transcendental functions. (Sound and
+# Music do, for the samples they make: those never reach the ball.)
+set(trajectory_sources "")
+foreach(name IN ITEMS Physics.cpp Physics.hpp Game.cpp Game.hpp Rules.cpp Rules.hpp
+                      Missions.cpp Missions.hpp Vec2.hpp FixedTimestep.hpp Input.hpp)
+  list(APPEND trajectory_sources ${CMAKE_SOURCE_DIR}/src/core/${name})
+endforeach()
+list(JOIN trajectory_sources "," trajectory_sources)
 add_test(NAME table_layout_no_libm
   COMMAND ${CMAKE_COMMAND} -DHEADER=${CMAKE_SOURCE_DIR}/src/core/TableLayout.hpp
+          -DSOURCES=${trajectory_sources}
           -P ${CMAKE_SOURCE_DIR}/tests/CheckNoLibm.cmake)
 
 if(PINBALL_ACCEPTANCE_TESTS)

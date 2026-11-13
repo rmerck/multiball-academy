@@ -528,7 +528,13 @@ void Game::handleEvents() {
       continue;
     }
     // Anything the ball can hit is on the playfield, so the first hit puts
-    // the ball in play even if it has not been seen clear of the lane yet.
+    // the ball in play even if it has not been seen clear of the lane yet:
+    // the corner of the field under the arch on the right (x 440 to 623
+    // above y 300) is not in table::inPlayArea, because the launch channel
+    // crosses it.
+    if (event.ball < kMaxBalls) {
+      balls_[event.ball].inPlay = true;
+    }
     enterPlay();
     const std::size_t index = event.element.index;
     switch (event.element.kind) {

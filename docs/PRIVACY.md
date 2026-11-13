@@ -32,4 +32,4 @@ If this policy changes, the new text replaces this page, and the page's history 
 
 ## Contact
 
-Questions about this policy: open an issue at <https://github.com/rmerck/multiball-academy/issues>. See also [SUPPORT.md](SUPPORT.md).
+Questions about this policy: open an issue at <https://github.com/rmerck/multiball-academy/issues>, or write to <dev@mrck.app>. See also [SUPPORT.md](SUPPORT.md).

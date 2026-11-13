@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
 
 #include "Check.hpp"
 #include "Suites.hpp"
@@ -102,10 +104,49 @@ void testBumpers() {
     CHECK(escaped);
   }
 
+  {  // Two bumpers cannot hold a ball between them. Dropped into the gap
+     // of each pair, from every place across it that is clear of both and
+     // at rest or already falling, the ball is out of the nest, or well
+     // away from where it was put, within ten seconds.
+    int starts = 0;
+    int held = 0;
+    for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
+      for (std::size_t j = i + 1; j < table::kBumpers.size(); ++j) {
+        const table::Circle& a = table::kBumpers[i].shape;
+        const table::Circle& b = table::kBumpers[j].shape;
+        const Vec2 middle = (a.center + b.center) * 0.5F;
+        for (float dx = -40.0F; dx <= 40.0F; dx += 4.0F) {
+          for (const float speed : {0.0F, 300.0F}) {
+            const Vec2 start = middle + Vec2{dx, -30.0F};
+            const float clear = table::kBallRadius + 1.0F;
+            if (length(start - a.center) < a.radius + clear ||
+                length(start - b.center) < b.radius + clear) {
+              continue;
+            }
+            ++starts;
+            PhysicsWorld world;
+            world.resetBall(start, {0.0F, speed});
+            bool escaped = false;
+            for (int step = 0; step < 120 * 10 && !escaped; ++step) {
+              world.step(kStep);
+              escaped = std::fabs(world.ballPosition().x - start.x) > 80.0F ||
+                        world.ballPosition().y > 300.0F;
+            }
+            held += escaped ? 0 : 1;
+          }
+        }
+      }
+    }
+    std::printf("two bumpers: %d starts, %d held\n", starts, held);
+    CHECK(starts >= 30);
+    CHECK(held == 0);
+  }
+
   {  // A rejected step leaves no stale events.
     const table::Circle& c = table::kBumpers[0].shape;
     PhysicsWorld world;
-    world.resetBall({c.center.x - c.radius - table::kBallRadius - 6.0F, c.center.y}, {900.0F, 0.0F});
+    world.resetBall({c.center.x - c.radius - table::kBallRadius - 6.0F, c.center.y},
+                    {900.0F, 0.0F});
     bool sawHit = false;
     for (int step = 0; step < 20 && !sawHit; ++step) {
       world.step(kStep);
