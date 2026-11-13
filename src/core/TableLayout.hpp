@@ -17,6 +17,9 @@ inline constexpr float kWidth = 768.0F;
 inline constexpr float kHeight = 960.0F;
 
 inline constexpr float kBallRadius = 12.0F;
+// Most balls on the table at once. The physics world keeps this many ball
+// slots; all but one are idle outside a multiball.
+inline constexpr std::size_t kMaxBalls = 3;
 
 // Outer shell: straight side walls joined by an elliptical arch over the top.
 inline constexpr float kWallLeft = 40.0F;
