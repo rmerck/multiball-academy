@@ -165,6 +165,46 @@ jobs:
           codesign -dv "$APP" 2>&1 | grep -E 'flags=.*runtime'
           codesign -dv "$APP/Contents/MacOS/Space Cadet Pinball" 2>&1 | grep -E 'flags=.*runtime'
 
+  # The iOS application, built for the simulator as it would be for release:
+  # optimised, warnings as errors, nothing signed. It is not started here;
+  # the bundle is taken apart instead, and the core and file handling tests
+  # are run inside a simulator, compiled with the iOS SDK. The image's Xcode
+  # is named, not left to the image's default. Nothing is cached: SDL's
+  # checks of the system, not its objects, are most of the time.
+  ios:
+    name: ios (simulator)
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Xcode and SDK
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build-ios-sim -G Xcode
+          -DCMAKE_SYSTEM_NAME=iOS
+          -DCMAKE_OSX_SYSROOT=iphonesimulator
+          -DPINBALL_FETCH_DEPS=ON
+          -DPINBALL_WERROR=ON
+      - name: Build
+        run: cmake --build build-ios-sim --config Release -- -quiet
+      - name: The bundle is complete
+        run: |
+          . build-ios-sim/product.env
+          app="build-ios-sim/Release-iphonesimulator/$PINBALL_APP_NAME.app"
+          ls -la "$app" "$app/assets"
+          plutil -p "$app/Info.plist"
+          sh tools/ios/check_bundle.sh "$app" build-ios-sim/product.env . --release
+      - name: Core and file handling tests on a simulator
+        run: sh tools/ios/simulator_tests.sh build-ios-sim Release
+
   linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
