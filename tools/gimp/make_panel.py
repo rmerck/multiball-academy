@@ -9,8 +9,8 @@
 # so the art always lines up with the text drawn over it.
 #
 # The sunset illustration behind the title is not drawn here: it is composited
-# from tools/gimp/sources/backglass.png, which was made in Canva (see the
-# README, "Assets").
+# from tools/gimp/sources/backglass.png, which was made in Canva (see
+# docs/ASSETS.md).
 # Everything else on the panel is drawn by this script.
 import math
 import random

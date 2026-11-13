@@ -14,3 +14,6 @@ __pycache__/
 /leak-*
 /oom-*
 /timeout-*
+
+# Release disk images are published as GitHub Release assets, never committed.
+*.dmg
