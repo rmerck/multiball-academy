@@ -35,7 +35,7 @@ constexpr GoalSet goalBit(Goal goal) noexcept { return GoalSet{1} << std::to_und
 static_assert(std::to_underlying(Goal::Slingshots) + 1U == kGoalCount, "one count per goal");
 static_assert(kGoalCount <= 32, "one bit per goal in a GoalSet");
 
-// Short instruction for the display, such as "HIT ATTACK BUMPERS".
+// Short instruction for the display, such as "HIT METEOR BUMPERS".
 std::string_view goalText(Goal goal) noexcept;
 
 struct MissionStage {
@@ -80,7 +80,7 @@ class MissionControl {
 
   explicit MissionControl(double stepSeconds) noexcept;
 
-  // Back to Cadet with nothing selected.
+  // Back to the first rank with nothing selected.
   void reset() noexcept;
   // The game is over: a selected or active mission is dropped, unannounced
   // and unpaid. Rank, progress and the count of missions done are kept.

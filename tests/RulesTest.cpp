@@ -100,7 +100,7 @@ void testRules() {
     CHECK(!rules.laneLit(999));
   }
 
-  {  // Re-entry lanes: each lights, all three upgrade the attack bumpers up
+  {  // Roll call lanes: each lights, all three charge the meteor bumpers up
      // to three times, and flipper presses rotate the lit lanes.
     Rules rules(kStep);
     const std::size_t lane = firstRollover(table::RolloverGroup::ReEntry);
@@ -176,8 +176,8 @@ void testRules() {
     CHECK(rules.fieldMultiplier() == 1);
   }
 
-  {  // Booster bank: online, jackpot lit, bonus lanes lit, extra ball. The
-     // jackpot is collected by the second hyperspace shot.
+  {  // Turbo bank: online, jackpot lit, outlane bonus lit, extra ball. The
+     // jackpot is collected by the second quasar chute shot.
     Rules rules(kStep);
     hitBank(rules, table::TargetBank::Booster);
     CHECK(rules.boosterLevel() == 1 && !rules.jackpotLit());
@@ -332,7 +332,7 @@ void testRules() {
   {  // Messages expire.
     Rules rules(kStep);
     rules.onHole(firstHole(table::HoleType::BlackHole));
-    CHECK(rules.message() == std::string_view("BLACK HOLE"));
+    CHECK(rules.message() == std::string_view("SINGULARITY"));
     wait(rules, Rules::kMessageSeconds);
     CHECK(rules.message().empty());
   }
@@ -350,7 +350,7 @@ void testRules() {
       rules.onBallInPlay();
       CHECK(rules.ballSaveActive());
       rules.onHole(firstHole(table::HoleType::BlackHole));
-      CHECK(rules.message() == std::string_view("BLACK HOLE"));
+      CHECK(rules.message() == std::string_view("SINGULARITY"));
       if (step >= 1.0) {
         rules.tick();
         CHECK(rules.message().empty());
@@ -364,15 +364,15 @@ void testRules() {
     Rules rules(kStep);
     for (int i = 0; i < 3; ++i) {
       hitBank(rules, table::TargetBank::Multiplier);
-      CHECK(rules.message() == std::string_view("FIELD MULTIPLIER RAISED"));
+      CHECK(rules.message() == std::string_view("OVERDRIVE RAISED"));
     }
     hitBank(rules, table::TargetBank::Multiplier);
     CHECK(rules.fieldMultiplier() == 10);
-    CHECK(rules.message() == std::string_view("FIELD MULTIPLIER RAISED"));
+    CHECK(rules.message() == std::string_view("OVERDRIVE RAISED"));
     const std::uint64_t before = rules.score();
     hitBank(rules, table::TargetBank::Multiplier);
     CHECK(rules.fieldMultiplier() == 10);
-    CHECK(rules.message() == std::string_view("FIELD MULTIPLIER AT MAXIMUM"));
+    CHECK(rules.message() == std::string_view("OVERDRIVE AT MAXIMUM"));
     std::uint64_t targets = 0;
     for (const table::Target& target : table::kTargets) {
       targets += target.bank == table::TargetBank::Multiplier ? 1U : 0U;
@@ -400,7 +400,7 @@ void testRules() {
     CHECK(rules.extraBalls() == Rules::kMaxExtraBalls);
     CHECK(rules.hyperspaceLevel() == 0);
     CHECK(rules.score() == before + points::kHyperspace[2]);
-    CHECK(rules.message() == std::string_view("HYPERSPACE BONUS"));
+    CHECK(rules.message() == std::string_view("QUASAR BONUS"));
     CHECK((rules.takeSounds() & pinball::soundBit(pinball::Sound::ExtraBall)) == 0U);
     // With room, the same rung is the extra ball and pays no points.
     Rules roomy(kStep);
@@ -433,7 +433,7 @@ void testRules() {
     rules.onBallReturned();
     CHECK(!rules.tilted());
     CHECK(rules.tiltWarning() == 0.0);
-    CHECK(rules.message() == std::string_view("RE-DEPLOY"));
+    CHECK(rules.message() == std::string_view("BALL SAVED"));
     CHECK(rules.score() == score && rules.bonus() == bonus && bonus > 0);
     CHECK(rules.ball() == 1 && !rules.gameOver());
     CHECK(rules.takeSounds() == 0U);

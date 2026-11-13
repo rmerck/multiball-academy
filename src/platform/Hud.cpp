@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <string_view>
 
+#include "core/DisplayText.hpp"
 #include "core/Format.hpp"
 #include "core/Missions.hpp"
 #include "core/PanelLayout.hpp"
@@ -26,8 +27,20 @@ constexpr SDL_Color kViolet{120, 30, 200, 255};
 // An unlit segment of a gauge.
 constexpr SDL_Color kUnlit{58, 30, 92, 255};
 
-constexpr float kLabelSize = 2.0F;
-constexpr float kPad = 12.0F;
+// The margin and the text sizes the display limits are worked out from
+// (core/DisplayText.hpp), so what the rules may say and what is drawn here
+// cannot drift apart.
+using display::kPad;
+constexpr float kLabelSize = display::kSmallestSize;
+
+// What the desktop adds to the game-over message. The two together are held
+// to the message window like any message.
+constexpr std::string_view kNewGameHint = "   PRESS F2";
+constexpr std::string_view kGameOverWithHint = "GAME OVER   PRESS F2";
+static_assert(kGameOverWithHint.starts_with(Rules::kGameOverMessage.text()) &&
+              kGameOverWithHint.ends_with(kNewGameHint) &&
+              kGameOverWithHint.size() == Rules::kGameOverMessage.text().size() + kNewGameHint.size());
+static_assert(display::fits(kGameOverWithHint, display::kMaxMessageLength));
 
 float centerX(const panel::Rect& r) noexcept { return r.x + r.w * 0.5F; }
 
@@ -125,7 +138,7 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game,
   // Rank and progress towards the next one.
   label(r, rankWell, "RANK");
   drawText(r, rankName(missions.rank()), rankWell.x + kPad, rankWell.y + 30.0F,
-           4.0F, kCyan);
+           display::kRankSize, kCyan);
   {
     const float gap = 4.0F;
     const float segment = (rankWell.w - 2.0F * kPad - gap * (kProgressPerRank - 1)) /
@@ -147,7 +160,7 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game,
   const float missionX = missionWell.x + kPad;
   const float missionY = missionWell.y + 34.0F;
   if (const Mission* mission = missions.mission()) {
-    drawText(r, mission->name, missionX, missionY, 3.0F, kAmber);
+    drawText(r, mission->name, missionX, missionY, display::kMissionSize, kAmber);
     if (missions.phase() == MissionControl::Phase::Selected) {
       if (blinkOn) {
         drawText(r, "SHOOT THE LAUNCH RAMP TO ACCEPT", missionX, missionY + 34.0F, kLabelSize,
@@ -175,7 +188,7 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game,
       }
     }
   } else {
-    drawText(r, "NO MISSION", missionX, missionY, 3.0F, kDim);
+    drawText(r, "NO MISSION", missionX, missionY, display::kMissionSize, kDim);
     drawText(r, "HIT A MISSION TARGET, LEFT WALL", missionX, missionY + 34.0F, kLabelSize,
              kDim);
   }
@@ -207,16 +220,14 @@ void drawHud(SDL_Renderer* r, SDL_Texture* panelArt, const Game& game,
   }
 
   // Message. On a desktop a finished game also says which key starts the
-  // next one.
+  // next one: drawn here, never said by the rules.
   std::string_view message = rules.message();
-  std::array<char, 48> withHint{};
-  if (desktop && rules.gameOver() && message == Rules::kGameOverMessage) {
-    message = formatText(withHint.data(), withHint.size(), "%.*s   PRESS F2",
-                         static_cast<int>(message.size()), message.data());
+  if (desktop && rules.gameOver() && message == Rules::kGameOverMessage.text()) {
+    message = kGameOverWithHint;
   }
   if (!message.empty()) {
     float messageSize = 4.0F;
-    while (messageSize > 2.0F &&
+    while (messageSize > display::kSmallestSize &&
            textWidth(message, messageSize) > messageWell.w - 2.0F * kPad) {
       messageSize -= 1.0F;
     }

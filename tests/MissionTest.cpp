@@ -4,9 +4,11 @@
 
 #include "Check.hpp"
 #include "Suites.hpp"
+#include "core/DisplayText.hpp"
 #include "core/Missions.hpp"
 #include "core/Rules.hpp"
 #include "core/TableLayout.hpp"
+#include "platform/Font5x7.hpp"
 
 namespace {
 
@@ -15,6 +17,7 @@ using pinball::goalBit;
 using pinball::MissionControl;
 using pinball::Rules;
 namespace table = pinball::table;
+namespace display = pinball::display;
 namespace points = pinball::points;
 
 constexpr double kStep = 1.0 / 120.0;
@@ -73,7 +76,7 @@ void testMissions() {
     rules.onTarget(missionTarget(1));
     CHECK(rules.missions().completedMissions() == 1);
     CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
-    CHECK(rules.message() == std::string_view("MISSION COMPLETE"));
+    CHECK(rules.message() == std::string_view("COURSE PASSED"));
     const pinball::SoundSet sounds = rules.takeSounds();
     CHECK((sounds & pinball::soundBit(pinball::Sound::MissionComplete)) != 0U);
     CHECK((sounds & pinball::soundBit(pinball::Sound::MissionSelect)) == 0U);
@@ -130,7 +133,7 @@ void testMissions() {
       Rules rules(kStep);
       rules.onBallInPlay();
       if (extraBall == 1) {
-        // Four medal banks: two commendations, then an extra ball.
+        // Four merit banks: two merit awards, then an extra ball.
         for (int bank = 0; bank < 3; ++bank) {
           for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
             if (table::kTargets[i].bank == table::TargetBank::Medal) {
@@ -153,8 +156,8 @@ void testMissions() {
       CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
       CHECK(rules.message() == std::string_view("TILT"));
       rules.onDrain();
-      CHECK(rules.message() == std::string_view(extraBall == 1 ? "SHOOT AGAIN  MISSION ABORTED"
-                                                               : "NEXT BALL  MISSION ABORTED"));
+      CHECK(rules.message() == std::string_view(extraBall == 1 ? "SHOOT AGAIN  COURSE FAILED"
+                                                               : "NEXT BALL  COURSE FAILED"));
       rules.onBallInPlay();
       for (int i = 0; i < 1200; ++i) {
         rules.tick();
@@ -170,7 +173,7 @@ void testMissions() {
     for (int i = 0; i < static_cast<int>(MissionControl::kFuelSeconds / kStep) + 2; ++i) {
       rules.tick();
     }
-    CHECK(rules.message() == std::string_view("OUT OF FUEL  MISSION ABORTED"));
+    CHECK(rules.message() == std::string_view("OUT OF ENERGY  COURSE FAILED"));
     rules.onNudge();
     rules.onNudge();
     rules.onNudge();
@@ -189,7 +192,7 @@ void testMissions() {
       returned.tick();
     }
     returned.onBallReturned();
-    CHECK(returned.message() == std::string_view("RE-DEPLOY  MISSION ABORTED"));
+    CHECK(returned.message() == std::string_view("BALL SAVED  COURSE FAILED"));
   }
 
   {  // The mission bank cannot be loaded during a mission. Accepting one
@@ -243,7 +246,7 @@ void testMissions() {
     Rules rules(kStep);
     rules.onBallInPlay();
     rules.onTarget(missionTarget(0));
-    CHECK(rules.message() == std::string_view("MISSION SELECTED  SHOOT THE RAMP"));
+    CHECK(rules.message() == std::string_view("COURSE SELECTED  SHOOT THE RUNWAY"));
     rules.onNudge();
     rules.onNudge();
     rules.onTarget(missionTarget(1));
@@ -264,27 +267,76 @@ void testMissions() {
     CHECK(last.message() == std::string_view("GAME OVER"));
   }
 
+  {  // The display limits. They are worked out from the panel windows and
+     // the font, and every rank, mission, goal and message is held to them
+     // when the game is compiled: this pins the arithmetic behind that.
+    static_assert(display::kAdvance == pinball::font::kAdvance &&
+                      display::kFirstChar == pinball::font::kFirstChar &&
+                      display::kLastChar == pinball::font::kLastChar,
+                  "the limits assume the font the display draws with");
+    // 440 pixels inside a window: a line of n characters is 6n - 1 font
+    // pixels wide.
+    static_assert(display::charsThatFit(240.0F, 3.0F) == 13);  // 77 * 3 = 231, and 14 need 249.
+    static_assert(display::kMaxRankNameLength == 13);
+    static_assert(display::charsThatFit(440.0F, 4.0F) == 18);  // 107 * 4 = 428, and 19 need 452.
+    static_assert(display::charsThatFit(440.0F, 3.0F) == 24);  // 143 * 3 = 429, and 25 need 447.
+    static_assert(display::charsThatFit(440.0F, 2.0F) == 36);  // 215 * 2 = 430, and 37 need 442.
+    static_assert(display::charsThatFit(10.0F, 2.0F) == 1);
+    static_assert(display::charsThatFit(9.0F, 2.0F) == 0);
+    static_assert(display::charsThatFit(0.0F, 2.0F) == 0);
+    static_assert(display::charsThatFit(440.0F, 0.0F) == 0);
+    static_assert(display::fits("COURSE PASSED  RANK UP", display::kMaxMessageLength));
+    static_assert(display::fits("FIELD TRIP: 101", 15) && !display::fits("FIELD TRIP: 101", 14));
+    static_assert(!display::fits("", 10));
+    static_assert(!display::fits(" PAD", 10) && !display::fits("PAD ", 10));
+    // Lower case, and anything else the font has no glyph for, is refused.
+    static_assert(!display::fits("Rookie", 10) && !display::fits("A\tB", 10) &&
+                  !display::fits("A~B", 10) && !display::fits("\xC9", 10));
+    // What the rules say comes through unchanged, and fits.
+    Rules rules(kStep);
+    CHECK(display::fits(rules.message(), display::kMaxMessageLength));
+    CHECK(rules.message() == display::Message("LAUNCH THE BALL").text());
+  }
+
   {  // The mission table is well formed: every mission has a name that fits
      // the display, a first stage, a positive award, and awards never fall
      // as rank rises.
     std::uint64_t previousNormal = 0;
     for (std::size_t rank = 0; rank < pinball::kRankCount; ++rank) {
-      CHECK(!pinball::rankName(rank).empty());
+      CHECK(display::fits(pinball::rankName(rank), display::kMaxRankNameLength));
       for (std::size_t m = 0; m < pinball::kMissionsPerRank; ++m) {
         const pinball::Mission& mission = pinball::missionAt(rank, m);
-        CHECK(!mission.name.empty() && mission.name.size() <= 22);
+        CHECK(display::fits(mission.name, display::kMaxMissionNameLength));
         CHECK(mission.stages[0].count > 0);
         CHECK(mission.award > 0);
         CHECK(mission.progress > 0 && mission.progress <= pinball::kProgressPerRank);
         for (const pinball::MissionStage& stage : mission.stages) {
           CHECK(static_cast<std::size_t>(stage.goal) < pinball::kGoalCount);
-          CHECK(!pinball::goalText(stage.goal).empty());
+          CHECK(display::fits(pinball::goalText(stage.goal), display::kMaxGoalTextLength));
         }
       }
       CHECK(pinball::missionAt(rank, 0).award >= previousNormal);
       CHECK(pinball::missionAt(rank, pinball::kSpecialMission).award >
             pinball::missionAt(rank, 0).award);
       previousNormal = pinball::missionAt(rank, 0).award;
+    }
+    // Every goal has a line that fits beside its count, used by a mission or
+    // not, and no two missions or ranks share a name.
+    for (std::size_t goal = 0; goal < pinball::kGoalCount; ++goal) {
+      CHECK(display::fits(pinball::goalText(static_cast<Goal>(goal)), display::kMaxGoalTextLength));
+    }
+    const std::size_t perRank = pinball::kMissionsPerRank;
+    const std::size_t missionCount = pinball::kRankCount * perRank;
+    for (std::size_t a = 0; a < missionCount; ++a) {
+      for (std::size_t b = a + 1; b < missionCount; ++b) {
+        CHECK(pinball::missionAt(a / perRank, a % perRank).name !=
+              pinball::missionAt(b / perRank, b % perRank).name);
+      }
+    }
+    for (std::size_t a = 0; a < pinball::kRankCount; ++a) {
+      for (std::size_t b = a + 1; b < pinball::kRankCount; ++b) {
+        CHECK(pinball::rankName(a) != pinball::rankName(b));
+      }
     }
     // Lookups clamp instead of reading out of range.
     CHECK(pinball::rankName(999) == pinball::rankName(pinball::kRankCount - 1));
@@ -380,7 +432,7 @@ void testMissions() {
      // further hit on the mission targets with the same mission selected
      // leaves the display and the speaker alone.
     const pinball::SoundSet select = pinball::soundBit(pinball::Sound::MissionSelect);
-    const std::string_view selected = "MISSION SELECTED  SHOOT THE RAMP";
+    const std::string_view selected = "COURSE SELECTED  SHOOT THE RUNWAY";
     const auto quiet = [&](Rules& rules, std::size_t target) {
       // Let the last announcement leave the display first.
       for (int i = 0; i < 1200 && !rules.message().empty(); ++i) {
@@ -410,7 +462,7 @@ void testMissions() {
     }
     // The ramp still accepts it.
     rules.onHole(hole(table::HoleType::Ramp));
-    CHECK(rules.message() == std::string_view("MISSION ACCEPTED"));
+    CHECK(rules.message() == std::string_view("CLASS IN SESSION"));
   }
 
   {  // Game over puts the mission lights out: a waiting selection or a
@@ -496,7 +548,7 @@ void testMissions() {
           continue;
         }
         MissionControl c(kStep);
-        // Reach Ensign by completing three Cadet missions.
+        // Reach the second rank by completing three first-rank missions.
         for (int i = 0; i < 3; ++i) {
           c.onMissionTarget(0, false);
           c.onRamp();
@@ -554,7 +606,7 @@ void testMissions() {
     CHECK(!control.tick().aborted);
   }
 
-  {  // A whole career: play every rank's missions to Fleet Admiral. Each
+  {  // A whole career: play every rank's missions to the top rank. Each
      // rank takes three normal missions; the top rank does not promote.
     MissionControl control(kStep);
     int promotions = 0;
@@ -589,10 +641,10 @@ void testMissions() {
     const std::size_t ramp = hole(table::HoleType::Ramp);
     rules.onTarget(missionTarget(0));
     CHECK(rules.missions().phase() == MissionControl::Phase::Selected);
-    CHECK(rules.message() == std::string_view("MISSION SELECTED  SHOOT THE RAMP"));
+    CHECK(rules.message() == std::string_view("COURSE SELECTED  SHOOT THE RUNWAY"));
     rules.onHole(ramp);
     CHECK(rules.missions().phase() == MissionControl::Phase::Active);
-    CHECK(rules.message() == std::string_view("MISSION ACCEPTED"));
+    CHECK(rules.message() == std::string_view("CLASS IN SESSION"));
 
     std::size_t attack = 0;
     for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
@@ -609,7 +661,7 @@ void testMissions() {
     rules.onBumper(attack);
     CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
     CHECK(rules.score() == before + points::kAttackBumper[0] + pinball::missionAt(0, 0).award);
-    CHECK(rules.message() == std::string_view("MISSION COMPLETE"));
+    CHECK(rules.message() == std::string_view("COURSE PASSED"));
 
     // Lighting all three mission targets selects the special mission.
     for (std::size_t t = 0; t < 3; ++t) {
@@ -618,7 +670,7 @@ void testMissions() {
     CHECK(rules.missions().mission() == &pinball::missionAt(0, pinball::kSpecialMission));
     CHECK(rules.targetLit(missionTarget(0)));
 
-    // A new game returns to Cadet with nothing selected.
+    // A new game returns to the first rank with nothing selected.
     rules.startGame();
     CHECK(rules.missions().rank() == 0);
     CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
@@ -648,7 +700,7 @@ void testMissions() {
       rules.tick();
     }
     CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
-    CHECK(rules.message() == std::string_view("OUT OF FUEL  MISSION ABORTED"));
+    CHECK(rules.message() == std::string_view("OUT OF ENERGY  COURSE FAILED"));
   }
 
   {  // The mission announcement wins over a lesser message from the same
@@ -676,10 +728,10 @@ void testMissions() {
     rules.onTarget(multiplier[1]);
     CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
     CHECK(rules.fieldMultiplier() == 2);
-    CHECK(rules.message() == std::string_view("MISSION COMPLETE"));
+    CHECK(rules.message() == std::string_view("COURSE PASSED"));
     // The lock lasts only for that step.
     rules.tick();
     rules.onHole(hole(table::HoleType::BlackHole));
-    CHECK(rules.message() == std::string_view("BLACK HOLE"));
+    CHECK(rules.message() == std::string_view("SINGULARITY"));
   }
 }
