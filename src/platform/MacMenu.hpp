@@ -10,8 +10,9 @@ namespace pinball {
 // game's name, which SDL takes from the application metadata.)
 //
 // Call after the video subsystem is up. Returns false if there was no such
-// menu item, which is normal with an offscreen video driver.
-#if defined(__APPLE__)
+// menu item, which is normal with an offscreen video driver. There is no
+// menu bar on iOS, nor anywhere else but macOS.
+#if defined(__APPLE__) && !defined(PINBALL_IOS)
 bool routeAboutMenu(Uint32 eventType);
 #else
 inline bool routeAboutMenu(Uint32 /*eventType*/) { return false; }

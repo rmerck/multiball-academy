@@ -9,21 +9,20 @@
 #include <string_view>
 #include <vector>
 
+#include "core/Version.hpp"
 #include "platform/SafeFile.hpp"
 
 namespace pinball {
 
 namespace {
 
-constexpr const char* kOrganisation = "space-cadet-pinball";
-constexpr const char* kApplication = "Space Cadet Pinball";
 constexpr const char* kFileName = "highscores.txt";
 
 // Full path of the score file, or empty if there is no preferences directory.
 std::string scoreFilePath() {
   // Created if missing; the returned string is ours to free.
   const std::unique_ptr<char, decltype([](char* text) { SDL_free(text); })> directory(
-      SDL_GetPrefPath(kOrganisation, kApplication));
+      SDL_GetPrefPath(kDataOrganisation, kDataDirectory));
   if (!directory) {
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No preferences directory: %s", SDL_GetError());
     return {};
