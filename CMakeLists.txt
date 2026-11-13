@@ -113,13 +113,16 @@ add_library(pinball_core STATIC
   src/core/Game.cpp
   src/core/HighScores.cpp
   src/core/Missions.cpp
+  src/core/OverlayLayout.cpp
   src/core/Physics.cpp
   src/core/PngHeader.cpp
   src/core/Rules.cpp
+  src/core/ScreenLayout.cpp
   src/core/Sha256.cpp
   src/core/Music.cpp
   src/core/Sound.cpp
   src/core/TableLayout.cpp
+  src/core/TouchControls.cpp
 )
 target_include_directories(pinball_core PUBLIC src ${PINBALL_VERSION_DIR})
 target_link_libraries(pinball_core PUBLIC box2d::box2d)
@@ -327,10 +330,12 @@ if(BUILD_TESTING)
     tests/PlungerTest.cpp
     tests/PngHeaderTest.cpp
     tests/RulesTest.cpp
+    tests/ScreenLayoutTest.cpp
     tests/Sha256Test.cpp
     tests/MusicTest.cpp
     tests/SoundTest.cpp
     tests/TargetTest.cpp
+    tests/TouchControlsTest.cpp
   )
   target_link_libraries(core_tests PRIVATE pinball_core)
   add_test(NAME core_tests COMMAND core_tests)
