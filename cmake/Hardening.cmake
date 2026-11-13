@@ -60,6 +60,13 @@ function(pinball_apply_hardening target scope)
       target_compile_options(${target} ${scope} -mbranch-protection=standard)
     endif()
   endif()
+  if(PINBALL_IOS AND NOT PINBALL_SANITIZE)
+    # Fortified library calls. Apple's headers turn level 2 on by themselves
+    # in an optimised build; said here so that it does not rest on a default.
+    target_compile_options(${target} ${scope}
+      $<$<NOT:$<CONFIG:Debug>>:-U_FORTIFY_SOURCE>
+      $<$<NOT:$<CONFIG:Debug>>:-D_FORTIFY_SOURCE=2>)
+  endif()
   if(PINBALL_WERROR)
     target_compile_options(${target} ${scope} -Werror)
   endif()
@@ -104,5 +111,11 @@ function(pinball_dependency_hardening)
     if(PINBALL_HAS_BRANCH_PROTECTION)
       add_compile_options(-mbranch-protection=standard)
     endif()
+  endif()
+  if(PINBALL_IOS AND NOT PINBALL_SANITIZE)
+    # As for the game's own code above.
+    add_compile_options(
+      $<$<NOT:$<CONFIG:Debug>>:-U_FORTIFY_SOURCE>
+      $<$<NOT:$<CONFIG:Debug>>:-D_FORTIFY_SOURCE=2>)
   endif()
 endfunction()
