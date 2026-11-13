@@ -2,7 +2,9 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
 #include <span>
+#include <vector>
 
 #include "Check.hpp"
 #include "Suites.hpp"
@@ -69,9 +71,223 @@ constexpr std::array<Mouth, 7> kMouths{{
     {table::LampId::ArrowCircuitRight, {590.0F, 480.0F}},
 }};
 
+// --- The gap test (TABLE.md 3.2: "every gap not meant as a passage is
+// closed, or at least 43") -----------------------------------------------------
+// A ball is 24 across. An opening between two solids that is wider than the
+// ball but narrower than 43 is where a ball can lodge or two can arch, so
+// each one on the table is either a lane, listed below with the reason it is
+// there, or a defect. The scan walks the free space on a 2 unit grid. A point
+// is in an opening when the nearest solid and the nearest solid on the other
+// side of it (its direction more than 120 degrees from the first) are equally
+// far away to within the grid; the opening's width there is the sum.
+struct Solid {
+  Vec2 a;
+  Vec2 b;
+  float radius;
+};
+struct Reach {
+  float gap = 1.0e9F;
+  Vec2 toward{};
+};
+Reach reach(Vec2 p, const Solid& s) {
+  const Vec2 run = s.b - s.a;
+  const float runSquared = run.x * run.x + run.y * run.y;
+  const float along =
+      runSquared > 0.0F
+          ? std::clamp(((p.x - s.a.x) * run.x + (p.y - s.a.y) * run.y) / runSquared, 0.0F, 1.0F)
+          : 0.0F;
+  const Vec2 to = s.a + run * along - p;
+  const float far = length(to);
+  return {far - s.radius, far > 0.0F ? to * (1.0F / far) : Vec2{}};
+}
+bool inside(Vec2 p, std::span<const Vec2> loop) {
+  bool in = false;
+  for (std::size_t i = 0, j = loop.size() - 1; i < loop.size(); j = i++) {
+    if ((loop[i].y > p.y) != (loop[j].y > p.y) &&
+        p.x < (loop[j].x - loop[i].x) * (p.y - loop[i].y) / (loop[j].y - loop[i].y) + loop[i].x) {
+      in = !in;
+    }
+  }
+  return in;
+}
+std::vector<Solid> solids(bool doorsUp) {
+  std::vector<Solid> all;
+  const auto chain = [&all](std::span<const Vec2> points, bool closed) {
+    for (std::size_t i = 0; i + 1 < points.size(); ++i) {
+      all.push_back({points[i], points[i + 1], 0.0F});
+    }
+    if (closed) {
+      all.push_back({points.back(), points.front(), 0.0F});
+    }
+  };
+  chain(table::kShell, true);
+  chain(table::kLaneIsland, true);
+  // The inner arch without its ghost points.
+  chain(std::span<const Vec2>{table::kInnerArch}.subspan(1, table::kInnerArch.size() - 2), false);
+  for (const table::Capsule& c : table::kAllWalls) {
+    all.push_back({c.a, c.b, c.radius});
+  }
+  for (const table::Capsule& c : table::kDeadPosts) {
+    all.push_back({c.a, c.b, c.radius});
+  }
+  for (const table::Target& t : table::kTargets) {
+    all.push_back({t.shape.a, t.shape.b, t.shape.radius});
+  }
+  if (doorsUp) {
+    for (const table::Capsule& c : table::kDropTargets) {
+      all.push_back({c.a, c.b, c.radius});
+    }
+  }
+  for (const table::Bumper& b : table::kBumpers) {
+    all.push_back({b.shape.center, b.shape.center, b.shape.radius});
+  }
+  for (const table::Triangle& sling : table::kSlingshots) {
+    for (std::size_t e = 0; e < 3; ++e) {
+      all.push_back({sling.points[e], sling.points[(e + 1) % 3], sling.cornerRadius});
+    }
+  }
+  return all;
+}
+
+// The openings in the forbidden band that are meant. `narrowest` pins each:
+// the scan fails if one of them closes up further than it is today.
+struct Opening {
+  const char* name;
+  const char* reason;
+  Vec2 low;
+  Vec2 high;
+  float narrowest;
+};
+constexpr Opening mirroredOpening(const Opening& o) {
+  const float twice = 2.0F * table::kFieldCenterX;
+  return {o.name, o.reason, {twice - o.high.x, o.low.y}, {twice - o.low.x, o.high.y}, o.narrowest};
+}
+constexpr Opening kOutlane{"outlane",
+                           "A lane: 38 wide, the least a lane may be (TABLE.md 3.2).",
+                           {40.0F, 570.0F},
+                           {80.0F, 760.0F},
+                           38.0F};
+constexpr Opening kInlane{
+    "inlane and its guide",
+    "A lane: 38 wide at the slingshot's back corner. Below that it is a guide, 30.2 wide, "
+    "between the divider's lower run and the slingshot's underside: one ball wide on purpose, "
+    "so that a ball is fed to the flipper along one line and two cannot pass or arch in it.",
+    {90.0F, 690.0F},
+    {240.0F, 800.0F},
+    30.0F};
+constexpr Opening kNestSide{
+    "nest side exit",
+    "A passage, 40.8 wide: between an outer bumper and the rim. A ball that touches the "
+    "bumper is kicked, so nothing rests here.",
+    {210.0F, 150.0F},
+    {260.0F, 200.0F},
+    40.5F};
+constexpr Opening kTargetNotch{
+    "turbo target notch",
+    "Not a passage: the corner between a turbo target and the rim it stands out from. It "
+    "opens down the table, so a ball that enters it rolls out again.",
+    {150.0F, 230.0F},
+    {190.0F, 270.0F},
+    24.0F};
+constexpr std::array kOpenings{
+    kOutlane,
+    mirroredOpening(kOutlane),
+    kInlane,
+    mirroredOpening(kInlane),
+    kNestSide,
+    mirroredOpening(kNestSide),
+    kTargetNotch,
+    mirroredOpening(kTargetNotch),
+    Opening{"launch channel's end",
+            "Behind the one-way arch, where it closes on the shell. The arch is not solid "
+            "from this side: a ball here passes through it into the field.",
+            {540.0F, 100.0F},
+            {610.0F, 170.0F},
+            24.0F},
+    Opening{"Briefing room roof corner",
+            "Not a passage: the corner under the Briefing room's sloping roof, inside the "
+            "scoop. It opens down the table, onto the scoop's capture box.",
+            {325.0F, 325.0F},
+            {365.0F, 365.0F},
+            24.0F},
+    Opening{"under the bay doors",
+            "Not a passage: the corner between the raised bay doors and the Briefing room's "
+            "left flare. It opens down the table. (Gone when the doors are down.)",
+            {270.0F, 395.0F},
+            {320.0F, 430.0F},
+            24.0F},
+};
+
+void checkGaps() {
+  constexpr float kBall = 2.0F * table::kBallRadius;
+  constexpr float kClear = 43.0F;
+  constexpr float kStep = 2.0F;
+  std::array<float, kOpenings.size()> narrowest{};
+  narrowest.fill(1.0e9F);
+  int unlisted = 0;
+  for (const bool doorsUp : {true, false}) {
+    const std::vector<Solid> all = solids(doorsUp);
+    for (float y = 0.0F; y < table::kHeight; y += kStep) {
+      for (float x = 0.0F; x < table::kWidth; x += kStep) {
+        const Vec2 p{x, y};
+        if (!inside(p, table::kShell) || inside(p, table::kLaneIsland) ||
+            inside(p, table::kLeftSlingshot.points) || inside(p, table::kRightSlingshot.points)) {
+          continue;
+        }
+        Reach first;
+        for (const Solid& s : all) {
+          const Reach r = reach(p, s);
+          first = r.gap < first.gap ? r : first;
+        }
+        if (first.gap <= 0.0F || first.gap >= kClear * 0.5F) {
+          continue;
+        }
+        Reach second;
+        for (const Solid& s : all) {
+          const Reach r = reach(p, s);
+          if (r.toward.x * first.toward.x + r.toward.y * first.toward.y < -0.5F &&
+              r.gap < second.gap) {
+            second = r;
+          }
+        }
+        const float width = first.gap + second.gap;
+        if (second.gap - first.gap > kStep + 0.05F || width <= kBall || width >= kClear) {
+          continue;
+        }
+        bool listed = false;
+        for (std::size_t i = 0; i < kOpenings.size(); ++i) {
+          const Opening& o = kOpenings[i];
+          if (x >= o.low.x && x <= o.high.x && y >= o.low.y && y <= o.high.y) {
+            narrowest[i] = std::min(narrowest[i], width);
+            listed = true;
+          }
+        }
+        if (!listed && unlisted++ < 10) {
+          std::fprintf(stderr, "gap %.1f wide at (%.0f, %.0f) is not a listed opening\n",
+                       static_cast<double>(width), static_cast<double>(x), static_cast<double>(y));
+        }
+      }
+    }
+  }
+  CHECK(unlisted == 0);
+  for (std::size_t i = 0; i < kOpenings.size(); ++i) {
+    // Each listed opening is there (the list has nothing stale in it) and
+    // is no narrower than recorded.
+    const bool holds = narrowest[i] < kClear && narrowest[i] >= kOpenings[i].narrowest;
+    if (!holds) {
+      std::fprintf(stderr, "opening '%s' (%s): narrowest %.1f, recorded %.1f\n", kOpenings[i].name,
+                   kOpenings[i].reason, static_cast<double>(narrowest[i]),
+                   static_cast<double>(kOpenings[i].narrowest));
+    }
+    CHECK(holds);
+  }
+}
+
 }  // namespace
 
 void testTableGeometry() {
+  checkGaps();
+
   {  // F1: nothing a player must see or hit is smaller than 20 units, except
      // the stand-up targets, which are at least 10 across and 24 along.
     constexpr float kSmallest = 20.0F;
@@ -176,8 +392,10 @@ void testTableGeometry() {
     CHECK(mirrored == 2 + 1 + 1 + static_cast<int>(table::kRimArcParts));
   }
 
-  {  // The passages. Flipper gap 36; inlanes and outlanes 38 wide; roll call
-     // lanes 52; the circuit lanes 52 between wall and rim.
+  {  // The passages. Flipper gap 36; outlanes 38 wide; inlanes 38 wide at the
+     // slingshot's back corner (the guide under the slingshot is 30.2: see
+     // kInlane above); roll call lanes 52; the circuit lanes 52 between wall
+     // and rim.
     const float tipReach = table::kFlipperLength * 0.8660254F;
     const float gap = (table::kRightFlipper.pivot.x - tipReach) -
                       (table::kLeftFlipper.pivot.x + tipReach) - 2.0F * table::kFlipperTipRadius;
