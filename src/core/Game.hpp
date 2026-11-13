@@ -26,6 +26,27 @@ struct BallView {
   // Riding a ramp's rail over the table, or waiting at its end for the exit
   // to clear: to be drawn above everything on the playfield.
   bool raised = false;
+  // Locked in one of the Hangar's bays: in view, at rest, out of play.
+  bool locked = false;
+};
+
+// Something the table did during a step, beside what the balls touched
+// (Game::events()): for the display, the sounds and the tests.
+struct GameEvent {
+  enum class Type : std::uint8_t {
+    DoorBankDropped,
+    DoorBankRaised,
+    BallLocked,        // index: the bay.
+    LockReleased,      // index: the bay it left.
+    HoleEject,         // index: the hole. Every ball a hole returns, locked or not.
+    Spin,              // The spinner turned once.
+    KickbackFired,     // The kickback took the ball.
+    KickbackReturned,  // And set it down again.
+    EjectSave,         // A ball drained within the short save after an eject.
+  };
+  Type type = Type::Spin;
+  std::uint8_t ball = 0;
+  std::uint8_t index = 0;
 };
 
 // The balls on the table, lowest id first. Fixed capacity and returned by
@@ -111,11 +132,13 @@ class Game {
   // Times the ball search has fired.
   [[nodiscard]] std::uint32_t ballSearchCount() const noexcept { return ballSearchCount_; }
 
-  // How long the scoop and the hangar keep the ball, in seconds. A ramp
-  // keeps it for table::kRampRideSeconds, the ride along its rail.
-  static constexpr double kHoleHoldSeconds = 0.9;
+  // How long a hole keeps the ball, in seconds: the scoop and the hangar
+  // their hold, a ramp the ride along its rail. The scoop and the hangar
+  // each hold one ball at a time: a ball that arrives while another is
+  // inside is taken and scored on arrival, waits behind it, and its own
+  // hold starts when the one ahead has left. Rails carry any number.
   [[nodiscard]] static constexpr double holdSeconds(table::HoleType type) noexcept {
-    return table::isRamp(type) ? table::kRampRideSeconds : kHoleHoldSeconds;
+    return table::holdSeconds(type);
   }
   // A ball on a rail is drawn this much larger.
   static constexpr float kRailScale = 1.15F;
@@ -124,6 +147,47 @@ class Game {
   // last ball left by the same exit. A single ball never waits for either.
   static constexpr float kHoleExitClearance = 30.0F;
   static constexpr double kHoleReleaseSpacingSeconds = 0.3;
+
+  // --- Bay doors -----------------------------------------------------------
+  // Whether the bank stands. It drops at once when the rules say so, and
+  // comes back up when they say so and no free ball's centre is inside the
+  // mouth (table::kDoorMouthCenter): until then the raise is pending.
+  [[nodiscard]] bool doorBankUp() const noexcept { return physics_.doorBankUp(); }
+  [[nodiscard]] bool doorRaisePending() const noexcept { return doorRaisePending_; }
+
+  // --- The lock ------------------------------------------------------------
+  // Balls locked in the Hangar's bays. A locked ball keeps its slot and its
+  // id, so it counts toward kMaxBalls, is in balls() (BallView::locked, at
+  // its bay) and stays where it is when a ball ends or the table is tilted.
+  // The bays are emptied when the game is over and when a new one starts.
+  [[nodiscard]] std::size_t lockedBalls() const noexcept;
+  [[nodiscard]] bool ballLocked(std::size_t slot) const noexcept {
+    return slot < kMaxBalls && physics_.ballActive(slot) && balls_[slot].lockBay != 0;
+  }
+  [[nodiscard]] std::uint32_t lockCount() const noexcept { return lockCount_; }
+  [[nodiscard]] std::uint32_t lockReleaseCount() const noexcept { return lockReleaseCount_; }
+
+  // --- Spinner -------------------------------------------------------------
+  // Turns counted so far, and turns a passing ball has earned that are
+  // still to be counted (one every table::kSpinPayoutSteps steps).
+  [[nodiscard]] std::uint32_t spinCount() const noexcept { return spinCount_; }
+  [[nodiscard]] int spinsOwed() const noexcept { return spinsOwed_; }
+  // Where the spinner's blade is in its turn, 0 to 1 (not including 1). It
+  // makes half a turn for each spin counted: 0 and 0.5 are flat, at rest.
+  [[nodiscard]] float spinnerPhase() const noexcept {
+    return static_cast<float>(spinnerTicks_) / static_cast<float>(2 * table::kSpinPayoutSteps);
+  }
+
+  // --- Kickback ------------------------------------------------------------
+  // Armed: the next ball into the left outlane's pocket is taken and carried
+  // back to the left inlane. The rules say when (Rules::kickbackLit()).
+  [[nodiscard]] bool kickbackArmed() const noexcept { return physics_.kickbackArmed(); }
+  [[nodiscard]] std::uint32_t kickbackCount() const noexcept { return kickbackCount_; }
+
+  // What the table did during the latest step.
+  [[nodiscard]] std::span<const GameEvent> gameEvents() const noexcept {
+    return std::span<const GameEvent>(gameEvents_).first(gameEventCount_);
+  }
 
   // Times the ball has rolled over each rollover.
   [[nodiscard]] std::uint32_t rolloverCount(std::size_t index) const noexcept {
@@ -197,7 +261,7 @@ class Game {
   void enterPlay();
   void startNewGame();
   void handleNudges(const InputState& input);
-  void handleDrain();
+  void handleDrain(std::size_t slot);
   // Deals with balls that have drained or been lost outside the table.
   void handleLostBalls();
   // Why a ball left the table while others stayed on it.
@@ -216,11 +280,46 @@ class Game {
   void updateAutoLaunch();
   // Puts a waiting ball on the plunger, in the given free slot.
   void serveQueuedBall(std::size_t slot);
+  // Notes a ball that a hole or the kickback has just taken.
+  void noteHeldBall(std::size_t slot);
+  // Runs a held ball's hold and returns it when its time has come.
   void updateHeldBall(std::size_t slot);
+  // Puts a ball on the plunger for the player, leaving locked balls alone.
+  // Returns its slot.
+  std::size_t serveForPlayer();
+  // Whether a ball is free of the lock: on the table and not in a bay.
+  [[nodiscard]] bool ballLive(std::size_t slot) const noexcept {
+    return physics_.ballActive(slot) && balls_[slot].lockBay == 0;
+  }
+  // Live balls other than this one.
+  [[nodiscard]] std::size_t otherLiveBalls(std::size_t slot) const noexcept;
+  // Locks the ball the Hangar has just taken, if a bay is free.
+  void lockBall(std::size_t slot);
+  // Lets every locked ball go, one at a time, by the Hangar's exit.
+  void releaseLocks() noexcept;
+  // Takes the locked balls off the table.
+  void clearLocks();
+  // Whether this ball is the one its hole returns next.
+  [[nodiscard]] bool firstInHole(std::size_t slot) const noexcept;
+  // The way the next ball out of the Hangar goes.
+  [[nodiscard]] Vec2 nextHangarExitVelocity() noexcept;
+  // The Briefing room's kick, a little different each time.
+  [[nodiscard]] Vec2 nextScoopExitVelocity() noexcept;
+  // Returns a held ball to the table and notes it.
+  void returnBall(std::size_t slot, std::size_t exitHole, Vec2 position, Vec2 velocity);
+  // Does what the rules ask of the doors and the kickback.
+  void applyRules();
+  [[nodiscard]] bool doorMouthClear() const;
+  void updateSpinner();
+  void addSpins(float speedAcross, int direction) noexcept;
+  // How the ball in a slot is leaving.
+  [[nodiscard]] Rules::DrainInfo drainInfo(std::size_t slot) const noexcept;
+  void note(GameEvent::Type type, std::size_t ball, std::size_t index = 0) noexcept;
   // The next number from the game's generator.
   [[nodiscard]] std::uint64_t nextRandom() noexcept;
-  // Whether a ball held by this hole may leave now.
-  [[nodiscard]] bool exitIsClear(std::size_t slot, std::size_t hole) const;
+  // Whether a ball may leave by this hole's exit now: nothing in the way,
+  // and long enough since the last ball left by it.
+  [[nodiscard]] bool exitIsClear(std::size_t slot, std::size_t hole, double spacingSeconds) const;
   // The flags say which flippers are actually raised: the keys count only
   // while the controls are live.
   void updateBallSearch(std::size_t slot, bool leftRaised, bool rightRaised);
@@ -241,10 +340,22 @@ class Game {
   std::array<std::uint32_t, table::kHoles.size()> holeCounts_{};
   // What the game keeps for each ball slot, beside the physics state.
   struct BallState {
-    // The hole holding the ball, and for how many steps so far.
-    std::size_t heldBy = 0;
+    // What is holding the ball (a hole or the kickback), and for how many
+    // steps its hold has run so far.
+    table::ElementRef holder{};
     std::uint32_t heldSteps = 0;
     bool wasHeld = false;
+    // The order in which held balls were taken: lower came first.
+    std::uint64_t arrival = 0;
+    // The rules' answer for a ball the Hangar took this step.
+    bool lockAsked = false;
+    // One more than the bay it is locked in; 0 if it is not locked.
+    std::uint8_t lockBay = 0;
+    // Locked, and told to leave.
+    bool releasing = false;
+    // One more than the step at which the scoop or the hangar last returned
+    // it; 0 if neither has.
+    std::uint64_t ejectStep = 0;
     // Ball search state.
     Vec2 searchAnchor{};
     std::uint32_t stillSteps = 0;
@@ -268,6 +379,23 @@ class Game {
   // 0 if it never has.
   std::array<std::uint64_t, table::kHoles.size()> lastReleaseStep_{};
   std::uint32_t ballSearchCount_ = 0;
+  std::uint64_t arrivals_ = 0;
+  // How many balls have left the Hangar close behind one another.
+  std::uint32_t hangarBurst_ = 0;
+  bool doorRaisePending_ = false;
+  std::uint32_t lockCount_ = 0;
+  std::uint32_t lockReleaseCount_ = 0;
+  std::uint32_t kickbackCount_ = 0;
+  // Spinner: turns owed, steps until the next may be counted, turns counted,
+  // the way it turns (+1 or -1) and where the blade is, in twelfths of a turn.
+  int spinsOwed_ = 0;
+  int spinCooldown_ = 0;
+  std::uint32_t spinCount_ = 0;
+  int spinDirection_ = 1;
+  std::uint32_t spinnerTicks_ = 0;
+  static constexpr std::size_t kMaxGameEvents = 24;
+  std::array<GameEvent, kMaxGameEvents> gameEvents_{};
+  std::size_t gameEventCount_ = 0;
   // The game's own source of chance: xorshift64 from a fixed seed, so the
   // same input always gives the same game. Advanced only by nextRandom().
   std::uint64_t random_ = 0x9E3779B97F4A7C15ULL;

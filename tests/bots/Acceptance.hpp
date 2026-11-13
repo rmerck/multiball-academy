@@ -99,7 +99,9 @@ struct ShotMap {
 // variants: how many jittered copies of each feed to sweep (1 is the plain
 // feeds of TABLE.md 5.1; more only add first hits for B4, the windows are
 // those of the plain feeds).
-[[nodiscard]] ShotMap shotSweep(int variants);
+// bankDown: with the bay doors dropped (and the lock off), so that the
+// Hangar itself is the shot; otherwise they stand and the doors are.
+[[nodiscard]] ShotMap shotSweep(int variants, bool bankDown = false);
 [[nodiscard]] char touchChar(Touch touch) noexcept;
 
 // --- A5, A6: lanes and ramps at a speed --------------------------------------------
@@ -121,8 +123,49 @@ struct ExitResult {
   int safe = 0;
 };
 [[nodiscard]] ExitResult exitOf(std::size_t hole, int releases);
-// B6, the geometry half: a ball kicked up the left outlane at a speed.
-[[nodiscard]] ExitResult kickbackAt(int speed, int kicks);
+// The same for a ball let go anywhere, at any velocity (the Hangar's second
+// way out, to the right flipper).
+[[nodiscard]] ExitResult exitAt(Vec2 position, Vec2 velocity, int releases);
+
+// The lock: two balls locked by the game and a third sent in, so that all
+// three are let go. Each is nudged a little off its exact release, and each
+// is followed to the first thing it meets, flippers idle.
+struct LockBurstResult {
+  int bursts = 0;
+  int released = 0;      // Balls let go: three a burst.
+  int safe = 0;          // First met a flipper or an inlane.
+  int outOfOrder = 0;    // Bursts not in the order arriving ball, bay 1, bay 2.
+  int badSpacing = 0;    // Releases not kLockReleaseSpacingSeconds after the one before.
+  int heldMoved = 0;     // Steps on which a locked ball was not in its bay.
+  int ballHits = 0;      // Touches between the released balls before their first touch.
+  TouchCounts first{};
+};
+[[nodiscard]] LockBurstResult lockBursts(int bursts);
+
+// The Briefing room with two balls: a second ball sent in while the first
+// is held, at every gap. Both must come out, one at a time, each to a
+// flipper or an inlane, and never onto each other.
+struct ScoopPairResult {
+  int pairs = 0;      // Pairs of which both balls got into the scoop.
+  int turnedAway = 0; // The second ball met the first coming out and never got in.
+  int bothOut = 0;
+  int tooClose = 0;  // Second out less than a full hold after the first.
+  int returned = 0;  // Balls returned by the scoop,
+  int safe = 0;      // and of those, the ones whose first touch was a flipper or an inlane.
+  int longestOverlap = 0;  // Steps running with the two more than 2 units into each other.
+};
+[[nodiscard]] ScoopPairResult scoopPairs(int pairs);
+
+// B6, the mechanism: balls coming down the left outlane, at every speed and
+// across the lane, with the kickback lit. Idle flippers.
+struct KickbackResult {
+  int balls = 0;
+  int fired = 0;
+  int returned = 0;  // Set down by the kickback.
+  int safe = 0;      // And then met the left inlane's switch or a flipper first.
+  int lostByOutlane = 0;  // Lost down the left outlane without the kickback firing.
+};
+[[nodiscard]] KickbackResult kickbackSweep(int balls);
 
 // --- D2: no resting place --------------------------------------------------------------
 struct RestResult {
@@ -153,6 +196,9 @@ struct SoakOptions {
   // Above zero: a ball that drains within this long of entering play is put
   // back on the plunger and its clock runs on, any number of times.
   double saverSeconds = 0.0;
+  // The kickback is lit at the start of every ball. Otherwise it is kept
+  // out: the table before the kickback.
+  bool kickback = false;
 };
 struct SoakResult {
   std::vector<double> ballSeconds;
@@ -180,6 +226,17 @@ struct SoakResult {
   std::array<std::uint64_t, 2> circuitEntered{};
   std::array<std::uint64_t, 2> circuitTop{};
   std::array<std::uint64_t, 2> circuitDone{};
+  // The new elements.
+  std::uint64_t hangarEntries = 0;
+  std::uint64_t hangarEntriesDoorsUp = 0;
+  std::uint64_t bankDrops = 0;
+  std::uint64_t bankRaises = 0;
+  std::uint64_t spins = 0;
+  std::uint64_t kickbacks = 0;
+  std::uint64_t kickbackReturns = 0;
+  std::uint64_t kickbackSafe = 0;
+  std::uint64_t kickbackLostAgain = 0;
+  std::uint64_t ejectSaves = 0;
   // A hash of every drain time and way out: the same seed must give the same.
   std::uint64_t fingerprint = 0;
 
@@ -215,6 +272,20 @@ struct StressResult {
   std::uint64_t longestOverlap = 0;
   std::uint64_t countBroken = 0;  // Steps on which balls on the table plus waiting was not `balls`.
   std::vector<Vec2> stuckAt;
+  // The lock and the other new elements, as the game's own rules use them.
+  std::uint64_t hangarEntries = 0;
+  std::uint64_t hangarEntriesDoorsUp = 0;
+  std::uint64_t bankDrops = 0;
+  std::uint64_t bankRaises = 0;
+  std::uint64_t locks = 0;
+  std::uint64_t lockReleases = 0;
+  std::uint64_t locksEmptied = 0;  // Taken out of the bays at a game's end.
+  std::uint64_t lockedAstray = 0;
+  std::uint64_t spins = 0;
+  std::uint64_t kickbacks = 0;
+  std::uint64_t kickbackReturns = 0;
+  std::uint64_t kickbackSafe = 0;
+  std::uint64_t kickbackLostAgain = 0;
   std::uint64_t fingerprint = 0;
 };
 [[nodiscard]] StressResult stress(const StressOptions& options);

@@ -340,6 +340,16 @@ int main() {
     point(h.exitVelocity);
     std::printf("}");
   });
+  // Sensor lines, in the order of table::SensorId: the two circuit mouths,
+  // the top of the arch, the spinner. The kickback's path starts in its zone.
+  list("sensors", table::kSensors, [](const table::SensorLine& line) {
+    std::printf("{\"a\": ");
+    point(line.a);
+    std::printf(", \"b\": ");
+    point(line.b);
+    std::printf("}");
+  });
+  list("kickbackPath", table::kKickbackPath, [](Vec2 p) { point(p); });
   list("runwayRail", table::kRunwayRail, [](Vec2 p) { point(p); });
   list("skywayRail", table::kSkywayRail, [](Vec2 p) { point(p); });
   // Lamps in LampId order; "kind" is arrow, course or status.

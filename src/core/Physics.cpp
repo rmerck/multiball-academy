@@ -178,6 +178,7 @@ PhysicsWorld::PhysicsWorld() {
   for (std::size_t slot = 1; slot < balls_.size(); ++slot) {
     buildBall(slot, false);
   }
+  buildDoorBank();
 }
 
 PhysicsWorld::~PhysicsWorld() {
@@ -414,14 +415,35 @@ void PhysicsWorld::buildTargets() {
     const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
     b2CreateCapsuleShape(table_, &shapeDef, &capsule);
   }
-  // The bay doors. For now they are targets that stay up: each reports its
-  // hits, and the Hangar behind them cannot be entered.
+}
+
+void PhysicsWorld::buildDoorBank() {
+  // The three bay doors on one static body: disabling it takes all three
+  // off the table at once and enabling it puts them back, so the Hangar's
+  // mouth is shut or wholly open and never open by one door.
+  b2BodyDef bodyDef = b2DefaultBodyDef();
+  bodyDef.type = b2_staticBody;
+  doorBank_ = b2CreateBody(world_, &bodyDef);
+  b2ShapeDef shapeDef = wallShapeDef();
+  shapeDef.material.restitution = kRubberRestitution;
   for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
     const table::Capsule& c = table::kDropTargets[i];
     shapeDef.userData =
         packElement({table::ElementKind::DropTarget, static_cast<std::uint8_t>(i)});
     const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
-    b2CreateCapsuleShape(table_, &shapeDef, &capsule);
+    b2CreateCapsuleShape(doorBank_, &shapeDef, &capsule);
+  }
+}
+
+void PhysicsWorld::setDoorBank(bool up) {
+  if (up == doorBankUp_) {
+    return;
+  }
+  doorBankUp_ = up;
+  if (up) {
+    b2Body_Enable(doorBank_);
+  } else {
+    b2Body_Disable(doorBank_);
   }
 }
 
@@ -573,8 +595,59 @@ std::size_t PhysicsWorld::slotOf(b2BodyId body) const noexcept {
 
 void PhysicsWorld::pushEvent(PhysicsEvent::Type type, table::ElementRef element, float speed,
                              std::size_t slot, std::size_t otherSlot) {
-  events_.push(
-      {type, element, speed, static_cast<std::uint8_t>(slot), static_cast<std::uint8_t>(otherSlot)});
+  events_.push({type, element, speed, static_cast<std::uint8_t>(slot),
+                static_cast<std::uint8_t>(otherSlot), 0});
+}
+
+void PhysicsWorld::holdBall(std::size_t slot, table::ElementRef by, float speed) {
+  // Disabling the body removes it from collision until it is released.
+  BallSlot& ball = balls_[slot];
+  ball.held = true;
+  ball.heldBy = by;
+  ball.sensorFromKnown = false;
+  b2Body_SetLinearVelocity(ball.body, {0.0F, 0.0F});
+  b2Body_SetAngularVelocity(ball.body, 0.0F);
+  b2Body_Disable(ball.body);
+  pushEvent(PhysicsEvent::Type::Capture, by, speed, slot);
+}
+
+void PhysicsWorld::checkSensors(std::size_t slot, Vec2 position, Vec2 velocity) {
+  BallSlot& ball = balls_[slot];
+  const Vec2 from = ball.sensorFrom;
+  const bool known = ball.sensorFromKnown;
+  ball.sensorFrom = position;
+  ball.sensorFromKnown = true;
+  if (!known) {
+    return;
+  }
+  for (std::size_t i = 0; i < table::kSensors.size(); ++i) {
+    const table::SensorLine& line = table::kSensors[i];
+    const Vec2 along = line.b - line.a;
+    // Which side of the line each end of the ball's move is on.
+    const float before = along.x * (from.y - line.a.y) - along.y * (from.x - line.a.x);
+    const float after = along.x * (position.y - line.a.y) - along.y * (position.x - line.a.x);
+    if ((before > 0.0F) == (after > 0.0F)) {
+      continue;
+    }
+    // Where the move meets the line, as a fraction of the line's length.
+    // The two sides differ, so the divisor is not zero.
+    const float part = before / (before - after);
+    const Vec2 meet = from + (position - from) * part;
+    const float lengthSquared = along.x * along.x + along.y * along.y;
+    const float place =
+        ((meet.x - line.a.x) * along.x + (meet.y - line.a.y) * along.y) / lengthSquared;
+    if (!(place >= 0.0F && place <= 1.0F)) {
+      continue;
+    }
+    const float across =
+        std::fabs(velocity.x * along.y - velocity.y * along.x) / std::sqrt(lengthSquared);
+    events_.push({PhysicsEvent::Type::Cross,
+                  {table::ElementKind::Sensor, static_cast<std::uint8_t>(i)},
+                  across,
+                  static_cast<std::uint8_t>(slot),
+                  0,
+                  static_cast<std::int8_t>(before > 0.0F ? 1 : -1)});
+  }
 }
 
 void PhysicsWorld::checkZones(std::size_t slot) {
@@ -590,6 +663,8 @@ void PhysicsWorld::checkZones(std::size_t slot) {
     const float dy = p.y - c.y;
     return std::sqrt(dx * dx + dy * dy);
   };
+
+  checkSensors(slot, p, v);
 
   for (std::size_t i = 0; i < table::kRollovers.size(); ++i) {
     // A strip across the lane, not the drawn circle: the circle is narrower
@@ -625,16 +700,16 @@ void PhysicsWorld::checkZones(std::size_t slot) {
     if (table::isRamp(hole.type) && !(v.y <= -table::kRampMinUpwardSpeed)) {
       continue;
     }
-    // Take the ball off the table. Disabling the body removes it from
-    // collision until it is released.
-    ball.held = true;
-    ball.heldHole = i;
-    b2Body_SetLinearVelocity(ball.body, {0.0F, 0.0F});
-    b2Body_SetAngularVelocity(ball.body, 0.0F);
-    b2Body_Disable(ball.body);
-    pushEvent(PhysicsEvent::Type::Capture, {table::ElementKind::Hole, static_cast<std::uint8_t>(i)},
-              speed, slot);
+    holdBall(slot, {table::ElementKind::Hole, static_cast<std::uint8_t>(i)}, speed);
     return;
+  }
+
+  // The kickback takes the first ball to come into its zone while it is
+  // armed, at any speed, and is then spent. The zone is as wide as the
+  // outlane and deeper than the fastest ball moves in a slice.
+  if (kickbackArmed_ && distanceTo(table::kKickbackZone.center) < table::kKickbackZone.radius) {
+    kickbackArmed_ = false;
+    holdBall(slot, {table::ElementKind::Kickback, 0}, speed);
   }
 }
 
@@ -855,6 +930,8 @@ void PhysicsWorld::resetBall(std::size_t slot, Vec2 position, Vec2 velocity) {
     b2Body_Enable(ball.body);
     ball.held = false;
   }
+  // A ball moved by hand has crossed nothing on the way.
+  ball.sensorFromKnown = false;
   b2Body_SetTransform(ball.body, b2ToPos(toMeters(position)), b2MakeRot(0.0F));
   b2Body_SetLinearVelocity(ball.body, toMeters(velocity));
   clampBallSpeed(slot);

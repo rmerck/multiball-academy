@@ -5,6 +5,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#ifdef PINBALL_TUNE_SCOOP
+#include <cstdlib>
+#endif
 
 #include "core/TableLayout.hpp"
 
@@ -33,6 +36,12 @@ Game::Game() {
 }
 
 std::size_t Game::primaryBall() const noexcept {
+  // A ball that is not locked away, if there is one.
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (ballLive(slot)) {
+      return slot;
+    }
+  }
   for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
     if (physics_.ballActive(slot)) {
       return slot;
@@ -41,21 +50,121 @@ std::size_t Game::primaryBall() const noexcept {
   return 0;
 }
 
+std::size_t Game::lockedBalls() const noexcept {
+  std::size_t count = 0;
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    count += ballLocked(slot) ? 1U : 0U;
+  }
+  return count;
+}
+
+std::size_t Game::otherLiveBalls(std::size_t slot) const noexcept {
+  std::size_t count = 0;
+  for (std::size_t other = 0; other < kMaxBalls; ++other) {
+    count += other != slot && ballLive(other) ? 1U : 0U;
+  }
+  return count;
+}
+
+void Game::note(GameEvent::Type type, std::size_t ball, std::size_t index) noexcept {
+  if (gameEventCount_ < gameEvents_.size()) {
+    gameEvents_[gameEventCount_++] = {type, static_cast<std::uint8_t>(ball),
+                                      static_cast<std::uint8_t>(index)};
+  }
+}
+
 void Game::serveBall() {
-  // One ball from here on: the first slot's, and nobody else's.
-  for (std::size_t slot = 1; slot < kMaxBalls; ++slot) {
-    removeBall(slot);
+  // One ball in play from here on, in the lowest slot that is not a locked
+  // ball's (with no lock in the game, always the first): locked balls stay
+  // in their bays, every other ball goes.
+  std::size_t served = kMaxBalls;
+  for (std::size_t slot = kMaxBalls; slot-- > 0;) {
+    if (!ballLocked(slot)) {
+      served = slot;
+    }
+  }
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (slot != served && ballLive(slot)) {
+      removeBall(slot);
+    }
   }
   queuedBalls_ = 0;
-  if (physics_.ballActive(0)) {
-    physics_.resetBall(table::kBallStart, {0.0F, 0.0F});
+  if (served >= kMaxBalls) {
+    return;  // Cannot happen: there are more slots than bays.
+  }
+  if (physics_.ballActive(served)) {
+    physics_.resetBall(served, table::kBallStart, {0.0F, 0.0F});
   } else {
     // Its state was cleared when it was taken off the table.
-    physics_.activateBall(0, table::kBallStart, {0.0F, 0.0F});
+    physics_.activateBall(served, table::kBallStart, {0.0F, 0.0F});
   }
-  balls_[0].inPlay = false;
-  balls_[0].autoLaunch = false;
-  balls_[0].placed = true;
+  BallState& ball = balls_[served];
+  ball.inPlay = false;
+  ball.autoLaunch = false;
+  ball.launched = false;
+  ball.ejectStep = 0;
+  ball.lockAsked = false;
+  ball.placed = true;
+}
+
+std::size_t Game::serveForPlayer() {
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (physics_.ballActive(slot) ||
+        !physics_.activateBall(slot, table::kBallStart, {0.0F, 0.0F})) {
+      continue;
+    }
+    BallState& ball = balls_[slot];
+    ball = {};
+    ball.searchAnchor = table::kBallStart;
+    ball.previous = ballView(slot);
+    ball.placed = true;
+    return slot;
+  }
+  return kMaxBalls;
+}
+
+void Game::lockBall(std::size_t slot) {
+  BallState& ball = balls_[slot];
+  std::array<bool, table::kLockBays.size()> taken{};
+  for (std::size_t other = 0; other < kMaxBalls; ++other) {
+    if (ballLocked(other)) {
+      taken[balls_[other].lockBay - 1U] = true;
+    }
+  }
+  for (std::size_t bay = 0; bay < taken.size(); ++bay) {
+    if (taken[bay]) {
+      continue;
+    }
+    ball.lockBay = static_cast<std::uint8_t>(bay + 1);
+    ball.releasing = false;
+    ball.placed = true;  // It is drawn in the bay from now on.
+    ++lockCount_;
+    note(GameEvent::Type::BallLocked, slot, bay);
+    // With nothing else to play, the player gets a new ball to launch.
+    bool served = false;
+    if (!rules_.gameOver() && otherLiveBalls(slot) == 0 && queuedBalls_ == 0) {
+      served = serveForPlayer() < kMaxBalls;
+    }
+    rules_.onBallLocked(bay, served);
+    return;
+  }
+  // Both bays full: the ball is returned like any other.
+}
+
+void Game::releaseLocks() noexcept {
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (ballLocked(slot)) {
+      balls_[slot].releasing = true;
+    }
+  }
+}
+
+void Game::clearLocks() {
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (ballLocked(slot)) {
+      removeBall(slot);
+    }
+  }
 }
 
 void Game::snapshotForDrawing() {
@@ -77,6 +186,9 @@ void Game::startNewGame() {
     ball.stillSteps = 0;
   }
   shake_ = {};
+  // The bays are emptied and the spinner stops where it is.
+  clearLocks();
+  spinsOwed_ = 0;
   serveBall();
 }
 
@@ -121,11 +233,21 @@ void Game::handleNudges(const InputState& input) {
   }
 }
 
-void Game::handleDrain() {
+Rules::DrainInfo Game::drainInfo(std::size_t slot) const noexcept {
+  const std::uint64_t ejected = balls_[slot].ejectStep;
+  return {.afterEject = ejected != 0 && static_cast<double>(stepCount_ + 1 - ejected) *
+                                                kStepSeconds <= table::kEjectSaveSeconds};
+}
+
+void Game::handleDrain(std::size_t slot) {
   ++drainCount_;
+  const Rules::DrainInfo info = drainInfo(slot);
+  if (info.afterEject) {
+    note(GameEvent::Type::EjectSave, slot);
+  }
   // Whatever the outcome, a ball goes back on the plunger. After the last
   // ball it simply waits there: the controls are off until a new game.
-  rules_.onDrain();
+  rules_.onDrain(info);
   serveBall();
 }
 
@@ -137,12 +259,21 @@ void Game::removeBall(std::size_t slot) {
 
 void Game::loseBallWithOthersLive(std::size_t slot, BallLoss loss) {
   // Play goes on with the others and nothing is served. A drained ball is
-  // counted; one lost outside the table is simply gone. (When the rules
-  // learn about several balls, this is where they are told.)
+  // counted and the rules are told; one lost outside the table is simply
+  // gone.
+  bool owedBack = false;
   if (loss == BallLoss::Drained) {
     ++drainCount_;
+    const Rules::DrainInfo info = drainInfo(slot);
+    if (info.afterEject) {
+      note(GameEvent::Type::EjectSave, slot);
+    }
+    owedBack = rules_.onBallLost(info);
   }
   removeBall(slot);
+  if (owedBack) {
+    requestBall();
+  }
 }
 
 void Game::handleLostBalls() {
@@ -154,7 +285,9 @@ void Game::handleLostBalls() {
     if (!lost && !(physics_.ballPosition(slot).y > table::kDrainY)) {
       continue;
     }
-    if (physics_.activeBallCount() > 1) {
+    // Locked balls are not in play: a ball that leaves them behind is the
+    // last one.
+    if (otherLiveBalls(slot) > 0) {
       loseBallWithOthersLive(slot, lost ? BallLoss::OutOfBounds : BallLoss::Drained);
     } else if (queuedBalls_ > 0) {
       // The last ball on the table, but not the last in the game: one is
@@ -169,7 +302,7 @@ void Game::handleLostBalls() {
       rules_.onBallReturned();
       serveBall();
     } else {
-      handleDrain();
+      handleDrain(slot);
     }
   }
 }
@@ -186,7 +319,9 @@ void Game::updateInPlay() {
     BallState& ball = balls_[slot];
     ball.inPlay =
         ball.inPlay || physics_.ballHeld(slot) || table::inPlayArea(physics_.ballPosition(slot));
-    anyInPlay = anyInPlay || ball.inPlay;
+    // A locked ball is out of play: it does not keep the ball "in play"
+    // for the rules while the player has a new one on the plunger.
+    anyInPlay = anyInPlay || (ball.inPlay && ball.lockBay == 0);
   }
   if (anyInPlay) {
     enterPlay();
@@ -220,10 +355,23 @@ void Game::updateAutoLaunch() {
   // Launch, or launch again, the balls that are served this way.
   for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
     BallState& ball = balls_[slot];
-    if (!physics_.ballActive(slot) || !ball.autoLaunch || ball.inPlay) {
+    if (!physics_.ballActive(slot) || physics_.ballHeld(slot) || ball.inPlay) {
       continue;
     }
     const Vec2 p = physics_.ballPosition(slot);
+    if (!ball.autoLaunch && rules_.tilted() &&
+        p.y > table::kBallStart.y - 2.0F * table::kBallRadius &&
+        std::fabs(physics_.ballVelocity(slot).y) < 8.0F) {
+      // A ball waiting on the plunger of a tilted table: the plunger is
+      // dead, so it is launched for the player. Otherwise it would sit
+      // there and the tilt, which ends when the last ball drains, never would.
+      ball.autoLaunch = true;
+      ball.launched = false;
+      ball.launchSteps = stepsIn(kAutoLaunchDelaySeconds);
+    }
+    if (!ball.autoLaunch) {
+      continue;
+    }
     if (!ball.launched) {
       if (ball.launchSteps > 0) {
         --ball.launchSteps;
@@ -288,6 +436,7 @@ void Game::step(const InputState& input) {
     ball.placed = false;
   }
   sounds_ = 0;
+  gameEventCount_ = 0;
   // Controls act on the press, not for as long as the key is held.
   if (input.newGame && !previousInput_.newGame) {
     startNewGame();
@@ -309,6 +458,14 @@ void Game::step(const InputState& input) {
 
   handleEvents();
   // Balls are always dealt with in slot order, so a step has one outcome.
+  // Every ball taken during the step is noted before any held ball is
+  // returned, so that the order in which a hole returns its balls does not
+  // depend on which slots they are in.
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (physics_.ballActive(slot)) {
+      noteHeldBall(slot);
+    }
+  }
   for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
     if (physics_.ballActive(slot)) {
       updateHeldBall(slot);
@@ -319,9 +476,15 @@ void Game::step(const InputState& input) {
       updateBallSearch(slot, playable && input.leftFlipper, playable && input.rightFlipper);
     }
   }
+  updateSpinner();
   rules_.tick();
+  applyRules();
 
   handleLostBalls();
+  if (rules_.gameOver()) {
+    // The bays are emptied when the game ends.
+    clearLocks();
+  }
   updateInPlay();
   updateAutoLaunch();
 
@@ -398,10 +561,31 @@ void Game::handleEvents() {
         hitSounds |= soundBit(Sound::Rollover);
         rules_.onRollover(index);
         break;
-      case Hole:
+      case Hole: {
         ++holeCounts_[index];
         hitSounds |= soundBit(Sound::HoleIn);
-        rules_.onHole(index);
+        const Rules::HoleResult result = rules_.onHole(index);
+        if (table::kHoles[index].type != table::HoleType::Hangar) {
+          break;  // Only the Hangar can do anything but return the ball.
+        }
+        if (result == Rules::HoleResult::Lock) {
+          balls_[event.ball].lockAsked = true;
+        } else if (result == Rules::HoleResult::StartMultiball) {
+          releaseLocks();
+        }
+        break;
+      }
+      case Sensor:
+        rules_.onSensor(index, event.direction, event.speed);
+        if (index == table::kSpinnerSensor) {
+          addSpins(event.speed, event.direction);
+        }
+        break;
+      case Kickback:
+        ++kickbackCount_;
+        hitSounds |= soundBit(Sound::Launch);
+        note(GameEvent::Type::KickbackFired, event.ball);
+        rules_.onKickback();
         break;
       case None:
         break;
@@ -419,11 +603,10 @@ std::uint64_t Game::nextRandom() noexcept {
   return random_;
 }
 
-bool Game::exitIsClear(std::size_t slot, std::size_t hole) const {
+bool Game::exitIsClear(std::size_t slot, std::size_t hole, double spacingSeconds) const {
   // The last ball out by this exit needs time to get out of the way.
   const std::uint64_t last = lastReleaseStep_[hole];
-  if (last != 0 &&
-      static_cast<double>(stepCount_ + 1 - last) * kStepSeconds < kHoleReleaseSpacingSeconds) {
+  if (last != 0 && static_cast<double>(stepCount_ + 1 - last) * kStepSeconds < spacingSeconds) {
     return false;
   }
   // And no ball may be sitting where this one would appear.
@@ -440,39 +623,236 @@ bool Game::exitIsClear(std::size_t slot, std::size_t hole) const {
   return true;
 }
 
-void Game::updateHeldBall(std::size_t slot) {
+bool Game::firstInHole(std::size_t slot) const noexcept {
+  // Balls passing through leave in the order they came; locked balls that
+  // have been let go follow them, bay by bay.
+  const BallState& ball = balls_[slot];
+  for (std::size_t other = 0; other < kMaxBalls; ++other) {
+    const BallState& rival = balls_[other];
+    if (other == slot || !physics_.ballHeld(other) || rival.holder != ball.holder ||
+        (rival.lockBay != 0 && !rival.releasing)) {
+      continue;
+    }
+    const bool rivalFirst =
+        (rival.lockBay == 0) != (ball.lockBay == 0)
+            ? rival.lockBay == 0
+            : (ball.lockBay == 0 ? rival.arrival < ball.arrival : rival.lockBay < ball.lockBay);
+    if (rivalFirst) {
+      return false;
+    }
+  }
+  return true;
+}
+
+Vec2 Game::nextHangarExitVelocity() noexcept {
+  // Balls leaving close behind one another go left, right, left: the first
+  // lobbed to the left inlane, the next kicked down to the right flipper.
+  const std::uint64_t last = lastReleaseStep_[table::kHangarHole];
+  const bool follows = last != 0 && static_cast<double>(stepCount_ + 1 - last) * kStepSeconds <=
+                                        table::kHangarBurstSeconds;
+  hangarBurst_ = follows ? hangarBurst_ + 1 : 0;
+  return hangarBurst_ % 2 == 1 ? table::kHangarEjectRight
+                               : table::kHoles[table::kHangarHole].exitVelocity;
+}
+
+#ifdef PINBALL_TUNE_SCOOP
+int tuneValue(const char* name, int fallback) {
+  const char* text = std::getenv(name);
+  return text != nullptr ? std::atoi(text) : fallback;
+}
+#endif
+
+Vec2 Game::nextScoopExitVelocity() noexcept {
+  // A little different each time, both ways (table::kScoopExitJitterLeft).
+#ifdef PINBALL_TUNE_SCOOP
+  static const int left = tuneValue("SCOOP_L", table::kScoopExitJitterLeft);
+  static const int right = tuneValue("SCOOP_R", table::kScoopExitJitterRight);
+  static const int down = tuneValue("SCOOP_D", table::kScoopExitJitterDown);
+#else
+  constexpr int left = table::kScoopExitJitterLeft;
+  constexpr int right = table::kScoopExitJitterRight;
+  constexpr int down = table::kScoopExitJitterDown;
+#endif
+  Vec2 velocity = table::kHoles[table::kScoopHole].exitVelocity;
+  const auto across = static_cast<std::uint64_t>(left + right + 1);
+  const auto along = static_cast<std::uint64_t>(2 * down + 1);
+  velocity.x += static_cast<float>(static_cast<int>(nextRandom() % across) - left);
+  velocity.y += static_cast<float>(static_cast<int>(nextRandom() % along) - down);
+  return velocity;
+}
+
+void Game::returnBall(std::size_t slot, std::size_t exitHole, Vec2 position, Vec2 velocity) {
+  BallState& ball = balls_[slot];
+  physics_.releaseBall(slot, position, velocity);
+  lastReleaseStep_[exitHole] = stepCount_ + 1;
+  ball.placed = true;
+  // So that a capture on the very next step still counts as a new one.
+  ball.wasHeld = false;
+  sounds_ |= soundBit(Sound::HoleOut);
+}
+
+void Game::noteHeldBall(std::size_t slot) {
   BallState& ball = balls_[slot];
   const bool held = physics_.ballHeld(slot);
   if (held && !ball.wasHeld) {
     // Taken from the physics state itself, not from the event list, which
     // can drop entries when a step is very busy.
-    ball.heldBy = std::min(physics_.heldHole(slot), table::kHoles.size() - 1);
+    const table::ElementRef by = physics_.heldBy(slot);
+    ball.holder = table::isValid(by) ? by : table::ElementRef{table::ElementKind::Hole, 0};
     ball.heldSteps = 0;
+    ball.arrival = ++arrivals_;
+    ball.lockBay = 0;
+    ball.releasing = false;
     // The held body stays where it was taken.
     ball.takenAt = physics_.ballPosition(slot);
+    if (ball.lockAsked && ball.holder.kind == table::ElementKind::Hole &&
+        table::kHoles[ball.holder.index].type == table::HoleType::Hangar) {
+      lockBall(slot);
+    }
   }
+  ball.lockAsked = false;
   ball.wasHeld = held;
-  if (!held) {
+}
+
+void Game::updateHeldBall(std::size_t slot) {
+  BallState& ball = balls_[slot];
+  if (!physics_.ballHeld(slot)) {
     return;
   }
-  ++ball.heldSteps;
-  const table::Hole& hole = table::kHoles[ball.heldBy];
-  if (static_cast<double>(ball.heldSteps) * kStepSeconds >= holdSeconds(hole.type) &&
-      exitIsClear(slot, ball.heldBy)) {
-    Vec2 velocity = hole.exitVelocity;
-    if (table::isRamp(hole.type)) {
-      // Set down a little faster or slower each time.
-      constexpr std::uint64_t kValues =
-          2U * static_cast<std::uint64_t>(table::kRampExitJitter) + 1U;
-      velocity.y +=
-          static_cast<float>(static_cast<int>(nextRandom() % kValues) - table::kRampExitJitter);
+  // Set down a little faster or slower each time.
+  const auto jittered = [this](Vec2 velocity) {
+    constexpr std::uint64_t kValues = 2U * static_cast<std::uint64_t>(table::kRampExitJitter) + 1U;
+    velocity.y +=
+        static_cast<float>(static_cast<int>(nextRandom() % kValues) - table::kRampExitJitter);
+    return velocity;
+  };
+
+  if (ball.holder.kind == table::ElementKind::Kickback) {
+    // Carried along the kickback's path, then set down where the Runway's
+    // rail sets its balls down, and as it does.
+    ++ball.heldSteps;
+    const table::Hole& runway = table::kHoles[table::kRunwayHole];
+    if (static_cast<double>(ball.heldSteps) * kStepSeconds >= table::kKickbackSeconds &&
+        exitIsClear(slot, table::kRunwayHole, kHoleReleaseSpacingSeconds)) {
+      returnBall(slot, table::kRunwayHole, runway.exitPosition, jittered(runway.exitVelocity));
+      note(GameEvent::Type::KickbackReturned, slot);
     }
-    physics_.releaseBall(slot, hole.exitPosition, velocity);
-    lastReleaseStep_[ball.heldBy] = stepCount_ + 1;
-    ball.placed = true;
-    // So that a capture on the very next step still counts as a new one.
-    ball.wasHeld = false;
-    sounds_ |= soundBit(Sound::HoleOut);
+    return;
+  }
+
+  const std::size_t index = ball.holder.index;
+  const table::Hole& hole = table::kHoles[index];
+  if (table::isRamp(hole.type)) {
+    // Each ball rides the rail on its own clock.
+    ++ball.heldSteps;
+    if (static_cast<double>(ball.heldSteps) * kStepSeconds >= holdSeconds(hole.type) &&
+        exitIsClear(slot, index, kHoleReleaseSpacingSeconds)) {
+      returnBall(slot, index, hole.exitPosition, jittered(hole.exitVelocity));
+      note(GameEvent::Type::HoleEject, slot, index);
+      rules_.onEject(index);
+    }
+    return;
+  }
+
+  // The scoop and the hangar hold one ball at a time. A locked ball stays
+  // until it is told to go; any other waits its turn, and its hold runs
+  // only once it is the next to leave.
+  const bool locked = ball.lockBay != 0;
+  if ((locked && !ball.releasing) || !firstInHole(slot)) {
+    return;
+  }
+  // The step in which the ball ahead left belongs to that ball: the next
+  // one's turn starts with the step after, whichever slot it is in.
+  if (lastReleaseStep_[index] == stepCount_ + 1) {
+    return;
+  }
+  if (!locked) {
+    ++ball.heldSteps;
+    if (static_cast<double>(ball.heldSteps) * kStepSeconds < holdSeconds(hole.type)) {
+      return;
+    }
+  }
+  const bool hangar = hole.type == table::HoleType::Hangar;
+  if (!exitIsClear(slot, index,
+                   hangar ? table::kLockReleaseSpacingSeconds : kHoleReleaseSpacingSeconds)) {
+    return;
+  }
+  const Vec2 velocity = hangar ? nextHangarExitVelocity() : nextScoopExitVelocity();
+  returnBall(slot, index, hole.exitPosition, velocity);
+  ball.ejectStep = stepCount_ + 1;
+  note(GameEvent::Type::HoleEject, slot, index);
+  if (locked) {
+    const std::size_t bay = ball.lockBay - 1U;
+    ball.lockBay = 0;
+    ball.releasing = false;
+    ++lockReleaseCount_;
+    note(GameEvent::Type::LockReleased, slot, bay);
+    rules_.onLockReleased(bay);
+  } else {
+    rules_.onEject(index);
+  }
+}
+
+bool Game::doorMouthClear() const {
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (!physics_.ballActive(slot) || physics_.ballHeld(slot)) {
+      continue;
+    }
+    const Vec2 p = physics_.ballPosition(slot);
+    if (std::fabs(p.x - table::kDoorMouthCenter.x) < table::kDoorMouthHalfSize.x &&
+        std::fabs(p.y - table::kDoorMouthCenter.y) < table::kDoorMouthHalfSize.y) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void Game::applyRules() {
+  switch (rules_.takeDoorCommand()) {
+    case Rules::DoorCommand::Drop:
+      doorRaisePending_ = false;
+      if (physics_.doorBankUp()) {
+        physics_.setDoorBank(false);
+        note(GameEvent::Type::DoorBankDropped, 0);
+        rules_.onDoorBank(false);
+      }
+      break;
+    case Rules::DoorCommand::Raise:
+      doorRaisePending_ = !physics_.doorBankUp();
+      break;
+    case Rules::DoorCommand::None:
+      break;
+  }
+  // The bank never comes up onto a ball: it waits, a step at a time, until
+  // the mouth is clear. A ball held inside the Hangar is no obstacle: it
+  // comes out below the door line.
+  if (doorRaisePending_ && doorMouthClear()) {
+    doorRaisePending_ = false;
+    physics_.setDoorBank(true);
+    note(GameEvent::Type::DoorBankRaised, 0);
+    rules_.onDoorBank(true);
+  }
+  physics_.setKickbackArmed(rules_.kickbackLit());
+}
+
+void Game::addSpins(float speedAcross, int direction) noexcept {
+  spinsOwed_ = std::min(spinsOwed_ + table::spinsFor(speedAcross), table::kMaxSpinsOwed);
+  spinDirection_ = direction < 0 ? -1 : 1;
+}
+
+void Game::updateSpinner() {
+  constexpr std::uint32_t kTurn = 2U * static_cast<std::uint32_t>(table::kSpinPayoutSteps);
+  if (spinCooldown_ > 0) {
+    // Half a turn for each spin, a step at a time, either way round.
+    --spinCooldown_;
+    spinnerTicks_ = (spinnerTicks_ + (spinDirection_ > 0 ? 1U : kTurn - 1U)) % kTurn;
+  }
+  if (spinsOwed_ > 0 && spinCooldown_ == 0) {
+    --spinsOwed_;
+    spinCooldown_ = table::kSpinPayoutSteps;
+    ++spinCount_;
+    note(GameEvent::Type::Spin, 0);
+    rules_.onSpin();
   }
 }
 
@@ -541,7 +921,39 @@ BallView Game::ballView(std::size_t slot) const {
     return view;
   }
   const BallState& state = balls_[slot];
-  const table::Hole& hole = table::kHoles[state.heldBy];
+  if (state.holder.kind == table::ElementKind::Kickback) {
+    // Carried up the outlane and over the divider: fast at first, slowing
+    // to a stop where it is set down. From where it was taken.
+    const auto& path = table::kKickbackPath;
+    const auto point = [&path, &state](std::size_t i) { return i == 0 ? state.takenAt : path[i]; };
+    float length = 0.0F;
+    for (std::size_t i = 1; i < path.size(); ++i) {
+      length += lengthOf(point(i) - point(i - 1));
+    }
+    const float t = std::clamp(static_cast<float>(static_cast<double>(state.heldSteps) *
+                                                  kStepSeconds / table::kKickbackSeconds),
+                               0.0F, 1.0F);
+    float left = (1.0F - (1.0F - t) * (1.0F - t)) * length;
+    view.position = path.back();
+    for (std::size_t i = 1; i < path.size(); ++i) {
+      const Vec2 run = point(i) - point(i - 1);
+      const float runLength = lengthOf(run);
+      if (left < runLength && runLength > 0.0F) {
+        view.position = point(i - 1) + run * (left / runLength);
+        break;
+      }
+      left -= runLength;
+    }
+    return view;
+  }
+  const table::Hole& hole = table::kHoles[state.holder.index];
+  if (state.lockBay != 0) {
+    // In its bay, in view, until it is let go.
+    view.position = table::kLockBays[state.lockBay - 1U];
+    view.angle = 0.0F;
+    view.locked = true;
+    return view;
+  }
   if (!table::isRamp(hole.type)) {
     view.visible = false;
     return view;

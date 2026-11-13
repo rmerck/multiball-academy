@@ -69,11 +69,28 @@ void testRules() {
       rules.onTarget(i);
       expected += points::kTarget;
     }
+    // A bay door pays once and is marked; hit again it pays less. The third
+    // door opens the bank, which pays too and (provisionally) lights the lock.
     for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
+      CHECK(!rules.doorMarked(i));
+      CHECK(rules.takeDoorCommand() == Rules::DoorCommand::None ||
+            i == 0);  // A new game asks for the bank to stand.
       rules.onDropTarget(i);
       expected += points::kBayDoor;
+      CHECK(rules.doorMarked(i));
+      if (i == 0) {
+        rules.onDropTarget(i);
+        expected += points::kBayDoorAgain;
+      }
     }
+    expected += points::kBayDoorsOpen;
     CHECK(rules.score() == expected);
+    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::Drop);
+    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::None);
+    CHECK(rules.lockLit());
+    CHECK(rules.message() == std::string_view("LOCK IS LIT"));
+    // For the rest of this test the Hangar only returns the ball.
+    rules.setLocksEnabled(false);
     rules.onRollover(firstRollover(table::RolloverGroup::TopLane));
     expected += points::kRollCallLane;
     rules.onRollover(firstRollover(table::RolloverGroup::Inlane));
@@ -82,7 +99,7 @@ void testRules() {
     CHECK(rules.score() == expected);
     rules.onHole(table::kScoopHole);
     CHECK(rules.message() == std::string_view("BRIEFING"));
-    rules.onHole(table::kHangarHole);
+    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::Eject);
     CHECK(rules.message() == std::string_view("HANGAR"));
     rules.onHole(table::kRunwayHole);
     CHECK(rules.message() == std::string_view("RUNWAY"));
@@ -94,6 +111,83 @@ void testRules() {
     rules.onBumper(0);
     rules.onHole(table::kRunwayHole);
     CHECK(rules.score() == expected + points::kBumper + points::kRamp);
+  }
+
+  {  // Provisional: the lock. Two balls are locked, the third lets them go
+     // and asks for the doors back up; with the locks off the Hangar
+     // returns the ball and the doors follow half a second after it is out.
+    Rules rules(kStep);
+    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::Raise);
+    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::Eject);  // Not lit.
+    for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
+      rules.onDropTarget(i);
+    }
+    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::Drop);
+    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::Lock);
+    CHECK(rules.locksHeld() == 1);
+    CHECK(rules.message() == std::string_view("BALL 1 LOCKED"));
+    rules.onBallInPlay();
+    rules.onBallLocked(0, true);
+    CHECK(!rules.ballInPlay());
+    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::Lock);
+    CHECK(rules.locksHeld() == 2);
+    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::None);
+    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::StartMultiball);
+    CHECK(rules.locksHeld() == 0 && !rules.lockLit());
+    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::Raise);
+    CHECK(!rules.doorMarked(0));
+    // A tilted table locks nothing.
+    for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
+      rules.onDropTarget(i);
+    }
+    rules.onBallInPlay();
+    for (int i = 0; i < 4; ++i) {
+      rules.onNudge();
+    }
+    CHECK(rules.tilted());
+    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::Eject);
+    CHECK(rules.locksHeld() == 0);
+
+    Rules plain(kStep);
+    plain.setLocksEnabled(false);
+    static_cast<void>(plain.takeDoorCommand());
+    for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
+      plain.onDropTarget(i);
+    }
+    CHECK(!plain.lockLit());
+    CHECK(plain.message() == std::string_view("BAY DOORS OPEN"));
+    CHECK(plain.takeDoorCommand() == Rules::DoorCommand::Drop);
+    CHECK(plain.onHole(table::kHangarHole) == Rules::HoleResult::Eject);
+    wait(plain, 2.0);
+    CHECK(plain.takeDoorCommand() == Rules::DoorCommand::None);  // Not before it is out.
+    plain.onEject(table::kHangarHole);
+    wait(plain, Rules::kDoorRaiseSeconds - 0.1);
+    CHECK(plain.takeDoorCommand() == Rules::DoorCommand::None);
+    wait(plain, 0.2);
+    CHECK(plain.takeDoorCommand() == Rules::DoorCommand::Raise);
+    plain.onDoorBank(true);
+    CHECK(!plain.doorMarked(0) && !plain.doorMarked(1) && !plain.doorMarked(2));
+  }
+
+  {  // Provisional: a spin and the kickback pay; the short save after an
+     // eject returns the ball without using up the ball save.
+    Rules rules(kStep);
+    rules.onSpin();
+    rules.onKickback();
+    CHECK(rules.score() == points::kSpin + points::kKickback);
+    rules.onBallInPlay();
+    wait(rules, 1.0);
+    CHECK(rules.onDrain({.afterEject = true}) == Rules::DrainResult::BallSaved);
+    CHECK(rules.ball() == 1);
+    rules.onBallInPlay();
+    CHECK(rules.ballSaveActive());
+    CHECK(rules.onDrain() == Rules::DrainResult::BallSaved);  // The ball save itself.
+    rules.onBallInPlay();
+    CHECK(rules.onDrain() == Rules::DrainResult::NextBall);
+    // With other balls in play the ball is owed back; not otherwise.
+    rules.onBallInPlay();
+    CHECK(rules.onBallLost({.afterEject = true}));
+    CHECK(!rules.onBallLost({.afterEject = false}));
   }
 
   {  // Out-of-range indices are ignored everywhere.

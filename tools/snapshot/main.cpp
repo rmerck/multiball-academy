@@ -7,6 +7,8 @@
 //
 // state    play (the default), launch, pause, interrupted, confirm, about,
 //          about-info, licences, initials, gameover, course, multiball,
+//          locked (a ball locked in the Hangar's first bay and the next on
+//          the plunger), bankdown (the bay doors dropped),
 //          or check: draw the layout's screens one after another and fail
 //          unless every control, window and dialog is really drawn (see
 //          checkLayout below); the picture written is the play frame
@@ -41,6 +43,7 @@
 #include <utility>
 #include <vector>
 
+#include "GameTestAccess.hpp"
 #include "core/Args.hpp"
 #include "core/DisplayText.hpp"
 #include "core/Game.hpp"
@@ -145,6 +148,8 @@ enum class State : std::uint8_t {
   GameOver,
   Course,
   Multiball,
+  Locked,
+  BankDown,
   Check,
 };
 
@@ -152,7 +157,7 @@ struct StateName {
   std::string_view name;
   State state;
 };
-constexpr std::array<StateName, 13> kStates{{
+constexpr std::array<StateName, 15> kStates{{
     {"play", State::Play},
     {"launch", State::Launch},
     {"pause", State::Pause},
@@ -165,6 +170,8 @@ constexpr std::array<StateName, 13> kStates{{
     {"gameover", State::GameOver},
     {"course", State::Course},
     {"multiball", State::Multiball},
+    {"locked", State::Locked},
+    {"bankdown", State::BankDown},
     {"check", State::Check},
 }};
 
@@ -188,7 +195,7 @@ constexpr float kMaxPictureSide = 8192.0F;
 constexpr const char* kUsage =
     "Usage: pinball_snapshot <steps 1..1000000> <name.png> [state] [options]\n"
     "  state: play launch pause interrupted confirm about about-info licences\n"
-    "         initials gameover course multiball check\n"
+    "         initials gameover course multiball locked bankdown check\n"
     "  --layout <preset | WxH[@scale][+top,bottom,left,right]>   points, 100..4096; scale 1..4,\n"
     "           and no more than 8192 pixels a side at that scale\n"
     "  --surface WxH   --insets top,bottom,left,right\n"
@@ -480,6 +487,8 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
     case State::GameOver:
     case State::Course:
     case State::Multiball:
+    case State::Locked:
+    case State::BankDown:
     case State::Check:
       break;
   }
@@ -846,6 +855,35 @@ int run(const Request& request) {
     const bool idle = request.state == State::GameOver || request.state == State::Launch;
     for (std::uint32_t i = 0; i < request.steps; ++i) {
       game.step(idle ? pinball::InputState{} : scriptedInput(step++));
+    }
+
+    if (request.state == State::Locked || request.state == State::BankDown) {
+      // What scripted play does not reach by itself is set up by hand,
+      // through the seam the tests use: the three doors are marked, as
+      // three hits would, and for the lock a ball is sent into the Hangar.
+      using Seam = pinball::GameTestAccess;
+      for (std::size_t door = 0; door < pinball::table::kDropTargets.size(); ++door) {
+        Seam::rules(game).onDropTarget(door);
+      }
+      game.step(pinball::InputState{});
+      if (request.state == State::Locked) {
+        const std::size_t slot = game.ball().id;
+        Seam::placeBall(game, slot, {279.0F, 440.0F}, {0.0F, -900.0F});
+        Seam::putInPlay(game, slot);
+        for (int i = 0; i < 240 && game.lockedBalls() == 0; ++i) {
+          game.step(pinball::InputState{});
+        }
+      }
+      for (int i = 0; i < 30; ++i) {
+        game.step(pinball::InputState{});
+      }
+      const bool reached = request.state == State::Locked
+                               ? game.lockedBalls() == 1
+                               : !game.doorBankUp();
+      if (!reached) {
+        std::fputs("the scene could not be set up\n", stderr);
+        return EXIT_FAILURE;
+      }
     }
 
     if (request.state == State::Check) {

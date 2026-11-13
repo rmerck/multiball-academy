@@ -34,6 +34,17 @@ struct pinball::GameTestAccess {
   static Vec2 position(const Game& game, std::size_t ball) {
     return game.physics_.ballPosition(ball);
   }
+  // The rules, to tell them things by hand.
+  static Rules& rules(Game& game) { return game.rules_; }
+  // Drops the bay doors at once; asks for them to come back up, which
+  // happens when the mouth is clear.
+  static void dropDoorBank(Game& game) {
+    game.doorRaisePending_ = false;
+    game.physics_.setDoorBank(false);
+  }
+  static void raiseDoorBank(Game& game) { game.doorRaisePending_ = !game.physics_.doorBankUp(); }
+  // Lets every locked ball go.
+  static void releaseLocks(Game& game) { game.releaseLocks(); }
   // Adds to a free ball's velocity, as a nudge does.
   static void pushBall(Game& game, std::size_t ball, Vec2 velocityChange) {
     game.physics_.pushBall(ball, velocityChange);

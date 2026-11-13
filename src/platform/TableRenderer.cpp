@@ -92,6 +92,9 @@ constexpr SDL_FColor kHoleColor = rgb(255, 150, 40);    // Scoop and hangar boxe
 constexpr SDL_FColor kRampColor = rgb(255, 225, 70);    // Ramp mouths and rails.
 constexpr SDL_FColor kLampColor = rgb(120, 96, 176);    // Unlit lamps.
 constexpr SDL_FColor kMarkColor = rgb(84, 64, 132);     // Spinner, kickback, lock bays.
+constexpr SDL_FColor kLitColor = rgb(255, 240, 120);    // A lamp that is on.
+constexpr SDL_FColor kBladeColor = rgb(240, 240, 255);  // The spinner's blade.
+constexpr SDL_FColor kDoorDownColor = rgb(120, 70, 20); // Where a dropped door lies.
 
 class Mesh {
  public:
@@ -386,17 +389,53 @@ void TableRenderer::drawBumpers(SDL_Renderer* r, const Game& game) const {
   }
 }
 
-void TableRenderer::drawTargets(SDL_Renderer* r) const {
+void TableRenderer::drawElements(SDL_Renderer* r, const Game& game) const {
+  elements_.clear();
+  Mesh mesh(elements_);
+  // Doors that have dropped lie flat: an outline where each stood.
+  if (!game.doorBankUp()) {
+    for (const table::Capsule& door : table::kDropTargets) {
+      mesh.box((door.a + door.b) * 0.5F,
+               {(door.b.x - door.a.x) * 0.5F + door.radius, door.radius}, 2.0F, kDoorDownColor);
+    }
+  }
+  // Lamps that the table itself answers for: a lock lamp for each ball in
+  // a bay, and the kickback's while it is armed.
+  for (const table::Lamp& lamp : table::kLamps) {
+    const bool lit =
+        (lamp.id == table::LampId::Kickback && game.kickbackArmed()) ||
+        (lamp.id == table::LampId::Lock1 && game.lockedBalls() >= 1) ||
+        (lamp.id == table::LampId::Lock2 && game.lockedBalls() >= 2);
+    if (lit) {
+      mesh.disc(lamp.position, table::kStatusLampDiameter * 0.5F, kLitColor);
+    }
+  }
+  // The spinner's blade seen from above: full depth when it lies flat, an
+  // edge when it stands, twice a turn.
+  const float turn = 2.0F * table::kPi * game.spinnerPhase();
+  constexpr float kBladeDepth = 16.0F;
+  mesh.line(table::kSpinner.a, table::kSpinner.b,
+            2.0F + (kBladeDepth - 2.0F) * std::fabs(std::cos(turn)), kBladeColor);
+  SDL_RenderGeometry(r, nullptr, elements_.data(), static_cast<int>(elements_.size()), nullptr, 0);
+}
+
+void TableRenderer::drawTargets(SDL_Renderer* r, const Game& game) const {
   SDL_Texture* const bar = textures_.bar.get();
   static const std::array<BarSprite, kBarCount> kSprites = makeBarSprites();
   for (std::size_t i = 0; i < kSprites.size(); ++i) {
-    // Turbo targets mint, bay doors orange. Nothing lights them yet, so
-    // each is the dim tube of an unlit bar.
-    const Rgb color = i < table::kTargets.size() ? Rgb{77, 255, 178} : Rgb{255, 150, 40};
-    constexpr float kLevel = 0.6F;
-    SDL_SetTextureColorMod(bar, toByte(static_cast<float>(color.r) / 255.0F * kLevel),
-                           toByte(static_cast<float>(color.g) / 255.0F * kLevel),
-                           toByte(static_cast<float>(color.b) / 255.0F * kLevel));
+    // Turbo targets mint, bay doors orange. A door is the dim tube of an
+    // unlit bar until it has been hit, bright once it is marked, and not
+    // drawn at all while the bank is down.
+    const bool door = i >= table::kTargets.size();
+    if (door && !game.doorBankUp()) {
+      continue;
+    }
+    const Rgb color = door ? Rgb{255, 150, 40} : Rgb{77, 255, 178};
+    const float level =
+        door && game.rules().doorMarked(i - table::kTargets.size()) ? 1.0F : 0.6F;
+    SDL_SetTextureColorMod(bar, toByte(static_cast<float>(color.r) / 255.0F * level),
+                           toByte(static_cast<float>(color.g) / 255.0F * level),
+                           toByte(static_cast<float>(color.b) / 255.0F * level));
     SDL_RenderTextureRotated(r, bar, nullptr, &kSprites[i].dst, kSprites[i].angleDegrees, nullptr,
                              SDL_FLIP_NONE);
   }
@@ -571,8 +610,9 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
     SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
   } else {
     drawPlayfield(r);
+    drawElements(r, game);
   }
-  drawTargets(r);
+  drawTargets(r, game);
   drawBumpers(r, game);
   drawSlingshotFlashes(r, game);
   drawPlunger(r, game);

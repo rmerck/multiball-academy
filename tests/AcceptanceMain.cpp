@@ -2,7 +2,7 @@
 //
 //   pinball_acceptance [--quick] [section ...]
 //
-// Sections: launch shots lanes exits rest wedge p1 p2 p2saver stress. With none
+// Sections: launch shots lanes exits rest wedge p1 p2 p2saver kickback stress. With none
 // named, all run (well over an hour in one process; name sections to split
 // the work between processes, as the CTest label `acceptance` does). --quick cuts every sample to a
 // fraction, to try the program out; its numbers are not the suite's.
@@ -16,7 +16,7 @@
 //               (TABLE.md 6.8). Reported with its value, never passed over,
 //               and not a failure of the build.
 //   INFO        measured for the record; by the owner's decision not a test.
-//   DEFERRED    needs an element type that the game does not have yet.
+//   DEFERRED    needs something that the game does not have yet.
 #include <algorithm>
 #include <array>
 #include <cstdarg>
@@ -134,11 +134,25 @@ void sectionShots(bool quick) {
     Touch touch;
     const char* name;
   };
-  // The Hangar cannot be entered while the bay doors are fixed targets: the
-  // shot is measured by the door bank it must hit, which has the same mouth.
+  // The Hangar is shot twice over: at its doors while they stand (this
+  // sweep) and into the pocket once they are down (the second sweep, the
+  // plain feeds only). Its window is the pocket's.
+  ShotMap open = shotSweep(1, true);
+  for (const std::string& fan : open.fans) {
+    std::printf("# fan, doors down, %s\n", fan.c_str());
+  }
+  const ShotWindow doors = map.shots[static_cast<std::size_t>(Touch::Door)];
+  std::printf(
+      "# shot %-20s best %2d  cradle %2d  inlane %2d  ramp exit %2d  first hits %3d  "
+      "through the gap untouched %d\n",
+      "bay doors (standing)", doors.best, doors.cradle, doors.inlane, doors.rampExit,
+      doors.firstHits, doors.throughGapUntouched);
+  ShotMap shots = map;
+  shots.shots[static_cast<std::size_t>(Touch::Hangar)] =
+      open.shots[static_cast<std::size_t>(Touch::Hangar)];
   constexpr std::array<Major, 7> kMajor{{{Touch::CircuitLeft, "left circuit"},
                                          {Touch::Runway, "Runway"},
-                                         {Touch::Door, "Hangar (bay doors)"},
+                                         {Touch::Hangar, "Hangar (doors down)"},
                                          {Touch::Briefing, "Briefing room"},
                                          {Touch::Turbine, "Turbine lane"},
                                          {Touch::Skyway, "Skyway"},
@@ -149,7 +163,7 @@ void sectionShots(bool quick) {
   std::string windows;
   std::string cradles;
   for (const Major& major : kMajor) {
-    const ShotWindow& window = map.shots[static_cast<std::size_t>(major.touch)];
+    const ShotWindow& window = shots.shots[static_cast<std::size_t>(major.touch)];
     std::printf(
         "# shot %-20s best %2d  cradle %2d  inlane %2d  ramp exit %2d  first hits %3d  "
         "through the gap untouched %d  reached arch %d  completed %d\n",
@@ -179,10 +193,10 @@ void sectionShots(bool quick) {
   double worstShare = 0.0;
   std::string tooFew;
   for (const Touch touch :
-       {Touch::CircuitLeft, Touch::Runway, Touch::Door, Touch::Briefing, Touch::Turbine,
-        Touch::Skyway, Touch::CircuitRight, Touch::Bumper, Touch::Slingshot, Touch::TargetLeft,
-        Touch::TargetRight, Touch::RollCall}) {
-    const ShotWindow& window = map.shots[static_cast<std::size_t>(touch)];
+       {Touch::CircuitLeft, Touch::Runway, Touch::Door, Touch::Hangar, Touch::Briefing,
+        Touch::Turbine, Touch::Skyway, Touch::CircuitRight, Touch::Bumper, Touch::Slingshot,
+        Touch::TargetLeft, Touch::TargetRight, Touch::RollCall}) {
+    const ShotWindow& window = shots.shots[static_cast<std::size_t>(touch)];
     if (window.firstHits == 0) {
       continue;
     }
@@ -278,17 +292,46 @@ void sectionExits(bool quick) {
   row(Kind::Hard, runway * 100 >= n * 80 && skyway * 100 >= n * 80, "A4",
       "each flipper has a shot that feeds the opposite inlane within 4 s",
       "80 percent of made shots", text("Runway %d, Skyway %d of %d", runway, skyway, n));
-  for (int speed = 900; speed <= 1300; speed += 200) {
-    const ExitResult kick = kickbackAt(speed, quick ? 12 : 60);
-    std::printf("# kick up the left outlane at %d px/s: %s\n", speed, firsts(kick.first).c_str());
-    if (speed == static_cast<int>(-table::kKickbackVelocity.y)) {
-      row(Kind::Hard, kick.safe * 100 >= kick.releases * 98, "B6k",
-          "a ball kicked up the left outlane at the kickback's speed reaches a flipper or inlane",
-          "98 percent", text("%d of %d", kick.safe, kick.releases));
-    }
-  }
-  row(Kind::Deferred, true, "B6", "kickback fires and the ball is not lost again within 3 s (P2)",
-      "100 percent; under 2 percent", "no kickback element yet");
+  // The Hangar's second way out: the kick to the right flipper.
+  const ExitResult right =
+      exitAt(table::kHoles[table::kHangarHole].exitPosition, table::kHangarEjectRight, n);
+  std::printf("# exit of the Hangar, kicked right: %s\n", firsts(right.first).c_str());
+  row(Kind::Hard, right.safe * 100 >= right.releases * 98, "B5h",
+      "releases from the Hangar's kick to the right that reach a flipper or inlane first",
+      "98 percent", text("%d of %d", right.safe, right.releases));
+  // The lock: two balls locked, a third in, all three let go.
+  const LockBurstResult lock = lockBursts(n);
+  std::printf("# lock: %d releases of three; first touch: %s; ball-on-ball touches %d\n",
+              lock.bursts, firsts(lock.first).c_str(), lock.ballHits);
+  row(Kind::Hard, lock.bursts == n && lock.released == 3 * lock.bursts && lock.outOfOrder == 0 &&
+                      lock.badSpacing == 0 && lock.heldMoved == 0,
+      "L1", "lock: held in the bays, then let go in order (arriving, bay 1, bay 2), 0.4 s apart",
+      "every release",
+      text("%d of %d releases of three; %d out of order, %d mistimed, %d steps off a bay",
+           lock.bursts, n, lock.outOfOrder, lock.badSpacing, lock.heldMoved));
+  row(Kind::Hard, lock.safe * 100 >= lock.released * 98, "L2",
+      "balls let go from the lock that reach a flipper or inlane first", "98 percent",
+      text("%d of %d", lock.safe, lock.released));
+  // The Briefing room with a second ball arriving while the first is held.
+  const ScoopPairResult pairs = scoopPairs(n);
+  row(Kind::Hard,
+      pairs.pairs > 0 && pairs.bothOut == pairs.pairs && pairs.tooClose == 0 &&
+          pairs.longestOverlap <= 4 && pairs.safe * 100 >= pairs.returned * 98,
+      "S1", "Briefing room, two balls: both returned, a full hold apart, each to a flipper or inlane",
+      "all; 98 percent safe",
+      text("%d of %d pairs out (%d more turned away at the mouth), %d too close, %d of %d "
+           "returned balls safe, longest overlap %d steps",
+           pairs.bothOut, pairs.pairs, pairs.turnedAway, pairs.tooClose, pairs.safe,
+           pairs.returned, pairs.longestOverlap));
+  // B6, the mechanism: every ball that comes down the lit left outlane.
+  const KickbackResult kick = kickbackSweep(quick ? 120 : 600);
+  row(Kind::Hard,
+      kick.balls > 0 && kick.fired == kick.balls && kick.returned == kick.fired &&
+          kick.safe == kick.returned,
+      "B6k", "kickback, lit: fires for every ball down the left outlane and returns it",
+      "100 percent, to the inlane or a flipper",
+      text("%d balls: fired %d, returned %d, then inlane or flipper %d (lost unfired %d)",
+           kick.balls, kick.fired, kick.returned, kick.safe, kick.lostByOutlane));
 }
 
 void sectionRest(bool quick) {
@@ -363,6 +406,32 @@ void rowsForSoundness(const char* id, const char* who, std::uint64_t steps, std:
            static_cast<unsigned long long>(lost), static_cast<unsigned long long>(overSpeed)));
 }
 
+// The new elements in a bot's game: the bank and the Hangar behind it.
+void reportElements(const char* label, const SoakResult& soak) {
+  std::printf(
+      "#   %s: bank dropped %llu, raised %llu; Hangar entries %llu (doors standing %llu); spins "
+      "%llu; kickback fired %llu, returned %llu, then inlane or flipper %llu, lost again within "
+      "3 s %llu; eject saves %llu\n",
+      label, static_cast<unsigned long long>(soak.bankDrops),
+      static_cast<unsigned long long>(soak.bankRaises),
+      static_cast<unsigned long long>(soak.hangarEntries),
+      static_cast<unsigned long long>(soak.hangarEntriesDoorsUp),
+      static_cast<unsigned long long>(soak.spins), static_cast<unsigned long long>(soak.kickbacks),
+      static_cast<unsigned long long>(soak.kickbackReturns),
+      static_cast<unsigned long long>(soak.kickbackSafe),
+      static_cast<unsigned long long>(soak.kickbackLostAgain),
+      static_cast<unsigned long long>(soak.ejectSaves));
+}
+
+void rowHangarShut(const char* who, std::uint64_t entries, std::uint64_t doorsStanding,
+                   std::uint64_t drops) {
+  row(Kind::Hard, doorsStanding == 0, "D4h",
+      text("%s: Hangar entered with a door standing", who), "0",
+      text("%llu of %llu entries; bank dropped %llu times",
+           static_cast<unsigned long long>(doorsStanding),
+           static_cast<unsigned long long>(entries), static_cast<unsigned long long>(drops)));
+}
+
 void sectionRandom(bool quick) {
   SoakOptions options;
   options.bot = BotKind::Random;
@@ -370,15 +439,20 @@ void sectionRandom(bool quick) {
   options.seed = 11;
   const SoakResult plain = soak(options);
   reportSoak("P1, saver off", plain);
+  reportElements("P1, saver off", plain);
   options.balls = quick ? 100 : 1000;
   options.seed = 12;
   options.saverSeconds = 15.0;
+  options.kickback = true;
   const SoakResult saved = soak(options);
-  reportSoak("P1, saver 15 s", saved);
-  row(Kind::Info, true, "C1", "P1 median ball time, saver on", "15 to 40 s (informational)",
+  reportSoak("P1, saver 15 s and kickback", saved);
+  reportElements("P1, saver 15 s and kickback", saved);
+  row(Kind::Info, true, "C1", "P1 median ball time, saver and kickback on",
+      "15 to 40 s (informational)",
       text("%.1f s (saver off %.1f s, %.0f%% under 10 s)", saved.percentile(0.5),
            plain.percentile(0.5), percentOf(plain.under10, plain.ballSeconds.size())));
-  // A3: everything registers. The Hangar is behind its doors until they can drop.
+  // A3: everything registers. The Hangar is behind its doors: it registers
+  // only once all three have been hit and the bank has dropped.
   std::uint64_t least = ~std::uint64_t{0};
   std::string leastName = "none";
   const auto see = [&least, &leastName](std::uint64_t hits, const std::string& name) {
@@ -403,15 +477,18 @@ void sectionRandom(bool quick) {
     see(plain.slingHits[i], text("slingshot %zu", i));
   }
   for (std::size_t i = 0; i < plain.holeHits.size(); ++i) {
-    if (i != table::kHangarHole) {
-      see(plain.holeHits[i], text("hole %zu", i));
-    }
+    see(plain.holeHits[i], i == table::kHangarHole ? std::string("Hangar entry")
+                                                    : text("hole %zu", i));
   }
   row(Kind::Hard, least > 0, "A3", "every bumper, target, door, rollover and hole registers (P1)",
       "each at least once",
-      text("least hit: %s, %llu (Hangar entry deferred: %llu)", leastName.c_str(),
+      text("least hit: %s, %llu (Hangar entries %llu, spins %llu)", leastName.c_str(),
            static_cast<unsigned long long>(least),
-           static_cast<unsigned long long>(plain.holeHits[table::kHangarHole])));
+           static_cast<unsigned long long>(plain.holeHits[table::kHangarHole]),
+           static_cast<unsigned long long>(plain.spins)));
+  rowHangarShut("P1, one ball", plain.hangarEntries + saved.hangarEntries,
+                plain.hangarEntriesDoorsUp + saved.hangarEntriesDoorsUp,
+                plain.bankDrops + saved.bankDrops);
   rowsForSoundness("D1", "P1, one ball", plain.steps + saved.steps, plain.stuck + saved.stuck,
                    plain.searches + saved.searches, plain.laneIntrusions + saved.laneIntrusions,
                    plain.lostBalls + saved.lostBalls, plain.overSpeed + saved.overSpeed);
@@ -434,6 +511,7 @@ void sectionReflex(bool quick, int onlyError) {
     options.seed = 21;
     const SoakResult result = soak(options);
     reportSoak(text("P2 E=%d, saver off", error).c_str(), result);
+    reportElements(text("P2 E=%d, saver off", error).c_str(), result);
     const double under5 = percentOf(result.under5, result.ballSeconds.size());
     const double under10 = percentOf(result.under10, result.ballSeconds.size());
     row(Kind::KnownMiss, under5 < 2.0, "B2a", text("P2 E=%d: balls ending within 5 s", error),
@@ -460,6 +538,8 @@ void sectionReflex(bool quick, int onlyError) {
              result.percentile(0.9)));
     rowsForSoundness("D1", text("P2 E=%d, one ball", error).c_str(), result.steps, result.stuck,
                      result.searches, result.laneIntrusions, result.lostBalls, result.overSpeed);
+    rowHangarShut(text("P2 E=%d, one ball", error).c_str(), result.hangarEntries,
+                  result.hangarEntriesDoorsUp, result.bankDrops);
   }
 }
 
@@ -474,22 +554,65 @@ void sectionReflexSaver(bool quick, int onlyError) {
     options.balls = quick ? 50 : 400;
     options.seed = 23;
     options.saverSeconds = 15.0;
+    // As the criterion is written: the saver, and the kickback lit at the
+    // start of every ball.
+    options.kickback = true;
     const SoakResult result = soak(options);
-    reportSoak(text("P2 E=%d, saver 15 s", error).c_str(), result);
+    reportSoak(text("P2 E=%d, saver 15 s and kickback", error).c_str(), result);
+    reportElements(text("P2 E=%d, saver 15 s and kickback", error).c_str(), result);
     const double median = result.percentile(0.5);
     row(Kind::KnownMiss, median >= 45.0 && median <= 90.0, "C2a",
-        text("P2 E=%d: median ball, 15 s saver (no kickback yet)", error), "45 to 90 s",
+        text("P2 E=%d: median ball, 15 s saver and kickback", error), "45 to 90 s",
         text("%.1f s", median));
     row(Kind::Hard, result.percentile(0.1) >= 12.0, "C2b",
-        text("P2 E=%d: 10th percentile ball, 15 s saver", error), "at least 12 s",
+        text("P2 E=%d: 10th percentile ball, 15 s saver and kickback", error), "at least 12 s",
         text("%.1f s", result.percentile(0.1)));
     row(Kind::KnownMiss, result.percentile(0.9) <= 300.0, "C2c",
-        text("P2 E=%d: 90th percentile ball, 15 s saver", error), "at most 300 s",
+        text("P2 E=%d: 90th percentile ball, 15 s saver and kickback", error), "at most 300 s",
         text("%.1f s", result.percentile(0.9)));
+    row(Kind::Info, true, "B6i",
+        text("P2 E=%d: kickback fired; lost again within 3 s (judged in section kickback)", error),
+        "under 2 percent",
+        text("%llu fired, %llu lost again", static_cast<unsigned long long>(result.kickbacks),
+             static_cast<unsigned long long>(result.kickbackLostAgain)));
     rowsForSoundness("D1", text("P2 E=%d with saver, one ball", error).c_str(), result.steps,
                      result.stuck, result.searches, result.laneIntrusions, result.lostBalls,
                      result.overSpeed);
   }
+}
+
+// B6 in play: the reflex bot, the kickback lit at the start of every ball,
+// no saver, enough balls for a few hundred kicks.
+void sectionKickback(bool quick) {
+  SoakOptions options;
+  options.bot = BotKind::Reflex;
+  options.reflexError = 5;
+  options.balls = quick ? 120 : 1500;
+  options.seed = 25;
+  options.kickback = true;
+  const SoakResult result = soak(options);
+  reportSoak("P2 E=5, kickback, saver off", result);
+  reportElements("P2 E=5, kickback, saver off", result);
+  // A ball taken in the run's last half second may not be down yet.
+  row(Kind::Hard,
+      result.kickbacks > 0 && result.kickbacks - result.kickbackReturns <= 1 &&
+          result.kickbackReturns - result.kickbackSafe <= 1,
+      "B6a", "P2 E=5: kickback fired, and the ball came back to the inlane or a flipper",
+      "100 percent",
+      text("fired %llu, returned %llu, then inlane or flipper %llu",
+           static_cast<unsigned long long>(result.kickbacks),
+           static_cast<unsigned long long>(result.kickbackReturns),
+           static_cast<unsigned long long>(result.kickbackSafe)));
+  const double lost = result.kickbackReturns == 0
+                          ? 0.0
+                          : 100.0 * static_cast<double>(result.kickbackLostAgain) /
+                                static_cast<double>(result.kickbackReturns);
+  row(Kind::Hard, lost < 2.0, "B6b", "P2 E=5: balls lost again within 3 s of the kickback",
+      "under 2 percent",
+      text("%.1f%% (%llu of %llu)", lost, static_cast<unsigned long long>(result.kickbackLostAgain),
+           static_cast<unsigned long long>(result.kickbackReturns)));
+  rowsForSoundness("D1", "P2 E=5 with kickback, one ball", result.steps, result.stuck,
+                   result.searches, result.laneIntrusions, result.lostBalls, result.overSpeed);
 }
 
 void sectionStress(bool quick, std::string_view which) {
@@ -521,7 +644,42 @@ void sectionStress(bool quick, std::string_view which) {
       std::printf("#   stuck at (%.0f, %.0f)\n", static_cast<double>(result.stuckAt[i].x),
                   static_cast<double>(result.stuckAt[i].y));
     }
+    std::printf(
+        "#   bank dropped %llu, raised %llu; Hangar entries %llu; locks %llu, let go %llu; "
+        "spins %llu; kickback fired %llu, returned %llu, then inlane or flipper %llu\n",
+        static_cast<unsigned long long>(result.bankDrops),
+        static_cast<unsigned long long>(result.bankRaises),
+        static_cast<unsigned long long>(result.hangarEntries),
+        static_cast<unsigned long long>(result.locks),
+        static_cast<unsigned long long>(result.lockReleases),
+        static_cast<unsigned long long>(result.spins),
+        static_cast<unsigned long long>(result.kickbacks),
+        static_cast<unsigned long long>(result.kickbackReturns),
+        static_cast<unsigned long long>(result.kickbackSafe));
     const std::string who = text("%s, three balls", run.name);
+    rowHangarShut(who.c_str(), result.hangarEntries, result.hangarEntriesDoorsUp,
+                  result.bankDrops);
+    // Two may still be in their bays when the run stops.
+    row(Kind::Hard,
+        result.locks > 0 && result.lockedAstray == 0 &&
+            result.locks - result.lockReleases - result.locksEmptied <= 2,
+        "L3",
+        text("%s: locked balls stay in their bays until let go, or the game is over", who.c_str()),
+        "every one",
+        text("%llu locked, %llu let go, %llu emptied at a game's end, %llu steps off a bay",
+             static_cast<unsigned long long>(result.locks),
+             static_cast<unsigned long long>(result.lockReleases),
+             static_cast<unsigned long long>(result.locksEmptied),
+             static_cast<unsigned long long>(result.lockedAstray)));
+    row(Kind::Hard,
+        result.kickbacks - result.kickbackReturns <= 1 &&
+            result.kickbackReturns - result.kickbackSafe <= 3,
+        "B6s", text("%s: kickback fired and the ball came back", who.c_str()),
+        "every one (the inlane or a flipper next, unless another ball met it first)",
+        text("fired %llu, returned %llu, then inlane or flipper %llu",
+             static_cast<unsigned long long>(result.kickbacks),
+             static_cast<unsigned long long>(result.kickbackReturns),
+             static_cast<unsigned long long>(result.kickbackSafe)));
     rowsForSoundness("D1", who.c_str(), result.steps, result.stuck, result.searches,
                      result.laneIntrusions, result.lostBalls, result.overSpeed);
     // A launched ball can meet a ball in play at the one-way arch and be
@@ -558,8 +716,8 @@ int main(int argc, char** argv) {
     }
   }
   if (sections.empty()) {
-    sections = {"launch", "shots", "lanes", "exits",   "rest",
-                "wedge",  "p1",    "p2",    "p2saver", "stress"};
+    sections = {"launch", "shots", "lanes",   "exits",    "rest",  "wedge",
+                "p1",     "p2",    "p2saver", "kickback", "stress"};
   }
   std::printf("# Acceptance suite, TABLE.md section 5%s\n",
               quick ? " (QUICK: reduced samples)" : "");
@@ -590,6 +748,8 @@ int main(int argc, char** argv) {
       sectionReflex(quick, number);
     } else if (name == "p2saver") {
       sectionReflexSaver(quick, number);
+    } else if (name == "kickback") {
+      sectionKickback(quick);
     } else if (name == "stress") {
       sectionStress(quick, option);
     } else {

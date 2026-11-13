@@ -16,12 +16,8 @@ namespace {
 using Seam = GameTestAccess;
 
 constexpr float kSpeedCap = PhysicsWorld::kMaxBallSpeed * PhysicsWorld::kPixelsPerMeter;
-// The circuit mouths: a line across each lane.
-constexpr float kMouthY = 440.0F;
-constexpr float kCircuitOuterLeft = 88.0F;
-constexpr float kCircuitInnerLeft = 145.0F;
-// The top of the arch is crossed above this.
-constexpr float kArchTopBelowY = 125.0F;
+// A ball the kickback set down is lost again if it drains this soon.
+constexpr std::uint64_t kKickLostSteps = 360;
 // A drain is by an outlane if that outlane's switch was passed this recently.
 constexpr std::uint64_t kOutlaneDrainSteps = 240;
 
@@ -100,9 +96,23 @@ bool TableHarness::nearFlipper(Vec2 p, std::size_t i, float slack) const {
   return reach.distance < table::kBallRadius + batRadius + slack;
 }
 
+void TableHarness::lightKickback() { Seam::rules(game_).setKickbackLit(true); }
+void TableHarness::setLocks(bool enabled) { Seam::rules(game_).setLocksEnabled(enabled); }
+
+void TableHarness::settleKick(std::size_t slot, bool safe) {
+  if (slot < balls_.size() && balls_[slot].kickTouchPending) {
+    balls_[slot].kickTouchPending = false;
+    kickbackSafe += safe ? 1U : 0U;
+  }
+}
+
 void TableHarness::log(Touch touch, float speed, std::size_t ball) {
   events.push_back({step_, touch, speed, static_cast<std::uint8_t>(ball)});
   ++count[static_cast<std::size_t>(touch)];
+  // The first thing a ball set down by the kickback meets.
+  if (touch != Touch::CircuitLeft && touch != Touch::CircuitRight && touch != Touch::Turbine) {
+    settleKick(ball, touch == Touch::InlaneLeft);
+  }
 }
 
 Touch TableHarness::advance() {
@@ -119,6 +129,13 @@ Touch TableHarness::advance() {
     }
   }
   const std::uint32_t drainsBefore = game_.drainCount();
+  const bool doorsUpBefore = game_.doorBankUp();
+  const std::size_t lockedBefore = game_.lockedBalls();
+  const std::uint64_t locksBefore = locks;
+  const std::uint64_t releasesBefore = lockReleases;
+  if (kickbackOff) {
+    Seam::rules(game_).setKickbackLit(false);
+  }
 
   InputState input;
   input.leftFlipper = left;
@@ -193,12 +210,99 @@ Touch TableHarness::advance() {
             touch = Touch::Skyway;
             break;
         }
+        if (table::kHoles[i].type == table::HoleType::Hangar) {
+          ++hangarEntries;
+          hangarEntriesDoorsUp += doorsUpBefore ? 1U : 0U;
+        }
         log(touch, event.speed, ball);
         break;
       }
+      case Sensor: {
+        Ball& state = balls_[ball];
+        switch (table::kSensors[i].id) {
+          case table::SensorId::CircuitMouthLeft:
+          case table::SensorId::CircuitMouthRight:
+            // A circuit is entered going up.
+            if (event.direction > 0) {
+              const bool leftSide = table::kSensors[i].id == table::SensorId::CircuitMouthLeft;
+              ++circuitEntered[leftSide ? 0 : 1];
+              state.circuitLeft = leftSide;
+              state.circuitRight = !leftSide;
+              log(leftSide ? Touch::CircuitLeft : Touch::CircuitRight, event.speed, ball);
+            }
+            break;
+          case table::SensorId::ArchTop:
+            // The top of the arch, crossed the way the circuit runs.
+            if (state.circuitLeft && event.direction > 0) {
+              ++circuitTop[0];
+            }
+            if (state.circuitRight && event.direction < 0) {
+              ++circuitTop[1];
+            }
+            break;
+          case table::SensorId::Spinner:
+            if (event.direction > 0) {
+              log(Touch::Turbine, event.speed, ball);
+            }
+            break;
+        }
+        break;
+      }
+      case Kickback:
+        ++kickbacks;
+        break;
       case None:
         break;
     }
+  }
+  for (const GameEvent& event : game_.gameEvents()) {
+    switch (event.type) {
+      using enum GameEvent::Type;
+      case DoorBankDropped:
+        ++bankDrops;
+        break;
+      case DoorBankRaised:
+        ++bankRaises;
+        break;
+      case BallLocked:
+        ++locks;
+        break;
+      case LockReleased:
+        ++lockReleases;
+        break;
+      case Spin:
+        ++spins;
+        break;
+      case KickbackReturned:
+        ++kickbackReturns;
+        if (event.ball < balls_.size()) {
+          balls_[event.ball].kickStep = step_ + 1;
+          balls_[event.ball].kickTouchPending = true;
+        }
+        break;
+      case EjectSave:
+        ++ejectSaves;
+        break;
+      case HoleEject:
+      case KickbackFired:
+        break;
+    }
+  }
+  // Every ball that left a bay was let go, or was taken out with the game over.
+  const std::uint64_t expected = lockedBefore + (locks - locksBefore) - (lockReleases - releasesBefore);
+  if (game_.lockedBalls() < expected) {
+    locksEmptied += expected - game_.lockedBalls();
+  }
+  // A locked ball is in its bay and nowhere else.
+  for (const BallView& view : game_.balls()) {
+    if (!view.locked) {
+      continue;
+    }
+    bool inBay = false;
+    for (const Vec2 bay : table::kLockBays) {
+      inBay = inBay || (view.position.x == bay.x && view.position.y == bay.y);
+    }
+    lockedAstray += inBay && view.visible ? 0U : 1U;
   }
 
   // Which balls left during the step. A drained ball was low on the table;
@@ -214,7 +318,11 @@ Touch TableHarness::advance() {
     const bool wasLow = state.previous.y > table::kDrainY - 60.0F;
     if (!gone || !wasLow) {
       if (!live(slot)) {
-        ++lostBalls;
+        // A ball that was waiting on the plunger when a new game began is
+        // not lost: the game put its one ball there again, in another slot.
+        const Vec2 fromStart = state.previous - table::kBallStart;
+        const bool onPlunger = fromStart.x * fromStart.x + fromStart.y * fromStart.y < 16.0F;
+        lostBalls += onPlunger ? 0U : 1U;
         state = {};
       }
       continue;
@@ -226,6 +334,9 @@ Touch TableHarness::advance() {
       continue;
     }
     --drained;
+    if (state.kickStep != 0 && step_ + 1 - state.kickStep <= kKickLostSteps) {
+      ++kickbackLostAgain;
+    }
     const bool byOutlane =
         state.outlaneStep != 0 && step_ + 1 - state.outlaneStep < kOutlaneDrainSteps;
     const Touch way = byOutlane ? state.outlane : Touch::DrainCentre;
@@ -257,34 +368,10 @@ void TableHarness::watchBall(std::size_t slot) {
   if (v.x * v.x + v.y * v.y > kSpeedCap * kSpeedCap * 1.002F) {
     ++overSpeed;
   }
-  // The spinner, crossed going up.
-  if (state.previous.y >= table::kSpinner.a.y && p.y < table::kSpinner.a.y &&
-      p.x > table::kSpinner.a.x && p.x < table::kSpinner.b.x) {
-    log(Touch::Turbine, std::fabs(v.y), slot);
-  }
-  // The circuit mouths, crossed going up.
-  const bool inLeft = p.x > kCircuitOuterLeft && p.x < kCircuitInnerLeft;
-  const bool inRight = p.x > table::mirrored(Vec2{kCircuitInnerLeft, 0.0F}).x &&
-                       p.x < table::mirrored(Vec2{kCircuitOuterLeft, 0.0F}).x;
-  if (state.previous.y >= kMouthY && p.y < kMouthY && (inLeft || inRight)) {
-    ++circuitEntered[inLeft ? 0 : 1];
-    state.circuitLeft = inLeft;
-    state.circuitRight = !inLeft;
-    log(inLeft ? Touch::CircuitLeft : Touch::CircuitRight, std::fabs(v.y), slot);
-  }
-  // The top of the arch, crossed the way the circuit runs.
-  if ((state.previous.x - table::kFieldCenterX) * (p.x - table::kFieldCenterX) < 0.0F &&
-      p.y < kArchTopBelowY) {
-    if (state.circuitLeft && v.x > 0.0F) {
-      ++circuitTop[0];
-    }
-    if (state.circuitRight && v.x < 0.0F) {
-      ++circuitTop[1];
-    }
-  }
   bool cradled = false;
   for (std::size_t f = 0; f < table::kFlippers.size(); ++f) {
     if (nearFlipper(p, f, 1.0F)) {
+      settleKick(slot, true);
       ++flipperTouches;
       state.circuitLeft = false;
       state.circuitRight = false;

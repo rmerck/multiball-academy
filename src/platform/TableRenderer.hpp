@@ -105,7 +105,10 @@ class TableRenderer {
   // The table drawn from its layout, for a build without the playfield art.
   void drawPlayfield(SDL_Renderer* renderer) const;
   void drawBumpers(SDL_Renderer* renderer, const Game& game) const;
-  void drawTargets(SDL_Renderer* renderer) const;
+  void drawTargets(SDL_Renderer* renderer, const Game& game) const;
+  // What moves or lights among the table's own elements, for the layout
+  // drawing: doors lying down, the lock and kickback lamps, the spinner.
+  void drawElements(SDL_Renderer* renderer, const Game& game) const;
   void drawSlingshotFlashes(SDL_Renderer* renderer, const Game& game) const;
   void drawPlunger(SDL_Renderer* renderer, const Game& game) const;
   void drawFlippers(SDL_Renderer* renderer, const Game& game, float alpha) const;
@@ -116,6 +119,9 @@ class TableRenderer {
   Textures textures_;
   // The layout drawing as triangles, built once: empty when there is art.
   std::vector<SDL_Vertex> playfield_;
+  // Triangles for drawElements, kept between frames so that drawing one
+  // allocates nothing.
+  mutable std::vector<SDL_Vertex> elements_;
 };
 
 }  // namespace pinball

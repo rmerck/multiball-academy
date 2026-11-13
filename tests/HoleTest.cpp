@@ -7,6 +7,7 @@
 #include <cstdio>
 
 #include "Check.hpp"
+#include "GameTestAccess.hpp"
 #include "Suites.hpp"
 #include "core/Game.hpp"
 #include "core/Physics.hpp"
@@ -47,7 +48,7 @@ float distance(Vec2 a, Vec2 b) {
 // (-ffp-contract=off, as Box2D is), the physics uses only exactly rounded
 // arithmetic, and the table's curves are point tables written out in
 // TableLayout.hpp, not computed with the C library.
-constexpr std::uint64_t kSoakTrajectory = 0x4ddccf0d52b33780ULL;
+constexpr std::uint64_t kSoakTrajectory = 0xbdcde1a92c499520ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {
@@ -264,10 +265,10 @@ void testHoles() {
   }
 
   {  // The game's hold times and counters.
-    const double holdSteps = Game::kHoleHoldSeconds / Game::kStepSeconds;
+    const double holdSteps = table::kScoopHoldSeconds / Game::kStepSeconds;
     CHECK(holdSteps > 30.0 && holdSteps < 600.0);
-    CHECK(Game::holdSeconds(table::HoleType::Scoop) == Game::kHoleHoldSeconds);
-    CHECK(Game::holdSeconds(table::HoleType::Hangar) == Game::kHoleHoldSeconds);
+    CHECK(Game::holdSeconds(table::HoleType::Scoop) == table::kScoopHoldSeconds);
+    CHECK(Game::holdSeconds(table::HoleType::Hangar) == table::kHangarHoldSeconds);
     CHECK(Game::holdSeconds(table::HoleType::RampLeft) == table::kRampRideSeconds);
     CHECK(Game::holdSeconds(table::HoleType::RampRight) == table::kRampRideSeconds);
     CHECK(Game().holeCount(999) == 0);
@@ -340,6 +341,8 @@ void testHoles() {
      // the playfield (a wedge), every kind of feature must see use, and the
      // game must keep serving balls.
     Game game;
+    // One ball throughout: the Hangar returns the ball and does not lock it.
+    pinball::GameTestAccess::rules(game).setLocksEnabled(false);
     int stillSteps = 0;
     int worstStill = 0;
     Vec2 previous{};
