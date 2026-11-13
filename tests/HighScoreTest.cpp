@@ -11,9 +11,7 @@
 void testHighScores() {
   using pinball::HighScore;
   using pinball::HighScores;
-  // The first file format, without initials. Still read, never written.
-  const std::string header = "SPACE-CADET-PINBALL-SCORES 1\n";
-  const std::string header2 = "SPACE-CADET-PINBALL-SCORES 2\n";
+  const std::string header = "PINBALL-SCORES 3\n";
 
   {  // Empty table.
     HighScores scores;
@@ -21,7 +19,7 @@ void testHighScores() {
     CHECK(!scores.qualifies(0));
     CHECK(scores.qualifies(1));
     CHECK(scores.at(0).score == 0 && scores.at(99).score == 0);
-    CHECK(scores.serialize() == header2);
+    CHECK(scores.serialize() == header);
     CHECK(scores.submit({0, 0}) == HighScores::kCapacity);
   }
 
@@ -63,9 +61,9 @@ void testHighScores() {
     const std::string top = std::to_string(pinball::points::kMaxScore);
     const std::string over = std::to_string(pinball::points::kMaxScore + 1);
     HighScores scores;
-    CHECK(scores.parse(header + top + " 0\n"));
+    CHECK(scores.parse(header + top + " 0 ---\n"));
     CHECK(scores.best() == pinball::points::kMaxScore);
-    CHECK(!scores.parse(header + over + " 0\n"));
+    CHECK(!scores.parse(header + over + " 0 ---\n"));
     CHECK(!scores.parse(std::string(HighScores::kMaxTextBytes + 1, ' ')));
 
     // A full table of top scores turns away another, however large.
@@ -85,17 +83,11 @@ void testHighScores() {
     CHECK(scores.at(0).initials == (pinball::Initials{'R', 'P', 'M'}));
     CHECK(scores.at(1).initials == (pinball::Initials{'-', '-', 'Z'}));
     CHECK(scores.at(2).initials == pinball::kNoInitials);
-    CHECK(scores.serialize() == header2 + "300 2 RPM\n200 1 --Z\n100 0 ---\n");
+    CHECK(scores.serialize() == header + "300 2 RPM\n200 1 --Z\n100 0 ---\n");
     HighScores copy;
     CHECK(copy.parse(scores.serialize()));
     CHECK(copy.at(0).initials == scores.at(0).initials);
     CHECK(copy.serialize() == scores.serialize());
-
-    // A first-format file loads with dashes and is written back in the new format.
-    HighScores old;
-    CHECK(old.parse(header + "900 3\n"));
-    CHECK(old.at(0).initials == pinball::kNoInitials);
-    CHECK(old.serialize() == header2 + "900 3 ---\n");
   }
 
   {  // A full table of the largest entries round trips and fits the size cap.
@@ -151,7 +143,7 @@ void testHighScores() {
     HighScores scores;
     CHECK(scores.parse(header));
     CHECK(scores.size() == 0);
-    CHECK(scores.parse(header + "1000 3\n1000 0\n5 8\n"));
+    CHECK(scores.parse(header + "1000 3 ABC\n1000 0 ---\n5 8 A-Z\n"));
     CHECK(scores.size() == 3 && scores.best() == 1000 && scores.at(2).rank == 8);
   }
 
@@ -159,52 +151,55 @@ void testHighScores() {
     const std::string bad[] = {
         "",
         "\n",
-        "SPACE-CADET-PINBALL-SCORES 3\n",
-        header2 + "100 1\n",                          // Initials missing.
-        header2 + "100 1 \n",
-        header2 + "100 1 AB\n",                       // Too few.
-        header2 + "100 1 ABCD\n",                     // Too many.
-        header2 + "100 1 abc\n",                      // Lower case.
-        header2 + "100 1 A C\n",                      // Space inside.
-        header2 + "100 1 A1C\n",                      // Digit.
-        header2 + "100 1 AB\xC3\n",                   // Not ASCII.
-        header2 + "100 1 ABC \n",                     // Trailing space.
-        header2 + "100 1 ABC DEF\n",                  // Extra field.
-        header2 + "100  1 ABC\n",                     // Double space.
-        header2 + std::string("100 1 A\0C\n", 10),    // Embedded NUL.
-        header + "100 1 ABC\n",                       // Initials in the first format.
-        header2 + "6 0 AAA\n5 0 AAA\n4 0 AAA\n3 0 AAA\n2 0 AAA\n1 0 AAA\n",  // Too many.
-        header2 + "100 1 AAA\n200 1 AAA\n",           // Out of order.
-        header2 + "100 1 ABC\r\n",                    // Carriage return.
-        header2 + "100\t1\tABC\n",                    // Tabs.
-        header2 + " 1 ABC\n",                         // Empty score.
-        header2 + "100  ABC\n",                       // Empty rank.
-        header2 + "200 1 ABC\n" + header2 + "100 1 ABC\n",  // Second header.
-        "space-cadet-pinball-scores 1\n",
+        "PINBALL-SCORES 4\n",                         // A format from the future.
+        // What the game wrote under its first name is not read.
+        "SPACE-CADET-PINBALL-SCORES 2\n",
+        "SPACE-CADET-PINBALL-SCORES 2\n100 1 ABC\n",
+        "SPACE-CADET-PINBALL-SCORES 1\n",
+        "SPACE-CADET-PINBALL-SCORES 1\n100 1\n",
+        "pinball-scores 3\n",                         // Lower case.
+        " PINBALL-SCORES 3\n",
+        "PINBALL-SCORES 3 \n",
+        "PINBALL-SCORES  3\n",
+        "PINBALL-SCORES 3\r\n",
+        header + "100 1\n",                           // Initials missing.
+        header + "100 1 \n",
+        header + "100 1 AB\n",                        // Too few.
+        header + "100 1 ABCD\n",                      // Too many.
+        header + "100 1 abc\n",                       // Lower case.
+        header + "100 1 A C\n",                       // Space inside.
+        header + "100 1 A1C\n",                       // Digit.
+        header + "100 1 AB\xC3\n",                    // Not ASCII.
+        header + "100 1 ABC \n",                      // Trailing space.
+        header + "100 1 ABC DEF\n",                   // Extra field.
+        header + "100  1 ABC\n",                      // Double space.
+        header + std::string("100 1 A\0C\n", 10),     // Embedded NUL.
+        header + "6 0 AAA\n5 0 AAA\n4 0 AAA\n3 0 AAA\n2 0 AAA\n1 0 AAA\n",  // Too many.
+        header + "100 1 AAA\n200 1 AAA\n",            // Out of order.
+        header + "100 1 ABC\r\n",                     // Carriage return.
+        header + "100\t1\tABC\n",                     // Tabs.
+        header + " 1 ABC\n",                          // Empty score.
+        header + "100  ABC\n",                        // Empty rank.
+        header + "200 1 ABC\n" + header + "100 1 ABC\n",  // Second header.
         header.substr(0, header.size() - 1),          // No final newline.
-        header + "100 1",                             // No final newline.
+        header + "100 1 ABC",                         // No final newline.
         header + "100\n",                             // Missing rank.
-        header + "100 1 1\n",                         // Extra field.
-        header + " 100 1\n",                          // Leading space.
-        header + "100  1\n",                          // Double space.
-        header + "100 1 \n",                          // Trailing space.
-        header + "-100 1\n",
-        header + "+100 1\n",
-        header + "0100 1\n",                          // Leading zero.
-        header + "100 01\n",
-        header + "1e3 1\n",
-        header + "0x10 1\n",
-        header + "100 9\n",                           // Rank out of range.
-        header + "0 1\n",                             // Zero score.
-        header + "1000000000000 1\n",                 // Above the score cap.
-        header + "99999999999999999999999 1\n",       // Overflows 64 bits.
-        header + "100 1\n200 1\n",                    // Out of order.
-        header + "6 0\n5 0\n4 0\n3 0\n2 0\n1 0\n",    // Too many entries.
-        header + "100 1\r\n",                         // Carriage return.
+        header + " 100 1 ABC\n",                      // Leading space.
+        header + "-100 1 ABC\n",
+        header + "+100 1 ABC\n",
+        header + "0100 1 ABC\n",                      // Leading zero.
+        header + "100 01 ABC\n",
+        header + "1e3 1 ABC\n",
+        header + "0x10 1 ABC\n",
+        header + "100 9 ABC\n",                       // Rank out of range.
+        header + "0 1 ABC\n",                         // Zero score.
+        header + "1000000000000 1 ABC\n",             // Above the score cap.
+        header + "99999999999999999999999 1 ABC\n",   // Overflows 64 bits.
         header + "\n",                                // Blank line.
-        header + std::string("100 1\0\n", 7),         // Embedded NUL.
-        header + std::string(600, '9') + " 1\n",      // Too long.
-        "garbage\n100 1\n",
+        header + "100 1 ABC\n\n",                     // Blank line at the end.
+        header + std::string("100 1 ABC\0\n", 11),    // Embedded NUL.
+        header + std::string(600, '9') + " 1 ABC\n",  // Too long.
+        "garbage\n100 1 ABC\n",
     };
     for (const std::string& text : bad) {
       HighScores scores;

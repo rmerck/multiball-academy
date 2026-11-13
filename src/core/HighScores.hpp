@@ -15,7 +15,7 @@ constexpr bool isInitialsChar(char c) noexcept { return (c >= 'A' && c <= 'Z') |
 
 struct HighScore {
   std::uint64_t score = 0;
-  std::uint8_t rank = 0;  // Rank index reached, 0 (Cadet) to 8.
+  std::uint8_t rank = 0;  // Rank index reached, 0 (the first) to 8.
   Initials initials = kNoInitials;
 };
 
@@ -43,8 +43,7 @@ class HighScores {
 
   // Text form: a header line then one "score rank initials" line per entry.
   [[nodiscard]] std::string serialize() const;
-  // Replaces the table with what text describes. Also reads the first file
-  // format, which had no initials. Anything malformed, out of
+  // Replaces the table with what text describes. Anything malformed, out of
   // range or out of order makes the whole text invalid: the table is left
   // empty and false is returned. Never trusts the input.
   [[nodiscard]] bool parse(std::string_view text) noexcept;
