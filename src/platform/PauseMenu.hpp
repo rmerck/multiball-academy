@@ -17,11 +17,12 @@ struct MenuState {
   bool afterInterruption;
 };
 
-// Draws the pause display over a dimmed table.
-//
-// Only the desktop's exists so far, whatever the idiom: the word PAUSED over
-// the playfield and how to resume. The menu of buttons a touch screen needs
-// (screen::menuLayout) is not drawn yet.
+// Draws the pause display over a dimmed table. A desktop gets the word
+// PAUSED over the playfield and the key that resumes. A touch screen gets
+// the menu of screen::menuLayout (resume, new game, sound, music, scores and
+// about) with everything round the table dimmed as well; after an
+// interruption it gets the word and TAP TO RESUME instead, and any tap
+// resumes.
 void drawPauseMenu(SDL_Renderer* renderer, const screen::Layout& layout, const MenuState& state);
 
 }  // namespace pinball

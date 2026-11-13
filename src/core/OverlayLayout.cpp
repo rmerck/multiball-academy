@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <cstddef>
 
-// Only the boxes are in use so far: InitialsLayout::box and the About box
-// are where today's desktop dialogs are drawn. The controls inside them are
-// first placements for the touch screens, to be settled with the drawing.
+// The boxes are where the desktop's dialogs have always been drawn. The
+// controls inside them are what the touch screens draw and hit-test; every
+// one is at least kMinHitUnits on a side.
 namespace pinball::screen {
 
 namespace {

@@ -5,12 +5,11 @@
 #include <cstddef>
 #include <span>
 
+#include "platform/About.hpp"
+
 namespace pinball {
 
 namespace {
-
-// How long the initials prompt ignores keys after it appears.
-constexpr Uint64 kEntryGuardMs = 700;
 
 // Maps a physical key to the control it drives, or nullptr. Scancodes are
 // key positions, so the controls sit under the same fingers on every
@@ -53,7 +52,11 @@ void App::handleKeyDown(const SDL_KeyboardEvent& key) {
   latchKey(key.scancode);
   if (key.key == SDLK_F1) {
     aboutOpen_ = !aboutOpen_;
+    aboutPage_ = AboutState{};
     latched_ = InputState{};
+  } else if (aboutOpen_ && (key.key == SDLK_LEFT || key.key == SDLK_RIGHT)) {
+    // The arrows turn the pages: scores, about, then each licence page.
+    aboutPage_ = turnAboutPage(aboutPage_, key.key == SDLK_RIGHT, licencePageCount(layout_));
   } else if (key.key == SDLK_ESCAPE && aboutOpen_) {
     aboutOpen_ = false;
     latched_ = InputState{};
@@ -62,6 +65,11 @@ void App::handleKeyDown(const SDL_KeyboardEvent& key) {
     paused_ = !paused_;
     // Nothing pressed during a pause carries into play.
     latched_ = InputState{};
+    if (!paused_) {
+      // The touch screen's pause menu is gone with it.
+      interrupted_ = false;
+      confirmNewGame_ = false;
+    }
   } else if (key.key == SDLK_F4) {
     toggleFullscreen();
   } else if (key.scancode == SDL_SCANCODE_M) {
@@ -85,6 +93,9 @@ void App::readInput() {
     input_ = InputState{};
     return;
   }
+  // Touches that began since the last step join the latched presses.
+  const InputState touched = touch_.takePressed();
+  const InputState touching = touch_.held();
   int keyCount = 0;
   const bool* const state = SDL_GetKeyboardState(&keyCount);
   const std::span<const bool> keys(
@@ -94,8 +105,10 @@ void App::readInput() {
     bool InputState::* const control = controlFor(scancode);
     const auto index = static_cast<std::size_t>(scancode);
     const bool held = index < keys.size() && keys[index];
-    // Held now, or pressed and released since the last simulation step.
-    input_.*control = held || latched_.*control;
+    latched_.*control = latched_.*control || touched.*control;
+    // Held now, by a key or a finger, or pressed and released since the
+    // last simulation step.
+    input_.*control = held || touching.*control || latched_.*control;
   }
 }
 
