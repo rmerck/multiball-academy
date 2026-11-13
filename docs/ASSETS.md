@@ -2,7 +2,7 @@
 
 The table's layout is new and its art is still to be drawn. Until it is, the game draws the playfield itself from `src/core/TableLayout.hpp`, in plain colours: the field inside the shell, every wall and guide as the physics has it (teal), the dead posts and slingshot vanes (grey), the slingshots (pink), the lane switches, the boxes of the Briefing room, the Hangar and the two ramp mouths with their rails and exits, the spinner line, the kickback zone, the lock bays, and every lamp at its place, unlit. Bumpers, targets, bay doors, flippers, plunger and balls are the sprites, as before. That drawing is used whenever the asset manifest has no `table/background.png`, so the picture always matches the table being played; putting a `table/background.png` into `assets` switches to the art (`TableRenderer`).
 
-The panel and the sprites still wear the old 1980s neon look and are to be redrawn with the table.
+The panel and the sprites still wear the old 1980s neon look and are to be redrawn with the table. The art pipeline is being replaced with them: the script that drew the old table's playfield is gone (it could not run against the new layout), no script draws the new one yet, and the scripts below, which still make the ball, the sprites, the panel and the icon, stay only until the new art replaces what they make.
 
 All art is original. It is generated in GIMP 3 by the scripts in `tools/gimp`, with one exception described below. The art is drawn from the same geometry the physics uses: `pinball_layout` prints `src/core/TableLayout.hpp` and `src/core/PanelLayout.hpp` as JSON and the scripts read it.
 
