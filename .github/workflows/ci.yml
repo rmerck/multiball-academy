@@ -3,7 +3,9 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    # TEMPORARY: ios/build, so that this branch is built before it has a pull
+    # request. To be removed before the branch is merged.
+    branches: [main, ios/build]
 
 permissions:
   contents: read
