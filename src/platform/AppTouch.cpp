@@ -10,6 +10,8 @@
 
 #include "core/OverlayLayout.hpp"
 #include "core/Version.hpp"
+#include "platform/About.hpp"
+#include "platform/GameViews.hpp"
 
 namespace pinball {
 
@@ -48,14 +50,12 @@ void App::syncScreen() {
   if (now != Screen::Menu) {
     confirmNewGame_ = false;
   }
-  needsRedraw_ = true;
+  redrawsDue_ = kRedrawsAfterEvent;
 }
 
 TouchControls::Context App::touchContext() const noexcept {
-  const bool over = game_.gameOver();
-  // Until core says so itself: a ball that is not yet in play is the one on
-  // the plunger.
-  return {.ballAwaitingLaunch = !over && !game_.rules().ballInPlay(), .gameOver = over};
+  // The same answer the drawing code gets.
+  return pinball::touchContext(game_);
 }
 
 void App::resumePlay() {
@@ -69,6 +69,13 @@ void App::resumePlay() {
 void App::handleTouch(const SDL_Event& event) {
   if (layout_.idiom != screen::Idiom::Touch) {
     // The desktop has no on-screen controls.
+    return;
+  }
+  // Only fingers on the screen itself, where the place touched is the
+  // place meant. (The mouse standing in for a finger is such a device to
+  // SDL.) A trackpad's raw fingers are places on the trackpad, not on the
+  // picture, and would press whatever lies at the same fraction of it.
+  if (SDL_GetTouchDeviceType(event.tfinger.touchID) != SDL_TOUCH_DEVICE_DIRECT) {
     return;
   }
   TouchPhase phase = TouchPhase::Cancel;
@@ -99,8 +106,13 @@ void App::handleTouch(const SDL_Event& event) {
       }
       break;
     case Screen::Menu:
-      touchMenu(overlayTaps_.handle(phase, id, menuTarget(screen::menuLayout(layout_), at.x, at.y),
-                                    now));
+      // After an interruption there are no buttons, only PAUSED and TAP TO
+      // RESUME: a tap anywhere is a tap outside.
+      touchMenu(overlayTaps_.handle(
+          phase, id,
+          interrupted_ ? OverlayTarget{OverlayTarget::Kind::Outside, 0}
+                       : menuTarget(screen::menuLayout(layout_), at.x, at.y),
+          now));
       break;
     case Screen::About:
       touchAbout(overlayTaps_.handle(
@@ -146,7 +158,7 @@ void App::touchMenu(OverlayTarget acted) {
     case Kind::MenuAbout:
       confirmNewGame_ = false;
       aboutOpen_ = true;
-      aboutState_ = AboutState{};
+      aboutPage_ = AboutState{};
       break;
     default:
       break;
@@ -163,15 +175,17 @@ void App::touchAbout(OverlayTarget acted) {
       break;
     case Kind::AboutTab:
       if (acted.index <= static_cast<std::uint8_t>(AboutPage::Licences)) {
-        aboutState_ = AboutState{.page = static_cast<AboutPage>(acted.index), .licencePage = 0};
+        aboutPage_ = AboutState{.page = static_cast<AboutPage>(acted.index), .licencePage = 0};
       }
       break;
     case Kind::AboutPrivacy: {
       // The one thing the game ever hands to another application: the
       // address of the privacy policy, to the system's browser, on this tap.
       // A build constant, and only if it is a plain https address.
+      // Only where the button is drawn, and never in a timed run, which
+      // has no player to have tapped it.
       const std::string_view url = kPrivacyUrl;
-      if (aboutState_.page == AboutPage::About && url.starts_with("https://") &&
+      if (privacyButtonShown(layout_, aboutPage_) && url.starts_with("https://") &&
           !options_.frameLimit && !SDL_OpenURL(kPrivacyUrl)) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Could not open the privacy policy: %s",
                     SDL_GetError());
@@ -179,14 +193,15 @@ void App::touchAbout(OverlayTarget acted) {
       break;
     }
     case Kind::AboutPrevious:
-      if (aboutState_.page == AboutPage::Licences && aboutState_.licencePage > 0) {
-        --aboutState_.licencePage;
-      }
-      break;
     case Kind::AboutNext:
-      if (aboutState_.page == AboutPage::Licences &&
-          aboutState_.licencePage + 1 < licencePageCount(layout_)) {
-        ++aboutState_.licencePage;
+      // The buttons turn the licence pages, as the arrow keys do, but do
+      // not leave the licences: the tabs are for that.
+      if (pageButtonsShown(layout_, aboutPage_)) {
+        const AboutState turned = turnAboutPage(
+            aboutPage_, acted.kind == Kind::AboutNext, licencePageCount(layout_));
+        if (turned.page == AboutPage::Licences) {
+          aboutPage_ = turned;
+        }
       }
       break;
     default:
@@ -236,7 +251,7 @@ void App::repeatHeldArrow() {
   const OverlayTarget arrow = overlayTaps_.repeat(SDL_GetTicks());
   if (arrow.kind != OverlayTarget::Kind::None) {
     touchInitials(arrow);
-    needsRedraw_ = true;
+    redrawsDue_ = kRedrawsAfterEvent;
   }
 }
 

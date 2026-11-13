@@ -29,6 +29,7 @@ class AudioOutput {
   // queues nothing and takes nothing from the mixer.
   void suspend();
   void resume();
+  [[nodiscard]] bool suspended() const noexcept { return suspended_; }
 
  private:
   friend class AudioOpener;

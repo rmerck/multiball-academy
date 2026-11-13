@@ -254,6 +254,11 @@ void testCancelling(const Layout& layout) {
   CHECK(nothingHeld(controls.held()));
   // A press from before the cancel does not reach the game after it.
   CHECK(nothingHeld(controls.takePressed()));
+  // Nor does a pause that was asked for and not yet taken.
+  send(controls, layout, 4, TouchPhase::Down, pause);
+  send(controls, layout, 4, TouchPhase::Up, pause);
+  controls.cancelAll();
+  CHECK(!controls.takePauseRequest());
   // The same finger, down again, works as usual.
   send(controls, layout, 2, TouchPhase::Down, right);
   CHECK(controls.held().rightFlipper);

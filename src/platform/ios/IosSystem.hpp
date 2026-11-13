@@ -12,9 +12,11 @@ bool reduceMotionEnabled() noexcept;
 // Another application's audio is playing: the game then starts without its
 // tune.
 bool otherAudioPlaying() noexcept;
-// How many times the audio route has changed (headphones in or out, a
+// How many times an audio device has come or gone (headphones in or out, a
 // speaker connected) since the first call, which starts the count at 0. A
 // number that has moved is a reason to try opening the audio device again.
+// Other route changes, such as the session's own when the device is
+// opened, are not counted.
 unsigned audioRouteChanges() noexcept;
 // A short tap of the device's haptics, strength 0 to 1. Does nothing where
 // there are none. (Not written: it does nothing anywhere yet.)

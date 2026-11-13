@@ -69,11 +69,14 @@ Point centreOf(const Rect& r) { return {r.x + r.w * 0.5F, r.y + r.h * 0.5F}; }
 
 // A finger event at a place on the canvas, as SDL reports it: a fraction of
 // the window.
-void finger(App& app, SDL_EventType type, SDL_FingerID id, Point canvas) {
+// The device is the mouse standing in for a finger, which SDL counts as a
+// touch screen whenever the application runs its touch layout.
+void finger(App& app, SDL_EventType type, SDL_FingerID id, Point canvas,
+            SDL_TouchID device = SDL_MOUSE_TOUCHID) {
   const pinball::screen::Layout layout = app.status().layout;
   SDL_Event event{};
   event.tfinger.type = type;
-  event.tfinger.touchID = 1;
+  event.tfinger.touchID = device;
   event.tfinger.fingerID = id;
   event.tfinger.x = canvas.x / layout.canvasWidth;
   event.tfinger.y = canvas.y / layout.canvasHeight;
@@ -144,18 +147,20 @@ void testDesktopKeys() {
   CHECK(app->status().paused);
   CHECK(frames(*app, 3));
   const std::uint64_t stepsAtPause = app->status().steps;
+  CHECK(frames(*app, 3));
   const std::uint32_t drawnAtPause = app->status().drawnFrames;
   CHECK(frames(*app, 20));
   status = app->status();
   CHECK(status.steps == stepsAtPause);
   // A loop that cannot sleep does not redraw the standing picture.
   CHECK(status.drawnFrames == drawnAtPause);
-  CHECK(status.frames >= 28);
-  // An event may have changed it: drawn once more, then still again.
+  CHECK(status.frames >= 31);
+  // An event may have changed it: drawn for a few frames more (the
+  // drawable can change a frame after the event), then still again.
   key(*app, SDLK_M, SDL_SCANCODE_M);
   CHECK(app->status().muted);
-  CHECK(frames(*app, 5));
-  CHECK(app->status().drawnFrames == drawnAtPause + 1);
+  CHECK(frames(*app, 10));
+  CHECK(app->status().drawnFrames == drawnAtPause + App::kRedrawsAfterEvent);
   key(*app, SDLK_M, SDL_SCANCODE_M);
   CHECK(!app->status().muted);
   key(*app, SDLK_N, SDL_SCANCODE_N);
@@ -318,10 +323,11 @@ void testLifecycle() {
   CHECK(status.paused && status.interrupted);
   CHECK(!status.touch.left);
   CHECK(!status.input.leftFlipper);
-  // Not yet in the background: the paused picture is still drawn, once.
+  // Not yet in the background: the paused picture is still drawn, for a
+  // few frames.
   const std::uint32_t drawnBefore = status.drawnFrames;
-  CHECK(frames(*app, 3));
-  CHECK(app->status().drawnFrames == drawnBefore + 1);
+  CHECK(frames(*app, 8));
+  CHECK(app->status().drawnFrames == drawnBefore + App::kRedrawsAfterEvent);
   const std::uint64_t stepsBefore = app->status().steps;
 
   // In the background nothing is drawn, whatever arrives.
@@ -330,23 +336,26 @@ void testLifecycle() {
   system(*app, SDL_EVENT_LOW_MEMORY);
   CHECK(frames(*app, 5));
   status = app->status();
-  CHECK(status.drawnFrames == drawnBefore + 1);
+  CHECK(status.drawnFrames == drawnBefore + App::kRedrawsAfterEvent);
   CHECK(status.steps == stepsBefore);
 
   // Back: still paused, with the menu, until the player says so. The thumb
   // that never left the glass does not hold the flipper.
   system(*app, SDL_EVENT_WILL_ENTER_FOREGROUND);
   system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
-  CHECK(frames(*app, 5));
+  CHECK(frames(*app, 8));
   status = app->status();
   CHECK(!status.backgrounded && status.paused && status.interrupted);
   CHECK(status.steps == stepsBefore);
-  CHECK(status.drawnFrames == drawnBefore + 2);
+  // Drawn again on return, for a few frames: the drawable may be new.
+  CHECK(status.drawnFrames == drawnBefore + 2 * App::kRedrawsAfterEvent);
   finger(*app, SDL_EVENT_FINGER_MOTION, 1, flipperPoint(layout, true));
   finger(*app, SDL_EVENT_FINGER_UP, 1, flipperPoint(layout, true));
   CHECK(app->status().paused);
-  // RESUME.
-  tap(*app, centreOf(pinball::screen::menuLayout(layout).resume));
+  // After an interruption there is only TAP TO RESUME: a tap anywhere,
+  // here where the NEW GAME button would be, resumes and does nothing else.
+  tap(*app, centreOf(pinball::screen::menuLayout(layout).newGame));
+  CHECK(!app->status().confirmNewGame && !app->status().gameOver);
   status = app->status();
   CHECK(!status.paused && !status.interrupted);
   CHECK(frames(*app, 4));
@@ -363,6 +372,20 @@ void testLifecycle() {
   // A tap outside the menu resumes too.
   const Rect box = pinball::screen::menuLayout(layout).box;
   tap(*app, {box.x + box.w * 0.5F, box.y - 20.0F});
+  CHECK(!app->status().paused);
+
+  // "Did enter background" with no "will" before it does all of it: the
+  // game is paused, a held flipper let go, and nothing is drawn.
+  finger(*app, SDL_EVENT_FINGER_DOWN, 2, flipperPoint(layout, false));
+  CHECK(frames(*app, 2));
+  CHECK(app->status().input.rightFlipper);
+  system(*app, SDL_EVENT_DID_ENTER_BACKGROUND);
+  status = app->status();
+  CHECK(status.paused && status.interrupted && status.backgrounded);
+  CHECK(!status.touch.right && !status.input.rightFlipper);
+  system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
+  finger(*app, SDL_EVENT_FINGER_UP, 2, flipperPoint(layout, false));
+  tap(*app, flipperPoint(layout, false));
   CHECK(!app->status().paused);
 
   // The same events twice over change nothing more.
@@ -405,7 +428,25 @@ void testBackgroundKeepsAScoreAtThePrompt() {
   CHECK(!status.entryOpen && status.paused && status.gameOver);
   system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
   CHECK(frames(*app, 2));
-  // NEW GAME with the game over needs no second tap.
+  // A tap resumes; the game is over, and the centre button starts another.
+  tap(*app, centreOf(pinball::screen::menuLayout(layout).newGame));
+  CHECK(!app->status().paused && app->status().gameOver);
+  CHECK(frames(*app, 2));
+  tap(*app, centre);
+  CHECK(frames(*app, 3));
+  CHECK(!app->status().gameOver);
+  // From the player's own pause, NEW GAME with the game over needs no
+  // second tap. (Play this one out first.)
+  CHECK(playToGameOver(
+      *app, [&] { finger(*app, SDL_EVENT_FINGER_DOWN, 9, centre); },
+      [&] { finger(*app, SDL_EVENT_FINGER_UP, 9, centre); }));
+  if (app->status().entryOpen) {
+    SDL_Delay(750);
+    tap(*app, centreOf(pinball::screen::initialsLayout(layout).ok));
+  }
+  CHECK(!app->status().entryOpen && app->status().gameOver);
+  key(*app, SDLK_F3, SDL_SCANCODE_F3);
+  CHECK(app->status().paused && !app->status().interrupted);
   tap(*app, centreOf(pinball::screen::menuLayout(layout).newGame));
   CHECK(!app->status().paused);
   CHECK(frames(*app, 3));
@@ -461,6 +502,16 @@ void testTouchPlayAndMenus() {
   CHECK(frames(*app, 1));
   CHECK(app->status().input.nudgeLeft && !app->status().input.leftFlipper);
   finger(*app, SDL_EVENT_FINGER_UP, 5, centreOf(layout.nudgeLeftButton));
+
+  // Only fingers on the screen count. A device SDL does not know as a
+  // touch screen (a trackpad's raw fingers come this way) presses nothing.
+  finger(*app, SDL_EVENT_FINGER_DOWN, 40, left, SDL_TouchID{77});
+  finger(*app, SDL_EVENT_FINGER_DOWN, 41, centreOf(layout.pauseButton), SDL_TouchID{77});
+  finger(*app, SDL_EVENT_FINGER_UP, 41, centreOf(layout.pauseButton), SDL_TouchID{77});
+  CHECK(frames(*app, 1));
+  status = app->status();
+  CHECK(!status.paused && !status.input.leftFlipper && !status.touch.left);
+  finger(*app, SDL_EVENT_FINGER_UP, 40, left, SDL_TouchID{77});
 
   // The pause button, with a thumb on a flipper at the time.
   finger(*app, SDL_EVENT_FINGER_DOWN, 6, right);
@@ -808,13 +859,47 @@ void testBackgroundAudioOpen() {
     SDL_Delay(5);
   }
   CHECK(app->status().audioOpen);
-  // Through the background and back it is still there.
+  CHECK(!app->status().audioSuspended);
+  // Through the background and back it is still there: stopped while away.
   system(*app, SDL_EVENT_WILL_ENTER_BACKGROUND);
+  CHECK(app->status().audioSuspended);
   system(*app, SDL_EVENT_DID_ENTER_BACKGROUND);
   CHECK(frames(*app, 2));
+  CHECK(app->status().audioSuspended);
   system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
   CHECK(frames(*app, 2));
-  CHECK(app->status().audioOpen);
+  CHECK(app->status().audioOpen && !app->status().audioSuspended);
+  // "Did enter background" alone stops it too.
+  system(*app, SDL_EVENT_DID_ENTER_BACKGROUND);
+  CHECK(app->status().audioSuspended);
+  system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
+  CHECK(!app->status().audioSuspended);
+}
+
+void testAudioOpenedWhileLeavingStaysStopped() {
+  // The device finishes opening after "will enter background" and before
+  // the application is in the background: it must not start playing.
+  AppOptions options = playerOptions(pinball::screen::Idiom::Touch);
+  options.backgroundAudioOpen = true;
+  const std::unique_ptr<App> app = App::create(options);
+  CHECK(app != nullptr);
+  if (!app) {
+    return;
+  }
+  // Three frames shown: the open starts with the next one.
+  CHECK(frames(*app, 3));
+  CHECK(!app->status().audioOpen);
+  system(*app, SDL_EVENT_WILL_ENTER_BACKGROUND);
+  for (int i = 0; i < 400 && !app->status().audioOpen; ++i) {
+    CHECK(frames(*app, 1));
+    SDL_Delay(5);
+  }
+  App::Status status = app->status();
+  CHECK(status.audioOpen && status.audioSuspended && !status.backgrounded);
+  system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
+  CHECK(frames(*app, 1));
+  status = app->status();
+  CHECK(status.audioOpen && !status.audioSuspended);
 }
 
 void testNoAudioRetriesOnReturn() {
@@ -860,6 +945,7 @@ void runAll() {
   testWindowChanges();
   testTimedRun();
   testBackgroundAudioOpen();
+  testAudioOpenedWhileLeavingStaysStopped();
   testNoAudioRetriesOnReturn();
 }
 

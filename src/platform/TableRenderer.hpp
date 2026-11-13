@@ -19,18 +19,25 @@ struct DrawOptions {
   bool dimmed = false;
   // The system asks for less motion: the table does not jolt on a nudge.
   bool reduceMotion = false;
+  // For the review tool: balls drawn as well as the game's own, so a table
+  // with several can be looked at before the game can be played into one.
+  std::span<const BallView> extraBalls{};
 };
 
 // Which textures to load. Desktop: what the Classic composition draws with.
-// All: the art of the touch layouts as well.
+// All: the art of the touch layouts as well (ui/strip.png, ui/deck.png,
+// ui/backdrop.png, sprites/button.png) and the title (ui/title.png). Each of
+// those is used if the build's asset manifest lists it; where it does not,
+// plain windows, buttons and lettering are drawn in its place, so the art
+// can arrive file by file.
 enum class TextureSet : std::uint8_t { Desktop, All };
 
 // Draws the game onto the logical canvas. Owns every texture. Used by the
 // game window and by the offscreen snapshot tool, so both show the same thing.
 class TableRenderer {
  public:
-  // Loads the textures. Returns nullptr, after logging, if any is missing.
-  // (There is no touch art yet, so both sets are the same.)
+  // Loads the textures. Returns nullptr, after logging, if one the manifest
+  // lists cannot be loaded.
   [[nodiscard]] static std::unique_ptr<TableRenderer> create(SDL_Renderer* renderer,
                                                              const AssetLoader& assets,
                                                              TextureSet set);
@@ -38,7 +45,8 @@ class TableRenderer {
   // Fills what the composition leaves of the canvas: the gutters, the bands
   // outside the safe area, the margin round Classic on a touch screen. Call
   // after clearing and before draw. The desktop's composition is the whole
-  // canvas, so there it draws nothing.
+  // canvas, so there it draws nothing. Without backdrop art it is the flat
+  // screen::kBackdropRgb under a lattice of dim dots.
   void drawBackdrop(SDL_Renderer* renderer, const screen::Layout& layout) const;
 
   // Draws one frame: the table at layout.playfield and the status display at
@@ -51,8 +59,10 @@ class TableRenderer {
   void draw(SDL_Renderer* renderer, const Game& game, float alpha, const screen::Layout& layout,
             const DrawOptions& options, const HudExtras& extras = {}) const;
 
-  // Draws the touch controls over the frame, held ones pressed in. Not
-  // written yet: it draws nothing.
+  // Draws the touch controls over the frame, held ones pressed in: the
+  // Stack's deck with its button row and flipper pads, the Classic panel's
+  // row, and the pause button. Call after draw and before any dialog. Draws
+  // nothing for the desktop idiom.
   void drawTouchOverlay(SDL_Renderer* renderer, const screen::Layout& layout,
                         const TouchControls::View& view) const;
 
@@ -66,6 +76,12 @@ class TableRenderer {
     TexturePtr bar;
     TexturePtr plunger;
     TexturePtr panel;
+    // The rest may be null: see TextureSet.
+    TexturePtr strip;
+    TexturePtr deck;
+    TexturePtr backdrop;
+    TexturePtr title;
+    TexturePtr button;
   };
   struct Rgb {
     Uint8 r;

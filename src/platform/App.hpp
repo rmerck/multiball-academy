@@ -8,6 +8,7 @@
 #include <optional>
 #include <vector>
 
+#include "core/AboutPages.hpp"
 #include "core/FixedTimestep.hpp"
 #include "core/Game.hpp"
 #include "core/Input.hpp"
@@ -93,6 +94,9 @@ class App {
     bool musicOn;
     bool confirmNewGame;
     bool audioOpen;
+    // The device is open and stopped, as it must be while the application
+    // is not in front.
+    bool audioSuspended;
     bool gameOver;
     AboutState about;
     // The letters and cursor of the initials prompt; AAA and 0 without one.
@@ -108,6 +112,8 @@ class App {
     TouchControls::View touch;
   };
   [[nodiscard]] Status status() const;
+  // How many frames a standing picture is drawn for after each event.
+  static constexpr std::uint32_t kRedrawsAfterEvent = 3;
 
  private:
   struct WindowDeleter {
@@ -168,6 +174,8 @@ class App {
   // is let go, and on a touch screen the game stays paused until the player
   // resumes it. Timed automated runs have no player and are never paused.
   void interrupt();
+  // The application is leaving the front: interrupt(), and no sound.
+  void leaveForeground();
   // Takes a device the background open has produced, and starts another
   // open when one is due.
   void serviceAudio();
@@ -205,8 +213,13 @@ class App {
   std::uint32_t frames_ = 0;
   std::uint32_t drawnFrames_ = 0;
   std::uint32_t haltedFrames_ = 0;
-  // Something may have changed what the picture shows since it was drawn.
-  bool needsRedraw_ = true;
+  // Frames still to be drawn although the game stands still: something
+  // may have changed what the picture shows. More than one for each event,
+  // because the drawable can change a frame or two after the event that
+  // announced it (a turned tablet, a resized window, a return to the
+  // foreground) with nothing further to say so. A frame that could not be
+  // presented does not count.
+  std::uint32_t redrawsDue_ = kRedrawsAfterEvent;
   // The cursor of the initials prompt as last drawn.
   bool cursorWasLit_ = false;
   // Between "will enter background" and "did enter foreground": nothing is
@@ -226,7 +239,8 @@ class App {
   bool autoPaused_ = false;
   // The About screen is up. The game stands still behind it.
   bool aboutOpen_ = false;
-  AboutState aboutState_;
+  // Which page of it is up. Back to the first whenever it opens.
+  AboutState aboutPage_{};
   // Touch idiom: the pause is from an interruption, and NEW GAME in the
   // pause menu was tapped once and waits for the second tap.
   bool interrupted_ = false;
@@ -238,12 +252,24 @@ class App {
   std::optional<bool> keepingAwake_;
   // Only with AppOptions::backgroundAudioOpen. Declared before audio_, so
   // that the device is closed before the opener.
+  //
+  // Its destructor waits for an open still in flight, on the thread that
+  // destroys the App. Where the open is stuck (a simulator with no audio
+  // route: about 30 seconds) quitting waits that long. Nothing is lost by
+  // it: finish(), which keeps a score waiting at the initials prompt, is
+  // called before the App is destroyed (main.cpp, main_ios.cpp), and the
+  // score file is written when initials are confirmed, never at exit.
   std::optional<AudioOpener> audioOpener_;
   // Another open is wanted (the application came back to the foreground, or
-  // the audio route changed), and when the last one was started.
+  // a device came or went); one is in flight; and when the last one ended,
+  // from which the wait before the next is counted.
   bool audioRetryWanted_ = false;
   bool audioAttempted_ = false;
+  bool audioOpening_ = false;
   Uint64 audioAttemptMs_ = 0;
+  // Between going to the background and coming back: the device stays
+  // stopped, also one that finishes opening meanwhile.
+  bool audioSuspended_ = false;
   unsigned audioRouteChangesSeen_ = 0;
   // Null when no audio device could be opened: the game then runs silent.
   std::unique_ptr<AudioOutput> audio_;

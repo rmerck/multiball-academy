@@ -6,7 +6,8 @@
 // build/pinball_fuzz -max_total_time=60 -dict=tests/fuzz/parsers.dict <new dir> tests/fuzz/corpus
 //
 // Seeds in tests/fuzz/corpus start with '0', '1', '2' or '3', which select
-// the score, PNG, asset name and argument parsers in that order.
+// the score, PNG, asset name and argument parsers in that order, or with
+// '4' for the review tools' window description.
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -20,6 +21,7 @@
 #include "core/HighScores.hpp"
 #include "core/PngHeader.hpp"
 #include "core/Rules.hpp"
+#include "core/SurfaceSpec.hpp"
 
 namespace {
 
@@ -78,6 +80,36 @@ void fuzzAssetName(std::string_view name) {
   require(!name.contains(':'));
 }
 
+// The window description of the review tools (core/SurfaceSpec.hpp). The
+// parser is in a header and is given its presets, so it needs nothing that
+// is not already linked here.
+void fuzzSurfaceSpec(std::string_view text) {
+  namespace screen = pinball::screen;
+  static constexpr screen::Preset kKnown[] = {
+      {"desktop", {1280.0F, 960.0F, 0.0F, 0.0F, 0.0F, 0.0F}, screen::Idiom::Desktop},
+      {"phone", {393.0F, 852.0F, 59.0F, 34.0F, 0.0F, 0.0F}, screen::Idiom::Touch},
+  };
+  const auto spec = screen::parseSurfaceSpec(text, kKnown);
+  if (!spec) {
+    return;
+  }
+  require(!text.empty() && text.size() <= 64);
+  require(spec->scale >= 0 && spec->scale <= static_cast<int>(screen::kMaxSpecScale));
+  const screen::Surface& s = spec->surface;
+  require(s.width >= static_cast<float>(screen::kMinSpecPoints) &&
+          s.width <= static_cast<float>(screen::kMaxSpecPoints));
+  require(s.height >= static_cast<float>(screen::kMinSpecPoints) &&
+          s.height <= static_cast<float>(screen::kMaxSpecPoints));
+  require(s.safeTop >= 0.0F && s.safeBottom >= 0.0F && s.safeLeft >= 0.0F && s.safeRight >= 0.0F);
+  require(s.safeTop + s.safeBottom <= s.height * screen::kMaxInsetShare);
+  require(s.safeLeft + s.safeRight <= s.width * screen::kMaxInsetShare);
+  // Only these characters can be part of one.
+  for (const char c : text) {
+    require((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || c == 'x' || c == '@' ||
+            c == '+' || c == ',' || c == '-');
+  }
+}
+
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) {
@@ -89,6 +121,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
   const std::size_t length = size - 1;
   // A copy of exactly the input's size, so any read past it is caught.
   const std::string text(reinterpret_cast<const char*>(body), length);
+  if (data[0] == '4') {
+    fuzzSurfaceSpec(text);
+    return 0;
+  }
   switch (which) {
     case 0:
       fuzzHighScores(text);

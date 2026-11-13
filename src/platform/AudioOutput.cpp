@@ -144,6 +144,9 @@ void AudioOutput::pump(SoundMixer& mixer) {
 
 AudioOpener::~AudioOpener() {
   if (thread_ != nullptr) {
+    // Waits as long as the open takes, which where it is stuck is about
+    // half a minute. The alternative, leaving the worker to finish by
+    // itself, would have it use SDL's audio after SDL has shut down.
     SDL_WaitThread(thread_, nullptr);
     thread_ = nullptr;
     if (stream_ != nullptr) {

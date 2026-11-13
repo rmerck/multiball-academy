@@ -449,6 +449,24 @@ if(BUILD_TESTING)
             -DSCRATCH=$<TARGET_FILE_DIR:safefile_fallback_tests>/safefile_fallback_scratch
             -P ${CMAKE_SOURCE_DIR}/tests/RunInScratch.cmake)
 
+  # The application's event handling (keys, touches, window changes, the
+  # mobile life cycle): the real App on SDL's dummy drivers, with no score
+  # file. It reads the assets beside itself, as the tools do, so it is built
+  # with them and after them. About a minute under the sanitizers, most of
+  # it waiting on the software renderer's paced presents: labelled slow, so
+  # that `ctest -LE slow` is the quick run.
+  if(PINBALL_BUILD_TOOLS AND NOT PINBALL_IOS)
+    add_executable(app_tests tests/AppEventTest.cpp)
+    target_include_directories(app_tests PRIVATE tests)
+    target_link_libraries(app_tests PRIVATE pinball_platform)
+    set_target_properties(app_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY ${PINBALL_BESIDE_DIR})
+    add_dependencies(app_tests pinball_snapshot)
+    add_test(NAME app_events COMMAND app_tests)
+    set_tests_properties(app_events PROPERTIES
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 300 LABELS slow)
+  endif()
+
   # Python runs isolated (-I): no user site directory, no PYTHON* variables
   # and no import from the script's or the current directory.
   find_package(Python3 COMPONENTS Interpreter)

@@ -3,15 +3,21 @@
 #include <cmath>
 #include <cstddef>
 #include <initializer_list>
+#include <cstdint>
 #include <limits>
+#include <string>
 #include <string_view>
+#include <utility>
 
 #include "Check.hpp"
 #include "Suites.hpp"
+#include "core/AboutPages.hpp"
 #include "core/OverlayLayout.hpp"
 #include "core/PanelLayout.hpp"
 #include "core/ScreenLayout.hpp"
+#include "core/SurfaceSpec.hpp"
 #include "core/TableLayout.hpp"
+#include "platform/GameViews.hpp"
 
 namespace {
 
@@ -109,6 +115,8 @@ void checkTouchLayout(const Layout& l) {
     CHECK(!isEmpty(button));
     CHECK(inside(button, l.safe, 1.0F));
     CHECK(!overlap(button, l.playfield));
+    // Large enough to find with a finger, in either composition.
+    CHECK(button.w >= kMinHitUnits && button.h >= kMinHitUnits);
   }
 
   // The flipper zones lie in the window, side by side, and reach both edges.
@@ -134,8 +142,14 @@ void checkTouchLayout(const Layout& l) {
     CHECK(inside(l.pauseButton, l.hud));
     CHECK(inside(l.nudgeLeftButton, l.deck) && inside(l.centreButton, l.deck) &&
           inside(l.nudgeRightButton, l.deck));
-    for (const Rect& button : buttons) {
-      CHECK(button.w >= kMinHitUnits && button.h >= kMinHitUnits);
+    // The corners beside the row are the thumbs': in the deck, clear of
+    // every button.
+    for (const Rect& corner : {pinball::deck::kLeftCorner, pinball::deck::kRightCorner}) {
+      const Rect placed{l.deck.x + corner.x, l.deck.y + corner.y, corner.w, corner.h};
+      CHECK(inside(placed, l.deck));
+      for (const Rect& button : buttons) {
+        CHECK(!overlap(placed, button));
+      }
     }
     // The zones start under the strip, and the row is symmetric about the
     // line between them.
@@ -247,6 +261,21 @@ void testDesktop() {
   }
   CHECK(inside(panel::kNudgeLeftButton, panel::kControlsArea, 0.0F));
   CHECK(inside(panel::kNudgeRightButton, panel::kControlsArea, 0.0F));
+  // What a touch may land in is at least the smallest size, holds what is
+  // drawn, stays on the panel, and no two of them overlap.
+  const std::array hits{panel::kNudgeLeftHit, panel::kCentreHit, panel::kNudgeRightHit,
+                        panel::kPauseHit};
+  const std::array drawn{panel::kNudgeLeftButton, panel::kCentreButton, panel::kNudgeRightButton,
+                         panel::kPauseButton};
+  CHECK(noneOverlap(hits));
+  for (std::size_t i = 0; i < hits.size(); ++i) {
+    CHECK(hits[i].w >= kMinHitUnits && hits[i].h >= kMinHitUnits);
+    CHECK(inside(drawn[i], hits[i], 0.0F) && inside(hits[i], panelArea, 0.0F));
+    CHECK(!overlap(hits[i], panel::kFlipperCorner));
+  }
+  CHECK(!overlap(panel::kTouchTitleArea, panel::kPauseButton));
+  CHECK(inside(panel::kTouchTitleArea, panel::kTitleArea, 0.0F));
+  CHECK(inside(panel::kFlipperCorner, panel::kControlsArea, 0.0F));
 }
 
 struct Expected {
@@ -260,9 +289,11 @@ struct Expected {
 
 void testPresets() {
   // The worked sizes of the design, to its three figures.
-  constexpr std::array<Expected, 9> kExpected{{
+  constexpr std::array<Expected, 11> kExpected{{
       {"phone-short", Composition::Stack, 2.048F, 768.0F, 1366.0F, 133.0F},
       {"phone", Composition::Stack, 1.954F, 768.0F, 1665.0F, 291.0F},
+      {"phone-pro", Composition::Stack, 1.910F, 768.0F, 1670.0F, 294.0F},
+      {"pad-portrait-11", Composition::Stack, 1.141F, 951.5F, 1362.0F, 120.0F},
       {"phone-max", Composition::Stack, 1.745F, 768.0F, 1669.0F, 309.0F},
       {"duo-outer", Composition::Stack, 1.935F, 902.0F, 1312.0F, 120.0F},
       {"duo-inner", Composition::Stack, 1.380F, 923.0F, 1312.0F, 120.0F},
@@ -290,10 +321,17 @@ void testPresets() {
     CHECK(near(l.deck.h, want.deck, 1.5F));
     checkTouchLayout(l);
     checkOverlays(l);
-    // Every control is at least 44 points across on every preset.
+    // Every preset is a window the game should be given, so every control
+    // is at least 44 points across, and so are the thumbs' corners.
+    CHECK(meetsMinimumScene(preset->surface));
     for (const Rect& button :
          {l.pauseButton, l.nudgeLeftButton, l.centreButton, l.nudgeRightButton}) {
-      CHECK(std::min(button.w, button.h) * l.pointsPerUnit >= 44.0F);
+      CHECK(std::min(button.w, button.h) * l.pointsPerUnit >= kMinHitPoints);
+    }
+    if (l.composition == Composition::Stack) {
+      const float cornerHeight = std::min(pinball::deck::kLeftCorner.h, l.deck.h - 20.0F);
+      CHECK(std::min(pinball::deck::kLeftCorner.w, cornerHeight) * l.pointsPerUnit >=
+            kMinHitPoints);
     }
   }
 
@@ -347,14 +385,16 @@ void testStackGeometry() {
     CHECK(near(inset.deck.h, kDeckMinHeight, 1.0F) && inset.playfield.x == 124.0F);
     CHECK(near(inset.safe.h, 1312.0F));
   }
-  {  // A very tall window: the deck stops at its cap and the rest goes
-     // above the strip.
+  {  // A very tall window: the deck stops at its cap and the composition
+     // sits in the middle of the height left over.
     const Layout l = touch(300.0F, 900.0F);
     CHECK(l.composition == Composition::Stack);
     CHECK(near(l.deck.h, kDeckMaxHeight, 1.0F));
-    CHECK(l.hud.y > 600.0F);
-    CHECK(near(l.deck.y + l.deck.h, l.canvasHeight, 1.0F));
+    const float above = l.hud.y;
+    const float below = l.canvasHeight - (l.deck.y + l.deck.h);
+    CHECK(above > 300.0F && near(above, below, 1.5F));
     CHECK(l.flipperLeftZone.y == l.playfield.y);
+    CHECK(near(l.flipperLeftZone.y + l.flipperLeftZone.h, l.canvasHeight));
     checkTouchLayout(l);
   }
   {  // Insets on one side only: the column is centred in the safe area,
@@ -387,8 +427,9 @@ void testChoice() {
     CHECK(near(l.playfield.x, (l.canvasWidth - 1280.0F) * 0.5F, 0.5F));
     CHECK(l.playfield.y >= l.safe.y - 1.0F && l.playfield.y < l.safe.y + 1.0F);
     namespace panel = pinball::panel;
-    CHECK(same(l.pauseButton, {l.playfield.x + panel::kPauseButton.x,
-                               l.playfield.y + panel::kPauseButton.y, 80.0F, 80.0F}));
+    CHECK(same(l.pauseButton, {l.playfield.x + panel::kPauseHit.x,
+                               l.playfield.y + panel::kPauseHit.y, 96.0F, 96.0F}));
+    CHECK(same(l.centreButton, {l.playfield.x + 896.0F, l.playfield.y + 860.0F, 132.0F, 96.0F}));
     CHECK(same(l.dialog, {l.playfield.x + 190.0F, l.playfield.y + 90.0F, 900.0F, 780.0F}));
     // Split down the middle of the composition; the corner right of the
     // button row is the right thumb's.
@@ -421,9 +462,11 @@ void testAnyWindow() {
         const float height = width / aspect;
         const Layout l = touch(width, height, inset[0], inset[1], inset[2], inset[3]);
         checkTouchLayout(l);
-        // The canvas is the window, scaled alike both ways.
+        // The canvas is the window, scaled alike both ways. (A side under
+        // the smallest believed counts as that.)
+        const float believed = std::max(height, kMinSurfacePoints);
         CHECK(near(l.canvasWidth * l.pointsPerUnit, width, width * 1e-4F));
-        CHECK(near(l.canvasHeight * l.pointsPerUnit, height, height * 1e-4F));
+        CHECK(near(l.canvasHeight * l.pointsPerUnit, believed, believed * 1e-4F));
         // The composition is as large as the safe area allows: it touches
         // two opposite sides of it.
         const bool stacked = l.composition == Composition::Stack;
@@ -463,6 +506,24 @@ void testDegenerate() {
   for (const Surface& s : surfaces) {
     checkTouchLayout(computeLayout(s, Idiom::Touch));
   }
+  // Sizes far beyond any screen are held to the largest believed, so the
+  // canvas stays small enough for whole units to be exact.
+  constexpr float kHuge = 3.0e38F;
+  for (const Surface& s : {Surface{kHuge, kHuge, 0.0F, 0.0F, 0.0F, 0.0F},
+                           Surface{kHuge, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F},
+                           Surface{1.0F, kHuge, kHuge, kHuge, kHuge, kHuge},
+                           Surface{kHuge, kHuge, kHuge, kHuge, kHuge, kHuge},
+                           Surface{kMaxSurfacePoints, kMinSurfacePoints, 0.0F, 48.0F, 0.0F, 0.0F}}) {
+    const Layout l = computeLayout(s, Idiom::Touch);
+    checkTouchLayout(l);
+    CHECK(l.canvasWidth <= kMaxCanvasUnits && l.canvasHeight <= kMaxCanvasUnits);
+    CHECK(wholeUnits(l.playfield.x + 1.0F) && wholeUnits(l.deck.y + 1.0F));
+  }
+  CHECK(near(computeLayout({kHuge, kHuge, 0.0F, 0.0F, 0.0F, 0.0F}, Idiom::Touch).pointsPerUnit,
+             kMaxSurfacePoints / kClassicWidth, 0.01F));
+  // A window under the smallest believed counts as that size.
+  CHECK(same(touch(1.0F, 1.0F).playfield, touch(64.0F, 64.0F).playfield));
+  CHECK(touch(10.0F, 3.0F).canvasWidth == touch(64.0F, 64.0F).canvasWidth);
   // Negative insets count as none.
   const Layout plain = touch(393.0F, 852.0F);
   const Layout negative = touch(393.0F, 852.0F, -59.0F, -34.0F, -1.0F, -1.0F);
@@ -471,6 +532,283 @@ void testDegenerate() {
   const Layout swallowed = touch(400.0F, 800.0F, 900.0F, 900.0F, 400.0F, 400.0F);
   CHECK(near(swallowed.safe.w * swallowed.pointsPerUnit, 100.0F, 0.01F));
   CHECK(near(swallowed.safe.h * swallowed.pointsPerUnit, 200.0F, 0.01F));
+}
+
+// From the smallest scene up, whatever the shape and the insets, everything
+// a finger must find is at least 44 points across.
+void testMinimumHitSize() {
+  constexpr std::array kWidths{352.0F, 353.0F, 375.0F, 402.0F, 440.0F,  507.0F, 600.0F,
+                               669.0F, 744.0F, 834.0F, 1024.0F, 1366.0F, 2048.0F, 4096.0F};
+  constexpr std::array kHeights{602.0F, 603.0F,  640.0F,  667.0F,  700.0F,  852.0F, 956.0F,
+                                1024.0F, 1194.0F, 1366.0F, 2048.0F, 2732.0F, 4096.0F};
+  constexpr std::array<std::array<float, 4>, 4> kInsets{{{0.0F, 0.0F, 0.0F, 0.0F},
+                                                         {62.0F, 34.0F, 0.0F, 0.0F},
+                                                         {24.0F, 20.0F, 0.0F, 0.0F},
+                                                         {0.0F, 21.0F, 62.0F, 62.0F}}};
+  const auto bigEnough = [](const Rect& r, const Layout& l) noexcept {
+    return std::min(r.w, r.h) * l.pointsPerUnit >= kMinHitPoints - 0.001F;
+  };
+  for (const float safeWidth : kWidths) {
+    for (const float safeHeight : kHeights) {
+      for (const auto& inset : kInsets) {
+        // The sizes above are of the safe area; the window is that and its insets.
+        const Surface surface{safeWidth + inset[2] + inset[3], safeHeight + inset[0] + inset[1],
+                              inset[0], inset[1], inset[2], inset[3]};
+        CHECK(meetsMinimumScene(surface));
+        const Layout l = computeLayout(surface, Idiom::Touch);
+        CHECK(kMinHitUnits * l.pointsPerUnit >= kMinHitPoints - 0.001F);
+        for (const Rect& button :
+             {l.pauseButton, l.nudgeLeftButton, l.centreButton, l.nudgeRightButton}) {
+          CHECK(bigEnough(button, l));
+        }
+        const MenuLayout menu = menuLayout(l);
+        for (const Rect& r : {menu.resume, menu.newGame, menu.sound, menu.music, menu.about}) {
+          CHECK(bigEnough(r, l));
+        }
+        const AboutLayout about = aboutLayout(l);
+        for (const Rect& r : {about.close, about.tabs[0], about.tabs[1], about.tabs[2],
+                              about.privacyLink, about.previous, about.next}) {
+          CHECK(bigEnough(r, l));
+        }
+        const InitialsLayout initials = initialsLayout(l);
+        for (std::size_t i = 0; i < initials.slot.size(); ++i) {
+          CHECK(bigEnough(initials.up[i], l) && bigEnough(initials.slot[i], l) &&
+                bigEnough(initials.down[i], l));
+        }
+        CHECK(bigEnough(initials.ok, l));
+      }
+    }
+  }
+  // Just under the smallest scene on either side is not one, and the limit
+  // is no larger than it needs to be: a square of the smallest width is too
+  // small for either composition.
+  CHECK(!meetsMinimumScene({351.0F, 602.0F, 0.0F, 0.0F, 0.0F, 0.0F}));
+  CHECK(!meetsMinimumScene({352.0F, 601.0F, 0.0F, 0.0F, 0.0F, 0.0F}));
+  CHECK(!meetsMinimumScene({402.0F, 650.0F, 62.0F, 34.0F, 0.0F, 0.0F}));
+  CHECK(kMinHitUnits * touch(352.0F, 352.0F).pointsPerUnit < kMinHitPoints);
+}
+
+// Nothing is drawn smaller than 8 points high: on every preset the status
+// display and the dialogs, and from the smallest scene up the Stack's strip
+// and the dialogs. (The Classic panel has lines at size 2, which a window
+// just wide enough for Classic and only 602 points high shows at 7.7.)
+void testSmallestText() {
+  const auto points = [](float size, const Layout& l) noexcept {
+    return size * kFontRows * l.pointsPerUnit;
+  };
+  float smallest = 1000.0F;
+  for (const Preset& preset : presets()) {
+    const Layout l = computeLayout(preset.surface, preset.idiom);
+    CHECK(points(hudTextSize(l), l) >= kMinTextPoints);
+    CHECK(points(smallestTextSize(l), l) >= kMinTextPoints);
+    smallest = std::min({smallest, points(hudTextSize(l), l), points(smallestTextSize(l), l)});
+  }
+  CHECK(smallest >= kMinTextPoints && smallest < 12.0F);
+  for (float width = kMinSceneWidth; width < 1500.0F; width += 13.0F) {
+    for (float height = kMinSceneHeight; height < 1500.0F; height += 17.0F) {
+      const Layout l = touch(width, height);
+      CHECK(points(smallestTextSize(l), l) >= kMinTextPoints);
+      if (l.composition == Composition::Stack) {
+        CHECK(points(hudTextSize(l), l) >= kMinTextPoints);
+      }
+    }
+  }
+  // Size 2 is kept where it is large enough, so a tablet's dialogs do not grow.
+  CHECK(smallestTextSize(desktopLayout()) == 2.0F);
+  CHECK(smallestTextSize(touch(1024.0F, 1366.0F)) == 2.0F);
+  CHECK(smallestTextSize(touch(402.0F, 874.0F)) == 3.0F);
+}
+
+// A block that exactly fills its range never ends past it by more than the
+// slack of the arithmetic, and never starts more than a unit before it.
+void testExactFit() {
+  for (float points = 300.0F; points < 1400.0F; points += 0.37F) {
+    for (const float top : {0.0F, 20.0F, 47.0F, 59.0F, 62.0F}) {
+      // Width-limited and height-limited in turn.
+      for (const Layout& l : {touch(points, points * 4.0F, top, 34.0F),
+                              touch(points * 3.0F, points, top, 21.0F),
+                              touch(points, points * 1312.0F / 768.0F + top, top, 0.0F)}) {
+        const Rect& top_block = l.composition == Composition::Stack ? l.hud : l.playfield;
+        const float bottom = l.composition == Composition::Stack ? l.deck.y + l.deck.h
+                                                                  : l.playfield.y + 960.0F;
+        CHECK(top_block.y > l.safe.y - 1.0F);
+        CHECK(bottom <= l.safe.y + l.safe.h + kEps);
+        CHECK(l.playfield.x > l.safe.x - 1.0F);
+        const float right = l.composition == Composition::Stack ? l.playfield.x + 768.0F
+                                                                 : l.hud.x + l.hud.w;
+        CHECK(right <= l.safe.x + l.safe.w + kEps);
+      }
+    }
+  }
+}
+
+void testSurfaceSpec() {
+  const auto parse = [](std::string_view text) { return parseSurfaceSpec(text, presets()); };
+  {
+    const auto spec = parse("phone-pro");
+    CHECK(spec && spec->idiom == Idiom::Touch && spec->scale == 0);
+    CHECK(spec && spec->surface.width == 402.0F && spec->surface.safeTop == 62.0F);
+  }
+  CHECK(parse("desktop") && parse("desktop")->idiom == Idiom::Desktop);
+  {
+    const auto spec = parse("402x874@3+62,34,0,0");
+    CHECK(spec && spec->scale == 3 && spec->idiom == Idiom::Touch);
+    CHECK(spec && spec->surface.width == 402.0F && spec->surface.height == 874.0F);
+    CHECK(spec && spec->surface.safeTop == 62.0F && spec->surface.safeBottom == 34.0F &&
+          spec->surface.safeLeft == 0.0F && spec->surface.safeRight == 0.0F);
+  }
+  {
+    const auto spec = parse("pad-split@2+0,21,59,58");
+    CHECK(spec && spec->scale == 2 && spec->surface.width == 507.0F);
+    CHECK(spec && spec->surface.safeTop == 0.0F && spec->surface.safeBottom == 21.0F &&
+          spec->surface.safeLeft == 59.0F && spec->surface.safeRight == 58.0F);
+  }
+  CHECK(parse("100x100") && parse("4096x4096") && parse("0820x1180"));
+  CHECK(parse("820x1180@1") && parse("820x1180@4") && parse("820x1180+0,0,0,0"));
+  // Insets that leave a quarter of the side are the most accepted.
+  CHECK(parse("400x800+300,300,150,150") && !parse("400x800+301,300,0,0") &&
+        !parse("400x800+0,0,151,150"));
+  for (const std::string_view bad :
+       {"", " ", "phone ", " phone", "Phone", "phone-", "99x800", "800x99", "4097x800",
+        "800x4097", "800", "800x", "x800", "800X600", "800x600x2", "-800x600", "+800x600",
+        "8 00x600", "800.0x600", "0x320x480", "800x600@", "800x600@0", "800x600@5",
+        "800x600@2@2", "800x600@-1", "800x600@2.0", "800x600+", "800x600+1,2,3", "800x600+1,2,3,4,5",
+        "800x600+1,2,3,", "800x600+,1,2,3", "800x600+1,,2,3", "800x600+1, 2,3,4",
+        "800x600+-1,2,3,4", "800x600+1000,0,0,0", "800x600+1,2,3,4+1,2,3,4", "800x600+1,2,3,4@2",
+        "phone@", "phone+", "99999x99999", "18446744073709551617x800",
+        "800x600\n", "800x600;rm"}) {
+    CHECK(!parse(bad));
+  }
+  CHECK(!parse(std::string_view("800x600\0", 8)));
+  CHECK(!parse(std::string(65, '1')));
+  // With no presets given, only sizes are understood.
+  CHECK(!parseSurfaceSpec("phone", {}) && parseSurfaceSpec("320x480", {}));
+  // Whatever is accepted is a window computeLayout takes as it is.
+  for (const std::string_view good : {"100x4096+999,999,0,0", "4096x100@4", "352x602"}) {
+    const auto spec = parse(good);
+    CHECK(spec.has_value());
+    if (spec) {
+      const Layout l = computeLayout(spec->surface, spec->idiom);
+      checkTouchLayout(l);
+      CHECK(near(l.safe.y * l.pointsPerUnit, spec->surface.safeTop, 0.01F));
+    }
+  }
+}
+
+// Stand-ins for the game as it is and as it is to be, to hold the drawing
+// code's adapters (platform/GameViews.hpp) to both.
+struct PlainRules {
+  bool over = false;
+  bool inPlay = false;
+  bool gameOver() const noexcept { return over; }
+  bool ballInPlay() const noexcept { return inPlay; }
+};
+struct PlainGame {
+  PlainRules state;
+  std::size_t count = 1;
+  const PlainRules& rules() const noexcept { return state; }
+  std::size_t ballCount() const noexcept { return count; }
+};
+struct LockRules : PlainRules {
+  int locksHeld() const noexcept { return 1; }
+  bool lockLit() const noexcept { return true; }
+  int locksNeeded() const noexcept { return 3; }
+  bool multiballJackpotLit() const noexcept { return true; }
+  bool superJackpotLit() const noexcept { return false; }
+};
+struct LockGame {
+  LockRules state;
+  bool waiting = false;
+  std::size_t count = 3;
+  const LockRules& rules() const noexcept { return state; }
+  std::size_t ballCount() const noexcept { return count; }
+  bool ballAwaitingLaunch() const noexcept { return waiting; }
+};
+
+void testGameViews() {
+  using namespace pinball;
+  {  // Today's rules: guesses from what they do say, and no locks.
+    PlainGame game;
+    CHECK(touchContext(game).ballAwaitingLaunch && !touchContext(game).gameOver);
+    game.state.inPlay = true;
+    CHECK(!touchContext(game).ballAwaitingLaunch);
+    game.state.over = true;
+    game.state.inPlay = false;
+    CHECK(touchContext(game).gameOver && !touchContext(game).ballAwaitingLaunch);
+    MultiballView view = multiballView(game);
+    CHECK(!view.locksKnown && !view.running() && view.ballsLive == 1 && view.locksHeld == 0);
+    CHECK(view.locksNeeded == kPlaceholderLocksNeeded && !view.jackpotLit);
+    // Several balls are a multiball whatever the rules can say.
+    game.count = 2;
+    view = multiballView(game);
+    CHECK(view.running() && view.ballsLive == 2 && !view.locksKnown);
+  }
+  {  // Rules with locks: their own word on everything.
+    LockGame game;
+    CHECK(!touchContext(game).ballAwaitingLaunch);
+    game.waiting = true;
+    CHECK(touchContext(game).ballAwaitingLaunch);
+    game.state.over = true;
+    CHECK(!touchContext(game).ballAwaitingLaunch && touchContext(game).gameOver);
+    const MultiballView view = multiballView(game);
+    CHECK(view.locksKnown && view.running() && view.ballsLive == 3 && view.locksHeld == 1 &&
+          view.locksNeeded == 3 && view.lockLit && view.jackpotLit && !view.superJackpotLit);
+    game.count = 1;
+    CHECK(!multiballView(game).running());
+  }
+  {  // The real game: its balls in its order, then the extra ones, and
+     // never more than there is room for.
+    const Game game;
+    const BallViews own = game.balls(1.0F);
+    const DrawnBalls drawn = ballsToDraw(game, 1.0F);
+    CHECK(drawn.count == own.size() && drawn.count == game.ballCount() && drawn.count >= 1);
+    CHECK(drawn.items[0].position.x == own.items[0].position.x && drawn.items[0].id == 0);
+    std::array<BallView, 12> extra{};
+    extra[0].position = {5.0F, 6.0F};
+    const DrawnBalls crowded = ballsToDraw(game, 1.0F, extra);
+    CHECK(crowded.count == kMaxDrawnBalls && crowded.span().size() == kMaxDrawnBalls);
+    CHECK(crowded.items[own.size()].position.x == 5.0F);
+    CHECK(kMaxDrawnBalls > Game::kMaxBalls);
+    CHECK(touchContext(game).ballAwaitingLaunch && !touchContext(game).gameOver);
+    CHECK(!multiballView(game).running() && multiballView(game).ballsLive == 1);
+  }
+}
+
+// The About screen's pages in a row: scores, about, each licence page.
+void testAboutPages() {
+  using namespace pinball;
+  constexpr std::size_t kLicencePages = 3;
+  static_assert(aboutPageTotal(kLicencePages) == 5 && aboutPageTotal(0) == 3);
+  AboutState state{};
+  CHECK(aboutPageNumber(state, kLicencePages) == 0);
+  // Back from the first page stays there.
+  state = turnAboutPage(state, false, kLicencePages);
+  CHECK(state.page == AboutPage::Scores && state.licencePage == 0);
+  // Forward through all five, and no further.
+  const std::array<std::pair<AboutPage, std::size_t>, 5> order{{{AboutPage::Scores, 0},
+                                                                {AboutPage::About, 0},
+                                                                {AboutPage::Licences, 0},
+                                                                {AboutPage::Licences, 1},
+                                                                {AboutPage::Licences, 2}}};
+  for (std::size_t i = 0; i < order.size(); ++i) {
+    CHECK(state.page == order[i].first && state.licencePage == order[i].second);
+    CHECK(aboutPageNumber(state, kLicencePages) == i);
+    state = turnAboutPage(state, true, kLicencePages);
+  }
+  CHECK(state.page == AboutPage::Licences && state.licencePage == 2);
+  // And back again.
+  for (std::size_t i = order.size() - 1; i > 0; --i) {
+    state = turnAboutPage(state, false, kLicencePages);
+    CHECK(state.page == order[i - 1].first && state.licencePage == order[i - 1].second);
+  }
+  // A licence page past the last (the layout changed under it) counts as
+  // the last, and a count of none as one.
+  const AboutState stale{AboutPage::Licences, 9};
+  CHECK(aboutPageNumber(stale, kLicencePages) == 4);
+  CHECK(turnAboutPage(stale, false, kLicencePages).licencePage == 1);
+  CHECK(turnAboutPage(stale, true, kLicencePages).licencePage == 2);
+  CHECK(turnAboutPage({AboutPage::About, 0}, true, 0).page == AboutPage::Licences);
+  CHECK(turnAboutPage({AboutPage::Licences, 0}, true, 0).licencePage == 0);
 }
 
 void testContains() {
@@ -498,5 +836,11 @@ void testScreenLayout() {
   testChoice();
   testAnyWindow();
   testDegenerate();
+  testMinimumHitSize();
+  testSmallestText();
+  testExactFit();
+  testSurfaceSpec();
+  testGameViews();
+  testAboutPages();
   testContains();
 }

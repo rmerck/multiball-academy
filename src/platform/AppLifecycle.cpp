@@ -46,18 +46,23 @@ void App::interrupt() {
   overlayTaps_.cancel();
 }
 
+void App::leaveForeground() {
+  interrupt();
+  mixer_.setMusicPlaying(false);
+  audioSuspended_ = true;
+  if (audio_) {
+    // No frames will run to keep it supplied.
+    audio_->suspend();
+  }
+}
+
 void App::handleLifecycle(Uint32 type) {
   switch (type) {
     case SDL_EVENT_WILL_ENTER_BACKGROUND:
       // Also sent when something only covers the game for a moment (the
       // system's control panel, a call, the application switcher), and then
       // followed straight by "did enter foreground".
-      interrupt();
-      mixer_.setMusicPlaying(false);
-      if (audio_) {
-        // No frames will run to keep it supplied.
-        audio_->suspend();
-      }
+      leaveForeground();
       break;
     case SDL_EVENT_DID_ENTER_BACKGROUND:
       // The system usually ends a suspended application without another
@@ -65,6 +70,9 @@ void App::handleLifecycle(Uint32 type) {
       // prompt can be kept: under the letters shown, as when quitting at
       // the prompt. One small file. A game in progress is not saved; it
       // lives on in memory if the application does.
+      // Everything "will enter background" does, again: nothing promises
+      // that it came first.
+      leaveForeground();
       commitInitials();
       backgrounded_ = true;
       break;
@@ -73,6 +81,7 @@ void App::handleLifecycle(Uint32 type) {
       break;
     case SDL_EVENT_DID_ENTER_FOREGROUND:
       backgrounded_ = false;
+      audioSuspended_ = false;
       if (audio_) {
         audio_->resume();
       } else {
@@ -87,11 +96,8 @@ void App::handleLifecycle(Uint32 type) {
     case SDL_EVENT_TERMINATING:
       // The application is being ended. What finish() would do, now: there
       // may be no later.
-      interrupt();
+      leaveForeground();
       commitInitials();
-      if (audio_) {
-        audio_->suspend();
-      }
       running_ = false;
       break;
     case SDL_EVENT_LOW_MEMORY:

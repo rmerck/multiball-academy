@@ -363,11 +363,14 @@ FrameResult App::iterate(bool restWhenStill) {
   // system forbids it.
   const bool cursorLit = (SDL_GetTicks() / kCursorBlinkMs) % 2U == 0U;
   const bool blinked = entry_ && !aboutOpen_ && cursorLit != cursorWasLit_;
-  const bool still = isHalted && halted() && !needsRedraw_ && !blinked;
+  const bool still = isHalted && halted() && redrawsDue_ == 0 && !blinked;
   if (!backgrounded_ && (!restWhenStill || options_.frameLimit || !still)) {
     // The accumulator is frozen while halted, so alpha is stable and nothing snaps.
     render(timestep_.alpha(), cursorLit);
-    needsRedraw_ = false;
+    // Only a frame that reached the screen counts.
+    if (presented_ && redrawsDue_ > 0) {
+      --redrawsDue_;
+    }
     cursorWasLit_ = cursorLit;
     ++drawnFrames_;
   }
@@ -398,7 +401,7 @@ int App::finish() {
 
 void App::handleEvent(const SDL_Event& event) {
   // Whatever it is, the picture may not be the same after it.
-  needsRedraw_ = true;
+  redrawsDue_ = kRedrawsAfterEvent;
   switch (event.type) {
     case SDL_EVENT_QUIT:
       running_ = false;
@@ -448,7 +451,7 @@ void App::handleEvent(const SDL_Event& event) {
       // Not over the initials prompt, which must be answered first, as with F1.
       if (aboutEvent_ != 0 && event.type == aboutEvent_ && !aboutOpen_ && !entry_) {
         aboutOpen_ = true;
-        aboutState_ = AboutState{};
+        aboutPage_ = AboutState{};
         latched_ = InputState{};
       }
       break;
@@ -472,7 +475,7 @@ void App::handleLayoutChange() {
   if (!applyPresentation(renderer_.get(), layout_)) {
     noteRenderFailure("SDL_SetRenderLogicalPresentation");
   }
-  aboutState_.licencePage = std::min(aboutState_.licencePage, licencePageCount(layout_) - 1);
+  aboutPage_.licencePage = std::min(aboutPage_.licencePage, licencePageCount(layout_) - 1);
   // The table has moved from under the player's hands (a turned tablet):
   // the ball does not run on while they find the controls again.
   if (recomposed && !halted() && !game_.gameOver()) {
@@ -484,14 +487,23 @@ void App::serviceAudio() {
   if (!audioOpener_) {
     return;
   }
+  const Uint64 now = SDL_GetTicks();
+  if (audioOpening_ && !audioOpener_->busy()) {
+    // The wait before another attempt runs from the end of this one: an
+    // open that took half a minute to fail is not followed at once by the
+    // next.
+    audioOpening_ = false;
+    audioAttemptMs_ = now;
+  }
   if (std::unique_ptr<AudioOutput> opened = audioOpener_->take()) {
     audio_ = std::move(opened);
-    if (backgrounded_) {
+    // It may have finished opening after the application left the front.
+    if (audioSuspended_) {
       audio_->suspend();
     }
   }
-  // A changed route (headphones, a speaker) is a reason to try again where
-  // there was no device before.
+  // A device that came or went (headphones, a speaker) is a reason to try
+  // again where there was no device before.
   const unsigned routeChanges = ios::audioRouteChanges();
   if (routeChanges != audioRouteChangesSeen_) {
     audioRouteChangesSeen_ = routeChanges;
@@ -503,12 +515,12 @@ void App::serviceAudio() {
   }
   // The first open once a few frames have been shown; later ones no more
   // often than every few seconds.
-  const Uint64 now = SDL_GetTicks();
   const bool due = audioAttempted_ ? now - audioAttemptMs_ >= kAudioRetryMs
                                    : drawnFrames_ >= kFramesBeforeAudio;
   if (audioRetryWanted_ && !backgrounded_ && !audioOpener_->busy() && due) {
     audioRetryWanted_ = false;
     audioAttempted_ = true;
+    audioOpening_ = true;
     audioAttemptMs_ = now;
     audioOpener_->start();
   }
@@ -541,8 +553,9 @@ App::Status App::status() const {
   status.musicOn = musicOn_;
   status.confirmNewGame = confirmNewGame_;
   status.audioOpen = audio_ != nullptr;
+  status.audioSuspended = audio_ != nullptr && audio_->suspended();
   status.gameOver = game_.gameOver();
-  status.about = aboutState_;
+  status.about = aboutPage_;
   status.initials = entry_ ? entry_->letters() : Initials{'A', 'A', 'A'};
   status.cursor = entry_ ? entry_->cursor() : 0;
   status.frames = frames_;
@@ -673,7 +686,7 @@ void App::render(double alpha, bool cursorLit) {
                             .afterInterruption = touch ? interrupted_ : !paused_});
   }
   if (aboutOpen_) {
-    drawAbout(r, highScores_, layout_, aboutState_);
+    drawAbout(r, highScores_, layout_, aboutPage_);
   } else if (entry_) {
     drawInitialsEntry(r, *entry_, pending_.score, cursorLit, layout_);
   }

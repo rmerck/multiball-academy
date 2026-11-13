@@ -42,8 +42,17 @@ unsigned audioRouteChanges() noexcept {
           addObserverForName:AVAudioSessionRouteChangeNotification
                       object:nil
                        queue:nil
-                  usingBlock:^(NSNotification* /*note*/) {
-                    gRouteChanges.fetch_add(1, std::memory_order_relaxed);
+                  usingBlock:^(NSNotification* note) {
+                    // Only a device that came or went. The session's own
+                    // changes of category and configuration, which opening
+                    // the device causes, are route changes too, and must
+                    // not make the game open it again.
+                    NSNumber* reason = note.userInfo[AVAudioSessionRouteChangeReasonKey];
+                    const NSUInteger value = reason.unsignedIntegerValue;
+                    if (value == AVAudioSessionRouteChangeReasonNewDeviceAvailable ||
+                        value == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) {
+                      gRouteChanges.fetch_add(1, std::memory_order_relaxed);
+                    }
                   }];
     }
   });
