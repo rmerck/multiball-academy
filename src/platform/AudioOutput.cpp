@@ -85,6 +85,13 @@ AudioOutput::~AudioOutput() {
   SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
 
+void AudioOutput::suspend() {
+  SDL_PauseAudioStreamDevice(stream_);
+  SDL_ClearAudioStream(stream_);
+}
+
+void AudioOutput::resume() { SDL_ResumeAudioStreamDevice(stream_); }
+
 void AudioOutput::pump(SoundMixer& mixer) {
   if (pumpsUntilDeviceCheck_-- <= 0) {
     pumpsUntilDeviceCheck_ = kPumpsPerDeviceCheck;

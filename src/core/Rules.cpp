@@ -491,7 +491,7 @@ Rules::DrainResult Rules::onDrain() noexcept {
     missions_.standDown();
     // No word on how to start again: that depends on the device (a key, a
     // button, a tap), so the platform draws the prompt.
-    say("GAME OVER");
+    say(kGameOverMessage);
     cue(Sound::GameOver);
     return DrainResult::GameOver;
   }

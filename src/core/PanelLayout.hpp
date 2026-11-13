@@ -1,15 +1,13 @@
 #pragma once
 
-// Layout of the information panel to the right of the playfield, in canvas
-// pixels. Shared by the display code and the panel art.
+#include "core/ScreenLayout.hpp"
+
+// Layout of the information panel to the right of the playfield, in the
+// units of the Classic composition (core/ScreenLayout.hpp), whose top left
+// corner is the playfield's. Shared by the display code and the panel art.
 namespace pinball::panel {
 
-struct Rect {
-  float x;
-  float y;
-  float w;
-  float h;
-};
+using Rect = screen::Rect;
 
 inline constexpr float kLeft = 768.0F;
 inline constexpr float kWidth = 512.0F;
@@ -41,5 +39,17 @@ constexpr bool wellsAreLaidOut() noexcept {
   return true;
 }
 static_assert(wellsAreLaidOut());
+
+// Above the wells: the title. Below them: the key hints on a desktop, the
+// button row on a touch screen.
+inline constexpr Rect kTitleArea{kLeft + kInset, 20.0F, kWellWidth, 116.0F};
+inline constexpr Rect kControlsArea{kLeft + kInset, 876.0F, kWellWidth, 76.0F};
+
+// Touch controls of the Classic composition. The corner to the right of the
+// row stays free for the right thumb's flipper.
+inline constexpr Rect kNudgeLeftButton{792.0F, 876.0F, 96.0F, 76.0F};
+inline constexpr Rect kCentreButton{896.0F, 876.0F, 132.0F, 76.0F};
+inline constexpr Rect kNudgeRightButton{1036.0F, 876.0F, 96.0F, 76.0F};
+inline constexpr Rect kPauseButton{1176.0F, 20.0F, 80.0F, 80.0F};
 
 }  // namespace pinball::panel

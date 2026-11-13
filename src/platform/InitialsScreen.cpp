@@ -5,7 +5,7 @@
 #include <string_view>
 
 #include "core/Format.hpp"
-#include "platform/Canvas.hpp"
+#include "core/OverlayLayout.hpp"
 #include "platform/Text.hpp"
 
 namespace pinball {
@@ -25,20 +25,20 @@ constexpr float kLetterPitch = 120.0F;  // Distance between letter centres.
 }  // namespace
 
 void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_t score,
-                       bool cursorLit) {
+                       bool cursorLit, const screen::Layout& layout) {
   if (r == nullptr) {
     return;
   }
   // Dim everything behind.
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(r, 10, 0, 26, 205);
-  const SDL_FRect whole{0.0F, 0.0F, static_cast<float>(kCanvasWidth),
-                        static_cast<float>(kCanvasHeight)};
+  const SDL_FRect whole{0.0F, 0.0F, layout.canvasWidth, layout.canvasHeight};
   SDL_RenderFillRect(r, &whole);
   // Only the dimming needs blending; the dialog's own fills are opaque.
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
-  const SDL_FRect box{290.0F, 250.0F, 700.0F, 460.0F};
+  const screen::Rect dialog = screen::initialsLayout(layout).box;
+  const SDL_FRect box{dialog.x, dialog.y, dialog.w, dialog.h};
   drawNeonFrame(r, box);
   drawNeonZigzag(r, box.x + 40.0F, box.y + 110.0F, box.y + box.h - 110.0F, kPink);
   drawNeonZigzag(r, box.x + box.w - 40.0F, box.y + 110.0F, box.y + box.h - 110.0F, kCyan);

@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.26)
 
+# iOS is a second Apple platform, chosen with -DCMAKE_SYSTEM_NAME=iOS. That
+# is read here from the cache, where -D put it, because the deployment target
+# below has to be settled before project().
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  set(PINBALL_IOS ON)
+else()
+  set(PINBALL_IOS OFF)
+endif()
+
 # The oldest macOS a self-contained build (PINBALL_FETCH_DEPS) runs on, and
 # the LSMinimumSystemVersion of its application bundle. 11.0 is the first
 # release for Apple silicon; SDL 3.4 itself asks for 10.13, and the C++ the
@@ -7,20 +16,59 @@ cmake_minimum_required(VERSION 3.26)
 # it, so the option is read here from the cache, where -D put it. A value
 # given on the command line or in the environment wins. A build against
 # installed libraries is left to target the macOS it is built on, as those
-# libraries do. Other systems ignore all of this.
-if(CMAKE_HOST_APPLE AND PINBALL_FETCH_DEPS AND "${CMAKE_OSX_DEPLOYMENT_TARGET}" STREQUAL ""
+# libraries do. Other systems ignore all of this. On iOS the variable means
+# the oldest iOS instead.
+if(PINBALL_IOS)
+  if("${CMAKE_OSX_DEPLOYMENT_TARGET}" STREQUAL "")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "26.0" CACHE STRING "Minimum iOS version" FORCE)
+  endif()
+elseif(CMAKE_HOST_APPLE AND PINBALL_FETCH_DEPS AND "${CMAKE_OSX_DEPLOYMENT_TARGET}" STREQUAL ""
    AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
   set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version" FORCE)
 endif()
 
+# The game's name, written here and nowhere else: renaming the game is a
+# change to this one line. The identifiers below follow from it. The source
+# reads them all from a generated header (src/core/Version.hpp includes it),
+# and the bundle's Info.plist, the window title, the panel, the About screen
+# and the high score directory are filled in from the same values, so they
+# cannot drift apart. The version is the one in project().
+set(PINBALL_APP_NAME "Space Cadet Pinball")
+# The name in lower case, with hyphens for its spaces and with them removed:
+# "space-cadet-pinball" and "spacecadetpinball".
+string(TOLOWER "${PINBALL_APP_NAME}" pinball_name_lower)
+string(REPLACE " " "-" pinball_name_hyphens "${pinball_name_lower}")
+string(REPLACE " " "" pinball_name_joined "${pinball_name_lower}")
+if(NOT pinball_name_joined MATCHES "^[a-z][a-z0-9]*$")
+  message(FATAL_ERROR "PINBALL_APP_NAME must be letters, digits and single spaces, "
+                      "starting with a letter: the identifiers are made from it")
+endif()
+# The application identifier: the bundle id, and what SDL is told.
+set(PINBALL_BUNDLE_ID "io.github.rmerck.${pinball_name_joined}")
+# The high scores live in <per-user data>/<PINBALL_DATA_ORG>/<PINBALL_DATA_DIR>/.
+# An empty PINBALL_DATA_ORG leaves that level out.
+set(PINBALL_DATA_ORG "${pinball_name_hyphens}")
+set(PINBALL_DATA_DIR "${PINBALL_APP_NAME}")
+# Where the privacy policy is published. Empty until it is.
+set(PINBALL_PRIVACY_URL "")
 project(SpaceCadetPinball VERSION 1.0.0 LANGUAGES CXX)
+set(PINBALL_BUILD_NUMBER "1" CACHE STRING "Build number: must rise with every upload to the App Store")
+set(PINBALL_IOS_TEAM_ID "" CACHE STRING "Apple team id for iOS device builds; never committed")
+
+# APPLE is true for iOS as well. What is only for the Mac asks this instead.
+if(APPLE AND NOT PINBALL_IOS)
+  set(PINBALL_MACOS ON)
+else()
+  set(PINBALL_MACOS OFF)
+endif()
 
 if(CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
   message(FATAL_ERROR "In-source builds are not supported. Use: cmake -S . -B build")
 endif()
 
 if(APPLE)
-  # For the menu bar hook (src/platform/MacMenu.mm). Enabled here, before any
+  # For the menu bar hook (src/platform/MacMenu.mm) on macOS and the system
+  # calls (src/platform/ios/IosSystem.mm) on iOS. Enabled here, before any
   # dependency is added, so every directory of the build knows the language.
   enable_language(OBJCXX)
 endif()
@@ -66,11 +114,8 @@ option(PINBALL_REQUIRE_ALL_TESTS
 
 include(cmake/Hardening.cmake)
 
-# The version and the application identifier are written once, here and in
-# project() above. The game reads them from this generated header
-# (src/core/Version.hpp includes it) and the macOS bundle's Info.plist is
-# filled in from the same values, so they cannot drift apart.
-set(PINBALL_BUNDLE_ID "io.github.rmerck.spacecadetpinball")
+# The generated header that carries the name, the identifiers and the
+# version from the block at the top to the source.
 set(PINBALL_VERSION_DIR ${CMAKE_BINARY_DIR}/generated_version)
 configure_file(cmake/VersionConfig.hpp.in ${PINBALL_VERSION_DIR}/VersionConfig.hpp @ONLY)
 
@@ -113,43 +158,60 @@ add_library(pinball_core STATIC
   src/core/Game.cpp
   src/core/HighScores.cpp
   src/core/Missions.cpp
+  src/core/OverlayLayout.cpp
   src/core/Physics.cpp
   src/core/PngHeader.cpp
   src/core/Rules.cpp
+  src/core/ScreenLayout.cpp
   src/core/Sha256.cpp
   src/core/Music.cpp
   src/core/Sound.cpp
   src/core/TableLayout.cpp
+  src/core/TouchControls.cpp
 )
 target_include_directories(pinball_core PUBLIC src ${PINBALL_VERSION_DIR})
 target_link_libraries(pinball_core PUBLIC box2d::box2d)
 # PUBLIC so the same warnings, hardening and sanitizer flags reach every consumer.
 pinball_apply_hardening(pinball_core PUBLIC)
+if(PINBALL_IOS)
+  # For the few places where the source must tell iOS from macOS.
+  target_compile_definitions(pinball_core PUBLIC PINBALL_IOS=1)
+endif()
 
 # SDL-facing code shared by the game and the snapshot tool.
 add_library(pinball_platform STATIC
   src/platform/About.cpp
   src/platform/App.cpp
+  src/platform/AppKeyboard.cpp
+  src/platform/AppLifecycle.cpp
+  src/platform/AppTouch.cpp
   src/platform/Assets.cpp
   src/platform/AudioOutput.cpp
   src/platform/EmbeddedManifest.cpp
   src/platform/Hud.cpp
   src/platform/InitialsScreen.cpp
+  src/platform/PauseMenu.cpp
   src/platform/SafeFile.cpp
   src/platform/ScoreStore.cpp
   src/platform/TableRenderer.cpp
   src/platform/Text.cpp
+  src/platform/TouchOverlay.cpp
 )
 target_link_libraries(pinball_platform PUBLIC pinball_core SDL3::SDL3)
-if(APPLE)
+if(PINBALL_MACOS)
   # The menu bar's About item is routed to the game's own About screen.
   target_sources(pinball_platform PRIVATE src/platform/MacMenu.mm)
   set_source_files_properties(src/platform/MacMenu.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
   target_link_libraries(pinball_platform PRIVATE "-framework Cocoa")
+elseif(PINBALL_IOS)
+  # What the game asks of iOS itself.
+  target_sources(pinball_platform PRIVATE src/platform/ios/IosSystem.mm)
+  set_source_files_properties(src/platform/ios/IosSystem.mm PROPERTIES
+    COMPILE_OPTIONS "-fobjc-arc")
 endif()
 
-if(APPLE)
-  # On macOS the game is an application bundle, "Space Cadet Pinball.app",
+if(PINBALL_MACOS)
+  # On macOS the game is an application bundle named after the game,
   # with the executable inside under the same name: the Dock, the menu bar
   # and Activity Monitor all take their label from one or the other. The
   # CMake target is still called pinball.
@@ -168,23 +230,29 @@ if(APPLE)
     endif()
   endif()
   set_target_properties(pinball PROPERTIES
-    OUTPUT_NAME "Space Cadet Pinball"
+    OUTPUT_NAME "${PINBALL_APP_NAME}"
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/cmake/Info.plist.in
-    MACOSX_BUNDLE_BUNDLE_NAME "Space Cadet Pinball"
+    MACOSX_BUNDLE_BUNDLE_NAME "${PINBALL_APP_NAME}"
     MACOSX_BUNDLE_GUI_IDENTIFIER ${PINBALL_BUNDLE_ID}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_ICON_FILE AppIcon
     MACOSX_BUNDLE_COPYRIGHT "MIT licence. An independent fan project.")
+elseif(PINBALL_IOS)
+  # On iOS the system owns the main loop, so the game has another entry
+  # point. The bundle's properties, its Info.plist and its resources are
+  # set by the included file.
+  add_executable(pinball MACOSX_BUNDLE src/main_ios.cpp)
+  include(cmake/Ios.cmake)
 else()
   add_executable(pinball src/main.cpp)
 endif()
 target_link_libraries(pinball PRIVATE pinball_platform)
 # A Release game carries no debug map, so it names no directory of the
 # machine that built it.
-if(APPLE)
+if(PINBALL_MACOS)
   target_link_options(pinball PRIVATE $<$<CONFIG:Release>:-Wl,-S>)
-elseif(NOT MSVC)
+elseif(NOT MSVC AND NOT APPLE)
   # And no symbol names either.
   target_link_options(pinball PRIVATE $<$<CONFIG:Release>:-Wl,-s>)
 endif()
@@ -194,7 +262,7 @@ endif()
 # on macOS, never inside it, because anything added to a signed bundle
 # breaks its signature. Elsewhere it is the directory of the executable, as
 # before.
-if(APPLE)
+if(PINBALL_MACOS)
   set(PINBALL_BESIDE_DIR $<TARGET_BUNDLE_DIR:pinball>/..)
   set(PINBALL_GAME_ASSETS_DIR $<TARGET_BUNDLE_CONTENT_DIR:pinball>/Resources/assets)
 else()
@@ -242,7 +310,8 @@ add_dependencies(pinball pinball_assets)
 # protections on but does not identify a publisher. PINBALL_CODESIGN_IDENTITY
 # names a certificate to sign with instead (a Developer ID Application one
 # for a build that is to be notarised: tools/notarize.sh). No entitlements
-# are used: the game needs no network, no JIT and no exemption.
+# are used: the game needs no network, no JIT and no exemption. (macOS only:
+# an iOS bundle is signed by Xcode.)
 #
 # The whole bundle is signed, which seals the Info.plist, the icon and the
 # assets with the executable. Signing therefore has to come last, and it is
@@ -250,7 +319,7 @@ add_dependencies(pinball pinball_assets)
 # the assets are copied: a POST_BUILD step would only run on a relink and
 # leave the seal stale after an asset changed. Anything that alters the
 # bundle afterwards invalidates the signature until the next build.
-if(APPLE)
+if(PINBALL_MACOS)
   set(PINBALL_CODESIGN_IDENTITY "" CACHE STRING
     "Code signing identity for the macOS bundle (empty: ad hoc), e.g. Developer ID Application: NAME (TEAMID)")
   set(pinball_sign OFF)
@@ -292,7 +361,7 @@ if(PINBALL_BUILD_TOOLS)
   # their own, kept up to date the same way.
   set_target_properties(pinball_snapshot PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${PINBALL_BESIDE_DIR})
-  if(APPLE)
+  if(PINBALL_MACOS)
     add_custom_target(pinball_tool_assets
       COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
               ${CMAKE_SOURCE_DIR}/assets ${PINBALL_BESIDE_DIR}/assets
@@ -327,10 +396,12 @@ if(BUILD_TESTING)
     tests/PlungerTest.cpp
     tests/PngHeaderTest.cpp
     tests/RulesTest.cpp
+    tests/ScreenLayoutTest.cpp
     tests/Sha256Test.cpp
     tests/MusicTest.cpp
     tests/SoundTest.cpp
     tests/TargetTest.cpp
+    tests/TouchControlsTest.cpp
   )
   target_link_libraries(core_tests PRIVATE pinball_core)
   add_test(NAME core_tests COMMAND core_tests)
@@ -429,6 +500,9 @@ if(BUILD_TESTING)
     endif()
   endif()
 
+  # Renders of every screen layout. (None yet.)
+  include(cmake/LayoutTests.cmake)
+
   # The geometry dump must be valid JSON.
   if(PINBALL_BUILD_TOOLS AND Python3_Interpreter_FOUND)
     add_test(NAME layout_json
@@ -446,10 +520,10 @@ if(BUILD_TESTING)
   # The macOS bundle: a valid Info.plist that carries the identifier and
   # version the game itself reports, the icon, the assets, and no stray
   # executable.
-  if(APPLE)
+  if(PINBALL_MACOS)
     add_test(NAME bundle_layout
       COMMAND ${CMAKE_COMMAND} -DBUNDLE=$<TARGET_BUNDLE_DIR:pinball>
-              -DEXECUTABLE=$<TARGET_FILE:pinball>
+              -DEXECUTABLE=$<TARGET_FILE:pinball> "-DNAME=${PINBALL_APP_NAME}"
               -DIDENTIFIER=${PINBALL_BUNDLE_ID} -DVERSION=${PROJECT_VERSION}
               -P ${CMAKE_SOURCE_DIR}/tests/CheckBundle.cmake)
     set_tests_properties(bundle_layout PROPERTIES TIMEOUT 30)
