@@ -83,7 +83,7 @@ repo=$3
 [ "$(uname -s)" = Darwin ] || fail "macOS only"
 
 # PINBALL_APP_NAME, PINBALL_BUNDLE_ID, PINBALL_VERSION, PINBALL_BUILD_NUMBER,
-# PINBALL_IOS_MINIMUM and PINBALL_ASSET_MANIFEST, as CMake configured them.
+# PINBALL_DEPLOYMENT_TARGET and PINBALL_ASSET_MANIFEST, as CMake configured them.
 # (A name without a slash would be looked up along PATH.)
 case $product in
   */*) ;;
@@ -120,7 +120,7 @@ expect CFBundleExecutable "$PINBALL_APP_NAME"
 expect CFBundleShortVersionString "$PINBALL_VERSION"
 expect CFBundleVersion "$PINBALL_BUILD_NUMBER"
 expect CFBundlePackageType APPL
-expect MinimumOSVersion "$PINBALL_IOS_MINIMUM"
+expect MinimumOSVersion "$PINBALL_DEPLOYMENT_TARGET"
 expect LSRequiresIPhoneOS true
 expect LSApplicationCategoryType public.app-category.arcade-games
 expect GCSupportsGameMode true
