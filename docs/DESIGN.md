@@ -45,8 +45,8 @@ The background tune (`src/core/Music`) is an original eight-bar loop for bass, a
 
 ## Layout
 
-- `src/core` game state and rules as a static library with no SDL dependency, unit tested without a display.
-- `src/platform` SDL window, input, asset loading and rendering, as a static library shared by the game and the snapshot tool. `TableRenderer` draws the game; `App` owns the window and the loop.
+- `src/core` game state and rules as a static library with no SDL dependency, unit tested without a display. `ScreenLayout` says where everything goes on the screen, as a function of the window's size and safe area: the desktop's fixed 1280 x 960 canvas with the table left and the panel right, and for touch screens either that or a column of status strip, table and control deck, whichever shows the table larger. `PanelLayout` is the inside of the panel and `OverlayLayout` the rectangles of the dialogs. Drawing takes a layout; so far only the desktop's is drawn. `TouchControls` (touches to game input) is a placeholder.
+- `src/platform` SDL window, input, asset loading and rendering, as a static library shared by the game and the snapshot tool. `TableRenderer` draws the game; `App` owns the window and runs the loop as `frame()` once per displayed frame, called by `run()` on a desktop, and `finish()` at the end. Its keyboard handling is in `AppKeyboard.cpp` and the pause on losing focus in `AppLifecycle.cpp`; `AppTouch.cpp`, `TouchOverlay` and `ios/IosSystem` are placeholders for the touch screen and iOS, and `src/main_ios.cpp` for the iOS entry point.
 - `assets` PNG art, copied at build time next to the executable, or into `Contents/Resources` of the macOS bundle. Sprites are authored at 4x.
 - `packaging/macos` the application icon: `icon_1024.png` as drawn, and `AppIcon.icns` made from it, which the build copies into the bundle.
 - `tools/gimp` GIMP 3 Python scripts that generate every asset and the icon, so art is reproducible.
@@ -56,5 +56,5 @@ The background tune (`src/core/Music`) is an original eight-bar loop for bass, a
 - `tools/check_assets.py`, `tools/test_asset_integrity.py` asset checks run by `ctest`. `tools/make_font.py` regenerates the pixel font header. `tools/check_pins.sh` compares the pinned dependencies with upstream. `tools/check_hardening.py` and `tools/check_deps_cache.sh` are CI's checks of the compiler hardening and of what its cache restored.
 - `tests` unit tests and headless smoke tests, run by `ctest`. `tests/fuzz` holds the fuzzer, its seed corpus and dictionary.
 - `docs` the reference pages: building, rules, design notes, art.
-- `cmake` hardening flags, the pinned dependencies, the asset manifest generator, and the templates for the macOS `Info.plist` and the generated version header. The version and the application identifier are written once, in `CMakeLists.txt`.
+- `cmake` hardening flags, the pinned dependencies, the asset manifest generator, and the templates for the macOS `Info.plist` and the generated version header. `Ios.cmake` and `LayoutTests.cmake` are included by the build and still empty. The game's name, its identifier, its data directory and its version are written once, in a block at the top of `CMakeLists.txt`.
 - `.github/workflows` CI and the weekly dependency pin check.

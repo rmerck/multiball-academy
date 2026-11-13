@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "core/Game.hpp"
+#include "core/ScreenLayout.hpp"
 
 namespace pinball {
 
@@ -15,9 +16,13 @@ struct HudExtras {
   bool newHighScore = false;
 };
 
-// Draws the information panel: score, ball, awards and messages. The panel
-// background art is drawn first by the caller's texture.
+// Draws the information panel at layout.hud: score, ball, awards and
+// messages. The panel art, if given, is drawn under them. The keyboard hints
+// are shown to the desktop idiom only.
+//
+// Only the Classic panel exists so far; a Stack layout gets the same panel
+// at the strip's origin.
 void drawHud(SDL_Renderer* renderer, SDL_Texture* panelArt, const Game& game,
-             const HudExtras& extras);
+             const screen::Layout& layout, const HudExtras& extras);
 
 }  // namespace pinball

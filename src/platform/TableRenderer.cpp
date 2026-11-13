@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <initializer_list>
 #include <memory>
+#include <span>
 #include <utility>
 
 #include "core/TableLayout.hpp"
@@ -71,7 +72,8 @@ std::array<TargetSprite, table::kTargets.size()> makeTargetSprites() noexcept {
 }  // namespace
 
 std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
-                                                     const AssetLoader& assets) {
+                                                     const AssetLoader& assets,
+                                                     TextureSet /*set*/) {
   if (renderer == nullptr) {
     return nullptr;
   }
@@ -290,53 +292,94 @@ void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game, float alpha)
   }
 }
 
-void TableRenderer::drawBall(SDL_Renderer* r, const Game& game, float alpha) const {
-  // The shadow and the halo follow the same in-between position as the ball.
-  const BallView ball = game.ball(alpha);
-  if (!ball.visible) {
-    return;
-  }
-  const float radius = table::kBallRadius * ball.scale;
-
-  // Soft contact shadow, offset further when the ball is up on the ramp.
+void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls) const {
   SDL_Texture* const glow = textures_.glow.get();
-  const float lift = (ball.scale - 1.0F) * 40.0F;
-  SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_BLEND);
-  SDL_SetTextureColorMod(glow, 0, 0, 0);
-  SDL_SetTextureAlphaMod(glow, 150);
-  const float shadowRadius = radius * 1.55F;
-  const SDL_FRect shadow{ball.position.x - shadowRadius + 3.0F + lift,
-                         ball.position.y - shadowRadius + 4.0F + lift, shadowRadius * 2.0F,
-                         shadowRadius * 2.0F};
-  SDL_RenderTexture(r, glow, nullptr, &shadow);
-  SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_ADD);
+  // Two rounds, so that a ball up on the ramp passes over one on the table.
+  // Within a round all the shadows go down first, then the halos, then the
+  // balls themselves.
+  for (const bool raised : {false, true}) {
+    const auto inRound = [raised](const BallView& ball) noexcept {
+      return ball.visible && (ball.scale > 1.0F) == raised;
+    };
+    if (std::ranges::none_of(balls, inRound)) {
+      continue;
+    }
+    // Soft contact shadows, offset further when the ball is up on the ramp.
+    // The glow texture is additive everywhere else: switched once for all of
+    // them, and back.
+    SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureColorMod(glow, 0, 0, 0);
+    SDL_SetTextureAlphaMod(glow, 150);
+    for (const BallView& ball : balls) {
+      if (!inRound(ball)) {
+        continue;
+      }
+      const float radius = table::kBallRadius * ball.scale;
+      const float lift = (ball.scale - 1.0F) * 40.0F;
+      const float shadowRadius = radius * 1.55F;
+      const SDL_FRect shadow{ball.position.x - shadowRadius + 3.0F + lift,
+                             ball.position.y - shadowRadius + 4.0F + lift, shadowRadius * 2.0F,
+                             shadowRadius * 2.0F};
+      SDL_RenderTexture(r, glow, nullptr, &shadow);
+    }
+    SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_ADD);
 
-  // A cool halo keeps the chrome ball easy to follow over the busy art.
-  drawGlow(r, ball.position, radius * 2.3F, {150, 225, 255}, 0.45F);
+    // A cool halo keeps the chrome ball easy to follow over the busy art.
+    for (const BallView& ball : balls) {
+      if (inRound(ball)) {
+        drawGlow(r, ball.position, table::kBallRadius * ball.scale * 2.3F, {150, 225, 255}, 0.45F);
+      }
+    }
 
-  const SDL_FRect dst{ball.position.x - radius, ball.position.y - radius, radius * 2.0F,
-                      radius * 2.0F};
-  SDL_RenderTexture(r, textures_.ball.get(), nullptr, &dst);
+    for (const BallView& ball : balls) {
+      if (!inRound(ball)) {
+        continue;
+      }
+      const float radius = table::kBallRadius * ball.scale;
+      const SDL_FRect dst{ball.position.x - radius, ball.position.y - radius, radius * 2.0F,
+                          radius * 2.0F};
+      SDL_RenderTexture(r, textures_.ball.get(), nullptr, &dst);
+    }
+  }
 }
 
-void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha, bool dimmed,
+void TableRenderer::drawBackdrop(SDL_Renderer* r, const screen::Layout& layout) const {
+  if (r == nullptr || layout.idiom == screen::Idiom::Desktop) {
+    return;
+  }
+  // A flat fill until there is backdrop art to tile over it.
+  SDL_SetRenderDrawColor(r, screen::kBackdropRgb[0], screen::kBackdropRgb[1],
+                         screen::kBackdropRgb[2], SDL_ALPHA_OPAQUE);
+  const SDL_FRect whole{0.0F, 0.0F, layout.canvasWidth, layout.canvasHeight};
+  SDL_RenderFillRect(r, &whole);
+}
+
+void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
+                         const screen::Layout& layout, const DrawOptions& options,
                          const HudExtras& extras) const {
   if (r == nullptr) {
     return;
   }
+  // In the playfield's own coordinates: everything on the table is drawn
+  // inside a viewport placed at the layout's playfield.
   const SDL_FRect playfield{0.0F, 0.0F, table::kWidth, table::kHeight};
+  const int left = static_cast<int>(std::lround(layout.playfield.x));
+  const int top = static_cast<int>(std::lround(layout.playfield.y));
 
-  // The playfield is drawn in its own viewport, which also clips it so that
-  // nothing spills onto the panel. A nudge shifts the viewport a few pixels.
-  const Vec2 shake = game.shake();
-  const SDL_Rect view{static_cast<int>(std::lround(std::clamp(shake.x, -12.0F, 12.0F))),
-                      static_cast<int>(std::lround(std::clamp(shake.y, -12.0F, 12.0F))),
-                      static_cast<int>(table::kWidth), static_cast<int>(table::kHeight)};
+  // The viewport also clips the table so that nothing spills onto the rest
+  // of the canvas. A nudge shifts the viewport a few pixels, unless the
+  // player has asked for less motion.
+  const Vec2 shake = options.reduceMotion ? Vec2{} : game.shake();
+  const int shakeX = static_cast<int>(std::lround(std::clamp(shake.x, -12.0F, 12.0F)));
+  const int shakeY = static_cast<int>(std::lround(std::clamp(shake.y, -12.0F, 12.0F)));
+  const SDL_Rect view{left + shakeX, top + shakeY, static_cast<int>(table::kWidth),
+                      static_cast<int>(table::kHeight)};
   SDL_SetRenderViewport(r, &view);
-  // The shifted viewport may reach past the canvas, and on a window that is
-  // not 4:3 that is the letterbox. Clip to the playfield's own rectangle on
-  // the canvas; a clip rectangle is relative to the viewport.
-  const SDL_Rect clip{-view.x, -view.y, view.w, view.h};
+  // The shifted viewport may reach past the playfield's place on the canvas,
+  // and at the canvas edge on a window of another shape that is the
+  // letterbox. Clip to the playfield's own rectangle; a clip rectangle is
+  // relative to the viewport.
+  const SDL_Rect clip{-shakeX, -shakeY, view.w, view.h};
   SDL_SetRenderClipRect(r, &clip);
 
   SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
@@ -345,9 +388,14 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha, bool di
   drawBumpers(r, game);
   drawPlungerAndGate(r, game);
   drawFlippers(r, game, alpha);
-  drawBall(r, game, alpha);
+  {
+    // The shadow and the halo follow the same in-between position as the
+    // ball. (One ball, until the game hands out a span of them.)
+    const BallView ball = game.ball(alpha);
+    drawBalls(r, std::span<const BallView>(&ball, 1));
+  }
 
-  if (dimmed) {
+  if (options.dimmed) {
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(r, 10, 0, 26, 140);
     SDL_RenderFillRect(r, &playfield);
@@ -355,9 +403,8 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha, bool di
   }
   SDL_SetRenderClipRect(r, nullptr);
   SDL_SetRenderViewport(r, nullptr);
-  // The panel covers anything the shifted playfield drew past its right edge.
 
-  drawHud(r, textures_.panel.get(), game, extras);
+  drawHud(r, textures_.panel.get(), game, layout, extras);
 }
 
 }  // namespace pinball

@@ -1,11 +1,11 @@
 # Checks the macOS application bundle: Info.plist is well-formed and carries
 # the expected identifier, version, names and icon; the icon and the assets
 # are in Resources; and the executable is the only thing in Contents/MacOS.
-# Usage: cmake -DBUNDLE=<.app> -DEXECUTABLE=<path> -DIDENTIFIER=<id>
-#              -DVERSION=<x.y.z> -P CheckBundle.cmake
-foreach(var IN ITEMS BUNDLE EXECUTABLE IDENTIFIER VERSION)
+# Usage: cmake -DBUNDLE=<.app> -DEXECUTABLE=<path> -DNAME=<the game's name>
+#              -DIDENTIFIER=<id> -DVERSION=<x.y.z> -P CheckBundle.cmake
+foreach(var IN ITEMS BUNDLE EXECUTABLE NAME IDENTIFIER VERSION)
   if(NOT DEFINED ${var})
-    message(FATAL_ERROR "BUNDLE, EXECUTABLE, IDENTIFIER and VERSION are required")
+    message(FATAL_ERROR "BUNDLE, EXECUTABLE, NAME, IDENTIFIER and VERSION are required")
   endif()
 endforeach()
 
@@ -35,8 +35,8 @@ get_filename_component(exe_name "${EXECUTABLE}" NAME)
 expect_key(CFBundleIdentifier "${IDENTIFIER}")
 expect_key(CFBundleShortVersionString "${VERSION}")
 expect_key(CFBundleVersion "${VERSION}")
-expect_key(CFBundleName "Space Cadet Pinball")
-expect_key(CFBundleDisplayName "Space Cadet Pinball")
+expect_key(CFBundleName "${NAME}")
+expect_key(CFBundleDisplayName "${NAME}")
 expect_key(CFBundleExecutable "${exe_name}")
 expect_key(CFBundlePackageType "APPL")
 expect_key(CFBundleIconFile "AppIcon")

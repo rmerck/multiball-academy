@@ -4,20 +4,22 @@
 #include <cmath>
 #include <utility>
 
+#include "core/DisplayText.hpp"
+
 namespace pinball {
 
 namespace {
 
 constexpr std::array<std::string_view, kRankCount> kRankNames{
-    "CADET",     "ENSIGN",    "LIEUTENANT", "CAPTAIN",       "LT COMMANDER",
-    "COMMANDER", "COMMODORE", "ADMIRAL",    "FLEET ADMIRAL"};
+    "ROOKIE", "TRAINEE",    "WINGMATE",    "PILOT",     "NAVIGATOR",
+    "ACE",    "INSTRUCTOR", "FLIGHT DEAN", "CHANCELLOR"};
 
 constexpr std::array<std::string_view, kGoalCount> kGoalTexts{
-    "HIT ATTACK BUMPERS",   "HIT ENGINE BUMPERS",   "HIT THE SATELLITE BUMPER",
-    "HIT ANY BUMPERS",      "PASS RE-ENTRY LANES",  "PASS RETURN LANES",
-    "SHOOT THE LAUNCH RAMP", "SHOOT HYPERSPACE",    "ENTER WORMHOLES",
-    "ENTER THE BLACK HOLE", "HIT BOOSTER TARGETS",  "HIT MEDAL TARGETS",
-    "HIT MULTIPLIER TARGETS", "HIT ANY TARGETS",    "HIT SLINGSHOTS"};
+    "HIT METEOR BUMPERS",     "HIT THRUSTER BUMPERS",   "HIT THE BEACON BUMPER",
+    "HIT ANY BUMPERS",        "PASS ROLL CALL LANES",   "PASS RETURN LANES",
+    "SHOOT THE RUNWAY",       "SHOOT THE QUASAR CHUTE", "ENTER JUMP GATES",
+    "ENTER THE SINGULARITY",  "HIT TURBO TARGETS",      "HIT MERIT TARGETS",
+    "HIT OVERDRIVE TARGETS",  "HIT ANY TARGETS",        "HIT SLINGSHOTS"};
 
 constexpr MissionStage kNone{Goal::AnyBumper, 0};
 constexpr std::uint8_t kNormalProgress = 6;
@@ -37,73 +39,76 @@ using G = Goal;
 // Four missions per rank: three chosen by the mission targets (top, middle,
 // bottom) and a special one for lighting the whole bank. Counts and awards
 // climb with rank.
+//
+// The display calls a mission a course, and names it like an academy
+// catalogue. An ordinary course is a subject and a number: the rank (1 to 9)
+// times 100, plus 1, 2 or 3 for the top, middle or bottom target. A special
+// course is an exam and its subject, with no number.
 constexpr std::array<std::array<Mission, kMissionsPerRank>, kRankCount> kMissions{{
-    {{  // Cadet
-        normal("TARGET PRACTICE", {G::AttackBumpers, 8}, kNone, 500'000),
-        normal("RE-ENTRY TRAINING", {G::ReEntryLanes, 3}, kNone, 500'000),
-        normal("LAUNCH TRAINING", {G::Ramp, 3}, kNone, 500'000),
-        special("SCIENCE MISSION", {G::AnyTarget, 9}, kNone, 750'000),
+    {{  // Rookie
+        normal("BUMPER BASICS 101", {G::AttackBumpers, 8}, kNone, 500'000),
+        normal("ROLL CALL 102", {G::ReEntryLanes, 3}, kNone, 500'000),
+        normal("RUNWAY DRILLS 103", {G::Ramp, 3}, kNone, 500'000),
+        special("POP QUIZ: TARGETS", {G::AnyTarget, 9}, kNone, 750'000),
     }},
-    {{  // Ensign
-        normal("BUG HUNT", {G::AnyTarget, 15}, kNone, 750'000),
-        normal("ORBITAL RESCUE", {G::Ramp, 1}, {G::Hyperspace, 1}, 750'000),
-        normal("ALIEN MENACE", {G::AttackBumpers, 8}, {G::EngineBumpers, 6}, 750'000),
-        special("SECRET MISSION", {G::Wormholes, 3}, kNone, 1'000'000),
+    {{  // Trainee
+        normal("TARGET LAB 201", {G::AnyTarget, 15}, kNone, 750'000),
+        normal("QUASAR NAV 202", {G::Ramp, 1}, {G::Hyperspace, 1}, 750'000),
+        normal("THRUSTER PRIMER 203", {G::AttackBumpers, 8}, {G::EngineBumpers, 6}, 750'000),
+        special("FIELD TRIP: JUMP GATES", {G::Wormholes, 3}, kNone, 1'000'000),
     }},
-    {{  // Lieutenant
-        normal("STRAY COMET", {G::ReEntryLanes, 2}, {G::Hyperspace, 1}, 1'000'000),
-        normal("SPACE RADIATION", {G::Wormholes, 1}, {G::ReEntryLanes, 3}, 1'000'000),
-        normal("BLACK HOLE THREAT", {G::EngineBumpers, 6}, {G::BlackHole, 1}, 1'000'000),
-        special("COSMIC PLAGUE", {G::AnyTarget, 20}, {G::Ramp, 1}, 1'500'000),
+    {{  // Wingmate
+        normal("QUASAR APPROACH 301", {G::ReEntryLanes, 2}, {G::Hyperspace, 1}, 1'000'000),
+        normal("GATE TRANSIT 302", {G::Wormholes, 1}, {G::ReEntryLanes, 3}, 1'000'000),
+        normal("GRAVITY STUDIES 303", {G::EngineBumpers, 6}, {G::BlackHole, 1}, 1'000'000),
+        special("MIDTERM: PRECISION", {G::AnyTarget, 20}, {G::Ramp, 1}, 1'500'000),
     }},
-    {{  // Captain
-        normal("SATELLITE RETRIEVAL", {G::SatelliteBumper, 3}, {G::Ramp, 1}, 1'250'000),
-        normal("RECON PATROL", {G::ReturnLanes, 4}, {G::ReEntryLanes, 3}, 1'250'000),
-        normal("DOOMSDAY DEVICE", {G::Slingshots, 6}, {G::Hyperspace, 1}, 1'250'000),
-        special("TIME WARP", {G::Wormholes, 2}, {G::BlackHole, 1}, 2'000'000),
+    {{  // Pilot
+        normal("BEACON SIGNALS 401", {G::SatelliteBumper, 3}, {G::Ramp, 1}, 1'250'000),
+        normal("LANE DISCIPLINE 402", {G::ReturnLanes, 4}, {G::ReEntryLanes, 3}, 1'250'000),
+        normal("SLINGSHOT PHYSICS 403", {G::Slingshots, 6}, {G::Hyperspace, 1}, 1'250'000),
+        special("LAB FINAL: GRAVITY", {G::Wormholes, 2}, {G::BlackHole, 1}, 2'000'000),
     }},
-    {{  // Lt Commander
-        normal("ASTEROID SWEEP", {G::AnyBumper, 25}, kNone, 1'500'000),
-        normal("SUPPLY RUN", {G::Ramp, 3}, {G::MedalTargets, 3}, 1'500'000),
-        normal("DEEP SCAN", {G::BoosterTargets, 3}, {G::MultiplierTargets, 2}, 1'500'000),
-        special("MAELSTROM", {G::AnyTarget, 9}, {G::Wormholes, 2}, 3'000'000),
+    {{  // Navigator
+        normal("BUMPER MARATHON 501", {G::AnyBumper, 25}, kNone, 1'500'000),
+        normal("MERIT WORKSHOP 502", {G::Ramp, 3}, {G::MedalTargets, 3}, 1'500'000),
+        normal("TURBO TUNING 503", {G::BoosterTargets, 3}, {G::MultiplierTargets, 2}, 1'500'000),
+        special("CHECK RIDE: GATE RUN", {G::AnyTarget, 9}, {G::Wormholes, 2}, 3'000'000),
     }},
-    {{  // Commander
-        normal("FLEET DRILL", {G::AttackBumpers, 15}, {G::ReEntryLanes, 3}, 1'750'000),
-        normal("CONVOY ESCORT", {G::ReturnLanes, 4}, {G::Ramp, 2}, 1'750'000),
-        normal("SIGNAL TRACE", {G::Wormholes, 3}, {G::Hyperspace, 1}, 1'750'000),
-        special("STARFALL", {G::AnyBumper, 30}, {G::BlackHole, 1}, 4'000'000),
+    {{  // Ace
+        normal("BUMPER TACTICS 601", {G::AttackBumpers, 15}, {G::ReEntryLanes, 3}, 1'750'000),
+        normal("APPROACH PATTERNS 602", {G::ReturnLanes, 4}, {G::Ramp, 2}, 1'750'000),
+        normal("LONG RANGE NAV 603", {G::Wormholes, 3}, {G::Hyperspace, 1}, 1'750'000),
+        special("FIRST SOLO: BUMPERS", {G::AnyBumper, 30}, {G::BlackHole, 1}, 4'000'000),
     }},
-    {{  // Commodore
-        normal("BLOCKADE RUN", {G::Ramp, 3}, {G::Hyperspace, 2}, 2'000'000),
-        normal("NEBULA SURVEY", {G::AnyTarget, 25}, kNone, 2'000'000),
-        normal("GRAVITY SLING", {G::BlackHole, 1}, {G::Wormholes, 3}, 2'000'000),
-        special("DARK FRONTIER", {G::EngineBumpers, 12}, {G::MedalTargets, 6}, 5'000'000),
+    {{  // Instructor
+        normal("ADVANCED RUNWAY 701", {G::Ramp, 3}, {G::Hyperspace, 2}, 2'000'000),
+        normal("TARGET SEMINAR 702", {G::AnyTarget, 25}, kNone, 2'000'000),
+        normal("ORBITAL MECHANICS 703", {G::BlackHole, 1}, {G::Wormholes, 3}, 2'000'000),
+        special("FINALS: PROPULSION", {G::EngineBumpers, 12}, {G::MedalTargets, 6}, 5'000'000),
     }},
-    {{  // Admiral
-        normal("ARMADA STRIKE", {G::AttackBumpers, 20}, {G::SatelliteBumper, 5}, 2'500'000),
-        normal("LONG PATROL", {G::ReEntryLanes, 6}, {G::ReturnLanes, 6}, 2'500'000),
-        normal("QUANTUM LEAP", {G::Hyperspace, 3}, kNone, 2'500'000),
-        special("SUPERNOVA", {G::AnyTarget, 30}, {G::Ramp, 3}, 6'000'000),
+    {{  // Flight Dean
+        normal("BUMPER COMMAND 801", {G::AttackBumpers, 20}, {G::SatelliteBumper, 5}, 2'500'000),
+        normal("LANE ENDURANCE 802", {G::ReEntryLanes, 6}, {G::ReturnLanes, 6}, 2'500'000),
+        normal("QUASAR THEORY 803", {G::Hyperspace, 3}, kNone, 2'500'000),
+        special("THESIS: RUNWAY OPS", {G::AnyTarget, 30}, {G::Ramp, 3}, 6'000'000),
     }},
-    {{  // Fleet Admiral
-        normal("LAST STAND", {G::AnyBumper, 40}, kNone, 3'000'000),
-        normal("GRAND TOUR", {G::Ramp, 2}, {G::Wormholes, 3}, 3'000'000),
-        normal("FLAGSHIP DUTY", {G::BoosterTargets, 6}, {G::MedalTargets, 6}, 3'000'000),
-        special("FINAL FRONTIER", {G::Hyperspace, 3}, {G::BlackHole, 2}, 10'000'000),
+    {{  // Chancellor
+        normal("BUMPER DOCTORATE 901", {G::AnyBumper, 40}, kNone, 3'000'000),
+        normal("FLIGHT PLANNING 902", {G::Ramp, 2}, {G::Wormholes, 3}, 3'000'000),
+        normal("SYSTEMS MASTERY 903", {G::BoosterTargets, 6}, {G::MedalTargets, 6}, 3'000'000),
+        special("GRADUATION DAY", {G::Hyperspace, 3}, {G::BlackHole, 2}, 10'000'000),
     }},
 }};
 
 // The table is checked when it is compiled: a mission that could not be
 // played, paid nothing or did not fit the display never reaches a player.
-constexpr std::size_t kMaxMissionNameLength = 22;  // Names are kept this short for the display.
-
 constexpr bool stageIsValid(const MissionStage& stage) noexcept {
   return std::to_underlying(stage.goal) < kGoalCount;
 }
 
 constexpr bool missionIsValid(const Mission& m) noexcept {
-  return !m.name.empty() && m.name.size() <= kMaxMissionNameLength && m.stages[0].count > 0 &&
+  return display::fits(m.name, display::kMaxMissionNameLength) && m.stages[0].count > 0 &&
          std::ranges::all_of(m.stages, stageIsValid) && m.award > 0 && m.progress > 0 &&
          m.progress <= kProgressPerRank;
 }
@@ -123,11 +128,16 @@ constexpr bool missionTableIsValid() noexcept {
   return true;
 }
 
-constexpr auto isNotEmpty = [](std::string_view text) { return !text.empty(); };
+constexpr auto rankFits = [](std::string_view text) {
+  return display::fits(text, display::kMaxRankNameLength);
+};
+constexpr auto goalFits = [](std::string_view text) {
+  return display::fits(text, display::kMaxGoalTextLength);
+};
 
 static_assert(missionTableIsValid());
-static_assert(std::ranges::all_of(kRankNames, isNotEmpty));
-static_assert(std::ranges::all_of(kGoalTexts, isNotEmpty));
+static_assert(std::ranges::all_of(kRankNames, rankFits));
+static_assert(std::ranges::all_of(kGoalTexts, goalFits));
 static_assert(kNormalProgress < kSpecialProgress && kSpecialProgress <= kProgressPerRank);
 
 }  // namespace

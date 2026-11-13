@@ -9,6 +9,9 @@ namespace pinball {
 
 namespace {
 
+// The one message a tilted table shows.
+constexpr display::Message kTiltMessage{"TILT"};
+
 constexpr std::size_t kFirstReEntryRollover = 0;
 constexpr std::size_t kReEntryLaneCount = 3;
 
@@ -86,7 +89,7 @@ void Rules::startGame() noexcept {
   missionMessageThisStep_ = false;
   abortUnannounced_ = false;
   resetBall();
-  say("PULL THE PLUNGER TO LAUNCH");
+  say("LAUNCH THE BALL");
 }
 
 void Rules::resetBall() noexcept {
@@ -101,18 +104,18 @@ void Rules::resetBall() noexcept {
   tiltHeat_ = 0.0;
 }
 
-void Rules::sayMission(std::string_view text) noexcept {
+void Rules::sayMission(display::Message text) noexcept {
   missionMessageThisStep_ = false;
   say(text);
   missionMessageThisStep_ = true;
 }
 
-void Rules::say(std::string_view text) noexcept {
+void Rules::say(display::Message text) noexcept {
   // While tilted the display says so and nothing else.
-  if (missionMessageThisStep_ || (tilted_ && text != "TILT")) {
+  if (missionMessageThisStep_ || (tilted_ && text.text() != kTiltMessage.text())) {
     return;
   }
-  message_ = text;
+  message_ = text.text();
   messageSteps_ = stepsFor(kMessageSeconds);
 }
 
@@ -157,7 +160,8 @@ void Rules::handleMission(const MissionControl::Outcome& outcome) noexcept {
       addScore(points::kJackpot);
       jackpotLit_ = false;
     }
-    sayMission(outcome.promoted ? "MISSION COMPLETE  PROMOTED" : "MISSION COMPLETE");
+    sayMission(outcome.promoted ? display::Message("COURSE PASSED  RANK UP")
+                                : display::Message("COURSE PASSED"));
     cue(Sound::MissionComplete);
     if (outcome.promoted) {
       cue(Sound::Promotion);
@@ -166,19 +170,19 @@ void Rules::handleMission(const MissionControl::Outcome& outcome) noexcept {
     // A tilted display says TILT and nothing else, so the news waits for
     // the message that ends the tilt.
     abortUnannounced_ = tilted_;
-    sayMission("OUT OF FUEL  MISSION ABORTED");
+    sayMission("OUT OF ENERGY  COURSE FAILED");
     cue(Sound::TiltWarning);
   } else if (outcome.stageCompleted) {
-    sayMission("STAGE COMPLETE");
+    sayMission("PART ONE PASSED");
     cue(Sound::BankComplete);
   } else if (outcome.accepted) {
-    sayMission("MISSION ACCEPTED");
+    sayMission("CLASS IN SESSION");
     cue(Sound::MissionAccept);
   } else if (outcome.selected) {
-    sayMission("MISSION SELECTED  SHOOT THE RAMP");
+    sayMission("COURSE SELECTED  SHOOT THE RUNWAY");
     cue(Sound::MissionSelect);
   } else if (outcome.refueled) {
-    sayMission("REFUELED");
+    sayMission("RECHARGED");
     cue(Sound::MissionSelect);
   }
 }
@@ -274,13 +278,13 @@ void Rules::completeBank(table::TargetBank bank) noexcept {
       award(points::kBoosterBank);
       boosterLevel_ = std::min(boosterLevel_ + 1, 4);
       if (boosterLevel_ == 1) {
-        say("BOOSTER ONLINE");
+        say("TURBO ONLINE");
       } else if (boosterLevel_ == 2) {
         jackpotLit_ = true;
-        say("JACKPOT ACTIVATED");
+        say("JACKPOT IS LIT");
       } else if (boosterLevel_ == 3) {
         bonusLaneLit_ = true;
-        say("BONUS LANES LIT");
+        say("OUTLANE BONUS LIT");
       } else {
         awardExtraBall();
         boosterLevel_ = 0;
@@ -290,9 +294,9 @@ void Rules::completeBank(table::TargetBank bank) noexcept {
       award(points::kMedalBank[std::min(medalLevel_, 2)]);
       medalLevel_ = std::min(medalLevel_ + 1, 3);
       if (medalLevel_ == 1) {
-        say("LEVEL ONE COMMENDATION");
+        say("MERIT AWARD ONE");
       } else if (medalLevel_ == 2) {
-        say("LEVEL TWO COMMENDATION");
+        say("MERIT AWARD TWO");
       } else {
         awardExtraBall();
         medalLevel_ = 0;
@@ -302,9 +306,9 @@ void Rules::completeBank(table::TargetBank bank) noexcept {
       award(points::kMultiplierBank);
       if (multiplierLevel_ + 1 < kFieldMultipliers.size()) {
         ++multiplierLevel_;
-        say("FIELD MULTIPLIER RAISED");
+        say("OVERDRIVE RAISED");
       } else {
-        say("FIELD MULTIPLIER AT MAXIMUM");
+        say("OVERDRIVE AT MAXIMUM");
       }
       break;
     case table::TargetBank::Mission:
@@ -331,7 +335,7 @@ void Rules::onRollover(std::size_t index) noexcept {
         cue(Sound::BankComplete);
         if (attackLevel_ < 3) {
           ++attackLevel_;
-          say("ATTACK BUMPERS UPGRADED");
+          say("METEOR BUMPERS CHARGED");
         }
       }
       break;
@@ -345,7 +349,7 @@ void Rules::onRollover(std::size_t index) noexcept {
       if (bonusLaneLit_) {
         award(points::kBonusLane);
         bonusLaneLit_ = false;
-        say("BONUS LANE");
+        say("OUTLANE BONUS");
       }
       break;
   }
@@ -358,12 +362,12 @@ void Rules::onHole(std::size_t index) noexcept {
   switch (table::kHoles[index].type) {
     case table::HoleType::Wormhole:
       award(points::kWormhole);
-      say("WORMHOLE");
+      say("JUMP GATE");
       report(goalBit(Goal::Wormholes));
       break;
     case table::HoleType::BlackHole:
       award(points::kBlackHole);
-      say("BLACK HOLE");
+      say("SINGULARITY");
       report(goalBit(Goal::BlackHole));
       break;
     case table::HoleType::Hyperspace: {
@@ -376,7 +380,7 @@ void Rules::onHole(std::size_t index) noexcept {
           // No room for another ball: the rung pays the top bonus instead of
           // nothing at all.
           award(points::kHyperspace[2]);
-          say("HYPERSPACE BONUS");
+          say("QUASAR BONUS");
         }
         hyperspaceLevel_ = 0;
       } else {
@@ -386,13 +390,13 @@ void Rules::onHole(std::size_t index) noexcept {
           say("JACKPOT");
         } else {
           award(points::kHyperspace[hyperspaceLevel_]);
-          say("HYPERSPACE BONUS");
+          say("QUASAR BONUS");
         }
         ++hyperspaceLevel_;
       }
       if (reflex) {
         award(points::kReflexShot);
-        say("REFLEX SHOT");
+        say("COMBO SHOT");
       }
       report(goalBit(Goal::Hyperspace));
       break;
@@ -401,9 +405,9 @@ void Rules::onHole(std::size_t index) noexcept {
       award(points::kRamp);
       if (rampReflexSteps_ > 0) {
         award(points::kReflexShot);
-        say("REFLEX SHOT");
+        say("COMBO SHOT");
       } else {
-        say("LAUNCH RAMP");
+        say("RUNWAY");
       }
       rampReflexSteps_ = stepsFor(kReflexSeconds);
       // Accepts a selected mission, or refuels and advances an active one.
@@ -438,7 +442,8 @@ void Rules::onBallReturned() noexcept {
   missionMessageThisStep_ = false;
   tilted_ = false;
   tiltHeat_ = 0.0;
-  say(std::exchange(abortUnannounced_, false) ? "RE-DEPLOY  MISSION ABORTED" : "RE-DEPLOY");
+  say(std::exchange(abortUnannounced_, false) ? display::Message("BALL SAVED  COURSE FAILED")
+                                              : display::Message("BALL SAVED"));
 }
 
 Rules::DrainResult Rules::onDrain() noexcept {
@@ -459,7 +464,7 @@ Rules::DrainResult Rules::onDrain() noexcept {
   if (ballSaveSteps_ > 0 && !wasTilted) {
     ballSaveSteps_ = 0;
     ballSaveUsed_ = true;
-    say("RE-DEPLOY");
+    say("BALL SAVED");
     cue(Sound::BallSaved);
     return DrainResult::BallSaved;
   }
@@ -474,7 +479,8 @@ Rules::DrainResult Rules::onDrain() noexcept {
   if (extraBalls_ > 0) {
     --extraBalls_;
     cue(Sound::Drain);
-    say(abortNews ? "SHOOT AGAIN  MISSION ABORTED" : "SHOOT AGAIN");
+    say(abortNews ? display::Message("SHOOT AGAIN  COURSE FAILED")
+                  : display::Message("SHOOT AGAIN"));
     return DrainResult::ShootAgain;
   }
   if (ball_ >= kBallsPerGame) {
@@ -483,13 +489,15 @@ Rules::DrainResult Rules::onDrain() noexcept {
     // running on a dead table.
     clearBank(table::TargetBank::Mission);
     missions_.standDown();
-    say("GAME OVER   PRESS F2");
+    // No word on how to start again: that depends on the device (a key, a
+    // button, a tap), so the platform draws the prompt.
+    say(kGameOverMessage);
     cue(Sound::GameOver);
     return DrainResult::GameOver;
   }
   ++ball_;
   cue(Sound::Drain);
-  say(abortNews ? "NEXT BALL  MISSION ABORTED" : "NEXT BALL");
+  say(abortNews ? display::Message("NEXT BALL  COURSE FAILED") : display::Message("NEXT BALL"));
   return DrainResult::NextBall;
 }
 
@@ -506,7 +514,7 @@ bool Rules::onNudge() noexcept {
     tiltHeat_ = kTiltLimit;
     ballSaveSteps_ = 0;  // A tilted ball is not returned.
     missionMessageThisStep_ = false;  // Nothing outranks the tilt.
-    say("TILT");
+    say(kTiltMessage);
     cue(Sound::Tilt);
     return false;
   }

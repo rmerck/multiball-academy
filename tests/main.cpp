@@ -23,10 +23,12 @@ void runSuites() {
   testPlunger();
   testPngHeader();
   testRules();
+  testScreenLayout();
   testSha256();
   testMusic();
   testSound();
   testTargets();
+  testTouchControls();
 }
 
 }  // namespace
