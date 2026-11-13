@@ -215,6 +215,12 @@ jobs:
           else
             mkdir preseed-new
             cmake -DBUILD=build-ios-sim -DOUTPUT_DIR="$PWD/preseed-new" -P cmake/MakeIosPreseed.cmake
+            # Also in the log, for whoever reads the run without the artifact.
+            for record in preseed-new/*.txt; do
+              echo "::group::$record"
+              cat "$record"
+              echo "::endgroup::"
+            done
             echo "recorded=yes" >> "$GITHUB_OUTPUT"
           fi
       - name: Offer the new record
