@@ -7,9 +7,13 @@
 #include <initializer_list>
 #include <memory>
 #include <span>
+#include <string_view>
 #include <utility>
 
+#include "core/AssetManifest.hpp"
 #include "core/TableLayout.hpp"
+#include "platform/EmbeddedManifest.hpp"
+#include "platform/GameViews.hpp"
 #include "platform/Hud.hpp"
 
 namespace pinball {
@@ -73,7 +77,7 @@ std::array<TargetSprite, table::kTargets.size()> makeTargetSprites() noexcept {
 
 std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
                                                      const AssetLoader& assets,
-                                                     TextureSet /*set*/) {
+                                                     TextureSet set) {
   if (renderer == nullptr) {
     return nullptr;
   }
@@ -90,6 +94,32 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   if (!t.background || !t.ball || !t.flipper || !t.bumper || !t.glow || !t.bar || !t.plunger ||
       !t.panel) {
     return nullptr;
+  }
+  if (set == TextureSet::All) {
+    // Art that may not have been drawn yet. One the manifest lists must
+    // load like any other; one it does not list is simply not there.
+    bool failed = false;
+    const auto optional = [&](std::string_view name) -> TexturePtr {
+      if (findAsset(embeddedAssets(), name) == nullptr) {
+        return nullptr;
+      }
+      TexturePtr texture = assets.loadTexture(renderer, name);
+      failed = failed || !texture;
+      return texture;
+    };
+    t.strip = optional("ui/strip.png");
+    t.deck = optional("ui/deck.png");
+    t.backdrop = optional("ui/backdrop.png");
+    t.title = optional("ui/title.png");
+    t.button = optional("sprites/button.png");
+    if (failed) {
+      return nullptr;
+    }
+    for (SDL_Texture* opaque : {t.strip.get(), t.deck.get(), t.backdrop.get()}) {
+      if (opaque != nullptr) {
+        SDL_SetTextureBlendMode(opaque, SDL_BLENDMODE_NONE);
+      }
+    }
   }
   // The background is opaque: skip blending for the largest draw of the frame.
   SDL_SetTextureBlendMode(t.background.get(), SDL_BLENDMODE_NONE);
@@ -347,11 +377,40 @@ void TableRenderer::drawBackdrop(SDL_Renderer* r, const screen::Layout& layout) 
   if (r == nullptr || layout.idiom == screen::Idiom::Desktop) {
     return;
   }
-  // A flat fill until there is backdrop art to tile over it.
+  const SDL_FRect whole{0.0F, 0.0F, layout.canvasWidth, layout.canvasHeight};
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
   SDL_SetRenderDrawColor(r, screen::kBackdropRgb[0], screen::kBackdropRgb[1],
                          screen::kBackdropRgb[2], SDL_ALPHA_OPAQUE);
-  const SDL_FRect whole{0.0F, 0.0F, layout.canvasWidth, layout.canvasHeight};
   SDL_RenderFillRect(r, &whole);
+  if (SDL_Texture* const tile = textures_.backdrop.get()) {
+    // 512 pixels to 256 units, from the canvas origin.
+    SDL_RenderTextureTiled(r, tile, nullptr, 0.5F, &whole);
+    return;
+  }
+  // No art yet: a lattice of dim dots, left out where the composition will
+  // cover it anyway.
+  const screen::Rect& field = layout.playfield;
+  const bool stacked = layout.composition == screen::Composition::Stack;
+  const float coveredLeft = field.x;
+  const float coveredRight = stacked ? field.x + field.w : layout.hud.x + layout.hud.w;
+  const float coveredTop = stacked ? layout.hud.y : field.y;
+  const float coveredBottom = stacked ? layout.deck.y + layout.deck.h : field.y + field.h;
+  constexpr float kPitch = 32.0F;
+  constexpr float kDot = 4.0F;
+  SDL_SetRenderDrawColor(r, 38, 16, 78, SDL_ALPHA_OPAQUE);
+  int row = 0;
+  for (float y = kPitch * 0.5F; y < layout.canvasHeight; y += kPitch * 0.5F, ++row) {
+    const bool rowCovered = y >= coveredTop && y + kDot <= coveredBottom;
+    for (float x = row % 2 == 0 ? kPitch * 0.5F : kPitch; x < layout.canvasWidth; x += kPitch) {
+      if (rowCovered && x >= coveredLeft && x + kDot <= coveredRight) {
+        // Skip to the far side of the composition.
+        x += std::floor((coveredRight - x) / kPitch) * kPitch;
+        continue;
+      }
+      const SDL_FRect dot{x, y, kDot, kDot};
+      SDL_RenderFillRect(r, &dot);
+    }
+  }
 }
 
 void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
@@ -389,10 +448,13 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
   drawPlungerAndGate(r, game);
   drawFlippers(r, game, alpha);
   {
-    // The shadow and the halo follow the same in-between position as the
-    // ball. (One ball, until the game hands out a span of them.)
-    const BallView ball = game.ball(alpha);
-    drawBalls(r, std::span<const BallView>(&ball, 1));
+    // The shadows and the halos follow the same in-between positions as
+    // the balls.
+    DrawnBalls balls = ballsToDraw(game, alpha);
+    for (const BallView& extra : options.extraBalls) {
+      balls.add(extra);
+    }
+    drawBalls(r, balls.span());
   }
 
   if (options.dimmed) {
@@ -404,7 +466,11 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
   SDL_SetRenderClipRect(r, nullptr);
   SDL_SetRenderViewport(r, nullptr);
 
-  drawHud(r, textures_.panel.get(), game, layout, extras);
+  drawHud(r,
+          HudArt{.panel = textures_.panel.get(),
+                 .strip = textures_.strip.get(),
+                 .title = textures_.title.get()},
+          game, layout, extras);
 }
 
 }  // namespace pinball
