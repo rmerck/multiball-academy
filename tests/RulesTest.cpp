@@ -100,7 +100,7 @@ void testRules() {
     CHECK(!rules.laneLit(999));
   }
 
-  {  // Re-entry lanes: each lights, all three upgrade the attack bumpers up
+  {  // Roll call lanes: each lights, all three charge the meteor bumpers up
      // to three times, and flipper presses rotate the lit lanes.
     Rules rules(kStep);
     const std::size_t lane = firstRollover(table::RolloverGroup::ReEntry);
@@ -176,8 +176,8 @@ void testRules() {
     CHECK(rules.fieldMultiplier() == 1);
   }
 
-  {  // Booster bank: online, jackpot lit, bonus lanes lit, extra ball. The
-     // jackpot is collected by the second hyperspace shot.
+  {  // Turbo bank: online, jackpot lit, outlane bonus lit, extra ball. The
+     // jackpot is collected by the second quasar chute shot.
     Rules rules(kStep);
     hitBank(rules, table::TargetBank::Booster);
     CHECK(rules.boosterLevel() == 1 && !rules.jackpotLit());
@@ -332,7 +332,7 @@ void testRules() {
   {  // Messages expire.
     Rules rules(kStep);
     rules.onHole(firstHole(table::HoleType::BlackHole));
-    CHECK(rules.message() == std::string_view("GRAVITY WELL"));
+    CHECK(rules.message() == std::string_view("SINGULARITY"));
     wait(rules, Rules::kMessageSeconds);
     CHECK(rules.message().empty());
   }
@@ -350,7 +350,7 @@ void testRules() {
       rules.onBallInPlay();
       CHECK(rules.ballSaveActive());
       rules.onHole(firstHole(table::HoleType::BlackHole));
-      CHECK(rules.message() == std::string_view("GRAVITY WELL"));
+      CHECK(rules.message() == std::string_view("SINGULARITY"));
       if (step >= 1.0) {
         rules.tick();
         CHECK(rules.message().empty());

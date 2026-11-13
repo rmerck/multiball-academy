@@ -294,9 +294,9 @@ void Rules::completeBank(table::TargetBank bank) noexcept {
       award(points::kMedalBank[std::min(medalLevel_, 2)]);
       medalLevel_ = std::min(medalLevel_ + 1, 3);
       if (medalLevel_ == 1) {
-        say("MERIT BADGE ONE");
+        say("MERIT AWARD ONE");
       } else if (medalLevel_ == 2) {
-        say("MERIT BADGE TWO");
+        say("MERIT AWARD TWO");
       } else {
         awardExtraBall();
         medalLevel_ = 0;
@@ -367,7 +367,7 @@ void Rules::onHole(std::size_t index) noexcept {
       break;
     case table::HoleType::BlackHole:
       award(points::kBlackHole);
-      say("GRAVITY WELL");
+      say("SINGULARITY");
       report(goalBit(Goal::BlackHole));
       break;
     case table::HoleType::Hyperspace: {

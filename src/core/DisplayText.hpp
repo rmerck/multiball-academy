@@ -33,9 +33,14 @@ constexpr std::size_t charsThatFit(float width, float pixelSize) noexcept {
 
 constexpr float innerWidth(const panel::Rect& well) noexcept { return well.w - 2.0F * kPad; }
 
-// The rank name, at its one size.
-inline constexpr std::size_t kMaxRankNameLength =
-    charsThatFit(innerWidth(panel::kRankWell), kRankSize);
+// The rank name. The panel's rank window is the roomiest place it is shown:
+// the high score table and the narrow rank window of the phone display
+// (240 pixels across, drawn at the mission size) hold less, so those set
+// the limit.
+inline constexpr float kNarrowRankWidth = 240.0F;
+inline constexpr std::size_t kMaxRankNameLength = charsThatFit(kNarrowRankWidth, kMissionSize);
+static_assert(kMaxRankNameLength <= charsThatFit(innerWidth(panel::kRankWell), kRankSize),
+              "a rank name must also fit the panel's rank window");
 // The mission name, at its one size.
 inline constexpr std::size_t kMaxMissionNameLength =
     charsThatFit(innerWidth(panel::kMissionWell), kMissionSize);
@@ -48,7 +53,7 @@ inline constexpr std::size_t kMaxGoalTextLength =
 inline constexpr std::size_t kMaxMessageLength =
     charsThatFit(innerWidth(panel::kMessageWell), kSmallestSize);
 
-static_assert(kMaxRankNameLength == 18 && kMaxMissionNameLength == 24 &&
+static_assert(kMaxRankNameLength == 13 && kMaxMissionNameLength == 24 &&
               kMaxGoalTextLength == 26 && kMaxMessageLength == 36,
               "the panel changed: check every name and message against the new limits");
 

@@ -133,7 +133,7 @@ void testMissions() {
       Rules rules(kStep);
       rules.onBallInPlay();
       if (extraBall == 1) {
-        // Four medal banks: two commendations, then an extra ball.
+        // Four merit banks: two merit awards, then an extra ball.
         for (int bank = 0; bank < 3; ++bank) {
           for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
             if (table::kTargets[i].bank == table::TargetBank::Medal) {
@@ -276,6 +276,8 @@ void testMissions() {
                   "the limits assume the font the display draws with");
     // 440 pixels inside a window: a line of n characters is 6n - 1 font
     // pixels wide.
+    static_assert(display::charsThatFit(240.0F, 3.0F) == 13);  // 77 * 3 = 231, and 14 need 249.
+    static_assert(display::kMaxRankNameLength == 13);
     static_assert(display::charsThatFit(440.0F, 4.0F) == 18);  // 107 * 4 = 428, and 19 need 452.
     static_assert(display::charsThatFit(440.0F, 3.0F) == 24);  // 143 * 3 = 429, and 25 need 447.
     static_assert(display::charsThatFit(440.0F, 2.0F) == 36);  // 215 * 2 = 430, and 37 need 442.
@@ -546,7 +548,7 @@ void testMissions() {
           continue;
         }
         MissionControl c(kStep);
-        // Reach Ensign by completing three Cadet missions.
+        // Reach the second rank by completing three first-rank missions.
         for (int i = 0; i < 3; ++i) {
           c.onMissionTarget(0, false);
           c.onRamp();
@@ -604,7 +606,7 @@ void testMissions() {
     CHECK(!control.tick().aborted);
   }
 
-  {  // A whole career: play every rank's missions to Fleet Admiral. Each
+  {  // A whole career: play every rank's missions to the top rank. Each
      // rank takes three normal missions; the top rank does not promote.
     MissionControl control(kStep);
     int promotions = 0;
@@ -668,7 +670,7 @@ void testMissions() {
     CHECK(rules.missions().mission() == &pinball::missionAt(0, pinball::kSpecialMission));
     CHECK(rules.targetLit(missionTarget(0)));
 
-    // A new game returns to Cadet with nothing selected.
+    // A new game returns to the first rank with nothing selected.
     rules.startGame();
     CHECK(rules.missions().rank() == 0);
     CHECK(rules.missions().phase() == MissionControl::Phase::Idle);
@@ -730,6 +732,6 @@ void testMissions() {
     // The lock lasts only for that step.
     rules.tick();
     rules.onHole(hole(table::HoleType::BlackHole));
-    CHECK(rules.message() == std::string_view("GRAVITY WELL"));
+    CHECK(rules.message() == std::string_view("SINGULARITY"));
   }
 }

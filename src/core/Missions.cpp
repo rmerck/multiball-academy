@@ -18,7 +18,7 @@ constexpr std::array<std::string_view, kGoalCount> kGoalTexts{
     "HIT METEOR BUMPERS",     "HIT THRUSTER BUMPERS",   "HIT THE BEACON BUMPER",
     "HIT ANY BUMPERS",        "PASS ROLL CALL LANES",   "PASS RETURN LANES",
     "SHOOT THE RUNWAY",       "SHOOT THE QUASAR CHUTE", "ENTER JUMP GATES",
-    "ENTER THE GRAVITY WELL", "HIT TURBO TARGETS",      "HIT MERIT TARGETS",
+    "ENTER THE SINGULARITY",  "HIT TURBO TARGETS",      "HIT MERIT TARGETS",
     "HIT OVERDRIVE TARGETS",  "HIT ANY TARGETS",        "HIT SLINGSHOTS"};
 
 constexpr MissionStage kNone{Goal::AnyBumper, 0};
@@ -61,13 +61,13 @@ constexpr std::array<std::array<Mission, kMissionsPerRank>, kRankCount> kMission
         normal("QUASAR APPROACH 301", {G::ReEntryLanes, 2}, {G::Hyperspace, 1}, 1'000'000),
         normal("GATE TRANSIT 302", {G::Wormholes, 1}, {G::ReEntryLanes, 3}, 1'000'000),
         normal("GRAVITY STUDIES 303", {G::EngineBumpers, 6}, {G::BlackHole, 1}, 1'000'000),
-        special("LAB FINAL: PRECISION", {G::AnyTarget, 20}, {G::Ramp, 1}, 1'500'000),
+        special("MIDTERM: PRECISION", {G::AnyTarget, 20}, {G::Ramp, 1}, 1'500'000),
     }},
     {{  // Pilot
         normal("BEACON SIGNALS 401", {G::SatelliteBumper, 3}, {G::Ramp, 1}, 1'250'000),
         normal("LANE DISCIPLINE 402", {G::ReturnLanes, 4}, {G::ReEntryLanes, 3}, 1'250'000),
         normal("SLINGSHOT PHYSICS 403", {G::Slingshots, 6}, {G::Hyperspace, 1}, 1'250'000),
-        special("MIDTERM: GRAVITY", {G::Wormholes, 2}, {G::BlackHole, 1}, 2'000'000),
+        special("LAB FINAL: GRAVITY", {G::Wormholes, 2}, {G::BlackHole, 1}, 2'000'000),
     }},
     {{  // Navigator
         normal("BUMPER MARATHON 501", {G::AnyBumper, 25}, kNone, 1'500'000),
