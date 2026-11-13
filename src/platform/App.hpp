@@ -160,7 +160,7 @@ class App {
   void handleLayoutChange();
   // In AppLifecycle.cpp: the window gained or lost focus, or was minimised
   // or restored.
-  void handleFocusChange();
+  void handleFocusChange(Uint32 type);
   // The application is going to the background, has come back, is being
   // ended, or was told that memory is short.
   void handleLifecycle(Uint32 type);

@@ -7,7 +7,7 @@
 
 namespace pinball {
 
-void App::handleFocusChange() {
+void App::handleFocusChange(Uint32 type) {
   // Do not let the ball drain while the player is elsewhere. The window's
   // own state decides, not the event, so a restore without focus stays
   // paused. Timed automated runs have no player and never auto-pause.
@@ -15,8 +15,11 @@ void App::handleFocusChange() {
   const bool away = (flags & SDL_WINDOW_INPUT_FOCUS) == 0 || (flags & SDL_WINDOW_MINIMIZED) != 0;
   if (layout_.idiom == screen::Idiom::Touch) {
     // On a touch screen the game does not start again by itself when the
-    // player returns: the hands are not in place yet.
-    if (away) {
+    // player returns: the hands are not in place yet. And only losing the
+    // window stops it: a window that is merely not focused yet when it is
+    // first shown must not open the game on its pause menu.
+    const bool lost = type == SDL_EVENT_WINDOW_FOCUS_LOST || type == SDL_EVENT_WINDOW_MINIMIZED;
+    if (away && lost) {
       interrupt();
     }
     return;

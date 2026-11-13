@@ -407,7 +407,7 @@ void App::handleEvent(const SDL_Event& event) {
     case SDL_EVENT_WINDOW_MINIMIZED:
     case SDL_EVENT_WINDOW_FOCUS_GAINED:
     case SDL_EVENT_WINDOW_RESTORED:
-      handleFocusChange();
+      handleFocusChange(event.type);
       break;
     case SDL_EVENT_RENDER_DEVICE_RESET:
       // Every texture died with the old device. (Render targets, which have
