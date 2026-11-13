@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -25,6 +26,35 @@ constexpr float kStep = 1.0F / 120.0F;
 float distance(Vec2 a, Vec2 b) {
   const Vec2 d = a - b;
   return std::sqrt(d.x * d.x + d.y * d.y);
+}
+
+// The scripted soak below, reduced to one number: FNV-1a over the bits of
+// the ball's position, the score and the drain count after every one of its
+// 72,000 steps. It pins the whole single-ball game: physics, serve, holes,
+// rules. It must change only together with a change that is meant to alter
+// how the ball moves or scores (table geometry, a physics constant, a rule
+// the script reaches, a new Box2D); a refactoring that changes it has
+// changed the game. To regenerate, run core_tests: on a mismatch it prints
+// the value it got.
+//
+// Recorded on x86-64, where g++ 13 and clang 18 give the same value with and
+// without optimisation and under the sanitizers. Other processors may round
+// differently (a compiler is free to fuse a multiply and an add where the
+// processor has an instruction for it), so there the value is printed and
+// only checked once it has been recorded here.
+#if defined(__x86_64__) || defined(_M_X64)
+constexpr std::uint64_t kSoakTrajectory = 0xe84f9acc5335bb8fULL;
+constexpr bool kSoakTrajectoryKnown = true;
+#else
+constexpr std::uint64_t kSoakTrajectory = 0;
+constexpr bool kSoakTrajectoryKnown = false;
+#endif
+
+void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
+  for (unsigned byte = 0; byte < 8U; ++byte) {
+    hash ^= (value >> (8U * byte)) & 0xFFU;
+    hash *= 0x100000001b3ULL;
+  }
 }
 
 // Steps until an event of the given type arrives. Returns its element, or
@@ -387,6 +417,7 @@ void testHoles() {
     int worstStill = 0;
     Vec2 previous{};
     Vec2 worstAt{};
+    std::uint64_t trajectory = 0xcbf29ce484222325ULL;
     for (int i = 0; i < 120 * 600; ++i) {
       InputState input;
       input.plunger = (i % 900) < 100 + (i / 900) % 60;
@@ -396,6 +427,14 @@ void testHoles() {
       game.step(input);
 
       const pinball::BallView ball = game.ball();
+      mixInto(trajectory, std::bit_cast<std::uint32_t>(ball.position.x));
+      mixInto(trajectory, std::bit_cast<std::uint32_t>(ball.position.y));
+      mixInto(trajectory, game.rules().score());
+      mixInto(trajectory, game.drainCount());
+      // One ball, start to finish.
+      if (game.ballCount() != 1 || ball.id != 0) {
+        trajectory = 0;
+      }
       const bool inLane = ball.position.x > table::kLaneWallX;
       if (game.ballHeld() || inLane) {
         stillSteps = 0;
@@ -434,5 +473,14 @@ void testHoles() {
                  game.drainCount(), game.bumperHits(), holes, rollovers, worstStill);
     CHECK(holes > 0);
     CHECK(rollovers > 20);
+
+    // The single-ball game is exactly the game it was.
+    if (!kSoakTrajectoryKnown || trajectory != kSoakTrajectory) {
+      std::fprintf(stderr, "soak trajectory 0x%016llx, score %llu%s\n",
+                   static_cast<unsigned long long>(trajectory),
+                   static_cast<unsigned long long>(game.rules().score()),
+                   kSoakTrajectoryKnown ? "" : " (not recorded for this processor)");
+    }
+    CHECK(!kSoakTrajectoryKnown || trajectory == kSoakTrajectory);
   }
 }
