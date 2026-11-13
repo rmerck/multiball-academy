@@ -50,6 +50,16 @@ if(NOT PINBALL_APP_NAME MATCHES "^[A-Za-z][A-Za-z0-9]*( [A-Za-z0-9]+)*$"
                       "starting with a letter and not ending with a space: the identifiers "
                       "are made from it. It is '${PINBALL_APP_NAME}'")
 endif()
+# The short name under the icon on an iPhone's or iPad's home screen, which
+# has room for about a dozen characters. Everywhere else the game goes by
+# its full name.
+set(PINBALL_HOME_NAME "Multiball")
+string(LENGTH "${PINBALL_HOME_NAME}" pinball_home_name_length)
+if(NOT PINBALL_HOME_NAME MATCHES "^[A-Za-z][A-Za-z0-9]*( [A-Za-z0-9]+)*$"
+   OR pinball_home_name_length GREATER 30)
+  message(FATAL_ERROR "PINBALL_HOME_NAME must be letters, digits and single spaces, at most 30. "
+                      "It is '${PINBALL_HOME_NAME}'")
+endif()
 # The name in lower case, with hyphens for its spaces and with them removed:
 # "multiball-academy" and "multiballacademy".
 string(TOLOWER "${PINBALL_APP_NAME}" pinball_name_lower)
@@ -64,12 +74,12 @@ set(PINBALL_BUNDLE_ID "io.github.rmerck.${pinball_name_joined}")
 set(PINBALL_DATA_ORG "")
 set(PINBALL_DATA_DIR "${pinball_name_hyphens}")
 # Where the privacy policy is published: docs/PRIVACY.md, as GitHub shows it.
-set(PINBALL_PRIVACY_URL "https://github.com/rmerck/space-cadet-pinball/blob/main/docs/PRIVACY.md")
+set(PINBALL_PRIVACY_URL "https://github.com/rmerck/multiball-academy/blob/main/docs/PRIVACY.md")
 # The copyright line of the application bundles.
 set(PINBALL_COPYRIGHT "Copyright 2026 rmerck. MIT licence.")
-project(MultiballAcademy VERSION 1.0.0 LANGUAGES CXX)
-# The iOS bundle version (CFBundleVersion), also shown beside the version.
-# A whole number with no leading zero.
+project(MultiballAcademy VERSION 2.0.0 LANGUAGES CXX)
+# The bundle version (CFBundleVersion) on iOS and macOS, also shown beside
+# the version. A whole number with no leading zero.
 set(PINBALL_BUILD_NUMBER "1" CACHE STRING "Build number: must rise with every upload to the App Store")
 string(LENGTH "${PINBALL_BUILD_NUMBER}" pinball_build_number_length)
 if(NOT PINBALL_BUILD_NUMBER MATCHES "^[1-9][0-9]*$" OR pinball_build_number_length GREATER 9)
@@ -332,7 +342,7 @@ if(PINBALL_MACOS)
     MACOSX_BUNDLE_BUNDLE_NAME "${PINBALL_APP_NAME}"
     MACOSX_BUNDLE_GUI_IDENTIFIER ${PINBALL_BUNDLE_ID}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
-    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+    MACOSX_BUNDLE_BUNDLE_VERSION ${PINBALL_BUILD_NUMBER}
     MACOSX_BUNDLE_ICON_FILE AppIcon
     MACOSX_BUNDLE_COPYRIGHT "${PINBALL_COPYRIGHT}")
 elseif(PINBALL_IOS)
@@ -351,7 +361,11 @@ if(PINBALL_MACOS)
   target_link_options(pinball PRIVATE $<$<CONFIG:Release>:-Wl,-S>)
 elseif(PINBALL_IOS)
   # Xcode strips the executable, after it has saved the debug information
-  # (cmake/Ios.cmake).
+  # (cmake/Ios.cmake). A warning from the linker stops the build, as one from
+  # the compiler does.
+  if(PINBALL_WERROR)
+    target_link_options(pinball PRIVATE -Wl,-fatal_warnings)
+  endif()
 elseif(NOT MSVC AND NOT APPLE)
   # And no symbol names either.
   target_link_options(pinball PRIVATE $<$<CONFIG:Release>:-Wl,-s>)
@@ -393,11 +407,26 @@ set_source_files_properties(src/platform/EmbeddedManifest.cpp PROPERTIES
   OBJECT_DEPENDS ${PINBALL_MANIFEST})
 
 # What this build is called, for the scripts and CI steps that check its
-# results (tools/ios/check_bundle.sh, .github/workflows/ci.yml): a file of
-# shell assignments, so that none of them spells the name out again.
+# results (tools/ios/check_bundle.sh, .github/workflows/ci.yml), so that
+# none of them spells the name out again: lines of NAME='value'. They read
+# it as text with tools/product_value.sh and never run it; all the same,
+# nothing goes into it that could end a quoted value or a line.
+if(NOT "${CMAKE_OSX_DEPLOYMENT_TARGET}" MATCHES "^[0-9.]*$")
+  message(FATAL_ERROR "CMAKE_OSX_DEPLOYMENT_TARGET must be a version number. "
+                      "It is '${CMAKE_OSX_DEPLOYMENT_TARGET}'")
+endif()
+foreach(value IN ITEMS "${PINBALL_APP_NAME}" "${PINBALL_HOME_NAME}" "${PINBALL_BUNDLE_ID}"
+                       "${PROJECT_VERSION}" "${PINBALL_BUILD_NUMBER}"
+                       "${CMAKE_OSX_DEPLOYMENT_TARGET}" "${PINBALL_MANIFEST}")
+  if(value MATCHES "['\n\r]")
+    message(FATAL_ERROR "A quote or a line break in '${value}': it cannot be written to "
+                        "product.env. (Is there one in the build directory's path?)")
+  endif()
+endforeach()
 file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/product.env @ONLY CONTENT
 "# Written by CMake from the block at the top of CMakeLists.txt. Do not edit.
 PINBALL_APP_NAME='@PINBALL_APP_NAME@'
+PINBALL_HOME_NAME='@PINBALL_HOME_NAME@'
 PINBALL_BUNDLE_ID='@PINBALL_BUNDLE_ID@'
 PINBALL_VERSION='@PROJECT_VERSION@'
 PINBALL_BUILD_NUMBER='@PINBALL_BUILD_NUMBER@'
@@ -680,6 +709,7 @@ if(BUILD_TESTING)
       COMMAND ${CMAKE_COMMAND} -DBUNDLE=$<TARGET_BUNDLE_DIR:pinball>
               -DEXECUTABLE=$<TARGET_FILE:pinball> "-DNAME=${PINBALL_APP_NAME}"
               -DIDENTIFIER=${PINBALL_BUNDLE_ID} -DVERSION=${PROJECT_VERSION}
+              -DBUILD_NUMBER=${PINBALL_BUILD_NUMBER}
               "-DCOPYRIGHT=${PINBALL_COPYRIGHT}"
               -P ${CMAKE_SOURCE_DIR}/tests/CheckBundle.cmake)
     set_tests_properties(bundle_layout PROPERTIES TIMEOUT 30)

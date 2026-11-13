@@ -20,8 +20,9 @@
 	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
 	<key>CFBundleName</key>
 	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+	<!-- The short name under the icon on the home screen. -->
 	<key>CFBundleDisplayName</key>
-	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+	<string>${PINBALL_HOME_NAME}</string>
 	<key>CFBundleIdentifier</key>
 	<string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
 	<key>CFBundleShortVersionString</key>

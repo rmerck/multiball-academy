@@ -91,7 +91,7 @@ cmake -S . -B build-ios-sim -G Xcode -DCMAKE_SYSTEM_NAME=iOS \
 cmake --build build-ios-sim --config Release
 ```
 
-The first configuration takes a few minutes: SDL tries several hundred small compilations to learn about the system. The result is `build-ios-sim/Release-iphonesimulator/Multiball Academy.app`, with `Multiball Academy.app.dSYM` beside it. Nothing is signed, which the simulator does not need. To run it on a simulator that is started without a window:
+The first configuration takes a few minutes: SDL tries some 350 small compilations to learn about the system, each a run of `xcodebuild` (see "Recorded configure results" below for the way round that). The result is `build-ios-sim/Release-iphonesimulator/Multiball Academy.app`, with `Multiball Academy.app.dSYM` beside it. Nothing is signed, which the simulator does not need. To run it on a simulator that is started without a window:
 
 ```sh
 xcrun simctl list devices available                  # pick a device, note its identifier
@@ -107,27 +107,27 @@ xcrun simctl shutdown <identifier>
 What an iOS build leaves out: the development tools, `ctest` (it runs programs on the Mac, and these are iOS programs) and the macOS signing options. The core unit tests and the two file handling tests are still built, and one script runs them inside a simulator; a second checks the finished bundle. CI runs both:
 
 ```sh
-tools/ios/simulator_tests.sh build-ios-sim Release
-tools/ios/check_bundle.sh "build-ios-sim/Release-iphonesimulator/Multiball Academy.app" \
+bash tools/ios/simulator_tests.sh build-ios-sim Release
+bash tools/ios/check_bundle.sh "build-ios-sim/Release-iphonesimulator/Multiball Academy.app" \
   build-ios-sim/product.env . --release
 ```
 
-`check_bundle.sh` holds the bundle to what the App Store expects of it: the `Info.plist` values (identifier, version, build number, minimum system, launch screen, orientations, no usage descriptions), the privacy manifest, every asset identical to its source and as many as the manifest compiled into the executable lists, system libraries only, no network calls, every required-reason API declared, and for a Release build no build path in the executable and debug symbols beside the bundle.
+`check_bundle.sh` works on a simulator or a device build and holds the bundle to what the App Store expects of it: the `Info.plist` values (identifier, names, version, build number, minimum system, launch screen, orientations, no usage descriptions), the privacy manifest, every asset identical to its source and as many as the manifest compiled into the executable lists, system libraries only, no network calls, every required-reason API declared, and for a Release build no build path in the executable and debug symbols beside the bundle that carry the executable's UUID. The values it expects come from `product.env` in the build directory, which CMake writes; scripts read it as text with `tools/product_value.sh` and never run it.
 
 What the application is made of, all from `cmake/Ios.cmake`:
 
-- `cmake/Info-iOS.plist.in` is its `Info.plist`. The name, the identifier and the version come from the block at the top of `CMakeLists.txt`; the bundle version is `PINBALL_BUILD_NUMBER`.
+- `cmake/Info-iOS.plist.in` is its `Info.plist`. The name, the identifier and the version come from the block at the top of `CMakeLists.txt`; the bundle version is `PINBALL_BUILD_NUMBER`. Under its icon on the home screen the game is "Multiball" (`PINBALL_HOME_NAME`), which fits there; everywhere else it is Multiball Academy.
 - `packaging/ios/PrivacyInfo.xcprivacy` is the privacy manifest: no tracking, nothing collected, and two required-reason API categories, file timestamps (C617.1: the game's own files) and system boot time (35F9.1: measuring elapsed time). It covers the statically linked SDL and Box2D as well, which ship none of their own. Read it again whenever either pin moves.
-- `packaging/ios/Assets.xcassets` holds the icon and the launch screen's colour. The icon there now is a placeholder with a striped frame, made by `tools/ios/make_placeholder_icon.py` from the macOS icon; an upload needs the real one, an opaque 1024 pixel square, in its place.
+- `packaging/ios/Assets.xcassets` holds the icon and the launch screen's colour. The icon there now is a placeholder with a striped frame, made by `tools/ios/make_placeholder_icon.py` from the macOS icon; an upload needs the real one, an opaque 1024 pixel square, in its place, and `packaging/ios/ICON_IS_A_PLACEHOLDER` deleted with it. While the placeholder is there, a configuration with `PINBALL_IOS_TEAM_ID` is refused, so it cannot be signed and shipped by mistake. The same goes for the temporary entry point, `packaging/ios/TemporaryMain.cpp`, for as long as `src/main_ios.cpp` has none.
 - The `assets` directory is copied into the bundle by Xcode, unchanged, and each build ends by checking that it arrived.
-- SDL is built without its camera, sensor, joystick, haptic, HIDAPI, GPU, OpenGL ES and Vulkan code (`cmake/PinnedDeps.cmake`), so the application links no CoreMotion, CoreBluetooth, CoreHaptics or OpenGL ES and refers to no camera class. AVFoundation stays: it is the audio session. GameController stays: SDL reads hardware keyboards and mice through it. Neither needs a purpose string.
+- SDL is built without its camera, sensor, joystick, haptic, HIDAPI, GPU, OpenGL ES and Vulkan code (`cmake/PinnedDeps.cmake`), so the application links no CoreMotion, CoreBluetooth, CoreHaptics or OpenGL ES and refers to no camera class. AVFoundation, CoreMedia and CoreVideo stay: SDL links them on iOS whatever is switched off, and uses the first for the audio session. GameController stays: SDL reads hardware keyboards and mice through it. None of them needs a purpose string, and `check_bundle.sh` checks that no camera class is referred to.
 
 Options for iOS:
 
 - `-DPINBALL_BUILD_NUMBER=N` is the bundle version, a whole number. App Store Connect wants a higher one for every upload of the same version.
 - `-DPINBALL_IOS_TEAM_ID=XXXXXXXXXX` is the Apple developer team to sign for, with Xcode's automatic signing. It is kept in the build directory, never in the repository. Without it nothing is signed.
 - `-DCMAKE_OSX_DEPLOYMENT_TARGET=...` sets the oldest iOS the build runs on. The default is 26.0.
-- `-DPINBALL_WERROR=ON` and `-DPINBALL_SANITIZE=ON` work as elsewhere. `PINBALL_REQUIRE_ALL_TESTS`, `PINBALL_FUZZ`, `PINBALL_HARDENED_RUNTIME` and `PINBALL_CODESIGN_IDENTITY` do not apply; the tools are always left out.
+- `-DPINBALL_WERROR=ON` and `-DPINBALL_SANITIZE=ON` work as elsewhere; with the first, a warning from the linker stops the build too. `PINBALL_REQUIRE_ALL_TESTS`, `PINBALL_FUZZ`, `PINBALL_HARDENED_RUNTIME` and `PINBALL_CODESIGN_IDENTITY` do not apply; the tools are always left out.
 
 ### A build for a device, TestFlight or the App Store
 
@@ -150,16 +150,28 @@ xcodebuild archive -project build-ios/MultiballAcademy.xcodeproj -scheme pinball
   -configuration Release -destination 'generic/platform=iOS' \
   -archivePath build-ios/MultiballAcademy.xcarchive -allowProvisioningUpdates
 
-cp -R "build-ios/Release-iphoneos/Multiball Academy.app.dSYM" build-ios/MultiballAcademy.xcarchive/dSYMs/
+bash tools/ios/collect_dsym.sh build-ios/MultiballAcademy.xcarchive build-ios
 
 xcodebuild -exportArchive -archivePath build-ios/MultiballAcademy.xcarchive \
   -exportOptionsPlist packaging/ios/ExportOptions.plist \
   -exportPath build-ios/export -allowProvisioningUpdates
 ```
 
-The `cp` puts the debug symbols into the archive, where the export looks for them: a CMake project builds into its own directory, so Xcode leaves the `.dSYM` there. The archive's `Products` holds the application and nothing else. `-allowProvisioningUpdates` lets Xcode create the certificate and the provisioning profile; it uses the account signed in to Xcode, or an API key given with `-authenticationKeyPath`, `-authenticationKeyID` and `-authenticationKeyIssuerID`. Keep the key file outside the repository. `packaging/ios/ExportOptions.plist` asks for the `app-store-connect` method (the current name; `app-store` is deprecated) and writes `build-ios/export/Multiball Academy.ipa`. Changing its `destination` from `export` to `upload` sends the build straight to App Store Connect instead; `xcrun altool --upload-app` and the Transporter application take the `.ipa`. For a trial that creates no build, set `method` to `validation`.
+`collect_dsym.sh` puts the debug symbols into the archive, where the export looks for them: a CMake project builds into its own directory, so Xcode leaves the `.dSYM` there. The script first checks that the symbols carry the archived executable's UUID. The archive's `Products` holds the application and nothing else. `-allowProvisioningUpdates` lets Xcode create the certificate and the provisioning profile; it uses the account signed in to Xcode, or an API key given with `-authenticationKeyPath`, `-authenticationKeyID` and `-authenticationKeyIssuerID`. Keep the key file outside the repository. `packaging/ios/ExportOptions.plist` asks for the `app-store-connect` method (the current name; `app-store` is deprecated) and writes `build-ios/export/Multiball Academy.ipa`. Changing its `destination` from `export` to `upload` sends the build straight to App Store Connect instead; `xcrun altool --upload-app` and the Transporter application take the `.ipa`. For a trial that creates no build, set `method` to `validation`.
 
-Before the first upload: the real icon, the app record in App Store Connect under the bundle identifier `io.github.rmerck.multiballacademy`, and the privacy policy and support pages ([PRIVACY.md](PRIVACY.md), [SUPPORT.md](SUPPORT.md)) reachable at their public addresses. After it, read the message App Store Connect sends: a required-reason API it found that the privacy manifest does not declare is named there. Then TestFlight on a real iPhone and a real iPad, for what no simulator shows: the ring/silent switch, interruptions, a 120 Hz display, heat.
+Before the first upload: the real icon (the configuration above stops until it is there), the app record in App Store Connect under the bundle identifier `io.github.rmerck.multiballacademy`, and the privacy policy and support pages ([PRIVACY.md](PRIVACY.md), [SUPPORT.md](SUPPORT.md)) reachable at their public addresses. After it, read the message App Store Connect sends: a required-reason API it found that the privacy manifest does not declare is named there. Then TestFlight on a real iPhone and a real iPad, for what no simulator shows: the ring/silent switch, interruptions, a 120 Hz display, heat.
+
+### Recorded configure results
+
+SDL's questions about the compiler have the same answers every time for one Xcode, one SDK, one deployment target and one SDL. `cmake/preseed` holds those answers, recorded from a full configuration, and adding `-C cmake/IosPreseed.cmake` to the configure command (after `-DCMAKE_SYSTEM_NAME` and `-DCMAKE_OSX_SYSROOT`) puts them in the cache, so a first configuration takes about a minute instead of ten on a CI runner. It is optional, and CI uses it.
+
+A record is applied only when it was made for exactly this configuration: its header names Xcode's build version, the SDK, the deployment target and the SHA-256 of `cmake/PinnedDeps.cmake`, and all four must match. Otherwise nothing is applied, a notice says so and every question is asked as before. A record is never run as CMake code: it is read as lines of `NAME=1` or `NAME=`, and only names of SDL's yes-or-no results are accepted, so it cannot change which sources are fetched, their pinned hash, or any option.
+
+After an Xcode update on the CI image, or a change to `cmake/PinnedDeps.cmake`, the old record no longer matches. CI then configures in full and uploads a new record as the artifact `ios-preseed`; read it, put it in `cmake/preseed` and delete the one it replaces. By hand, from a build directory that was configured without `-C`:
+
+```sh
+cmake -DBUILD=build-ios-sim -P cmake/MakeIosPreseed.cmake
+```
 
 ## Tests and CI
 
@@ -175,4 +187,4 @@ Every pull request must pass seven CI jobs, all with warnings as errors. The fir
 
 An eighth job, not required, builds and tests on Linux with clang and libc++ under sanitizers. libc++ is the standard library macOS uses, so a missing include shows up there before it breaks the macOS jobs.
 
-A ninth, `ios (simulator)`, also not required yet, builds the iOS application for the simulator on a macOS 26 runner with Xcode 26.6, Release with warnings as errors and nothing signed, checks the bundle with `tools/ios/check_bundle.sh` and runs the core and file handling tests inside a simulator with `tools/ios/simulator_tests.sh`. It does not start the game. It caches nothing.
+A ninth, `ios (simulator)`, also not required yet, builds the iOS application on a macOS 26 runner with Xcode 26.6, Release with warnings as errors and nothing signed, for the simulator and for a device. It checks both bundles with `tools/ios/check_bundle.sh` and runs the core and file handling tests inside a simulator with `tools/ios/simulator_tests.sh`. It does not start the game. It caches nothing; it configures from the recorded results described above when they match.

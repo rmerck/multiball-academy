@@ -8,11 +8,39 @@
 # application does not link, so a stand-in is compiled. It goes by itself
 # once the real file defines SDL_AppInit; then delete this block and
 # packaging/ios/TemporaryMain.cpp.
+#
+# A build with a team id is one that can be signed, archived and sent to the
+# App Store, and neither stand-in may ever get there: with PINBALL_IOS_TEAM_ID
+# set, the temporary entry point and the placeholder icon each stop the
+# configuration. Without one they are warnings.
+if(PINBALL_IOS_TEAM_ID)
+  set(pinball_ios_standin FATAL_ERROR)
+else()
+  set(pinball_ios_standin WARNING)
+endif()
 file(STRINGS ${CMAKE_SOURCE_DIR}/src/main_ios.cpp pinball_ios_entry REGEX "SDL_AppInit *\\(")
 if(NOT pinball_ios_entry)
-  message(WARNING "src/main_ios.cpp has no entry point yet: building the temporary one, "
-                  "packaging/ios/TemporaryMain.cpp")
+  message(${pinball_ios_standin}
+    "src/main_ios.cpp has no entry point yet: the temporary one, "
+    "packaging/ios/TemporaryMain.cpp, is built in its place. It must not be shipped, "
+    "so a build with PINBALL_IOS_TEAM_ID is refused")
   target_sources(pinball PRIVATE ${CMAKE_SOURCE_DIR}/packaging/ios/TemporaryMain.cpp)
+endif()
+
+# The icon in the asset catalog is a placeholder until the art is drawn. It
+# is known two ways, so that neither a forgotten marker nor a regenerated
+# placeholder slips through: the marker file tools/ios/make_placeholder_icon.py
+# writes beside the catalog, which goes when the real icon is dropped in, and
+# the SHA-256 of the placeholder that is committed today.
+set(pinball_ios_icon
+  ${CMAKE_SOURCE_DIR}/packaging/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png)
+file(SHA256 ${pinball_ios_icon} pinball_ios_icon_hash)
+if(EXISTS ${CMAKE_SOURCE_DIR}/packaging/ios/ICON_IS_A_PLACEHOLDER
+   OR pinball_ios_icon_hash STREQUAL "62cae5f0b7bbcca630794c23a725009451cac0e2c6bee2b507655b3ff99709bb")
+  message(${pinball_ios_standin}
+    "The iOS icon is still the placeholder (packaging/ios/Assets.xcassets). It must not be "
+    "shipped, so a build with PINBALL_IOS_TEAM_ID is refused. With the real icon in place, "
+    "delete packaging/ios/ICON_IS_A_PLACEHOLDER")
 endif()
 
 # Resources. In an iOS bundle "Resources" is the bundle's top directory.
@@ -95,6 +123,6 @@ endif()
 # them builds and then refuses to start, or is refused at upload. The script
 # finds the bundle through the variables Xcode gives its build phases.
 add_custom_command(TARGET pinball POST_BUILD
-  COMMAND sh ${CMAKE_SOURCE_DIR}/tools/ios/check_bundle.sh --resources ${CMAKE_SOURCE_DIR}
+  COMMAND bash ${CMAKE_SOURCE_DIR}/tools/ios/check_bundle.sh --resources ${CMAKE_SOURCE_DIR}
   COMMENT "Checking the bundle's resources"
   VERBATIM)

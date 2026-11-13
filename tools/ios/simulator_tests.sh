@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Runs the test programs of an iOS simulator build on a simulator: the core
 # unit tests and the two file handling tests, compiled with the iOS SDK and
 # its standard library. CTest cannot do this (it runs programs on the Mac
@@ -11,7 +11,7 @@
 # a window if it is not running, runs the programs in it with
 # `xcrun simctl spawn`, and shuts it down again if it was this script that
 # booted it. macOS with Xcode only.
-set -eu
+set -euo pipefail
 
 fail() {
   echo "simulator_tests: $*" >&2
@@ -30,7 +30,8 @@ for test in core_tests safefile_tests safefile_fallback_tests; do
 done
 
 # "<udid> <state>" of the named device under the newest iOS runtime that has it.
-found=$(xcrun simctl list devices available -j | DEVICE=$device python3 -I -c '
+devices=$(xcrun simctl list devices available -j)
+found=$(DEVICE=$device python3 -I -c '
 import json, os, re, sys
 best = None
 for runtime, devices in json.load(sys.stdin)["devices"].items():
@@ -44,7 +45,7 @@ for runtime, devices in json.load(sys.stdin)["devices"].items():
                 best = (key, entry["udid"], entry.get("state", ""))
 if best:
     print(best[1], best[2])
-')
+' <<<"$devices")
 [ -n "$found" ] || fail "no available simulator named '$device'"
 udid=${found%% *}
 state=${found#* }

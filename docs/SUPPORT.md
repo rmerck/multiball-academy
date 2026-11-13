@@ -4,7 +4,7 @@ Multiball Academy is a pinball game for iPhone, iPad, macOS and Linux.
 
 ## Getting help or reporting a problem
 
-Open an issue at <https://github.com/rmerck/space-cadet-pinball/issues>. Anyone with a GitHub account can do so. It helps to say:
+Open an issue at <https://github.com/rmerck/multiball-academy/issues>. Anyone with a GitHub account can do so. It helps to say:
 
 - the device and its system version (for example "iPad, iPadOS 26.1" or "macOS 15");
 - the game's version, shown on the About screen;
@@ -19,6 +19,8 @@ Issues are public: do not put personal information in one. To report a security 
 **There is no sound on my iPhone or iPad.** The game follows the ring/silent switch, like other games' sound effects: with the device set to silent, it is silent.
 
 **How do I reset the high scores?** On iPhone and iPad, delete the app and install it again. On macOS and Linux, delete the file named in the [privacy policy](PRIVACY.md).
+
+**My high scores are gone.** If the score file was damaged, the game sets it aside and starts a new table; the [privacy policy](PRIVACY.md) says where the copy is.
 
 **Are my scores from Space Cadet Pinball 1.0.0 on macOS kept?** No. Multiball Academy starts with an empty table. The old file is left where it was and is not touched.
 

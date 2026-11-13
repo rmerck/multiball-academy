@@ -2,11 +2,12 @@
 # the expected identifier, version, names and icon; the icon and the assets
 # are in Resources; and the executable is the only thing in Contents/MacOS.
 # Usage: cmake -DBUNDLE=<.app> -DEXECUTABLE=<path> -DNAME=<the game's name>
-#              -DIDENTIFIER=<id> -DVERSION=<x.y.z> -DCOPYRIGHT=<line>
-#              -P CheckBundle.cmake
-foreach(var IN ITEMS BUNDLE EXECUTABLE NAME IDENTIFIER VERSION COPYRIGHT)
+#              -DIDENTIFIER=<id> -DVERSION=<x.y.z> -DBUILD_NUMBER=<n>
+#              -DCOPYRIGHT=<line> -P CheckBundle.cmake
+foreach(var IN ITEMS BUNDLE EXECUTABLE NAME IDENTIFIER VERSION BUILD_NUMBER COPYRIGHT)
   if(NOT DEFINED ${var})
-    message(FATAL_ERROR "BUNDLE, EXECUTABLE, NAME, IDENTIFIER, VERSION and COPYRIGHT are required")
+    message(FATAL_ERROR "BUNDLE, EXECUTABLE, NAME, IDENTIFIER, VERSION, BUILD_NUMBER and "
+                        "COPYRIGHT are required")
   endif()
 endforeach()
 
@@ -35,7 +36,7 @@ endfunction()
 get_filename_component(exe_name "${EXECUTABLE}" NAME)
 expect_key(CFBundleIdentifier "${IDENTIFIER}")
 expect_key(CFBundleShortVersionString "${VERSION}")
-expect_key(CFBundleVersion "${VERSION}")
+expect_key(CFBundleVersion "${BUILD_NUMBER}")
 expect_key(CFBundleName "${NAME}")
 expect_key(CFBundleDisplayName "${NAME}")
 expect_key(CFBundleExecutable "${exe_name}")

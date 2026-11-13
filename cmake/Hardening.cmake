@@ -35,9 +35,16 @@ function(pinball_apply_hardening target scope)
     -ffile-prefix-map=${CMAKE_BINARY_DIR}=build
     -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.)
   # Bounds and precondition checks in the standard library.
-  target_compile_definitions(${target} ${scope}
-    _LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
-    _GLIBCXX_ASSERTIONS)
+  if(PINBALL_IOS)
+    # Xcode defines the stricter debug mode itself in a Debug build, and a
+    # second definition is a warning.
+    target_compile_definitions(${target} ${scope}
+      $<$<NOT:$<CONFIG:Debug>>:_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST>)
+  else()
+    target_compile_definitions(${target} ${scope}
+      _LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST)
+  endif()
+  target_compile_definitions(${target} ${scope} _GLIBCXX_ASSERTIONS)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_compile_options(${target} ${scope} -fstack-clash-protection)
     target_link_options(${target} ${scope} -Wl,-z,relro,-z,now)

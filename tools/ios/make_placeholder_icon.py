@@ -6,7 +6,8 @@ The macOS icon is a rounded square on transparency, so this lays it over the
 game's backdrop colour and draws a striped frame round the edge to mark the
 result as a stand-in. The real icon is drawn by the art scripts and replaces
 packaging/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png; this script
-and its output then go.
+and the marker file it writes, packaging/ios/ICON_IS_A_PLACEHOLDER, then go.
+While the marker is there, a build with a signing team is refused.
 
 Usage: make_placeholder_icon.py [source.png [output.png]]
 Standard library only. The result is committed, so a build does not run this.
@@ -121,6 +122,13 @@ def main(argv):
         rows.append(row)
     write_rgb(output, rows)
     print("wrote %s" % output)
+    if len(argv) <= 2:
+        # Tells the build that the catalog's icon is a stand-in (cmake/Ios.cmake).
+        marker = repo / "packaging/ios/ICON_IS_A_PLACEHOLDER"
+        marker.write_text("The icon in Assets.xcassets/AppIcon.appiconset is a placeholder made by\n"
+                          "tools/ios/make_placeholder_icon.py. A build that could be shipped is refused\n"
+                          "while this file exists. Delete it together with replacing the icon.\n")
+        print("wrote %s" % marker)
     return 0
 
 
