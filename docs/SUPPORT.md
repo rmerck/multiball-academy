@@ -4,7 +4,7 @@ Multiball Academy is a pinball game for iPhone, iPad, macOS and Linux.
 
 ## Getting help or reporting a problem
 
-Open an issue at <https://github.com/rmerck/multiball-academy/issues>. Anyone with a GitHub account can do so. It helps to say:
+Open an issue at <https://github.com/rmerck/multiball-academy/issues>; anyone with a GitHub account can do so. Or write to <dev@mrck.app>, which needs no account. Either way it helps to say:
 
 - the device and its system version (for example "iPad, iPadOS 26.1" or "macOS 15");
 - the game's version, shown on the About screen;
