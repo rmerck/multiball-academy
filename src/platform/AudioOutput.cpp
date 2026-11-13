@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <utility>
 
 namespace pinball {
 
@@ -57,23 +58,36 @@ static_assert(kMinQueuedFrames > 0 && kMinQueuedFrames <= kMaxFramesPerPump);
 
 }  // namespace
 
-std::unique_ptr<AudioOutput> AudioOutput::open() {
-  if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio: %s", SDL_GetError());
-    return nullptr;
-  }
+namespace {
+
+// Opens and starts the default playback device. The audio subsystem must be
+// up. Returns null, after logging a warning, if there is no usable device.
+SDL_AudioStream* openStream() {
   const SDL_AudioSpec spec{.format = SDL_AUDIO_F32, .channels = 1, .freq = SoundMixer::kSampleRate};
   SDL_AudioStream* stream =
       SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
   if (stream == nullptr) {
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio device: %s", SDL_GetError());
-    SDL_QuitSubSystem(SDL_INIT_AUDIO);
     return nullptr;
   }
   // The device starts paused.
   if (!SDL_ResumeAudioStreamDevice(stream)) {
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Audio would not start: %s", SDL_GetError());
     SDL_DestroyAudioStream(stream);
+    return nullptr;
+  }
+  return stream;
+}
+
+}  // namespace
+
+std::unique_ptr<AudioOutput> AudioOutput::open() {
+  if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio: %s", SDL_GetError());
+    return nullptr;
+  }
+  SDL_AudioStream* stream = openStream();
+  if (stream == nullptr) {
     SDL_QuitSubSystem(SDL_INIT_AUDIO);
     return nullptr;
   }
@@ -86,13 +100,22 @@ AudioOutput::~AudioOutput() {
 }
 
 void AudioOutput::suspend() {
+  suspended_ = true;
   SDL_PauseAudioStreamDevice(stream_);
   SDL_ClearAudioStream(stream_);
 }
 
-void AudioOutput::resume() { SDL_ResumeAudioStreamDevice(stream_); }
+void AudioOutput::resume() {
+  suspended_ = false;
+  SDL_ResumeAudioStreamDevice(stream_);
+  // The default device may be another one by now.
+  pumpsUntilDeviceCheck_ = 0;
+}
 
 void AudioOutput::pump(SoundMixer& mixer) {
+  if (suspended_) {
+    return;
+  }
   if (pumpsUntilDeviceCheck_-- <= 0) {
     pumpsUntilDeviceCheck_ = kPumpsPerDeviceCheck;
     SDL_AudioSpec device{};
@@ -117,6 +140,65 @@ void AudioOutput::pump(SoundMixer& mixer) {
   mixer.render(std::span<float>(buffer).first(frames));
   // If this fails the sound for one frame is lost; nothing else depends on it.
   SDL_PutAudioStreamData(stream_, buffer.data(), static_cast<int>(frames * sizeof(float)));
+}
+
+AudioOpener::~AudioOpener() {
+  if (thread_ != nullptr) {
+    SDL_WaitThread(thread_, nullptr);
+    thread_ = nullptr;
+    if (stream_ != nullptr) {
+      SDL_DestroyAudioStream(stream_);
+    }
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
+  }
+}
+
+int SDLCALL AudioOpener::work(void* self) {
+  auto* const opener = static_cast<AudioOpener*>(self);
+  opener->stream_ = openStream();
+  SDL_SetAtomicInt(&opener->state_, kDone);
+  return 0;
+}
+
+void AudioOpener::start() {
+  if (thread_ != nullptr) {
+    return;
+  }
+  // Up here and not on the worker: bringing a subsystem up is not something
+  // SDL promises to do safely on two threads at once. It opens no device.
+  if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio: %s", SDL_GetError());
+    return;
+  }
+  stream_ = nullptr;
+  SDL_SetAtomicInt(&state_, kOpening);
+  thread_ = SDL_CreateThread(&AudioOpener::work, "audio open", this);
+  if (thread_ == nullptr) {
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio: %s", SDL_GetError());
+    SDL_SetAtomicInt(&state_, kIdle);
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
+  }
+}
+
+bool AudioOpener::busy() const noexcept {
+  return SDL_GetAtomicInt(&state_) == kOpening;
+}
+
+std::unique_ptr<AudioOutput> AudioOpener::take() {
+  if (thread_ == nullptr || SDL_GetAtomicInt(&state_) != kDone) {
+    return nullptr;
+  }
+  // The worker has finished its work; this returns at once.
+  SDL_WaitThread(thread_, nullptr);
+  thread_ = nullptr;
+  SDL_SetAtomicInt(&state_, kIdle);
+  SDL_AudioStream* const stream = std::exchange(stream_, nullptr);
+  if (stream == nullptr) {
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
+    return nullptr;
+  }
+  // The AudioOutput takes over the subsystem reference start() took.
+  return std::unique_ptr<AudioOutput>(new AudioOutput(stream));
 }
 
 }  // namespace pinball
