@@ -33,14 +33,38 @@ Game::Game() {
   snapshotForDrawing();
 }
 
+std::size_t Game::primaryBall() const noexcept {
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (physics_.ballActive(slot)) {
+      return slot;
+    }
+  }
+  return 0;
+}
+
 void Game::serveBall() {
-  physics_.resetBall(table::kBallStart, {0.0F, 0.0F});
+  // One ball from here on: the first slot's, and nobody else's.
+  for (std::size_t slot = 1; slot < kMaxBalls; ++slot) {
+    removeBall(slot);
+  }
+  if (physics_.ballActive(0)) {
+    physics_.setBallPassesGate(0, false);
+    physics_.resetBall(table::kBallStart, {0.0F, 0.0F});
+  } else {
+    physics_.activateBall(0, table::kBallStart, {0.0F, 0.0F});
+    balls_[0] = {};
+  }
   physics_.setLaneGateClosed(false);
-  ballPlaced_ = true;
+  balls_[0].inPlay = false;
+  balls_[0].placed = true;
 }
 
 void Game::snapshotForDrawing() {
-  previousBall_ = ball();
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (physics_.ballActive(slot)) {
+      balls_[slot].previous = ballView(slot);
+    }
+  }
   for (std::size_t i = 0; i < previousFlipperAngles_.size(); ++i) {
     previousFlipperAngles_[i] = physics_.flipperAngle(i);
   }
@@ -50,7 +74,9 @@ void Game::startNewGame() {
   rules_.startGame();
   bumperFlash_.fill(0.0F);
   slingshotFlash_.fill(0.0F);
-  stillSteps_ = 0;
+  for (BallState& ball : balls_) {
+    ball.stillSteps = 0;
+  }
   shake_ = {};
   serveBall();
 }
@@ -88,7 +114,10 @@ void Game::handleNudges(const InputState& input) {
       sounds_ |= soundBit(Sound::Nudge);
     }
     if (helps) {
-      physics_.pushBall(nudge.ballKick);
+      // Every ball on the table feels it. A ball in a hole does not.
+      for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+        physics_.pushBall(slot, nudge.ballKick);
+      }
     }
   }
 }
@@ -101,9 +130,99 @@ void Game::handleDrain() {
   serveBall();
 }
 
+void Game::removeBall(std::size_t slot) {
+  physics_.deactivateBall(slot);
+  balls_[slot] = {};
+}
+
+void Game::handleLostBalls() {
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (!physics_.ballActive(slot)) {
+      continue;
+    }
+    const bool lost = !physics_.ballIsSane(slot);
+    if (!lost && !(physics_.ballPosition(slot).y > table::kDrainY)) {
+      continue;
+    }
+    if (physics_.activeBallCount() > 1) {
+      // Others are still on the table, so play goes on with them and
+      // nothing is served. A drained ball is counted; one lost outside the
+      // table is simply gone.
+      if (!lost) {
+        ++drainCount_;
+      }
+      removeBall(slot);
+    } else if (lost) {
+      // Fail safe: a ball outside the table or with a corrupt state is put
+      // back. Rules must hear of it: there is no drain to end a tilt, and a
+      // tilted table with the ball on the plunger could never launch it again.
+      rules_.onBallReturned();
+      serveBall();
+    } else {
+      handleDrain();
+    }
+  }
+}
+
+void Game::updateLaneGate() {
+  // A ball in a hole is on the playfield wherever the hole is.
+  bool anyInPlay = false;
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (!physics_.ballActive(slot)) {
+      continue;
+    }
+    BallState& ball = balls_[slot];
+    ball.inPlay =
+        ball.inPlay || physics_.ballHeld(slot) || onPlayfield(physics_.ballPosition(slot));
+    anyInPlay = anyInPlay || ball.inPlay;
+  }
+  // Once a launched ball is clear of the lane, shut the gate behind it.
+  if (!physics_.laneGateClosed() && anyInPlay) {
+    physics_.setLaneGateClosed(true);
+    enterPlay();
+  }
+  if (!physics_.laneGateClosed()) {
+    return;
+  }
+  // The gate keeps balls in play out of the lane. With several balls, one
+  // still in the lane behind it is let through, until it too has reached
+  // the playfield. A single ball is never given the pass, so for it the
+  // gate is what it always was.
+  const bool several = physics_.activeBallCount() > 1;
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (!physics_.ballActive(slot)) {
+      continue;
+    }
+    if (balls_[slot].inPlay) {
+      physics_.setBallPassesGate(slot, false);
+    } else if (several) {
+      physics_.setBallPassesGate(slot, true);
+    }
+  }
+}
+
+std::size_t Game::addBall(Vec2 position, Vec2 velocity) {
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (physics_.ballActive(slot)) {
+      continue;
+    }
+    if (!physics_.activateBall(slot, position, velocity)) {
+      break;
+    }
+    balls_[slot] = {};
+    balls_[slot].searchAnchor = position;
+    balls_[slot].previous = ballView(slot);
+    balls_[slot].placed = true;
+    return slot;
+  }
+  return kMaxBalls;
+}
+
 void Game::step(const InputState& input) {
   snapshotForDrawing();
-  ballPlaced_ = false;
+  for (BallState& ball : balls_) {
+    ball.placed = false;
+  }
   sounds_ = 0;
   // Controls act on the press, not for as long as the key is held.
   if (input.newGame && !previousInput_.newGame) {
@@ -129,30 +248,27 @@ void Game::step(const InputState& input) {
   physics_.step(static_cast<float>(kStepSeconds));
 
   handleEvents();
-  updateHeldBall();
-  updateBallSearch(playable && input.leftFlipper, playable && input.rightFlipper);
+  // Balls are always dealt with in slot order, so a step has one outcome.
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (physics_.ballActive(slot)) {
+      updateHeldBall(slot);
+    }
+  }
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (physics_.ballActive(slot)) {
+      updateBallSearch(slot, playable && input.leftFlipper, playable && input.rightFlipper);
+    }
+  }
   rules_.tick();
 
-  if (!physics_.ballIsSane()) {
-    // Fail safe: a ball outside the table or with a corrupt state is put back.
-    // Rules must hear of it: there is no drain to end a tilt, and a tilted
-    // table with the ball on the plunger could never launch it again.
-    rules_.onBallReturned();
-    serveBall();
-  } else if (physics_.ballPosition().y > table::kDrainY) {
-    handleDrain();
-  }
+  handleLostBalls();
+  updateLaneGate();
 
-  // Once the launched ball is clear of the lane, shut the gate behind it. A
-  // ball in a hole is on the playfield wherever the hole is.
-  if (!physics_.laneGateClosed() && (physics_.ballHeld() || onPlayfield(physics_.ballPosition()))) {
-    physics_.setLaneGateClosed(true);
-    enterPlay();
-  }
-
-  if (ballPlaced_) {
-    // Nothing to draw between the old place and the new one.
-    previousBall_ = ball();
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (physics_.ballActive(slot) && balls_[slot].placed) {
+      // Nothing to draw between the old place and the new one.
+      balls_[slot].previous = ballView(slot);
+    }
   }
 
   sounds_ |= rules_.takeSounds();
@@ -231,31 +347,56 @@ void Game::handleEvents() {
   }
 }
 
-void Game::updateHeldBall() {
-  const bool held = physics_.ballHeld();
-  if (held && !wasHeld_) {
+bool Game::exitIsClear(std::size_t slot, std::size_t hole) const {
+  // The last ball out by this exit needs time to get out of the way.
+  const std::uint64_t last = lastReleaseStep_[hole];
+  if (last != 0 &&
+      static_cast<double>(stepCount_ + 1 - last) * kStepSeconds < kHoleReleaseSpacingSeconds) {
+    return false;
+  }
+  // And no ball may be sitting where this one would appear.
+  const Vec2 exit = table::kHoles[hole].exitPosition;
+  for (std::size_t other = 0; other < kMaxBalls; ++other) {
+    if (other == slot || !physics_.ballActive(other) || physics_.ballHeld(other)) {
+      continue;
+    }
+    const Vec2 d = physics_.ballPosition(other) - exit;
+    if (d.x * d.x + d.y * d.y < kHoleExitClearance * kHoleExitClearance) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void Game::updateHeldBall(std::size_t slot) {
+  BallState& ball = balls_[slot];
+  const bool held = physics_.ballHeld(slot);
+  if (held && !ball.wasHeld) {
     // Taken from the physics state itself, not from the event list, which
     // can drop entries when a step is very busy.
-    heldBy_ = std::min(physics_.heldHole(), table::kHoles.size() - 1);
-    heldSteps_ = 0;
+    ball.heldBy = std::min(physics_.heldHole(slot), table::kHoles.size() - 1);
+    ball.heldSteps = 0;
   }
-  wasHeld_ = held;
+  ball.wasHeld = held;
   if (!held) {
     return;
   }
-  ++heldSteps_;
-  if (static_cast<double>(heldSteps_) * kStepSeconds >= kHoleHoldSeconds) {
-    const table::Hole& hole = table::kHoles[heldBy_];
-    physics_.releaseBall(hole.exitPosition, hole.exitVelocity);
-    ballPlaced_ = true;
+  ++ball.heldSteps;
+  if (static_cast<double>(ball.heldSteps) * kStepSeconds >= kHoleHoldSeconds &&
+      exitIsClear(slot, ball.heldBy)) {
+    const table::Hole& hole = table::kHoles[ball.heldBy];
+    physics_.releaseBall(slot, hole.exitPosition, hole.exitVelocity);
+    lastReleaseStep_[ball.heldBy] = stepCount_ + 1;
+    ball.placed = true;
     // So that a capture on the very next step still counts as a new one.
-    wasHeld_ = false;
+    ball.wasHeld = false;
     sounds_ |= soundBit(Sound::HoleOut);
   }
 }
 
-void Game::updateBallSearch(bool leftRaised, bool rightRaised) {
-  const Vec2 p = physics_.ballPosition();
+void Game::updateBallSearch(std::size_t slot, bool leftRaised, bool rightRaised) {
+  BallState& ball = balls_[slot];
+  const Vec2 p = physics_.ballPosition(slot);
   // Not stuck: off the table in a hole, waiting on the plunger, or being
   // cradled on a raised flipper.
   // A cradle means resting on a flipper that is being held up, so only a
@@ -270,24 +411,24 @@ void Game::updateBallSearch(bool leftRaised, bool rightRaised) {
   };
   const bool cradled = (leftRaised && nearFlipper(table::kLeftFlipperIndex)) ||
                        (rightRaised && nearFlipper(table::kRightFlipperIndex));
-  const bool exempt = physics_.ballHeld() || p.x > table::kLaneWallX || cradled;
-  const float dx = p.x - searchAnchor_.x;
-  const float dy = p.y - searchAnchor_.y;
+  const bool exempt = physics_.ballHeld(slot) || p.x > table::kLaneWallX || cradled;
+  const float dx = p.x - ball.searchAnchor.x;
+  const float dy = p.y - ball.searchAnchor.y;
   constexpr float kMovedPixels = 3.0F;
   if (exempt || dx * dx + dy * dy > kMovedPixels * kMovedPixels) {
-    searchAnchor_ = p;
-    stillSteps_ = 0;
+    ball.searchAnchor = p;
+    ball.stillSteps = 0;
     return;
   }
-  ++stillSteps_;
-  if (static_cast<double>(stillSteps_) * kStepSeconds < kBallSearchSeconds) {
+  ++ball.stillSteps;
+  if (static_cast<double>(ball.stillSteps) * kStepSeconds < kBallSearchSeconds) {
     return;
   }
   // Shove it up the table and towards the centre.
   const float towardCentre = p.x < table::kFieldCenterX ? 1.0F : -1.0F;
-  physics_.pushBall({towardCentre * 260.0F, -420.0F});
+  physics_.pushBall(slot, {towardCentre * 260.0F, -420.0F});
   ++ballSearchCount_;
-  stillSteps_ = 0;
+  ball.stillSteps = 0;
 }
 
 FlipperView Game::flipper(std::size_t index) const {
@@ -297,12 +438,28 @@ FlipperView Game::flipper(std::size_t index) const {
   return {table::kFlippers[index].pivot, physics_.flipperAngle(index)};
 }
 
-BallView Game::ball() const {
-  BallView view{physics_.ballPosition(), physics_.ballAngle()};
-  if (!physics_.ballHeld()) {
+BallView Game::ball() const { return ballView(primaryBall()); }
+
+BallView Game::ball(float alpha) const { return ballView(primaryBall(), alpha); }
+
+BallViews Game::balls(float alpha) const {
+  BallViews views;
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (physics_.ballActive(slot)) {
+      views.items[views.count++] = ballView(slot, alpha);
+    }
+  }
+  return views;
+}
+
+BallView Game::ballView(std::size_t slot) const {
+  BallView view{physics_.ballPosition(slot), physics_.ballAngle(slot)};
+  view.id = static_cast<std::uint8_t>(slot);
+  if (!physics_.ballHeld(slot)) {
     return view;
   }
-  const table::Hole& hole = table::kHoles[heldBy_];
+  const BallState& state = balls_[slot];
+  const table::Hole& hole = table::kHoles[state.heldBy];
   if (hole.type != table::HoleType::Ramp) {
     view.visible = false;
     return view;
@@ -312,26 +469,27 @@ BallView Game::ball() const {
   // was taken (the held body stays there), which can be anywhere across the
   // ramp's mouth.
   const float t = std::clamp(
-      static_cast<float>(static_cast<double>(heldSteps_) * kStepSeconds / kHoleHoldSeconds), 0.0F,
-      1.0F);
+      static_cast<float>(static_cast<double>(state.heldSteps) * kStepSeconds / kHoleHoldSeconds),
+      0.0F, 1.0F);
   view.position = view.position + (hole.exitPosition - view.position) * t;
   view.scale = 1.0F + 0.35F * 4.0F * t * (1.0F - t);
   return view;
 }
 
-BallView Game::ball(float alpha) const {
-  const BallView now = ball();
+BallView Game::ballView(std::size_t slot, float alpha) const {
+  const BallView now = ballView(slot);
+  const BallView& before = balls_[slot].previous;
   const float t = blendFactor(alpha);
   // A hidden ball has no place to draw from or to.
-  if (t >= 1.0F || !now.visible || !previousBall_.visible) {
+  if (t >= 1.0F || !now.visible || !before.visible) {
     return now;
   }
   BallView view = now;
-  view.position = previousBall_.position + (now.position - previousBall_.position) * t;
+  view.position = before.position + (now.position - before.position) * t;
   // The angle wraps at half a turn either way, so go round the short way.
-  const float turn = std::remainder(now.angle - previousBall_.angle, 2.0F * table::kPi);
-  view.angle = previousBall_.angle + turn * t;
-  view.scale = previousBall_.scale + (now.scale - previousBall_.scale) * t;
+  const float turn = std::remainder(now.angle - before.angle, 2.0F * table::kPi);
+  view.angle = before.angle + turn * t;
+  view.scale = before.scale + (now.scale - before.scale) * t;
   return view;
 }
 
