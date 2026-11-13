@@ -12,8 +12,10 @@
 namespace {
 
 void printUsage() {
-  std::fputs("Usage: pinball [--frames N]\n"
-             "  --frames N   exit after N frames (1..1000000), for automated tests\n",
+  std::fputs("Usage: pinball [--frames N] [--touch]\n"
+             "  --frames N   exit after N frames (1..1000000), for automated tests\n"
+             "  --touch      the touch screen's layout and controls, in a window;\n"
+             "               the mouse stands in for a finger\n",
              stderr);
 }
 
@@ -30,6 +32,8 @@ int main(int argc, char* argv[]) {
         printUsage();
         return EXIT_FAILURE;
       }
+    } else if (arg == "--touch") {
+      options.idiom = pinball::screen::Idiom::Touch;
     } else {
       printUsage();
       return EXIT_FAILURE;
