@@ -23,6 +23,9 @@ struct BallView {
   // Which ball: its slot, 0 to kMaxBalls - 1. A ball keeps its id for as
   // long as it is on the table.
   std::uint8_t id = 0;
+  // Riding the ramp over the table, or waiting at its top for the exit to
+  // clear: to be drawn above everything on the playfield.
+  bool raised = false;
 };
 
 // The balls on the table, lowest id first. Fixed capacity and returned by
@@ -38,8 +41,12 @@ struct BallViews {
     return std::span<const BallView>(items).first(count);
   }
   std::span<const BallView> span() const&& = delete;
-  [[nodiscard]] auto begin() const noexcept { return span().begin(); }
-  [[nodiscard]] auto end() const noexcept { return span().end(); }
+  // The same goes for these. A range-for over game.balls(alpha) is fine: it
+  // keeps the object for the length of the loop.
+  [[nodiscard]] auto begin() const& noexcept { return span().begin(); }
+  [[nodiscard]] auto end() const& noexcept { return span().end(); }
+  void begin() const&& = delete;
+  void end() const&& = delete;
   [[nodiscard]] std::size_t size() const noexcept { return count; }
   [[nodiscard]] bool empty() const noexcept { return count == 0; }
 };
@@ -164,7 +171,12 @@ class Game {
   void handleDrain();
   // Deals with balls that have drained or been lost outside the table.
   void handleLostBalls();
-  // Takes one of several balls off the table for good.
+  // Why a ball left the table while others stayed on it.
+  enum class BallLoss : std::uint8_t { Drained, OutOfBounds };
+  // The one way a ball leaves the table while others play on. The rules
+  // will hear of every such ball from here.
+  void loseBallWithOthersLive(std::size_t slot, BallLoss loss);
+  // Takes a ball off the table and forgets everything kept about it.
   void removeBall(std::size_t slot);
   // Puts another ball on the table, in the lowest free slot. Returns the
   // slot, or kMaxBalls if every slot is in use or the input is not finite.

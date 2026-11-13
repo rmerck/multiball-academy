@@ -179,9 +179,27 @@ int fillTable(Game& game) {
   return added;
 }
 
+// Whether span(), begin() and end() can be called on a T.
+template <typename T>
+concept GivesViews = requires(T&& views) {
+  static_cast<T&&>(views).span();
+  static_cast<T&&>(views).begin();
+  static_cast<T&&>(views).end();
+};
+template <typename T>
+concept GivesNoViews = !requires(T&& views) { static_cast<T&&>(views).span(); } &&
+                       !requires(T&& views) { static_cast<T&&>(views).begin(); } &&
+                       !requires(T&& views) { static_cast<T&&>(views).end(); };
+
 // The game with more than one ball on the table. No rule puts a second ball
 // there yet, so the tests add them through the seam.
 void testSeveralBalls() {
+  // A BallViews that is about to go away gives out nothing pointing into it.
+  static_assert(GivesNoViews<pinball::BallViews>);
+  static_assert(GivesNoViews<const pinball::BallViews>);
+  static_assert(GivesViews<pinball::BallViews&>);
+  static_assert(GivesViews<const pinball::BallViews&>);
+
   {  // One ball to begin with; more appear in id order and the primary ball
      // is the lowest of them.
     Game game;
@@ -366,6 +384,16 @@ void testSeveralBalls() {
     CHECK(find(views, 1).id == kNoBall);
     CHECK(distance(views.items[0].position, kOpenField + Vec2{-70.0F, 0.0F}) < 10.0F);
     CHECK(game.laneGateClosed() && game.rules().ballInPlay() && game.rules().ball() == 1);
+    // A ball that drains while others play on leaves by the same door: the
+    // difference is only that it is counted.
+    Seam::placeBall(game, 2, {table::kFieldCenterX, table::kDrainY + 5.0F});
+    game.step(input);
+    CHECK(game.ballCount() == 1 && game.drainCount() == 1 && game.ball().id == 0);
+    CHECK(game.laneGateClosed() && game.rules().ballInPlay() && game.rules().ball() == 1);
+    CHECK(Seam::addBall(game, kOpenField + Vec2{70.0F, 0.0F}) == 1);
+    Seam::placeBall(game, 1, {300.0F, 2000.0F});  // Below the drain, and outside the shell.
+    game.step(input);
+    CHECK(game.ballCount() == 1 && game.drainCount() == 1);
     // The freed slot is the next one used.
     CHECK(Seam::addBall(game, kOpenField) == 1);
     CHECK(ballsAreSound(game));
@@ -408,6 +436,108 @@ void testSeveralBalls() {
     CHECK(!Seam::passesGate(game, 0) && !Seam::passesGate(game, 1));
   }
 
+  {  // The last ball in play drains on the very step a new ball arrives on
+     // the plunger. The gate is shut and nothing will open it, so the ball
+     // in the lane, now the only ball, must be let through.
+    Game game;
+    InputState input;
+    Seam::placeBall(game, kOpenField);
+    Seam::putInPlay(game);
+    game.step(input);
+    CHECK(game.laneGateClosed());
+    Seam::placeBall(game, 0, {table::kFieldCenterX, table::kDrainY + 5.0F});
+    CHECK(Seam::addBall(game, table::kBallStart) == 1);
+    game.step(input);
+    CHECK(game.ballCount() == 1 && game.ball().id == 1 && game.drainCount() == 1);
+    CHECK(game.laneGateClosed());
+    CHECK(Seam::passesGate(game, 1));
+    input.plunger = true;
+    for (int i = 0; i < 150; ++i) {
+      game.step(input);
+    }
+    input.plunger = false;
+    bool out = false;
+    for (int i = 0; i < 360 && !out; ++i) {
+      game.step(input);
+      out = game.ball().id == 1 && game.ball().position.x < table::kLaneGateCloseX;
+    }
+    CHECK(out);
+    CHECK(!Seam::passesGate(game, 1) && game.laneGateClosed());
+  }
+
+  {  // A slot keeps nothing of the ball that left it. The next ball in it,
+     // put in the lane, is not taken for one that was already in play.
+    Game game;
+    const InputState input;
+    Seam::placeBall(game, kOpenField);
+    Seam::putInPlay(game);
+    CHECK(Seam::addBall(game, kOpenField + Vec2{70.0F, 0.0F}) == 1);
+    game.step(input);
+    CHECK(!Seam::passesGate(game, 1));
+    Seam::placeBall(game, 1, {table::kFieldCenterX, table::kDrainY + 5.0F});
+    game.step(input);
+    CHECK(game.ballCount() == 1);
+    CHECK(Seam::addBall(game, table::kBallStart) == 1);
+    Seam::placeBall(game, 0, kOpenField);
+    game.step(input);
+    CHECK(Seam::passesGate(game, 1) && !Seam::passesGate(game, 0));
+  }
+
+  {  // The ball search watches every ball: two stuck balls are each shoved
+     // after four seconds, whichever slots they are in.
+    Game game;
+    const InputState input;
+    const Vec2 spots[] = {kOpenField + Vec2{-70.0F, 0.0F}, kOpenField + Vec2{70.0F, 0.0F}};
+    CHECK(Seam::addBall(game, spots[0]) == 1);
+    CHECK(Seam::addBall(game, spots[1]) == 2);
+    const int due = static_cast<int>(Game::kBallSearchSeconds * 120.0);
+    for (int i = 0; i < due + 2 && game.ballSearchCount() == 0; ++i) {
+      CHECK(i >= due - 2 || game.ballSearchCount() == 0);
+      // Held where they are, as a wedged ball would be.
+      Seam::placeBall(game, 1, spots[0]);
+      Seam::placeBall(game, 2, spots[1]);
+      game.step(input);
+    }
+    CHECK(game.ballSearchCount() == 2);
+    // Up the table and towards the middle, each from its own side.
+    CHECK(Seam::velocity(game, 1).y < -300.0F && Seam::velocity(game, 1).x > 100.0F);
+    CHECK(Seam::velocity(game, 2).y < -300.0F && Seam::velocity(game, 2).x < -100.0F);
+    // The ball on the plunger is not stuck.
+    CHECK(distance(game.ball().position, table::kBallStart) < 2.0F);
+  }
+
+  {  // A ball returned by the ramp is drawn at the exit at once, whichever
+     // slot it is in: not part-way back along the last step of its ride.
+    const table::Hole& rampHole = table::kHoles[holeOfType(table::HoleType::Ramp)];
+    for (const std::size_t slot : {std::size_t{1}, std::size_t{2}}) {
+      Game game;
+      const InputState input;
+      CHECK(Seam::addBall(game, kOpenField + Vec2{100.0F, 0.0F}) == 1);
+      CHECK(Seam::addBall(game, kOpenField + Vec2{-100.0F, 0.0F}) == 2);
+      Seam::placeBall(game, slot, rampHole.center + Vec2{12.0F, 30.0F}, {-420.0F, -1300.0F});
+      bool ridden = false;
+      bool returned = false;
+      for (int i = 0; i < 200 && !returned; ++i) {
+        // The other added ball is kept out of the way.
+        Seam::placeBall(game, 3 - slot, kOpenField + Vec2{100.0F, 0.0F});
+        const BallView before = find(game.balls(), slot);
+        game.step(input);
+        const BallView now = find(game.balls(), slot);
+        if (Seam::held(game, slot)) {
+          ridden = true;
+        } else if (ridden) {
+          returned = true;
+          CHECK(before.raised && !now.raised);
+          CHECK(distance(before.position, rampHole.exitPosition) > 1.0F);
+          CHECK(distance(now.position, rampHole.exitPosition) < 0.01F);
+          CHECK(same(find(game.balls(0.0F), slot), now));
+          CHECK(same(find(game.balls(0.5F), slot), now));
+        }
+      }
+      CHECK(returned);
+    }
+  }
+
   {  // Three balls into one hole. Each is scored as it arrives and held its
      // own 0.9 s; they leave one at a time, 0.3 s apart, and of two that are
      // both waiting the lower id goes first.
@@ -448,6 +578,7 @@ void testSeveralBalls() {
           CHECK(view.id == b && view.visible);
           CHECK(distance(view.position, blackHole.exitPosition) < 0.01F);
           CHECK(same(find(game.balls(0.0F), b), view));
+          CHECK(!view.raised);
         }
       }
       sound = sound && ballsAreSound(game);
@@ -548,6 +679,8 @@ void testSeveralBalls() {
         const BallView a = find(now, 0);
         const BallView b = find(now, 1);
         CHECK(a.visible && b.visible && a.scale > 1.0F && b.scale > 1.0F);
+        CHECK(a.raised && b.raised && !find(now, 2).raised);
+        CHECK(find(half, 0).raised && find(half, 1).raised);
         CHECK(a.position.y < b.position.y);  // The first is further along.
         for (std::size_t each = 0; each < 2; ++each) {
           CHECK(distance(find(half, each).position,
@@ -563,6 +696,8 @@ void testSeveralBalls() {
         CHECK(Seam::held(game, 0) && Seam::held(game, 1));
         CHECK(distance(find(now, 0).position, rampHole.exitPosition) < 0.01F);
         CHECK(find(now, 0).scale == 1.0F && find(now, 0).visible);
+        // Still up on the ramp, not on the playfield under the ball there.
+        CHECK(find(now, 0).raised && find(now, 1).raised && !find(now, 2).raised);
       }
     }
     CHECK(taken[0] >= 0 && taken[0] < 6 && taken[1] > taken[0] && taken[1] < 16);

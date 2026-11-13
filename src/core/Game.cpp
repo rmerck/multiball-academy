@@ -51,8 +51,8 @@ void Game::serveBall() {
     physics_.setBallPassesGate(0, false);
     physics_.resetBall(table::kBallStart, {0.0F, 0.0F});
   } else {
+    // Its state was cleared when it was taken off the table.
     physics_.activateBall(0, table::kBallStart, {0.0F, 0.0F});
-    balls_[0] = {};
   }
   physics_.setLaneGateClosed(false);
   balls_[0].inPlay = false;
@@ -132,7 +132,18 @@ void Game::handleDrain() {
 
 void Game::removeBall(std::size_t slot) {
   physics_.deactivateBall(slot);
+  // The slot's next ball starts with nothing of this one's.
   balls_[slot] = {};
+}
+
+void Game::loseBallWithOthersLive(std::size_t slot, BallLoss loss) {
+  // Play goes on with the others and nothing is served. A drained ball is
+  // counted; one lost outside the table is simply gone. (When the rules
+  // learn about several balls, this is where they are told.)
+  if (loss == BallLoss::Drained) {
+    ++drainCount_;
+  }
+  removeBall(slot);
 }
 
 void Game::handleLostBalls() {
@@ -145,13 +156,7 @@ void Game::handleLostBalls() {
       continue;
     }
     if (physics_.activeBallCount() > 1) {
-      // Others are still on the table, so play goes on with them and
-      // nothing is served. A drained ball is counted; one lost outside the
-      // table is simply gone.
-      if (!lost) {
-        ++drainCount_;
-      }
-      removeBall(slot);
+      loseBallWithOthersLive(slot, lost ? BallLoss::OutOfBounds : BallLoss::Drained);
     } else if (lost) {
       // Fail safe: a ball outside the table or with a corrupt state is put
       // back. Rules must hear of it: there is no drain to end a tilt, and a
@@ -184,19 +189,14 @@ void Game::updateLaneGate() {
   if (!physics_.laneGateClosed()) {
     return;
   }
-  // The gate keeps balls in play out of the lane. With several balls, one
-  // still in the lane behind it is let through, until it too has reached
-  // the playfield. A single ball is never given the pass, so for it the
-  // gate is what it always was.
-  const bool several = physics_.activeBallCount() > 1;
+  // The gate keeps balls in play out of the lane. A ball still in the lane
+  // behind the shut gate is let through it until it too has reached the
+  // playfield, however many balls there are: the others may all have
+  // drained since. In a game with one ball the gate shuts only once that
+  // ball is in play, so it is never given the pass.
   for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
-    if (!physics_.ballActive(slot)) {
-      continue;
-    }
-    if (balls_[slot].inPlay) {
-      physics_.setBallPassesGate(slot, false);
-    } else if (several) {
-      physics_.setBallPassesGate(slot, true);
+    if (physics_.ballActive(slot)) {
+      physics_.setBallPassesGate(slot, !balls_[slot].inPlay);
     }
   }
 }
@@ -209,7 +209,6 @@ std::size_t Game::addBall(Vec2 position, Vec2 velocity) {
     if (!physics_.activateBall(slot, position, velocity)) {
       break;
     }
-    balls_[slot] = {};
     balls_[slot].searchAnchor = position;
     balls_[slot].previous = ballView(slot);
     balls_[slot].placed = true;
@@ -471,6 +470,7 @@ BallView Game::ballView(std::size_t slot) const {
   const float t = std::clamp(
       static_cast<float>(static_cast<double>(state.heldSteps) * kStepSeconds / kHoleHoldSeconds),
       0.0F, 1.0F);
+  view.raised = true;
   view.position = view.position + (hole.exitPosition - view.position) * t;
   view.scale = 1.0F + 0.35F * 4.0F * t * (1.0F - t);
   return view;
