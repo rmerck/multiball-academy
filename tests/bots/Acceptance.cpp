@@ -906,6 +906,36 @@ KickbackResult kickbackSweep(int balls) {
   return result;
 }
 
+KickbackPlayResult kickbackUnderBot(int reflexError, int balls) {
+  KickbackPlayResult result;
+  for (int j = 0; j < balls; ++j) {
+    TableHarness harness;
+    harness.setLocks(false);
+    harness.lightKickback();
+    harness.advance();
+    ReflexBot bot(4000U + static_cast<std::uint64_t>(j), reflexError);
+    harness.put(0, {53.0F + static_cast<float>(j % 13), 660.0F},
+                {0.0F, 100.0F + static_cast<float>(j % 7) * 100.0F}, true);
+    // Until it is set down, then three seconds of play.
+    int since = -1;
+    for (int i = 0; i < kStepsPerSecond * 6 && since < kStepsPerSecond * 3; ++i) {
+      harness.act(bot);
+      const Touch drain = harness.advance();
+      if (since < 0 && harness.kickbackReturns > 0) {
+        since = 0;
+        ++result.kicks;
+      } else if (since >= 0) {
+        ++since;
+      }
+      if (drain != Touch::None) {
+        result.lostAgain += since >= 0 ? 1 : 0;
+        break;
+      }
+    }
+  }
+  return result;
+}
+
 RestResult restingPlaces(int balls, std::uint64_t seed) {
   RestResult result;
   Rng rng(seed);

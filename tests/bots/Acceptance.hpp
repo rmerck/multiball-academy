@@ -167,6 +167,15 @@ struct KickbackResult {
 };
 [[nodiscard]] KickbackResult kickbackSweep(int balls);
 
+// B6, in play: a ball down the lit left outlane with the reflex bot at the
+// flippers, each with its own seed, followed for three seconds after the
+// kickback has set it down.
+struct KickbackPlayResult {
+  int kicks = 0;
+  int lostAgain = 0;  // Drained within three seconds of the set-down.
+};
+[[nodiscard]] KickbackPlayResult kickbackUnderBot(int reflexError, int balls);
+
 // --- D2: no resting place --------------------------------------------------------------
 struct RestResult {
   int placed = 0;

@@ -570,7 +570,7 @@ void sectionReflexSaver(bool quick, int onlyError) {
     row(Kind::KnownMiss, result.percentile(0.9) <= 300.0, "C2c",
         text("P2 E=%d: 90th percentile ball, 15 s saver and kickback", error), "at most 300 s",
         text("%.1f s", result.percentile(0.9)));
-    row(Kind::Info, true, "B6i",
+    row(Kind::Info, true, "B6j",
         text("P2 E=%d: kickback fired; lost again within 3 s (judged in section kickback)", error),
         "under 2 percent",
         text("%llu fired, %llu lost again", static_cast<unsigned long long>(result.kickbacks),
@@ -603,14 +603,19 @@ void sectionKickback(bool quick) {
            static_cast<unsigned long long>(result.kickbacks),
            static_cast<unsigned long long>(result.kickbackReturns),
            static_cast<unsigned long long>(result.kickbackSafe)));
-  const double lost = result.kickbackReturns == 0
-                          ? 0.0
-                          : 100.0 * static_cast<double>(result.kickbackLostAgain) /
-                                static_cast<double>(result.kickbackReturns);
-  row(Kind::Hard, lost < 2.0, "B6b", "P2 E=5: balls lost again within 3 s of the kickback",
-      "under 2 percent",
-      text("%.1f%% (%llu of %llu)", lost, static_cast<unsigned long long>(result.kickbackLostAgain),
+  row(Kind::Info, true, "B6i", "P2 E=5: balls lost again within 3 s of the kickback, in that play",
+      "under 2 percent (judged below on a larger sample)",
+      text("%llu of %llu", static_cast<unsigned long long>(result.kickbackLostAgain),
            static_cast<unsigned long long>(result.kickbackReturns)));
+  // The same question put directly, with enough kicks to answer it: a ball
+  // down the lit outlane, the bot at the flippers, at each timing error.
+  for (const int error : {3, 5, 8}) {
+    const KickbackPlayResult play = kickbackUnderBot(error, quick ? 300 : 3000);
+    const double lost = play.kicks == 0 ? 100.0 : 100.0 * play.lostAgain / play.kicks;
+    row(Kind::Hard, play.kicks > 0 && lost < 2.0, "B6b",
+        text("P2 E=%d: balls lost again within 3 s of the kickback", error), "under 2 percent",
+        text("%.2f%% (%d of %d)", lost, play.lostAgain, play.kicks));
+  }
   rowsForSoundness("D1", "P2 E=5 with kickback, one ball", result.steps, result.stuck,
                    result.searches, result.laneIntrusions, result.lostBalls, result.overSpeed);
 }
