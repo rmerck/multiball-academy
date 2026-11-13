@@ -38,7 +38,7 @@ endif()
 # and the bundle's Info.plist, the window title, the panel, the About screen
 # and the high score directory are filled in from the same values, so they
 # cannot drift apart. The version is the one in project().
-set(PINBALL_APP_NAME "Space Cadet Pinball")
+set(PINBALL_APP_NAME "Multiball Academy")
 # Words of letters and digits with one space between them, the first starting
 # with a letter, and no more than the 30 characters the App Store allows a
 # name. It becomes a file name, a bundle identifier and a directory name, so
@@ -51,21 +51,23 @@ if(NOT PINBALL_APP_NAME MATCHES "^[A-Za-z][A-Za-z0-9]*( [A-Za-z0-9]+)*$"
                       "are made from it. It is '${PINBALL_APP_NAME}'")
 endif()
 # The name in lower case, with hyphens for its spaces and with them removed:
-# "space-cadet-pinball" and "spacecadetpinball".
+# "multiball-academy" and "multiballacademy".
 string(TOLOWER "${PINBALL_APP_NAME}" pinball_name_lower)
 string(REPLACE " " "-" pinball_name_hyphens "${pinball_name_lower}")
 string(REPLACE " " "" pinball_name_joined "${pinball_name_lower}")
 # The application identifier: the bundle id, and what SDL is told.
 set(PINBALL_BUNDLE_ID "io.github.rmerck.${pinball_name_joined}")
 # The high scores live in <per-user data>/<PINBALL_DATA_ORG>/<PINBALL_DATA_DIR>/.
-# An empty PINBALL_DATA_ORG leaves that level out.
-set(PINBALL_DATA_ORG "${pinball_name_hyphens}")
-set(PINBALL_DATA_DIR "${PINBALL_APP_NAME}")
+# An empty PINBALL_DATA_ORG leaves that level out, which is how it is: one
+# directory, "multiball-academy". (Version 1.0.0, under its old name, kept
+# its scores in a directory of its own. That one is never read or removed.)
+set(PINBALL_DATA_ORG "")
+set(PINBALL_DATA_DIR "${pinball_name_hyphens}")
 # Where the privacy policy is published. Empty until it is.
 set(PINBALL_PRIVACY_URL "")
 # The copyright line of the application bundles.
 set(PINBALL_COPYRIGHT "Copyright 2026 rmerck. MIT licence.")
-project(SpaceCadetPinball VERSION 1.0.0 LANGUAGES CXX)
+project(MultiballAcademy VERSION 1.0.0 LANGUAGES CXX)
 # The iOS bundle version (CFBundleVersion), also shown beside the version.
 # A whole number with no leading zero.
 set(PINBALL_BUILD_NUMBER "1" CACHE STRING "Build number: must rise with every upload to the App Store")
@@ -320,7 +322,7 @@ if(PINBALL_MACOS)
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_ICON_FILE AppIcon
-    MACOSX_BUNDLE_COPYRIGHT "MIT licence. An independent fan project.")
+    MACOSX_BUNDLE_COPYRIGHT "${PINBALL_COPYRIGHT}")
 elseif(PINBALL_IOS)
   # On iOS the system owns the main loop, so the game has another entry
   # point. The bundle's properties, its Info.plist and its resources are
@@ -666,6 +668,7 @@ if(BUILD_TESTING)
       COMMAND ${CMAKE_COMMAND} -DBUNDLE=$<TARGET_BUNDLE_DIR:pinball>
               -DEXECUTABLE=$<TARGET_FILE:pinball> "-DNAME=${PINBALL_APP_NAME}"
               -DIDENTIFIER=${PINBALL_BUNDLE_ID} -DVERSION=${PROJECT_VERSION}
+              "-DCOPYRIGHT=${PINBALL_COPYRIGHT}"
               -P ${CMAKE_SOURCE_DIR}/tests/CheckBundle.cmake)
     set_tests_properties(bundle_layout PROPERTIES TIMEOUT 30)
   endif()

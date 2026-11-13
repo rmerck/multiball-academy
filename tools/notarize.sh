@@ -1,5 +1,5 @@
 #!/bin/sh
-# Notarises a built and signed "Space Cadet Pinball.app" with Apple, staples
+# Notarises a built and signed "Multiball Academy.app" with Apple, staples
 # the ticket to it and checks the result.
 #
 # Usage: tools/notarize.sh <path/to/App.app> <keychain-profile>

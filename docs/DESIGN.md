@@ -12,7 +12,7 @@ The code is C++23 with compiler extensions off, kept to the parts of the languag
 
 ## High scores
 
-The five best games are kept in a small text file in the per-user preferences directory (`~/Library/Application Support/space-cadet-pinball/Space Cadet Pinball/highscores.txt` on macOS, `~/.local/share/space-cadet-pinball/Space Cadet Pinball/highscores.txt` on Linux unless `XDG_DATA_HOME` says otherwise), with the score, the rank reached and the player's three initials. This is the only file the game ever writes.
+The five best games are kept in a small text file in the per-user preferences directory (`~/Library/Application Support/multiball-academy/highscores.txt` on macOS, `~/.local/share/multiball-academy/highscores.txt` on Linux unless `XDG_DATA_HOME` says otherwise, and `Library/Application Support/multiball-academy/highscores.txt` inside the application's own container on iOS), with the score, the rank reached and the player's three initials. This is the only file the game ever writes. Version 1.0.0, released as Space Cadet Pinball, kept its scores in a directory under that name; they are not carried over, and that file is never read or removed.
 
 A game that makes the table asks for initials: type letters, or use Up and Down to change one, Enter to confirm each, Left or Backspace to go back, Right to move on, Escape to accept as shown. The last initials entered are offered again.
 

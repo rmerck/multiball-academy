@@ -122,50 +122,52 @@ jobs:
           key: ${{ steps.deps.outputs.cache-primary-key }}
       - name: Test
         run: ctest --test-dir build --output-on-failure --no-tests=error
+      # The steps below take the bundle's name, identifier and version from
+      # build/product.env, which CMake writes from the one name block in
+      # CMakeLists.txt, so that nothing here spells them out a second time.
       - name: No build paths in the binary
-        env:
-          APP: build/Space Cadet Pinball.app
         run: |
-          exe="$APP/Contents/MacOS/Space Cadet Pinball"
+          . build/product.env
+          exe="build/$PINBALL_APP_NAME.app/Contents/MacOS/$PINBALL_APP_NAME"
           test -x "$exe"
           if strings -a "$exe" | grep -E '/Users/|/home/|/private/var/'; then
             echo "build paths found in the binary"; exit 1
           fi
       - name: Only system libraries are loaded
-        env:
-          APP: build/Space Cadet Pinball.app
         run: |
-          exe="$APP/Contents/MacOS/Space Cadet Pinball"
+          . build/product.env
+          exe="build/$PINBALL_APP_NAME.app/Contents/MacOS/$PINBALL_APP_NAME"
           otool -L "$exe"
           if otool -L "$exe" | tail -n +2 | grep -v -E '^\s+(/System/Library/|/usr/lib/)'; then
             echo "non-system library dependency"; exit 1
           fi
       - name: The bundle is complete
-        env:
-          APP: build/Space Cadet Pinball.app
         run: |
-          plist="$APP/Contents/Info.plist"
+          . build/product.env
+          app="build/$PINBALL_APP_NAME.app"
+          plist="$app/Contents/Info.plist"
           plutil -lint "$plist"
-          test "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" = io.github.rmerck.spacecadetpinball
-          version=$(sed -n 's/^project(SpaceCadetPinball VERSION \([0-9.]*\) .*/\1/p' CMakeLists.txt)
-          test -n "$version"
-          test "$(plutil -extract CFBundleShortVersionString raw -o - "$plist")" = "$version"
-          test "$(plutil -extract CFBundleVersion raw -o - "$plist")" = "$version"
+          test -n "$PINBALL_BUNDLE_ID"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" = "$PINBALL_BUNDLE_ID"
+          test "$(plutil -extract CFBundleName raw -o - "$plist")" = "$PINBALL_APP_NAME"
+          test -n "$PINBALL_VERSION"
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$plist")" = "$PINBALL_VERSION"
+          test "$(plutil -extract CFBundleVersion raw -o - "$plist")" = "$PINBALL_VERSION"
           test "$(plutil -extract CFBundleIconFile raw -o - "$plist")" = AppIcon
-          test -s "$APP/Contents/Resources/AppIcon.icns"
-          test -d "$APP/Contents/Resources/assets"
+          test -s "$app/Contents/Resources/AppIcon.icns"
+          test -d "$app/Contents/Resources/assets"
           # The development tools stay outside the bundle.
-          test "$(ls "$APP/Contents/MacOS")" = "Space Cadet Pinball"
+          test "$(ls "$app/Contents/MacOS")" = "$PINBALL_APP_NAME"
           sh -n tools/notarize.sh
           sh -n tools/make_icns.sh
       - name: The bundle's signature verifies and the hardened runtime is on
-        env:
-          APP: build/Space Cadet Pinball.app
         run: |
+          . build/product.env
+          app="build/$PINBALL_APP_NAME.app"
           # After the tests on purpose: nothing they do may touch the bundle.
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          codesign -dv "$APP" 2>&1 | grep -E 'flags=.*runtime'
-          codesign -dv "$APP/Contents/MacOS/Space Cadet Pinball" 2>&1 | grep -E 'flags=.*runtime'
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -E 'flags=.*runtime'
+          codesign -dv "$app/Contents/MacOS/$PINBALL_APP_NAME" 2>&1 | grep -E 'flags=.*runtime'
 
   # The iOS application, built for the simulator as it would be for release:
   # optimised, warnings as errors, nothing signed. It is not started here;
