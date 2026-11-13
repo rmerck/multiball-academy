@@ -63,8 +63,8 @@ set(PINBALL_BUNDLE_ID "io.github.rmerck.${pinball_name_joined}")
 # its scores in a directory of its own. That one is never read or removed.)
 set(PINBALL_DATA_ORG "")
 set(PINBALL_DATA_DIR "${pinball_name_hyphens}")
-# Where the privacy policy is published. Empty until it is.
-set(PINBALL_PRIVACY_URL "")
+# Where the privacy policy is published: docs/PRIVACY.md, as GitHub shows it.
+set(PINBALL_PRIVACY_URL "https://github.com/rmerck/space-cadet-pinball/blob/main/docs/PRIVACY.md")
 # The copyright line of the application bundles.
 set(PINBALL_COPYRIGHT "Copyright 2026 rmerck. MIT licence.")
 project(MultiballAcademy VERSION 1.0.0 LANGUAGES CXX)
@@ -190,7 +190,11 @@ if(PINBALL_IOS)
     endif()
   endforeach()
   # Only the application goes into an archive, not the static libraries.
+  # And an archive build must not strip the libraries on the way: their
+  # debug information has to reach the application's .dSYM. The application
+  # itself is stripped (cmake/Ios.cmake).
   set(CMAKE_XCODE_ATTRIBUTE_SKIP_INSTALL YES)
+  set(CMAKE_XCODE_ATTRIBUTE_STRIP_INSTALLED_PRODUCT NO)
 endif()
 
 include(cmake/Hardening.cmake)

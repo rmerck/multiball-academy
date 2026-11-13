@@ -150,12 +150,14 @@ xcodebuild archive -project build-ios/MultiballAcademy.xcodeproj -scheme pinball
   -configuration Release -destination 'generic/platform=iOS' \
   -archivePath build-ios/MultiballAcademy.xcarchive -allowProvisioningUpdates
 
+cp -R "build-ios/Release-iphoneos/Multiball Academy.app.dSYM" build-ios/MultiballAcademy.xcarchive/dSYMs/
+
 xcodebuild -exportArchive -archivePath build-ios/MultiballAcademy.xcarchive \
   -exportOptionsPlist packaging/ios/ExportOptions.plist \
   -exportPath build-ios/export -allowProvisioningUpdates
 ```
 
-`-allowProvisioningUpdates` lets Xcode create the certificate and the provisioning profile; it uses the account signed in to Xcode, or an API key given with `-authenticationKeyPath`, `-authenticationKeyID` and `-authenticationKeyIssuerID`. Keep the key file outside the repository. `packaging/ios/ExportOptions.plist` asks for the `app-store-connect` method (the current name; `app-store` is deprecated) and writes `build-ios/export/Multiball Academy.ipa`. Changing its `destination` from `export` to `upload` sends the build straight to App Store Connect instead; `xcrun altool --upload-app` and the Transporter application take the `.ipa`. For a trial that creates no build, set `method` to `validation`.
+The `cp` puts the debug symbols into the archive, where the export looks for them: a CMake project builds into its own directory, so Xcode leaves the `.dSYM` there. The archive's `Products` holds the application and nothing else. `-allowProvisioningUpdates` lets Xcode create the certificate and the provisioning profile; it uses the account signed in to Xcode, or an API key given with `-authenticationKeyPath`, `-authenticationKeyID` and `-authenticationKeyIssuerID`. Keep the key file outside the repository. `packaging/ios/ExportOptions.plist` asks for the `app-store-connect` method (the current name; `app-store` is deprecated) and writes `build-ios/export/Multiball Academy.ipa`. Changing its `destination` from `export` to `upload` sends the build straight to App Store Connect instead; `xcrun altool --upload-app` and the Transporter application take the `.ipa`. For a trial that creates no build, set `method` to `validation`.
 
 Before the first upload: the real icon, the app record in App Store Connect under the bundle identifier `io.github.rmerck.multiballacademy`, and the privacy policy and support pages ([PRIVACY.md](PRIVACY.md), [SUPPORT.md](SUPPORT.md)) reachable at their public addresses. After it, read the message App Store Connect sends: a required-reason API it found that the privacy manifest does not declare is named there. Then TestFlight on a real iPhone and a real iPad, for what no simulator shows: the ring/silent switch, interruptions, a 120 Hz display, heat.
 
