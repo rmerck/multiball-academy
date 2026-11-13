@@ -1,0 +1,951 @@
+#include "bots/Acceptance.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <memory>
+#include <span>
+
+#include "bots/Bots.hpp"
+#include "core/Game.hpp"
+#include "core/TableLayout.hpp"
+
+namespace pinball::bots::acceptance {
+
+namespace {
+
+constexpr int kStepsPerSecond = 120;
+// Start positions across the plunger for a launch: sideways offsets.
+constexpr std::array<float, 8> kLaunchOffsets{0.0F,  -1.5F, -0.75F, -0.25F,
+                                              0.25F, 0.75F, 1.5F,   0.0F};
+
+Vec2 mirrorPoint(Vec2 p, bool mirror) noexcept { return mirror ? table::mirrored(p) : p; }
+Vec2 mirrorVelocity(Vec2 v, bool mirror) noexcept { return mirror ? Vec2{-v.x, v.y} : v; }
+
+bool isSafeFirstTouch(Touch touch) noexcept {
+  return touch == Touch::Flipper || touch == Touch::InlaneLeft || touch == Touch::InlaneRight ||
+         touch == Touch::RollCall;
+}
+
+bool isPassedThrough(Touch touch) noexcept {
+  return touch == Touch::CircuitLeft || touch == Touch::CircuitRight || touch == Touch::Turbine;
+}
+
+float speedOf(Vec2 v) noexcept { return std::sqrt(v.x * v.x + v.y * v.y); }
+
+// Puts the ball on the plunger, lets it settle, and holds the plunger.
+void plunge(TableHarness& harness, int offsetIndex, int holdSteps) {
+  const auto index = static_cast<std::size_t>(offsetIndex) % kLaunchOffsets.size();
+  harness.put(0, {table::kBallStart.x + kLaunchOffsets[index], table::kBallStart.y}, {}, false);
+  for (int i = 0; i < (index == 7 ? 20 : 30); ++i) {
+    harness.advance();
+  }
+  harness.plunger = true;
+  for (int i = 0; i < holdSteps; ++i) {
+    harness.advance();
+  }
+  harness.plunger = false;
+}
+
+bool atRestOnPlunger(const TableHarness& harness) {
+  return !harness.game().ballInPlay(0) &&
+         std::fabs(harness.position(0).y - table::kBallStart.y) < 3.0F &&
+         std::fabs(harness.velocity(0).y) < 5.0F;
+}
+
+std::unique_ptr<Bot> makeBot(BotKind kind, std::uint64_t seed, int reflexError) {
+  switch (kind) {
+    case BotKind::Idle:
+      return std::make_unique<IdleBot>();
+    case BotKind::Random:
+      return std::make_unique<RandomBot>(seed);
+    case BotKind::Reflex:
+      break;
+  }
+  return std::make_unique<ReflexBot>(seed, reflexError);
+}
+
+// Whether a ball can be put at p without starting inside something solid:
+// clear of every wall, post, target, door, bumper and slingshot, and not in
+// the Hangar, which is shut behind its doors.
+bool clearOfSolids(Vec2 p) noexcept {
+  constexpr float kClear = table::kBallRadius + 1.0F;
+  const auto clearOf = [p](const table::Capsule& c) {
+    return reachOf(p, c.a, c.b).distance > c.radius + kClear;
+  };
+  for (const table::Capsule& wall : table::kAllWalls) {
+    if (!clearOf(wall)) {
+      return false;
+    }
+  }
+  for (const table::Capsule& post : table::kDeadPosts) {
+    if (!clearOf(post)) {
+      return false;
+    }
+  }
+  for (const table::Target& target : table::kTargets) {
+    if (!clearOf(target.shape)) {
+      return false;
+    }
+  }
+  for (const table::Capsule& door : table::kDropTargets) {
+    if (!clearOf(door)) {
+      return false;
+    }
+  }
+  for (const table::Bumper& bumper : table::kBumpers) {
+    const Vec2 d = p - bumper.shape.center;
+    const float reach = bumper.shape.radius + kClear;
+    if (d.x * d.x + d.y * d.y < reach * reach) {
+      return false;
+    }
+  }
+  for (const table::Triangle& sling : table::kSlingshots) {
+    // Near an edge, or inside.
+    bool inside = true;
+    for (std::size_t i = 0; i < 3; ++i) {
+      const Vec2 a = sling.points[i];
+      const Vec2 b = sling.points[(i + 1) % 3];
+      if (reachOf(p, a, b).distance < sling.cornerRadius + kClear) {
+        return false;
+      }
+      const Vec2 c = sling.points[(i + 2) % 3];
+      const float side = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+      const float inner = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+      inside = inside && side * inner > 0.0F;
+    }
+    if (inside) {
+      return false;
+    }
+  }
+  // The Hangar's pocket, from its roof down to the doors.
+  const bool inHangar = p.x > table::kHangarLeft.a.x && p.x < table::kHangarRight.a.x &&
+                        p.y > table::kHangarRoofRight.a.y && p.y < table::kDoorY;
+  return !inHangar;
+}
+
+void mix(std::uint64_t& hash, std::uint64_t value) noexcept {
+  hash = (hash ^ value) * 0x100000001B3ULL;
+}
+
+}  // namespace
+
+LaunchResult launchSweep(int holdStride, int offsets) {
+  LaunchResult result;
+  for (int hold = 1; hold <= 125; hold += std::max(holdStride, 1)) {
+    for (int j = 0; j < std::clamp(offsets, 1, 8); ++j) {
+      TableHarness harness;
+      plunge(harness, j, hold);
+      Touch first = Touch::None;
+      bool back = false;
+      float before = speedOf(harness.velocity(0));
+      for (int i = 0; i < kStepsPerSecond * 25; ++i) {
+        const std::size_t eventsBefore = harness.events.size();
+        const std::uint64_t touchesBefore = harness.flipperTouches;
+        const bool wasInPlay = harness.game().ballInPlay(0);
+        const bool clearOfPlunger = harness.position(0).y < table::kPlungerRestTopY - 120.0F;
+        const Touch drain = harness.advance();
+        const float now = speedOf(harness.velocity(0));
+        if (!wasInPlay && clearOfPlunger && drain == Touch::None) {
+          result.largestKick = std::max(result.largestKick, now - before);
+        }
+        before = now;
+        for (const TouchEvent& event : std::span(harness.events).subspan(eventsBefore)) {
+          if (!isPassedThrough(event.touch)) {
+            first = event.touch;
+            break;
+          }
+        }
+        if (first == Touch::None && harness.flipperTouches > touchesBefore) {
+          first = Touch::Flipper;
+        }
+        if (first == Touch::None && drain != Touch::None) {
+          first = drain;
+        }
+        if (first != Touch::None) {
+          break;
+        }
+        if (i > 240 && atRestOnPlunger(harness)) {
+          back = true;
+          break;
+        }
+      }
+      ++result.launches;
+      if (back) {
+        ++result.backOnPlunger;
+        continue;
+      }
+      ++result.first[static_cast<std::size_t>(first)];
+      if (!isSafeFirstTouch(first)) {
+        ++result.unsafe;
+      }
+    }
+  }
+  return result;
+}
+
+DescentResult slowDescents(int stride) {
+  DescentResult result;
+  int n = 0;
+  for (int side = 0; side < 2; ++side) {
+    for (int ix = 0; ix < 6; ++ix) {
+      for (int iy = 0; iy < 5; ++iy) {
+        for (int iv = 0; iv < 4; ++iv) {
+          for (int il = 0; il < 3; ++il) {
+            if (n++ % std::max(stride, 1) != 0) {
+              continue;
+            }
+            TableHarness harness;
+            // Across the lane, down its length, at 0 to 450 px/s down.
+            const Vec2 p{101.0F + static_cast<float>(ix) * 7.4F,
+                         300.0F + static_cast<float>(iy) * 45.0F};
+            const Vec2 v{(static_cast<float>(il) - 1.0F) * 70.0F, static_cast<float>(iv) * 150.0F};
+            harness.put(0, mirrorPoint(p, side == 1), mirrorVelocity(v, side == 1), true);
+            Touch first = Touch::None;
+            bool touched = false;
+            for (int i = 0; i < kStepsPerSecond * 8; ++i) {
+              const std::size_t eventsBefore = harness.events.size();
+              const std::uint64_t touchesBefore = harness.flipperTouches;
+              const Touch drain = harness.advance();
+              if (first == Touch::None && harness.events.size() > eventsBefore) {
+                first = harness.events[eventsBefore].touch;
+              }
+              if (harness.flipperTouches > touchesBefore) {
+                touched = true;
+                if (first == Touch::None) {
+                  first = Touch::Flipper;
+                }
+              }
+              if (drain != Touch::None) {
+                if (drain == Touch::DrainCentre && !touched) {
+                  ++result.throughGapUntouched;
+                }
+                if (first == Touch::None) {
+                  first = drain;
+                }
+                break;
+              }
+            }
+            ++result.descents;
+            ++result.first[static_cast<std::size_t>(first)];
+          }
+        }
+      }
+    }
+  }
+  return result;
+}
+
+SkillShotResult skillShotDrains(int holdStride, int offsets) {
+  SkillShotResult result;
+  for (int hold = 6; hold <= 125; hold += std::max(holdStride, 1)) {
+    for (int j = 0; j < std::clamp(offsets, 1, 8); ++j) {
+      TableHarness harness;
+      plunge(harness, j, hold);
+      bool first = true;
+      bool lane = false;
+      bool touched = false;
+      Touch drain = Touch::None;
+      for (int i = 0; i < kStepsPerSecond * 25 && drain == Touch::None; ++i) {
+        const std::size_t eventsBefore = harness.events.size();
+        const std::uint64_t touchesBefore = harness.flipperTouches;
+        drain = harness.advance();
+        if (first && harness.events.size() > eventsBefore) {
+          lane = harness.events[eventsBefore].touch == Touch::RollCall;
+          first = false;
+        }
+        touched = touched || harness.flipperTouches > touchesBefore;
+      }
+      if (!lane) {
+        continue;
+      }
+      ++result.reachedRollCall;
+      if (drain == Touch::DrainCentre && !touched) {
+        ++result.throughGapUntouched;
+      }
+    }
+  }
+  return result;
+}
+
+AutoLaunchRow autoLaunchAt(int speed, int launches) {
+  AutoLaunchRow row;
+  row.speed = speed;
+  for (int j = 0; j < launches; ++j) {
+    TableHarness harness;
+    harness.put(
+        0, {table::kBallStart.x + (static_cast<float>(j % 8) - 3.5F) * 0.4F, table::kBallStart.y},
+        {}, false);
+    for (int i = 0; i < 20 + j / 8; ++i) {
+      harness.advance();
+    }
+    harness.put(0, harness.position(0), {0.0F, -static_cast<float>(speed)}, false);
+    Touch first = Touch::None;
+    bool back = false;
+    for (int i = 0; i < kStepsPerSecond * 12; ++i) {
+      const FirstTouch touch = firstTouch(harness, 1);
+      if (touch.touch != Touch::None) {
+        first = touch.touch;
+        break;
+      }
+      if (i > 300 && !harness.game().ballInPlay(0) && harness.position(0).y > 870.0F &&
+          std::fabs(harness.velocity(0).y) < 5.0F) {
+        back = true;
+        break;
+      }
+    }
+    ++row.launches;
+    if (back) {
+      ++row.backOnPlunger;
+    } else if (first == Touch::InlaneLeft) {
+      ++row.leftInlane;
+    } else if (first == Touch::RollCall) {
+      ++row.rollCall;
+    } else if (first == Touch::InlaneRight) {
+      ++row.rightInlane;
+    } else {
+      ++row.other;
+    }
+  }
+  return row;
+}
+
+GameAutoLaunchResult gameAutoLaunch(int launches) {
+  GameAutoLaunchResult result;
+  for (int j = 0; j < launches; ++j) {
+    TableHarness harness;
+    // The only ball is dropped out of the bottom with another asked for:
+    // the game serves that one and launches it by itself.
+    harness.put(0, {300.0F + static_cast<float>(j), table::kHeight - 20.0F}, {}, true);
+    if (!harness.game().requestBall()) {
+      continue;
+    }
+    for (int i = 0; i < kStepsPerSecond && harness.advance() == Touch::None; ++i) {
+    }
+    harness.events.clear();
+    const FirstTouch touch = firstTouch(harness, kStepsPerSecond * 12);
+    ++result.launches;
+    result.safeFirstTouch += isSafeFirstTouch(touch.touch) ? 1 : 0;
+    result.leftInlane += touch.touch == Touch::InlaneLeft ? 1 : 0;
+    result.relaunches += harness.game().autoRelaunchCount();
+  }
+  return result;
+}
+
+OneWayResult oneWayArch(int balls) {
+  OneWayResult result;
+  // The arch part of the chain, ghosts and the straight wall aside.
+  constexpr std::size_t kFirst = 3;
+  constexpr std::size_t kLast = table::kInnerArch.size() - 2;
+  for (int k = 0; k < balls; ++k) {
+    TableHarness harness;
+    const std::size_t index = kFirst + static_cast<std::size_t>(k) * 7U % (kLast - kFirst + 1U);
+    const Vec2 target = table::kInnerArch[index];
+    // From 70 units inside, straight out at the arch (the line from the
+    // arch's centre is near enough its normal), a little off to one side.
+    const Vec2 inward = table::kArchCenter - target;
+    const float length = speedOf(inward);
+    const Vec2 unit = inward * (1.0F / length);
+    const Vec2 start = target + unit * 70.0F;
+    const float speed = 300.0F + 150.0F * static_cast<float>(k % 15);
+    const float skew = (static_cast<float>(k % 5) - 2.0F) * 0.15F;
+    const Vec2 velocity{(-unit.x + skew * unit.y) * speed, (-unit.y - skew * unit.x) * speed};
+    harness.put(0, start, velocity, true);
+    bool crossed = false;
+    for (int i = 0; i < kStepsPerSecond * 3 && !crossed; ++i) {
+      if (harness.advance() != Touch::None) {
+        break;
+      }
+      const Vec2 p = harness.position(0);
+      if (p.y < table::kArchCenter.y) {
+        const float ex = (p.x - table::kArchCenter.x) / table::kArchRadiusX;
+        const float ey = (p.y - table::kArchCenter.y) / table::kArchRadiusY;
+        crossed = p.x > table::kArchCenter.x && ex * ex + ey * ey > 1.0F;
+      } else {
+        crossed = p.x > table::kLaneWallX + table::kWallRadius;
+      }
+    }
+    ++result.fired;
+    result.crossed += crossed || harness.laneIntrusions > 0 ? 1 : 0;
+  }
+  return result;
+}
+
+// --- The shot sweep ------------------------------------------------------------------
+
+namespace {
+
+struct Feed {
+  const char* name;
+  Vec2 position;  // For the left flipper; mirrored for the right.
+  Vec2 velocity;
+  bool cradle;
+};
+// TABLE.md 5.1: the standard feeds, and a ball crossing the field.
+constexpr std::array<Feed, 7> kFeeds{{
+    {"inlane", {107.0F, 690.0F}, {0.0F, 0.0F}, false},
+    {"ramp exit", {107.0F, 672.0F}, {0.0F, 80.0F}, false},
+    {"circuit return", {112.0F, 470.0F}, {0.0F, 700.0F}, false},
+    {"cradle", {0.0F, 0.0F}, {0.0F, 0.0F}, true},
+    {"drop mid", {300.0F, 640.0F}, {0.0F, 0.0F}, false},
+    {"drop tip", {322.0F, 640.0F}, {0.0F, 0.0F}, false},
+    {"cross", {470.0F, 560.0F}, {-330.0F, 0.0F}, false},
+}};
+constexpr std::size_t kInlaneFeed = 0;
+constexpr std::size_t kRampExitFeed = 1;
+
+struct Attempt {
+  Touch shot = Touch::None;
+  bool reachedArch = false;
+  bool completed = false;
+  bool throughGapUntouched = false;
+  // Dry run only: the first and last step the ball was on the flipper.
+  int contactFirst = -1;
+  int contactLast = -1;
+};
+
+void setUpFeed(TableHarness& harness, const Feed& feed, bool rightSide, int variant) {
+  // Variant 0 is the feed as written. The others move it a little, to give
+  // more first hits; they are not used for the timing windows.
+  const float dx = static_cast<float>((variant * 3) % 7 - (variant == 0 ? 0 : 3)) * 0.6F;
+  const float dv = static_cast<float>((variant * 5) % 9 - (variant == 0 ? 0 : 4)) * 6.0F;
+  if (feed.cradle) {
+    (rightSide ? harness.right : harness.left) = true;
+    for (int i = 0; i < 20; ++i) {
+      harness.advance();
+    }
+    const Vec2 pivot = table::kFlippers[rightSide ? 1 : 0].pivot;
+    harness.put(0, {pivot.x + (rightSide ? -45.0F : 45.0F) + dx, pivot.y - 60.0F}, {}, true);
+    for (int i = 0; i < 240; ++i) {
+      harness.advance();
+    }
+    (rightSide ? harness.right : harness.left) = false;
+  } else {
+    const Vec2 position{feed.position.x + dx, feed.position.y};
+    const Vec2 velocity{feed.velocity.x, feed.velocity.y + (feed.velocity.y > 0.0F ? dv : 0.0F)};
+    harness.put(0, mirrorPoint(position, rightSide), mirrorVelocity(velocity, rightSide), true);
+  }
+  harness.events.clear();
+}
+
+// One go: the scripted bot presses at step pressStep after the feed is set
+// up (never, for a dry run).
+Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep) {
+  const bool dry = pressStep < 0;
+  TableHarness harness;
+  setUpFeed(harness, feed, rightSide, variant);
+  const std::size_t flipper = rightSide ? table::kRightFlipperIndex : table::kLeftFlipperIndex;
+  ScriptedBot bot(flipper, pressStep);
+  Attempt result;
+  bool decided = false;
+  std::uint64_t touchesAtHit = 0;
+  std::uint64_t topsAtHit = 0;
+  std::uint64_t doneAtHit = 0;
+  for (int i = 0; i < kStepsPerSecond * 7; ++i) {
+    if (dry && harness.nearFlipper(harness.position(0), flipper, 1.0F)) {
+      if (result.contactFirst < 0) {
+        result.contactFirst = i;
+      }
+      result.contactLast = i;
+    }
+    harness.act(bot);
+    const std::size_t eventsBefore = harness.events.size();
+    const Touch drain = harness.advance();
+    const bool isCircuit = result.shot == Touch::CircuitLeft || result.shot == Touch::CircuitRight;
+    if (i >= pressStep && !dry && !decided) {
+      for (const TouchEvent& event : std::span(harness.events).subspan(eventsBefore)) {
+        if (event.touch == Touch::InlaneLeft || event.touch == Touch::InlaneRight) {
+          continue;
+        }
+        result.shot = event.touch;
+        decided = true;
+        touchesAtHit = harness.flipperTouches;
+        topsAtHit = harness.circuitTop[0] + harness.circuitTop[1];
+        doneAtHit = harness.circuitDone[0] + harness.circuitDone[1];
+        break;
+      }
+    } else if (decided && isCircuit) {
+      result.reachedArch =
+          result.reachedArch || harness.circuitTop[0] + harness.circuitTop[1] > topsAtHit;
+      result.completed =
+          result.completed || harness.circuitDone[0] + harness.circuitDone[1] > doneAtHit;
+    }
+    if (drain != Touch::None) {
+      result.throughGapUntouched =
+          decided && drain == Touch::DrainCentre && harness.flipperTouches == touchesAtHit;
+      break;
+    }
+    if (decided && !isCircuit && i - pressStep > 300) {
+      break;
+    }
+    if (decided && i - pressStep > 600) {
+      break;
+    }
+  }
+  return result;
+}
+
+}  // namespace
+
+char touchChar(Touch touch) noexcept {
+  static constexpr char kChars[] = ".OLwDHSPWRQbs^ijxyc*";
+  const auto index = static_cast<std::size_t>(touch);
+  return index < sizeof(kChars) - 1 ? kChars[index] : '?';
+}
+
+ShotMap shotSweep(int variants) {
+  ShotMap map;
+  for (int variant = 0; variant < std::max(variants, 1); ++variant) {
+    for (int side = 0; side < 2; ++side) {
+      for (std::size_t f = 0; f < kFeeds.size(); ++f) {
+        const Feed& feed = kFeeds[f];
+        const Attempt dry = attempt(feed, side == 1, variant, -1);
+        if (dry.contactFirst < 0) {
+          continue;  // Never reaches the flipper.
+        }
+        const int first = std::max(0, dry.contactFirst - 2);
+        const int last = std::min(dry.contactLast, dry.contactFirst + 140) + 2;
+        std::string line = std::string(side == 1 ? "R " : "L ") + feed.name + ": ";
+        std::array<int, kTouchCount> bestRun{};
+        Touch previous = Touch::Count;
+        int run = 0;
+        for (int k = first; k <= last; ++k) {
+          const Attempt made = attempt(feed, side == 1, variant, k);
+          Touch shot = made.shot;
+          ShotWindow& window = map.shots[static_cast<std::size_t>(shot)];
+          ++window.firstHits;
+          window.throughGapUntouched += made.throughGapUntouched ? 1 : 0;
+          window.reachedArch += made.reachedArch ? 1 : 0;
+          window.completed += made.completed ? 1 : 0;
+          // A circuit that did not reach the arch is not a made circuit.
+          if ((shot == Touch::CircuitLeft || shot == Touch::CircuitRight) && !made.reachedArch) {
+            shot = Touch::None;
+          }
+          line.push_back(touchChar(shot));
+          run = shot == previous ? run + 1 : 1;
+          previous = shot;
+          bestRun[static_cast<std::size_t>(shot)] =
+              std::max(bestRun[static_cast<std::size_t>(shot)], run);
+        }
+        if (variant != 0) {
+          continue;
+        }
+        map.fans.push_back(line);
+        for (std::size_t s = 1; s < kTouchCount; ++s) {
+          ShotWindow& window = map.shots[s];
+          window.best = std::max(window.best, bestRun[s]);
+          if (feed.cradle) {
+            window.cradle = std::max(window.cradle, bestRun[s]);
+          } else if (f == kInlaneFeed) {
+            window.inlane = std::max(window.inlane, bestRun[s]);
+          } else if (f == kRampExitFeed) {
+            window.rampExit = std::max(window.rampExit, bestRun[s]);
+          }
+        }
+      }
+    }
+  }
+  return map;
+}
+
+LaneResult circuitAt(bool rightSide, int speed) {
+  LaneResult result;
+  double seconds = 0.0;
+  const Touch farInlane = rightSide ? Touch::InlaneLeft : Touch::InlaneRight;
+  const Touch nearInlane = rightSide ? Touch::InlaneRight : Touch::InlaneLeft;
+  for (int j = 0; j < 40; ++j) {
+    TableHarness harness;
+    const Vec2 p{102.0F + static_cast<float>(j % 10) * 2.6F, 470.0F};
+    const Vec2 v{(static_cast<float>(j / 10) - 1.5F) * 60.0F, -static_cast<float>(speed)};
+    harness.put(0, mirrorPoint(p, rightSide), mirrorVelocity(v, rightSide), true);
+    ++result.balls;
+    for (int i = 0; i < kStepsPerSecond * 6; ++i) {
+      const std::size_t eventsBefore = harness.events.size();
+      const Touch drain = harness.advance();
+      bool over = drain != Touch::None;
+      for (const TouchEvent& event : std::span(harness.events).subspan(eventsBefore)) {
+        if (isPassedThrough(event.touch)) {
+          continue;
+        }
+        if (event.touch == farInlane) {
+          ++result.completed;
+          const double t = static_cast<double>(i) / kStepsPerSecond;
+          seconds += t;
+          result.worstSeconds = std::max(result.worstSeconds, t);
+        } else if (event.touch == Touch::RollCall || event.touch == Touch::Bumper) {
+          ++result.rollCallOrNest;
+        } else if (event.touch != nearInlane && event.touch != Touch::Slingshot) {
+          // Anything else: neither made nor fallen back.
+        }
+        over = true;
+        break;
+      }
+      if (over) {
+        break;
+      }
+    }
+  }
+  result.meanSeconds = result.completed > 0 ? seconds / result.completed : 0.0;
+  return result;
+}
+
+LaneResult rampAt(bool rightSide, int speed) {
+  LaneResult result;
+  const table::Hole& hole = table::kHoles[rightSide ? table::kSkywayHole : table::kRunwayHole];
+  for (int j = 0; j < 40; ++j) {
+    TableHarness harness;
+    const float x = hole.center.x - hole.halfSize.x + 2.0F +
+                    static_cast<float>(j % 10) * (2.0F * hole.halfSize.x - 4.0F) / 9.0F;
+    const float vx = (static_cast<float>(j / 10) - 1.5F) * 40.0F;
+    harness.put(0, {x - vx * 0.03F, 470.0F}, {vx, -static_cast<float>(speed)}, true);
+    ++result.balls;
+    for (int i = 0; i < kStepsPerSecond && !harness.held(0); ++i) {
+      harness.advance();
+    }
+    result.completed += harness.held(0) ? 1 : 0;
+  }
+  return result;
+}
+
+ExitResult exitOf(std::size_t hole, int releases) {
+  ExitResult result;
+  if (hole >= table::kHoles.size()) {
+    return result;
+  }
+  const table::Hole& from = table::kHoles[hole];
+  for (int j = 0; j < releases; ++j) {
+    TableHarness harness;
+    const float jx = (static_cast<float>(j % 20) - 9.5F) * 0.05F;
+    const float jv = (static_cast<float>(j / 20 % 10) - 4.5F) * 2.0F;
+    harness.put(0, {from.exitPosition.x + jx, from.exitPosition.y},
+                {from.exitVelocity.x + jv, from.exitVelocity.y}, true);
+    const FirstTouch touch = firstTouch(harness, kStepsPerSecond * 10);
+    ++result.releases;
+    ++result.first[static_cast<std::size_t>(touch.touch)];
+    result.safe += touch.touch == Touch::Flipper || touch.touch == Touch::InlaneLeft ||
+                           touch.touch == Touch::InlaneRight
+                       ? 1
+                       : 0;
+  }
+  return result;
+}
+
+ExitResult kickbackAt(int speed, int kicks) {
+  ExitResult result;
+  for (int j = 0; j < kicks; ++j) {
+    TableHarness harness;
+    const float x = table::kKickbackZone.center.x - 6.0F + static_cast<float>(j % 6) * 2.5F;
+    const float vx = (static_cast<float>(j / 6 % 10) - 4.5F) * 6.0F;
+    harness.put(0, {x, table::kKickbackZone.center.y + 2.0F}, {vx, -static_cast<float>(speed)},
+                true);
+    // The outlane's own switch is passed on the way up; it is not a touch.
+    for (int i = 0; i < 20; ++i) {
+      harness.advance();
+    }
+    std::erase_if(harness.events,
+                  [](const TouchEvent& event) { return event.touch == Touch::OutlaneLeft; });
+    Touch first = Touch::None;
+    for (const TouchEvent& event : harness.events) {
+      if (!isPassedThrough(event.touch)) {
+        first = event.touch;
+        break;
+      }
+    }
+    if (first == Touch::None) {
+      first = firstTouch(harness, kStepsPerSecond * 6).touch;
+    }
+    ++result.releases;
+    ++result.first[static_cast<std::size_t>(first)];
+    result.safe +=
+        first == Touch::Flipper || first == Touch::InlaneLeft || first == Touch::InlaneRight ? 1
+                                                                                             : 0;
+  }
+  return result;
+}
+
+RestResult restingPlaces(int balls, std::uint64_t seed) {
+  RestResult result;
+  Rng rng(seed);
+  while (result.placed < balls) {
+    const Vec2 p{100.0F + rng.unit() * 510.0F, 90.0F + rng.unit() * 760.0F};
+    // Inside the arch, not in the launch channel or the shell.
+    const float ex = (p.x - table::kArchCenter.x) / (table::kArchRadiusX - 16.0F);
+    const float ey = (p.y - table::kArchCenter.y) / (table::kArchRadiusY - 16.0F);
+    if ((p.y < table::kArchCenter.y && ex * ex + ey * ey > 1.0F) || !clearOfSolids(p)) {
+      continue;
+    }
+    const Vec2 v{rng.unit() * 1600.0F - 800.0F, rng.unit() * 1600.0F - 800.0F};
+    TableHarness harness;
+    harness.put(0, p, v, true);
+    ++result.placed;
+    Touch drain = Touch::None;
+    for (int i = 0; i < kStepsPerSecond * 30 && drain == Touch::None; ++i) {
+      const Vec2 before = harness.position(0);
+      const std::uint32_t searches = harness.game().ballSearchCount();
+      drain = harness.advance();
+      if (harness.game().ballSearchCount() > searches && result.restingAt.size() < 16) {
+        result.restingAt.push_back(before);
+      }
+    }
+    result.searches += harness.game().ballSearchCount();
+    if (drain == Touch::None) {
+      ++result.notDrained;
+      if (result.restingAt.size() < 16) {
+        result.restingAt.push_back(harness.position(0));
+      }
+    }
+  }
+  return result;
+}
+
+WedgeResult inlaneWedge(int stride) {
+  WedgeResult result;
+  int n = 0;
+  // From the foot of the circuit lane, and from just above the funnel.
+  for (int side = 0; side < 4; ++side) {
+    const float startY = side < 2 ? 540.0F : 640.0F;
+    for (int ix = 0; ix < 6; ++ix) {
+      for (int gap = 0; gap < 5; ++gap) {
+        for (int iy = 0; iy < 7; ++iy) {
+          for (int iv = 0; iv < 3; ++iv) {
+            if (n++ % std::max(stride, 1) != 0) {
+              continue;
+            }
+            TableHarness harness;
+            // The outer ball against the divider's side of the lane and the
+            // inner one beside it, a little apart, level or one a little ahead.
+            const Vec2 outer{100.0F + static_cast<float>(ix) * 1.5F, startY};
+            const Vec2 inner{outer.x + 24.2F + static_cast<float>(gap) * 1.5F,
+                             startY + (static_cast<float>(iy) - 3.0F) * 4.0F};
+            const Vec2 v{0.0F, static_cast<float>(iv) * 120.0F};
+            const bool rightSide = side % 2 == 1;
+            harness.put(0, mirrorPoint(outer, rightSide), v, true);
+            const std::size_t second = harness.add(mirrorPoint(inner, rightSide), v);
+            bool cleared = false;
+            Vec2 searchedAt{};
+            for (int i = 0; i < kStepsPerSecond * 12 && !cleared; ++i) {
+              const Vec2 before = harness.position(0);
+              const std::uint32_t searches = harness.game().ballSearchCount();
+              harness.advance();
+              if (searches == 0 && harness.game().ballSearchCount() > 0) {
+                searchedAt = before;
+              }
+              // Cleared once neither is anywhere near the inlane mouth: the
+              // game has served a new ball to slot 0 by then.
+              cleared = !harness.live(second) &&
+                        harness.drains[0] + harness.drains[1] + harness.drains[2] >= 2;
+            }
+            ++result.pairs;
+            if (!cleared || harness.stuck > 0 || harness.game().ballSearchCount() > 0) {
+              ++result.wedged;
+              if (result.wedgedAt.size() < 8) {
+                result.wedgedAt.push_back(
+                    harness.game().ballSearchCount() > 0 ? searchedAt : harness.position(0));
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return result;
+}
+
+double SoakResult::percentile(double q) const {
+  if (ballSeconds.empty()) {
+    return 0.0;
+  }
+  std::vector<double> sorted = ballSeconds;
+  std::ranges::sort(sorted);
+  return sorted[static_cast<std::size_t>(q * static_cast<double>(sorted.size() - 1))];
+}
+
+double SoakResult::drainShare(std::size_t way) const {
+  const double total = static_cast<double>(drains[0] + drains[1] + drains[2]);
+  return way < drains.size() && total > 0.0 ? 100.0 * static_cast<double>(drains[way]) / total
+                                            : 0.0;
+}
+
+SoakResult soak(const SoakOptions& options) {
+  SoakResult result;
+  TableHarness harness;
+  const std::unique_ptr<Bot> bot = makeBot(options.bot, options.seed, options.reflexError);
+  Rng rng(options.seed ^ 0xABCDEFULL);
+  const auto advance = [&harness, &result] {
+    ++result.steps;
+    return harness.advance();
+  };
+  // Holds the plunger for a number of steps and lets go.
+  const auto pull = [&harness, &advance](int steps) {
+    harness.plunger = true;
+    for (int i = 0; i < steps; ++i) {
+      advance();
+    }
+    harness.plunger = false;
+  };
+  constexpr std::uint64_t kNotStarted = ~std::uint64_t{0};
+  for (int n = 0; n < options.balls; ++n) {
+    // The game has a ball on the plunger: at the start, and after every drain.
+    harness.left = false;
+    harness.right = false;
+    for (int i = 0; i < 20; ++i) {
+      advance();
+    }
+    pull(rng.range(60, 125));
+    std::uint64_t start = kNotStarted;
+    Touch way = Touch::None;
+    int waiting = 0;
+    while (true) {
+      if (start == kNotStarted && harness.game().ballInPlay(0)) {
+        start = harness.step();
+      }
+      if (start != kNotStarted) {
+        harness.act(*bot);
+      } else {
+        harness.left = false;
+        harness.right = false;
+      }
+      const Touch drain = advance();
+      const double played = start == kNotStarted
+                                ? 0.0
+                                : static_cast<double>(harness.step() - start) / kStepsPerSecond;
+      if (drain != Touch::None && start != kNotStarted && played < options.saverSeconds) {
+        // Saved: back on the plunger, launched at full power, the clock runs on.
+        ++result.saves;
+        harness.left = false;
+        harness.right = false;
+        pull(125);
+        for (int i = 0; i < kStepsPerSecond * 6 && !harness.game().ballInPlay(0); ++i) {
+          advance();
+        }
+        continue;
+      }
+      if (drain != Touch::None) {
+        way = drain;
+        break;
+      }
+      if (start == kNotStarted && ++waiting > kStepsPerSecond * 20) {
+        // A weak plunge came back: again, at full power.
+        pull(125);
+        waiting = 0;
+        ++result.replunges;
+      }
+      if (start != kNotStarted && harness.step() - start > kStepsPerSecond * 60U * 20U) {
+        // Twenty minutes: end the ball by hand so that the run goes on.
+        ++result.timeouts;
+        harness.put(0, {table::kFieldCenterX, table::kDrainY + 4.0F}, {}, true);
+        advance();
+        break;
+      }
+    }
+    harness.events.clear();
+    if (start == kNotStarted) {
+      continue;
+    }
+    const double seconds = static_cast<double>(harness.step() - start) / kStepsPerSecond;
+    result.ballSeconds.push_back(seconds);
+    result.under5 += seconds < 5.0 ? 1 : 0;
+    result.under10 += seconds < 10.0 ? 1 : 0;
+    mix(result.fingerprint, harness.step());
+    mix(result.fingerprint, static_cast<std::uint64_t>(way));
+  }
+  // Only the drains that ended a ball: a saved ball's drain is not one.
+  result.drains = harness.drains;
+  result.stuck = harness.stuck;
+  result.stuckAt = harness.stuckAt;
+  result.searches = harness.game().ballSearchCount();
+  result.laneIntrusions = harness.laneIntrusions;
+  result.lostBalls = harness.lostBalls;
+  result.overSpeed = harness.overSpeed;
+  result.count = harness.count;
+  result.bumperHits = harness.bumperHits;
+  result.targetHits = harness.targetHits;
+  result.doorHits = harness.doorHits;
+  result.rolloverHits = harness.rolloverHits;
+  result.holeHits = harness.holeHits;
+  result.slingHits = harness.slingHits;
+  result.circuitEntered = harness.circuitEntered;
+  result.circuitTop = harness.circuitTop;
+  result.circuitDone = harness.circuitDone;
+  return result;
+}
+
+StressResult stress(const StressOptions& options) {
+  StressResult result;
+  TableHarness harness;
+  Game& game = harness.game();
+  const std::unique_ptr<Bot> bot = makeBot(options.bot, options.seed, options.reflexError);
+  const std::size_t wanted = std::clamp<std::size_t>(options.balls, 1, table::kMaxBalls);
+  int inLane = 0;
+  int pullLeft = 0;
+  std::uint64_t overlapRun = 0;
+  std::array<std::uint64_t, table::kMaxBalls> laneSteps{};
+  for (std::uint64_t n = 0; n < options.steps; ++n) {
+    // Keep the table full: every ball that leaves is asked for again and
+    // the game serves and launches it by itself.
+    while (game.ballCount() + game.queuedBalls() < wanted && game.requestBall()) {
+    }
+    // A ball served for the player to launch (the first of a game) is
+    // plunged at full power once it has waited a moment.
+    bool waiting = false;
+    for (std::size_t slot = 0; slot < table::kMaxBalls; ++slot) {
+      waiting = waiting ||
+                (harness.live(slot) && !harness.held(slot) && !game.ballInPlay(slot) &&
+                 harness.position(slot).y > 860.0F && std::fabs(harness.velocity(slot).y) < 8.0F);
+    }
+    inLane = waiting ? inLane + 1 : 0;
+    if (pullLeft == 0 && inLane > kStepsPerSecond) {
+      pullLeft = 125;
+    }
+    harness.plunger = pullLeft > 0;
+    pullLeft = std::max(pullLeft - 1, 0);
+
+    harness.act(*bot);
+    const std::array<std::uint64_t, 3> drainsBefore = harness.drains;
+    harness.advance();
+    for (std::size_t way = 0; way < 3; ++way) {
+      if (harness.drains[way] != drainsBefore[way]) {
+        mix(result.fingerprint, n * 4U + way);
+      }
+    }
+    if (game.ballCount() + game.queuedBalls() > wanted || game.ballCount() == 0) {
+      ++result.countBroken;
+    }
+    std::array<Vec2, table::kMaxBalls> free{};
+    std::size_t freeCount = 0;
+    for (std::size_t slot = 0; slot < table::kMaxBalls; ++slot) {
+      if (harness.live(slot) && !harness.held(slot)) {
+        free[freeCount++] = harness.position(slot);
+      }
+      laneSteps[slot] = harness.live(slot) && !game.ballInPlay(slot) ? laneSteps[slot] + 1 : 0;
+      result.longestInLane = std::max(result.longestInLane, laneSteps[slot]);
+    }
+    result.stepsWithAllFree += freeCount == wanted ? 1U : 0U;
+    bool overlap = false;
+    for (std::size_t a = 0; a < freeCount; ++a) {
+      for (std::size_t b = a + 1; b < freeCount; ++b) {
+        const Vec2 d = free[a] - free[b];
+        constexpr float kDeepest = 2.0F * table::kBallRadius - 2.0F;
+        overlap = overlap || d.x * d.x + d.y * d.y < kDeepest * kDeepest;
+      }
+    }
+    overlapRun = overlap ? overlapRun + 1 : 0;
+    result.overlapSteps += overlap ? 1U : 0U;
+    result.longestOverlap = std::max(result.longestOverlap, overlapRun);
+    if (harness.events.size() > 4096) {
+      harness.events.clear();
+    }
+  }
+  result.steps = options.steps;
+  result.drains = harness.drains[0] + harness.drains[1] + harness.drains[2];
+  result.autoLaunches = game.autoLaunchCount();
+  result.relaunches = game.autoRelaunchCount();
+  result.stuck = harness.stuck;
+  result.stuckAt = harness.stuckAt;
+  result.searches = game.ballSearchCount();
+  result.laneIntrusions = harness.laneIntrusions;
+  result.lostBalls = harness.lostBalls;
+  result.overSpeed = harness.overSpeed;
+  return result;
+}
+
+}  // namespace pinball::bots::acceptance

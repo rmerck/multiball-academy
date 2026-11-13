@@ -8,6 +8,7 @@
 namespace {
 
 void runSuites() {
+  testAcceptance();
   testArgs();
   testAssetName();
   testBumpers();
@@ -17,6 +18,7 @@ void runSuites() {
   testGame();
   testHighScores();
   testHoles();
+  testLaunch();
   testMissions();
   testNudge();
   testPhysics();

@@ -536,6 +536,7 @@ include(CTest)
 if(BUILD_TESTING)
   add_executable(core_tests
     tests/main.cpp
+    tests/AcceptanceTest.cpp
     tests/ArgsTest.cpp
     tests/AssetNameTest.cpp
     tests/BumperTest.cpp
@@ -545,6 +546,7 @@ if(BUILD_TESTING)
     tests/GameTest.cpp
     tests/HighScoreTest.cpp
     tests/HoleTest.cpp
+    tests/LaunchTest.cpp
     tests/MissionTest.cpp
     tests/NudgeTest.cpp
     tests/PhysicsTest.cpp
@@ -558,6 +560,8 @@ if(BUILD_TESTING)
     tests/TableGeometryTest.cpp
     tests/TargetTest.cpp
     tests/TouchControlsTest.cpp
+    tests/bots/Acceptance.cpp
+    tests/bots/TableHarness.cpp
   )
   target_include_directories(core_tests PRIVATE tests)
   target_link_libraries(core_tests PRIVATE pinball_core)
@@ -706,6 +710,8 @@ if(BUILD_TESTING)
 
   # Renders of every screen layout. (None yet.)
   include(cmake/LayoutTests.cmake)
+  # The table's acceptance tests: the statistical suite and its CTest label.
+  include(cmake/AcceptanceTests.cmake)
 
   # The recorded SDL configure results an iOS build may start from hold
   # nothing but yes-or-no probe results (cmake/IosPreseed.cmake).

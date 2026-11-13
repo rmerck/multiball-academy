@@ -3,6 +3,7 @@
 // Every test suite. Each is defined in its own file, which includes this
 // header, and is called from main.cpp. A declared suite with no definition
 // fails to link.
+void testAcceptance();
 void testArgs();
 void testAssetName();
 void testBumpers();
@@ -12,6 +13,7 @@ void testFormat();
 void testGame();
 void testHighScores();
 void testHoles();
+void testLaunch();
 void testMissions();
 void testNudge();
 void testPhysics();
