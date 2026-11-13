@@ -37,9 +37,12 @@ float distance(Vec2 a, Vec2 b) {
 // changed the game. To regenerate, run core_tests: on a mismatch it prints
 // the value it got.
 //
-// The same on every platform the game is built for: the core is compiled
-// without fused multiply-add (-ffp-contract=off, as Box2D is) and uses only
-// exactly rounded arithmetic where it touches the ball.
+// The same on every platform the game is built for (checked on x86-64 with
+// glibc and on arm64 macOS): the core is compiled without fused
+// multiply-add (-ffp-contract=off, as Box2D is) and the physics uses only
+// exactly rounded arithmetic. The one exception is the arch of the outer
+// wall, laid out with the C library's sin and cos; a library that rounded
+// those differently would need this value looked at again.
 constexpr std::uint64_t kSoakTrajectory = 0xe84f9acc5335bb8fULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
