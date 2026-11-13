@@ -316,7 +316,7 @@ void testGame() {
     }
     CHECK(game.drainCount() == 1);
     CHECK(game.rules().ball() == 1);
-    CHECK(game.rules().message() == std::string_view("RE-DEPLOY"));
+    CHECK(game.rules().message() == std::string_view("BALL SAVED"));
   }
 
   {  // A ball still in the lane, or passing the open gate, is not in play,
