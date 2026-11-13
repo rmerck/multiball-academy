@@ -20,6 +20,8 @@
 # probe results (cmake/IosPreseedKeys.cmake) are accepted; any other line
 # rejects the whole file. So no file in cmake/preseed can change which
 # sources are fetched, the pinned hash, or any option.
+# (An initial-cache script starts with no policies set.)
+cmake_policy(VERSION 3.26)
 include("${CMAKE_CURRENT_LIST_DIR}/IosPreseedKeys.cmake")
 
 set(PINBALL_IOS_PRESEED "" CACHE INTERNAL "The preseed file applied to this build, if any" FORCE)

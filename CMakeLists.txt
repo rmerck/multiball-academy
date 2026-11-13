@@ -687,6 +687,12 @@ if(BUILD_TESTING)
   # Renders of every screen layout. (None yet.)
   include(cmake/LayoutTests.cmake)
 
+  # The recorded SDL configure results an iOS build may start from hold
+  # nothing but yes-or-no probe results (cmake/IosPreseed.cmake).
+  add_test(NAME preseed_records
+    COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -P ${CMAKE_SOURCE_DIR}/tests/CheckPreseed.cmake)
+
   # The geometry dump must be valid JSON.
   if(PINBALL_BUILD_TOOLS AND Python3_Interpreter_FOUND)
     add_test(NAME layout_json
