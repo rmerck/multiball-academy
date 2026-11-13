@@ -80,13 +80,27 @@ inline constexpr float kStackMinHeight = kStripHeight + kPlayfieldHeight + kDeck
 // over it and must end in it.
 inline constexpr std::array<std::uint8_t, 3> kBackdropRgb{10, 0, 26};
 
-// The smallest side of a touch control in the Stack, in units. It is at
-// least 44 points on every preset.
+// The smallest side of what a touch on a control may land in, in units, in
+// both compositions and in the overlays.
 inline constexpr float kMinHitUnits = 96.0F;
+// The size that must come to in points for a finger to find it.
+inline constexpr float kMinHitPoints = 44.0F;
+// The smallest window the game should be given, as the size of its safe
+// area in points: at this size and above, kMinHitUnits is at least
+// kMinHitPoints whatever the shape (the Stack composition fits, and a
+// composition is only ever replaced by one that draws larger). The platform
+// asks the system for no smaller a scene; a smaller window still gets a
+// correct picture, with smaller controls.
+inline constexpr float kMinSceneWidth = 352.0F;
+inline constexpr float kMinSceneHeight = 602.0F;
+// True if the surface's safe area is at least the smallest scene.
+[[nodiscard]] bool meetsMinimumScene(const Surface& surface) noexcept;
 
-// The layout for a window. Never fails: a surface that is not a usable size
-// (zero, negative, not a number) is treated as a very small one, and insets
-// that would leave almost nothing are scaled back. Desktop ignores the
+// The layout for a window. Never fails: a side that is not a usable size
+// (under kMinSurfacePoints, negative, not a number) counts as
+// kMinSurfacePoints, one over kMaxSurfacePoints as that, and insets that
+// would leave almost nothing are scaled back. So the canvas is never more
+// than kMaxCanvasUnits on a side, and whole units stay exact. Desktop ignores the
 // surface and returns desktopLayout().
 //
 // A touch surface gets whichever composition shows the larger playfield;
@@ -94,6 +108,16 @@ inline constexpr float kMinHitUnits = 96.0F;
 [[nodiscard]] Layout computeLayout(const Surface& surface, Idiom idiom) noexcept;
 // Classic on a 1280 x 960 canvas, with no touch controls.
 [[nodiscard]] Layout desktopLayout() noexcept;
+
+// Bounds on what is believed of a surface's sides, in points; the share of a
+// side its two insets may take between them; and what those hold the canvas
+// to, in units: small enough that whole units stay exact.
+inline constexpr float kMinSurfacePoints = 64.0F;
+inline constexpr float kMaxSurfacePoints = 16384.0F;
+inline constexpr float kMaxInsetShare = 0.75F;
+inline constexpr float kMaxCanvasUnits =
+    kMaxSurfacePoints * kStackMinHeight / (kMinSurfacePoints * (1.0F - kMaxInsetShare));
+static_assert(kMaxCanvasUnits < 16'777'216.0F);
 
 // Named surfaces for the snapshot tool and the tests. The inset values are
 // typical figures, not a claim about any one device.
@@ -131,5 +155,12 @@ inline constexpr screen::Rect kCentreButton{244.0F, 12.0F, 280.0F, 96.0F};
 inline constexpr screen::Rect kNudgeRightButton{540.0F, 12.0F, 96.0F, 96.0F};
 // Where the flipper pads' art starts, below the button row.
 inline constexpr float kPadTop = 120.0F;
+// The pads also come up beside the row, into the two corners the buttons
+// leave free: on a short deck (a 16:9 phone) those corners are the whole
+// pad, and they keep the thumbs below the table and off the buttons.
+inline constexpr float kCornerWidth = 124.0F;
+inline constexpr screen::Rect kLeftCorner{8.0F, 12.0F, kCornerWidth - 8.0F, 96.0F};
+inline constexpr screen::Rect kRightCorner{screen::kStackWidth - kCornerWidth, 12.0F, kCornerWidth - 8.0F,
+                                           96.0F};
 
 }  // namespace pinball::deck

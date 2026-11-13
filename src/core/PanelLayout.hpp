@@ -45,11 +45,22 @@ static_assert(wellsAreLaidOut());
 inline constexpr Rect kTitleArea{kLeft + kInset, 20.0F, kWellWidth, 116.0F};
 inline constexpr Rect kControlsArea{kLeft + kInset, 876.0F, kWellWidth, 76.0F};
 
-// Touch controls of the Classic composition. The corner to the right of the
-// row stays free for the right thumb's flipper.
+// Touch controls of the Classic composition, as drawn. The corner to the
+// right of the row stays free for the right thumb's flipper.
 inline constexpr Rect kNudgeLeftButton{792.0F, 876.0F, 96.0F, 76.0F};
 inline constexpr Rect kCentreButton{896.0F, 876.0F, 132.0F, 76.0F};
 inline constexpr Rect kNudgeRightButton{1036.0F, 876.0F, 96.0F, 76.0F};
 inline constexpr Rect kPauseButton{1176.0F, 20.0F, 80.0F, 80.0F};
+// What a touch on each may land in: screen::kMinHitUnits on every side, so a
+// little more than is drawn. The row's reach above its buttons lies over the
+// foot of the last window, which is not a control.
+inline constexpr Rect kNudgeLeftHit{792.0F, 860.0F, 96.0F, 96.0F};
+inline constexpr Rect kCentreHit{896.0F, 860.0F, 132.0F, 96.0F};
+inline constexpr Rect kNudgeRightHit{1036.0F, 860.0F, 96.0F, 96.0F};
+inline constexpr Rect kPauseHit{1168.0F, 12.0F, 96.0F, 96.0F};
+// On a touch screen the title keeps clear of the pause button.
+inline constexpr Rect kTouchTitleArea{kLeft + kInset, 20.0F, 368.0F, 116.0F};
+// Where the right thumb's corner is marked.
+inline constexpr Rect kFlipperCorner{1148.0F, 876.0F, 108.0F, 76.0F};
 
 }  // namespace pinball::panel
