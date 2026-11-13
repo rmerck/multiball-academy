@@ -674,6 +674,11 @@ Vec2 Game::nextScoopExitVelocity() noexcept {
   constexpr int down = table::kScoopExitJitterDown;
 #endif
   Vec2 velocity = table::kHoles[table::kScoopHole].exitVelocity;
+#ifdef PINBALL_TUNE_SCOOP
+  static const int meanX = tuneValue("SCOOP_VX", static_cast<int>(velocity.x));
+  static const int meanY = tuneValue("SCOOP_VY", static_cast<int>(velocity.y));
+  velocity = {static_cast<float>(meanX), static_cast<float>(meanY)};
+#endif
   const auto across = static_cast<std::uint64_t>(left + right + 1);
   const auto along = static_cast<std::uint64_t>(2 * down + 1);
   velocity.x += static_cast<float>(static_cast<int>(nextRandom() % across) - left);
@@ -734,7 +739,8 @@ void Game::updateHeldBall(std::size_t slot) {
     const table::Hole& runway = table::kHoles[table::kRunwayHole];
     if (static_cast<double>(ball.heldSteps) * kStepSeconds >= table::kKickbackSeconds &&
         exitIsClear(slot, table::kRunwayHole, kHoleReleaseSpacingSeconds)) {
-      returnBall(slot, table::kRunwayHole, runway.exitPosition, jittered(runway.exitVelocity));
+      returnBall(slot, table::kRunwayHole, runway.exitPosition,
+                 jittered(table::kKickbackExitVelocity));
       note(GameEvent::Type::KickbackReturned, slot);
     }
     return;

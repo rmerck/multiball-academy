@@ -1109,8 +1109,10 @@ void testKickback() {
               CHECK(v.x == 0.0F);
               // It had all but stopped there.
               CHECK(lastSpeed < 0.5F);
-              CHECK(v.y >= runway.exitVelocity.y - static_cast<float>(table::kRampExitJitter));
-              CHECK(v.y <= runway.exitVelocity.y + static_cast<float>(table::kRampExitJitter));
+              CHECK(v.y >= table::kKickbackExitVelocity.y -
+                               static_cast<float>(table::kRampExitJitter));
+              CHECK(v.y <= table::kKickbackExitVelocity.y +
+                               static_cast<float>(table::kRampExitJitter));
               CHECK(distance(last, p) < 6.0F);
             }
             if (returnedAt >= 0) {

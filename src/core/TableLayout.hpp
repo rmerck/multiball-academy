@@ -530,11 +530,14 @@ inline constexpr int kSpinPayoutSteps = 6;
 // the kickback goes out. The ball is not thrown and left to chance: it is
 // carried along kKickbackPath, up the outlane and over the top of the
 // divider, fast at first (about 950 px/s) and slowing to a stop over
-// kKickbackSeconds, and is set down above the left inlane exactly where and
-// as the Runway's rail sets its balls down (that hole's exit and exit
-// velocity, with the same variation). Whatever speed the ball arrived with,
+// kKickbackSeconds, and is set down above the left inlane where the Runway's
+// rail sets its balls down, moving down at kKickbackExitVelocity (with the
+// rails' variation, kRampExitJitter). Whatever speed the ball arrived with,
 // it comes back the same way, to the left flipper. The path starts from
 // where the ball was taken and joins the table at its second point.
+// The set-down speed is the one the reflex player loses fewest balls from
+// (measured from 0 to 300 px/s: about 1 percent lost within three seconds
+// at 150, about 2 percent at the rails' 80).
 inline constexpr Circle kKickbackZone{{59.0F, 740.0F}, 12.0F};
 inline constexpr std::array<Vec2, 6> kKickbackPath{{
     {59.0F, 740.0F},
@@ -545,6 +548,7 @@ inline constexpr std::array<Vec2, 6> kKickbackPath{{
     kHoles[kRunwayHole].exitPosition,
 }};
 inline constexpr double kKickbackSeconds = 0.5;
+inline constexpr Vec2 kKickbackExitVelocity{0.0F, 150.0F};
 
 // --- Lamps -----------------------------------------------------------------------------
 // Positions are centres. Drawn sizes: shot arrows kArrowLampLength long,
@@ -610,7 +614,7 @@ inline constexpr std::array<Lamp, 29> kLamps{{
     {LampId::ExtraBall, {378.0F, 498.0F}},
     {LampId::Overdrive, {430.0F, 488.0F}},
     {LampId::TurboCharge, {452.0F, 444.0F}},
-    {LampId::Kickback, {59.0F, 672.0F}},
+    {LampId::Kickback, {59.0F, 662.0F}},
     {LampId::ShootAgain, {355.5F, 930.0F}},
     {LampId::RollCall1, {293.0F, 150.0F}},
     {LampId::RollCall2, {355.5F, 150.0F}},
