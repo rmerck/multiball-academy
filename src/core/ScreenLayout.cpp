@@ -25,11 +25,8 @@ constexpr float kStackDialogInset = 24.0F;
 constexpr float kStackDialogDrop = 40.0F;
 constexpr float kStackDialogHeight = 880.0F;
 
-// Bounds on what is believed of a surface, in points.
-constexpr float kMinSurface = 1.0F;
-constexpr float kMaxSurface = 16384.0F;
-// Insets may take at most this share of a side between them.
-constexpr float kMaxInsetShare = 0.75F;
+constexpr float kMinSurface = kMinSurfacePoints;
+constexpr float kMaxSurface = kMaxSurfacePoints;
 
 constexpr Rect moved(const Rect& r, float dx, float dy) noexcept {
   return {r.x + dx, r.y + dy, r.w, r.h};
@@ -64,19 +61,16 @@ Surface sanitised(const Surface& s) noexcept {
 
 // Where a block of the given extent starts so that it sits at whole units
 // and stays between low and high. wanted is where it would go unrounded.
-// When the block fills the range exactly it cannot always be both: then it
-// starts at the whole unit at or before low, which is never off the canvas.
+// When no whole unit does both (the block fills the range, which does not
+// begin on one) it starts at the whole unit at or before low: that is never
+// off the canvas, and never ends past high.
 float snapped(float wanted, float extent, float low, float high) noexcept {
-  // The range is a product of floats and can come out a hair short.
-  constexpr float kSlack = 1.0F / 64.0F;
-  float start = std::floor(wanted + 0.5F);
-  if (start < low - kSlack) {
-    start = std::ceil(wanted);
+  const float first = std::ceil(low);
+  const float last = std::floor(high - extent);
+  if (first <= last) {
+    return std::clamp(std::floor(wanted + 0.5F), first, last);
   }
-  if (start + extent > high + kSlack) {
-    start = std::floor(wanted);
-  }
-  return std::max(start, std::floor(low));
+  return std::floor(low);
 }
 
 Layout classicTouch(Layout layout) noexcept {
@@ -90,10 +84,10 @@ Layout classicTouch(Layout layout) noexcept {
   layout.hud = {x + panel::kLeft, y, panel::kWidth, panel::kHeight};
   layout.deck = kNone;
   layout.dialog = moved(kClassicDialog, x, y);
-  layout.pauseButton = moved(panel::kPauseButton, x, y);
-  layout.nudgeLeftButton = moved(panel::kNudgeLeftButton, x, y);
-  layout.centreButton = moved(panel::kCentreButton, x, y);
-  layout.nudgeRightButton = moved(panel::kNudgeRightButton, x, y);
+  layout.pauseButton = moved(panel::kPauseHit, x, y);
+  layout.nudgeLeftButton = moved(panel::kNudgeLeftHit, x, y);
+  layout.centreButton = moved(panel::kCentreHit, x, y);
+  layout.nudgeRightButton = moved(panel::kNudgeRightHit, x, y);
   // Split down the middle of the composition, the full height of the canvas.
   const float split = x + kClassicWidth * 0.5F;
   layout.flipperLeftZone = {0.0F, 0.0F, split, layout.canvasHeight};
@@ -104,14 +98,14 @@ Layout classicTouch(Layout layout) noexcept {
 Layout stack(Layout layout) noexcept {
   const Rect& safe = layout.safe;
   const float safeBottom = safe.y + safe.h;
-  // The deck takes all the spare height up to its cap; what is left over
-  // goes above the strip, which pushes the content down toward the thumbs.
+  // The deck takes all the spare height up to its cap. A window taller
+  // still has the composition in the middle of what is left over.
   const float spare = std::max(safe.h - kStripHeight - kPlayfieldHeight, kDeckMinHeight);
   const float spacer = spare - std::min(spare, kDeckMaxHeight);
   const float blocks = kStripHeight + kPlayfieldHeight + kDeckMinHeight;
   const float x =
       snapped(safe.x + (safe.w - kStackWidth) * 0.5F, kStackWidth, safe.x, safe.x + safe.w);
-  const float y = snapped(safe.y + spacer, blocks, safe.y, safeBottom);
+  const float y = snapped(safe.y + spacer * 0.5F, blocks, safe.y, safeBottom);
   layout.composition = Composition::Stack;
   layout.hud = {x, y, kStackWidth, kStripHeight};
   layout.playfield = {x, y + kStripHeight, kPlayfieldWidth, kPlayfieldHeight};
@@ -133,14 +127,16 @@ Layout stack(Layout layout) noexcept {
   return layout;
 }
 
-constexpr std::array<Preset, 10> kPresets{{
+constexpr std::array<Preset, 12> kPresets{{
     {"desktop", {kClassicWidth, kClassicHeight, 0.0F, 0.0F, 0.0F, 0.0F}, Idiom::Desktop},
     {"phone", {393.0F, 852.0F, 59.0F, 34.0F, 0.0F, 0.0F}, Idiom::Touch},
+    {"phone-pro", {402.0F, 874.0F, 62.0F, 34.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"phone-short", {375.0F, 667.0F, 20.0F, 0.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"phone-max", {440.0F, 956.0F, 62.0F, 34.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"duo-outer", {466.0F, 678.0F, 0.0F, 0.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"duo-inner", {669.0F, 951.0F, 0.0F, 0.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"pad-portrait", {1024.0F, 1366.0F, 24.0F, 20.0F, 0.0F, 0.0F}, Idiom::Touch},
+    {"pad-portrait-11", {834.0F, 1194.0F, 24.0F, 20.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"pad-split", {507.0F, 1024.0F, 24.0F, 20.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"pad-landscape", {1366.0F, 1024.0F, 24.0F, 20.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"pad-landscape-11", {1194.0F, 834.0F, 24.0F, 20.0F, 0.0F, 0.0F}, Idiom::Touch},
@@ -190,6 +186,12 @@ Layout computeLayout(const Surface& surface, Idiom idiom) noexcept {
   layout.pointsPerUnit = 1.0F / units;
   layout.safe = {s.safeLeft * units, s.safeTop * units, safeWidth * units, safeHeight * units};
   return useStack ? stack(layout) : classicTouch(layout);
+}
+
+bool meetsMinimumScene(const Surface& surface) noexcept {
+  const Surface s = sanitised(surface);
+  return s.width - s.safeLeft - s.safeRight >= kMinSceneWidth &&
+         s.height - s.safeTop - s.safeBottom >= kMinSceneHeight;
 }
 
 std::span<const Preset> presets() noexcept { return kPresets; }

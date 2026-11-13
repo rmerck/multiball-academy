@@ -7,6 +7,7 @@
 #include <optional>
 #include <vector>
 
+#include "core/AboutPages.hpp"
 #include "core/FixedTimestep.hpp"
 #include "core/Game.hpp"
 #include "core/Input.hpp"
@@ -129,6 +130,8 @@ class App {
   bool autoPaused_ = false;
   // The About screen is up. The game stands still behind it.
   bool aboutOpen_ = false;
+  // Which page of it is up. Back to the first whenever it opens.
+  AboutState aboutPage_{};
   // Null when no audio device could be opened: the game then runs silent.
   std::unique_ptr<AudioOutput> audio_;
   SoundMixer mixer_;
