@@ -17,7 +17,7 @@ inline constexpr const char* kGameIdentifier = "@PINBALL_BUNDLE_ID@";
 // place for application data, and the directory above it (empty for none).
 inline constexpr const char* kDataOrganisation = "@PINBALL_DATA_ORG@";
 inline constexpr const char* kDataDirectory = "@PINBALL_DATA_DIR@";
-// Where the privacy policy is published. Empty until it is.
+// Where the privacy policy is published.
 inline constexpr const char* kPrivacyUrl = "@PINBALL_PRIVACY_URL@";
 
 }  // namespace pinball

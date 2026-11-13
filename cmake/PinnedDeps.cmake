@@ -59,6 +59,22 @@ set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
+if(PINBALL_IOS)
+  # On iOS, SDL without the parts the game never starts. Linked statically,
+  # each would still put its system framework and class names into the
+  # application, and the App Store asks for a purpose string when it sees
+  # the camera (AVCaptureDevice), motion (CoreMotion, which SDL's joystick
+  # code uses as well as its sensor code) or Bluetooth (CoreBluetooth, from
+  # HIDAPI) ones. The game draws with SDL's Metal renderer and has no game
+  # controller support, so OpenGL ES, Vulkan, the GPU API and the joystick
+  # and haptic subsystems go too, and with them CoreHaptics. What is left:
+  # video, the Metal renderer, audio, and the keyboard, mouse and touch
+  # events. tools/ios/check_bundle.sh checks the result.
+  foreach(part IN ITEMS CAMERA SENSOR HIDAPI JOYSTICK HAPTIC GPU OPENGLES VULKAN DIALOG TRAY
+                        DISKAUDIO)
+    set(SDL_${part} OFF CACHE BOOL "" FORCE)
+  endforeach()
+endif()
 # The release archive, checked against its SHA-256. Files keep the dates
 # they have in the archive, not the time of unpacking: the sources then look
 # the same age on every machine, and objects compiled from them earlier (CI

@@ -12,10 +12,10 @@ namespace pinball {
 
 namespace {
 
-// Version 2 added initials. Version 1 files are still read; their entries
-// get dashes.
-constexpr std::string_view kHeader = "SPACE-CADET-PINBALL-SCORES 2";
-constexpr std::string_view kHeaderV1 = "SPACE-CADET-PINBALL-SCORES 1";
+// The one format there is: this line, then "score rank initials" lines. The
+// number is 3 because the game's first release, under another name and in
+// another directory, wrote two earlier formats; neither is read.
+constexpr std::string_view kHeader = "PINBALL-SCORES 3";
 
 // Reads an unsigned decimal number made only of digits, with no sign, space
 // or leading zero (other than "0" itself).
@@ -95,7 +95,6 @@ bool HighScores::parse(std::string_view text) noexcept {
   std::array<HighScore, kCapacity> parsed{};
   std::size_t parsedCount = 0;
   bool sawHeader = false;
-  bool hasInitials = false;
   while (!text.empty()) {
     const std::size_t newline = text.find('\n');
     if (newline == std::string_view::npos) {
@@ -105,10 +104,9 @@ bool HighScores::parse(std::string_view text) noexcept {
     text.remove_prefix(newline + 1);
 
     if (!sawHeader) {
-      if (line != kHeader && line != kHeaderV1) {
+      if (line != kHeader) {
         return false;
       }
-      hasInitials = line == kHeader;
       sawHeader = true;
       continue;
     }
@@ -121,21 +119,19 @@ bool HighScores::parse(std::string_view text) noexcept {
     }
     std::string_view rankText = line.substr(space + 1);
     Initials initials = kNoInitials;
-    if (hasInitials) {
-      // Exactly one more field: three initials characters.
-      const std::size_t second = rankText.find(' ');
-      if (second == std::string_view::npos || rankText.size() - second - 1 != initials.size()) {
+    // Exactly one more field: three initials characters.
+    const std::size_t second = rankText.find(' ');
+    if (second == std::string_view::npos || rankText.size() - second - 1 != initials.size()) {
+      return false;
+    }
+    for (std::size_t i = 0; i < initials.size(); ++i) {
+      const char c = rankText[second + 1 + i];
+      if (!isInitialsChar(c)) {
         return false;
       }
-      for (std::size_t i = 0; i < initials.size(); ++i) {
-        const char c = rankText[second + 1 + i];
-        if (!isInitialsChar(c)) {
-          return false;
-        }
-        initials[i] = c;
-      }
-      rankText = rankText.substr(0, second);
+      initials[i] = c;
     }
+    rankText = rankText.substr(0, second);
     std::uint64_t score = 0;
     unsigned rank = 0;
     if (!parseNumber(line.substr(0, space), score) || !parseNumber(rankText, rank)) {

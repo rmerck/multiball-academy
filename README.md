@@ -1,6 +1,8 @@
-# Space Cadet Pinball
+# Multiball Academy
 
-A recreation of the Space Cadet pinball table in C++23, SDL3 and Box2D.
+A pinball game in C++23, SDL3 and Box2D.
+
+Release 1.0.0 was published as Space Cadet Pinball, and this page describes that release; from the next version the game is named Multiball Academy.
 
 The purpose of this project was to take a piece of software from an empty repository to a signed, notarized release using AI-assisted development, with secure coding and secure design as the first priority. The game is the deliverable. The process behind it is the point.
 
@@ -8,7 +10,7 @@ The purpose of this project was to take a piece of software from an empty reposi
 
 ## Download
 
-[Space Cadet Pinball 1.0.0 for macOS](https://github.com/rmerck/space-cadet-pinball/releases/download/v1.0.0/SpaceCadetPinball-1.0.0-arm64.dmg) (9 MB, Apple Silicon, macOS 11 or newer)
+[Space Cadet Pinball 1.0.0 for macOS](https://github.com/rmerck/multiball-academy/releases/download/v1.0.0/SpaceCadetPinball-1.0.0-arm64.dmg) (9 MB, Apple Silicon, macOS 11 or newer)
 
 The app is signed with a Developer ID and notarized by Apple. It makes no network connections and writes one file, the high score table.
 
@@ -45,7 +47,7 @@ brew install cmake sdl3 box2d
 cmake -S . -B build
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-open "build/Space Cadet Pinball.app"
+open "build/Multiball Academy.app"
 ```
 
 Linux, with the build fetching and verifying SDL3 and Box2D:

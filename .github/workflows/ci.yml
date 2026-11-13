@@ -120,50 +120,144 @@ jobs:
           key: ${{ steps.deps.outputs.cache-primary-key }}
       - name: Test
         run: ctest --test-dir build --output-on-failure --no-tests=error
+      # The steps below take the bundle's name, identifier and version from
+      # build/product.env, which CMake writes from the one name block in
+      # CMakeLists.txt, so that nothing here spells them out a second time.
+      # The file is read as text (tools/product_value.sh), not run.
       - name: No build paths in the binary
-        env:
-          APP: build/Space Cadet Pinball.app
         run: |
-          exe="$APP/Contents/MacOS/Space Cadet Pinball"
+          name=$(sh tools/product_value.sh build/product.env PINBALL_APP_NAME)
+          exe="build/$name.app/Contents/MacOS/$name"
           test -x "$exe"
           if strings -a "$exe" | grep -E '/Users/|/home/|/private/var/'; then
             echo "build paths found in the binary"; exit 1
           fi
       - name: Only system libraries are loaded
-        env:
-          APP: build/Space Cadet Pinball.app
         run: |
-          exe="$APP/Contents/MacOS/Space Cadet Pinball"
+          name=$(sh tools/product_value.sh build/product.env PINBALL_APP_NAME)
+          exe="build/$name.app/Contents/MacOS/$name"
           otool -L "$exe"
           if otool -L "$exe" | tail -n +2 | grep -v -E '^\s+(/System/Library/|/usr/lib/)'; then
             echo "non-system library dependency"; exit 1
           fi
       - name: The bundle is complete
-        env:
-          APP: build/Space Cadet Pinball.app
         run: |
-          plist="$APP/Contents/Info.plist"
+          name=$(sh tools/product_value.sh build/product.env PINBALL_APP_NAME)
+          identifier=$(sh tools/product_value.sh build/product.env PINBALL_BUNDLE_ID)
+          version=$(sh tools/product_value.sh build/product.env PINBALL_VERSION)
+          number=$(sh tools/product_value.sh build/product.env PINBALL_BUILD_NUMBER)
+          test -n "$name" && test -n "$identifier" && test -n "$version" && test -n "$number"
+          app="build/$name.app"
+          plist="$app/Contents/Info.plist"
           plutil -lint "$plist"
-          test "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" = io.github.rmerck.spacecadetpinball
-          version=$(sed -n 's/^project(SpaceCadetPinball VERSION \([0-9.]*\) .*/\1/p' CMakeLists.txt)
-          test -n "$version"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" = "$identifier"
+          test "$(plutil -extract CFBundleName raw -o - "$plist")" = "$name"
           test "$(plutil -extract CFBundleShortVersionString raw -o - "$plist")" = "$version"
-          test "$(plutil -extract CFBundleVersion raw -o - "$plist")" = "$version"
+          test "$(plutil -extract CFBundleVersion raw -o - "$plist")" = "$number"
           test "$(plutil -extract CFBundleIconFile raw -o - "$plist")" = AppIcon
-          test -s "$APP/Contents/Resources/AppIcon.icns"
-          test -d "$APP/Contents/Resources/assets"
+          test -s "$app/Contents/Resources/AppIcon.icns"
+          test -d "$app/Contents/Resources/assets"
           # The development tools stay outside the bundle.
-          test "$(ls "$APP/Contents/MacOS")" = "Space Cadet Pinball"
+          test "$(ls "$app/Contents/MacOS")" = "$name"
           sh -n tools/notarize.sh
           sh -n tools/make_icns.sh
       - name: The bundle's signature verifies and the hardened runtime is on
-        env:
-          APP: build/Space Cadet Pinball.app
         run: |
+          name=$(sh tools/product_value.sh build/product.env PINBALL_APP_NAME)
+          app="build/$name.app"
           # After the tests on purpose: nothing they do may touch the bundle.
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          codesign -dv "$APP" 2>&1 | grep -E 'flags=.*runtime'
-          codesign -dv "$APP/Contents/MacOS/Space Cadet Pinball" 2>&1 | grep -E 'flags=.*runtime'
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -E 'flags=.*runtime'
+          codesign -dv "$app/Contents/MacOS/$name" 2>&1 | grep -E 'flags=.*runtime'
+
+  # The iOS application, built as it would be for release: optimised,
+  # warnings as errors, nothing signed. Once for the simulator and once for a
+  # device, from one configuration. Each bundle is taken apart, and inside a
+  # simulator the core and file handling tests are run, compiled with the
+  # iOS SDK, and the game is started for a timed run. The image's Xcode is named, not
+  # left to the image's default.
+  #
+  # Nothing is cached. What takes the time is SDL asking the compiler some
+  # 350 questions, each a run of xcodebuild; their answers for this Xcode are
+  # recorded in cmake/preseed and applied by cmake/IosPreseed.cmake, which
+  # checks that they were recorded for this Xcode, SDK, deployment target and
+  # SDL pin and otherwise applies nothing. Then the questions are all asked,
+  # which is slow but right, and the job offers the new record as an artifact
+  # to be reviewed and committed.
+  ios:
+    name: ios (simulator)
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Xcode and SDK
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build-ios-sim -G Xcode
+          -DCMAKE_SYSTEM_NAME=iOS
+          -DCMAKE_OSX_SYSROOT=iphonesimulator
+          -C cmake/IosPreseed.cmake
+          -DPINBALL_FETCH_DEPS=ON
+          -DPINBALL_WERROR=ON
+          -DPINBALL_IOS_TEST_EXIT=ON
+      - name: Record SDL's configure results if none were applied
+        id: preseed
+        run: |
+          if grep -q '^PINBALL_IOS_PRESEED:INTERNAL=.' build-ios-sim/CMakeCache.txt; then
+            echo "recorded=no" >> "$GITHUB_OUTPUT"
+          else
+            mkdir preseed-new
+            cmake -DBUILD=build-ios-sim -DOUTPUT_DIR="$PWD/preseed-new" -P cmake/MakeIosPreseed.cmake
+            # Also in the log, for whoever reads the run without the artifact.
+            for record in preseed-new/*.txt; do
+              echo "::group::$record"
+              cat "$record"
+              echo "::endgroup::"
+            done
+            echo "recorded=yes" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Offer the new record
+        if: steps.preseed.outputs.recorded == 'yes'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-preseed
+          path: preseed-new/
+          if-no-files-found: error
+      - name: Build for the simulator
+        run: cmake --build build-ios-sim --config Release -- -quiet
+      - name: The simulator bundle is complete
+        run: |
+          name=$(sh tools/product_value.sh build-ios-sim/product.env PINBALL_APP_NAME)
+          app="build-ios-sim/Release-iphonesimulator/$name.app"
+          ls -la "$app" "$app/assets"
+          plutil -p "$app/Info.plist"
+          bash tools/ios/check_bundle.sh "$app" build-ios-sim/product.env . --release
+      # The game itself is started too, for 300 frames: this build honours
+      # --frames and ends by itself (PINBALL_IOS_TEST_EXIT), which the one
+      # that is submitted does not.
+      - name: Tests and a timed run of the game on a simulator
+        run: bash tools/ios/simulator_tests.sh build-ios-sim Release
+      # The slice that is shipped. Same project, the device SDK.
+      - name: Build for a device
+        run: >
+          xcodebuild -project build-ios-sim/MultiballAcademy.xcodeproj
+          -target pinball -configuration Release -sdk iphoneos
+          CODE_SIGNING_ALLOWED=NO -quiet build
+      - name: The device bundle is complete
+        run: |
+          name=$(sh tools/product_value.sh build-ios-sim/product.env PINBALL_APP_NAME)
+          app="build-ios-sim/Release-iphoneos/$name.app"
+          xcrun vtool -show-build "$app/$name"
+          xcrun vtool -show-build "$app/$name" | grep -E 'platform IOS$'
+          bash tools/ios/check_bundle.sh "$app" build-ios-sim/product.env . --release
 
   linux:
     runs-on: ubuntu-24.04

@@ -12,13 +12,13 @@ The code is C++23 with compiler extensions off, kept to the parts of the languag
 
 ## High scores
 
-The five best games are kept in a small text file in the per-user preferences directory (`~/Library/Application Support/space-cadet-pinball/Space Cadet Pinball/highscores.txt` on macOS, `~/.local/share/space-cadet-pinball/Space Cadet Pinball/highscores.txt` on Linux unless `XDG_DATA_HOME` says otherwise), with the score, the rank reached and the player's three initials. This is the only file the game ever writes.
+The five best games are kept in a small text file in the per-user preferences directory (`~/Library/Application Support/multiball-academy/highscores.txt` on macOS, `~/.local/share/multiball-academy/highscores.txt` on Linux unless `XDG_DATA_HOME` says otherwise, and `Library/Application Support/multiball-academy/highscores.txt` inside the application's own container on iOS), with the score, the rank reached and the player's three initials. This is the only file the game ever writes. Version 1.0.0, released as Space Cadet Pinball, kept its scores in a directory under that name; they are not carried over, and that file is never read or removed.
 
 A game that makes the table asks for initials: type letters, or use Up and Down to change one, Enter to confirm each, Left or Backspace to go back, Right to move on, Escape to accept as shown. The last initials entered are offered again.
 
 - It is written to a new, uniquely named, owner-only temporary file, flushed to disk and renamed into place, so a crash cannot leave half a table and no existing file or link is ever written through. Where the file system has no flush to offer, the save goes ahead without one; a flush that fails stops it. The temporary file is named `highscores.txt.tmp-` and six more characters; one left by an interrupted save is removed at a later start, once it is a minute old. Only regular files with exactly such a name are removed. (These link and permission protections are POSIX; other platforms use plain SDL file calls with the same size limit.)
 - On load it must be a regular file, not a link, of at most 512 bytes and every line is validated strictly (digits only, in range, in order, initials A to Z or dashes). Anything else is set aside as `highscores.txt.bad`, or `.bad.1` to `.bad.9` when earlier ones are still there (a file set aside is never replaced), and the table starts empty; it is never partly trusted. If all ten names are taken the file stays where it is and nothing is saved that run. A file that cannot be read at all is left where it is, and nothing is saved that run.
-- Files from before initials were added are still read; their entries show dashes.
+- There is one file format. The two that version 1.0.0 wrote, under the game's first name and in another directory, are not read.
 
 ## Sound
 

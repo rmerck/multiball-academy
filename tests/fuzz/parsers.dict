@@ -1,6 +1,5 @@
 # Tokens the parsers look for, so the fuzzer does not have to guess them.
-"SPACE-CADET-PINBALL-SCORES 2\x0a"
-"SPACE-CADET-PINBALL-SCORES 1\x0a"
+"PINBALL-SCORES 3\x0a"
 " 0 AAA\x0a"
 " 8 ---\x0a"
 "999999999999"
