@@ -82,8 +82,9 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure --no-tests=error
 
-  # The build that would be handed to someone: optimised, self-contained,
-  # hardened runtime, and free of the build machine's paths.
+  # The build that would be handed to someone: an application bundle that is
+  # optimised, self-contained, signed with the hardened runtime, and free of
+  # the build machine's paths.
   macos-release:
     runs-on: macos-15
     timeout-minutes: 30
@@ -120,21 +121,49 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure --no-tests=error
       - name: No build paths in the binary
+        env:
+          APP: build/Space Cadet Pinball.app
         run: |
-          test -x build/pinball
-          if strings -a build/pinball | grep -E '/Users/|/home/|/private/var/'; then
+          exe="$APP/Contents/MacOS/Space Cadet Pinball"
+          test -x "$exe"
+          if strings -a "$exe" | grep -E '/Users/|/home/|/private/var/'; then
             echo "build paths found in the binary"; exit 1
           fi
       - name: Only system libraries are loaded
+        env:
+          APP: build/Space Cadet Pinball.app
         run: |
-          otool -L build/pinball
-          if otool -L build/pinball | tail -n +2 | grep -v -E '^\s+(/System/Library/|/usr/lib/)'; then
+          exe="$APP/Contents/MacOS/Space Cadet Pinball"
+          otool -L "$exe"
+          if otool -L "$exe" | tail -n +2 | grep -v -E '^\s+(/System/Library/|/usr/lib/)'; then
             echo "non-system library dependency"; exit 1
           fi
-      - name: Hardened runtime is on
+      - name: The bundle is complete
+        env:
+          APP: build/Space Cadet Pinball.app
         run: |
-          codesign --verify --strict build/pinball
-          codesign -dv build/pinball 2>&1 | grep -E 'flags=.*runtime'
+          plist="$APP/Contents/Info.plist"
+          plutil -lint "$plist"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" = io.github.rmerck.spacecadetpinball
+          version=$(sed -n 's/^project(SpaceCadetPinball VERSION \([0-9.]*\) .*/\1/p' CMakeLists.txt)
+          test -n "$version"
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$plist")" = "$version"
+          test "$(plutil -extract CFBundleVersion raw -o - "$plist")" = "$version"
+          test "$(plutil -extract CFBundleIconFile raw -o - "$plist")" = AppIcon
+          test -s "$APP/Contents/Resources/AppIcon.icns"
+          test -d "$APP/Contents/Resources/assets"
+          # The development tools stay outside the bundle.
+          test "$(ls "$APP/Contents/MacOS")" = "Space Cadet Pinball"
+          sh -n tools/notarize.sh
+          sh -n tools/make_icns.sh
+      - name: The bundle's signature verifies and the hardened runtime is on
+        env:
+          APP: build/Space Cadet Pinball.app
+        run: |
+          # After the tests on purpose: nothing they do may touch the bundle.
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | grep -E 'flags=.*runtime'
+          codesign -dv "$APP/Contents/MacOS/Space Cadet Pinball" 2>&1 | grep -E 'flags=.*runtime'
 
   linux:
     runs-on: ubuntu-24.04
