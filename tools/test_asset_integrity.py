@@ -5,6 +5,12 @@ Copies the built executable and its assets to a scratch directory, confirms
 it runs, then damages the assets in several ways and confirms each run is
 refused with exit code 1 and an integrity message.
 
+When the executable is inside a macOS application bundle
+(<name>.app/Contents/MacOS/<executable>), the whole bundle is copied and the
+assets damaged are the ones in its Contents/Resources/assets. A signed
+bundle's seal no longer verifies after that, which is expected: what is
+tested here is the game's own refusal, not the system's.
+
 Usage: test_asset_integrity.py <pinball-executable> <scratch-dir>
 """
 import os
@@ -32,9 +38,16 @@ def main() -> int:
         return 2
     source_exe = Path(sys.argv[1]).resolve()
     scratch = Path(sys.argv[2]).resolve()
-    source_assets = source_exe.parent / "assets"
+    # <name>.app/Contents/MacOS/<executable>, or a plain executable.
+    bundle = None
+    if (source_exe.parent.name == "MacOS" and source_exe.parent.parent.name == "Contents"
+            and source_exe.parents[2].suffix == ".app"):
+        bundle = source_exe.parents[2]
+        source_assets = bundle / "Contents" / "Resources" / "assets"
+    else:
+        source_assets = source_exe.parent / "assets"
     if not source_exe.is_file() or not source_assets.is_dir():
-        print("FAIL: %s or the assets directory next to it is missing" % source_exe)
+        print("FAIL: %s or its assets directory %s is missing" % (source_exe, source_assets))
         return 1
 
     # Only ever remove a directory this script created.
@@ -47,9 +60,16 @@ def main() -> int:
     scratch.mkdir(parents=True)
     marker.touch()
 
-    exe = scratch / source_exe.name
-    shutil.copy2(source_exe, exe)
-    assets = scratch / "assets"
+    if bundle is not None:
+        copied = scratch / bundle.name
+        shutil.copytree(bundle, copied, symlinks=True)
+        exe = copied / "Contents" / "MacOS" / source_exe.name
+        assets = copied / "Contents" / "Resources" / "assets"
+        shutil.rmtree(assets)
+    else:
+        exe = scratch / source_exe.name
+        shutil.copy2(source_exe, exe)
+        assets = scratch / "assets"
 
     def fresh_assets():
         if assets.exists():
@@ -74,7 +94,7 @@ def main() -> int:
 
     files = fresh_assets()
     if not files:
-        print("FAIL: no assets next to %s" % source_exe)
+        print("FAIL: no assets in %s" % source_assets)
         return 1
     expect("intact", True)
 

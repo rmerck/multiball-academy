@@ -28,8 +28,10 @@ brew install cmake sdl3 box2d
 cmake -S . -B build
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/pinball
+open "build/Space Cadet Pinball.app"
 ```
+
+On macOS the game is an application bundle, `Space Cadet Pinball.app`, with its icon, its `Info.plist` and the assets inside. The executable is `build/Space Cadet Pinball.app/Contents/MacOS/Space Cadet Pinball`; run that path directly to see the game's messages in the terminal or to pass `--frames`. On Linux the game is the plain executable `build/pinball`.
 
 Linux: the same `cmake` and `ctest` commands work where SDL3 3.4 or newer and Box2D 3.2 or newer are installed as CMake packages. Few distributions have both yet, so the usual way is to let the build fetch them (`-DPINBALL_FETCH_DEPS=ON`, below), which needs the headers SDL builds against. On Ubuntu 24.04, as CI does:
 
@@ -51,14 +53,21 @@ The default build type is RelWithDebInfo. Options:
 - `-DPINBALL_FETCH_DEPS=ON` needs no installed SDL or Box2D: it downloads SDL3 3.4.20 (release archive, checked by SHA-256) and Box2D 3.2.0 (fixed by commit), builds them with the same protective compiler flags as the game, and links them statically. CI uses this. `tools/check_pins.sh` reports when either has a newer release; a weekly workflow runs it. FetchContent's own switches that would put other sources in their place unchecked (`FETCHCONTENT_SOURCE_DIR_SDL3`, `FETCHCONTENT_SOURCE_DIR_BOX2D`, `FETCHCONTENT_FULLY_DISCONNECTED`, `FETCHCONTENT_TRY_FIND_PACKAGE_MODE=ALWAYS`) stop the configuration.
 - `-DPINBALL_ALLOW_UNVERIFIED_DEPS=ON` accepts those switches, with a warning: the dependencies are then whatever was supplied, not the pinned and verified sources.
 - `-DPINBALL_HARDENED_RUNTIME=OFF` (macOS, only with `PINBALL_FETCH_DEPS` and without sanitizers) skips the ad hoc signing with the hardened runtime that a Release build otherwise gets.
+- `-DPINBALL_CODESIGN_IDENTITY="Developer ID Application: NAME (TEAMID)"` (macOS, under the same conditions) signs the Release bundle with that certificate and a secure timestamp instead of ad hoc. See below.
+- `-DCMAKE_OSX_DEPLOYMENT_TARGET=...` (macOS) sets the oldest macOS the build runs on. With `PINBALL_FETCH_DEPS` the default is 11.0. A build against installed libraries targets the macOS it is built on, like those libraries.
 - `-DPINBALL_BUILD_TOOLS=OFF` leaves out the development tools `pinball_snapshot` and `pinball_layout`, and with them the render and layout tests.
 - `-DBUILD_TESTING=OFF` leaves out the tests.
 - `-DPINBALL_REQUIRE_ALL_TESTS=ON` stops the configuration if a test cannot be registered: no Python 3, or the tools left out. CI uses this, and runs `ctest --no-tests=error`.
 - `-DPINBALL_FUZZ=ON` (clang with libFuzzer, not Apple clang) builds only `pinball_fuzz`, which fuzzes the score file, PNG header, asset name and argument parsers.
 
-There are no install rules: the game runs from the build directory, with its `assets` directory next to the executable.
+There are no install rules: the game runs from the build directory. On Linux its `assets` directory is next to the executable. On macOS it is inside the bundle, at `Contents/Resources/assets`, and the bundle can be moved or copied as a whole.
 
-`pinball --frames N` (1 to 1,000,000) exits after N frames and leaves the high score file alone. The tests use it; the game takes no other arguments.
+`--frames N` (1 to 1,000,000) makes the game exit after N frames and leave the high score file alone. The tests use it; the game takes no other arguments. With no display:
+
+```sh
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "build/Space Cadet Pinball.app/Contents/MacOS/Space Cadet Pinball" --frames 60   # macOS
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy build/pinball --frames 60                                                      # Linux
+```
 
 ### A build to give to someone else
 
@@ -67,18 +76,36 @@ cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DPINBALL_FETCH_DEPS=ON
 cmake --build build-release --parallel
 ```
 
-On macOS that binary is optimised, links only system libraries, carries no path from the build machine, and runs under the hardened runtime, so the system ignores injected libraries. It is not signed by an identified developer or notarised, so macOS Gatekeeper will still warn about it on another machine.
+On macOS the result is `build-release/Space Cadet Pinball.app`. Its executable is optimised, links only system libraries, carries no path from the build machine and runs on macOS 11.0 or newer. The whole bundle is signed, with the hardened runtime on, so the system ignores injected libraries and the signature seals the assets, the icon and the `Info.plist` together with the executable. Signing is the last step of every build; anything that changes the bundle afterwards breaks the seal until the next build. No entitlements are requested.
+
+By default that signature is ad hoc: it names no publisher, and the bundle is not notarised, so macOS Gatekeeper will still warn about it on another machine. To sign as an identified developer, name a Developer ID Application certificate from your keychain (`security find-identity -v -p codesigning` lists them):
+
+```sh
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DPINBALL_FETCH_DEPS=ON \
+  -DPINBALL_CODESIGN_IDENTITY="Developer ID Application: NAME (TEAMID)"
+cmake --build build-release --parallel
+codesign --verify --deep --strict --verbose=2 "build-release/Space Cadet Pinball.app"
+```
+
+The bundle is then signed with that identity, the hardened runtime and a secure timestamp (which needs the network at each build). To have Apple notarise it, store credentials for `notarytool` in the keychain once, under a profile name of your choice, then run the script with the bundle and that name:
+
+```sh
+xcrun notarytool store-credentials pinball-notary    # asks for the Apple ID, team and app-specific password
+tools/notarize.sh "build-release/Space Cadet Pinball.app" pinball-notary
+```
+
+`tools/notarize.sh` checks the signature (Developer ID, hardened runtime, timestamp), zips the bundle with `ditto`, submits it with `xcrun notarytool submit --wait`, staples the ticket and verifies the result with `codesign --verify --deep --strict` and `spctl -a -vv`. Do it last: a rebuild signs the bundle again and drops the ticket. CI builds and checks the ad hoc signed bundle only; signing with a certificate and notarising are done by hand.
 
 On Linux the same build is a position-independent executable with full RELRO, stack protection, fortified library calls and control-flow protection. SDL still opens the system's display and audio libraries at run time, as every SDL program does.
 
 ### Tests and CI
 
-`ctest` runs 17 tests: the core unit tests (`core_tests`, no display needed), the file handling tests, the same file handling tests built without the system's single-call move-without-replace so that the `link()` fallback other systems use is run everywhere (`safe_files_fallback`), two asset checks, three offscreen render checks, a check that the snapshot tool replaces a symbolic link at its output name instead of writing through it, the layout dump check, a headless run of the real game, and six rejected command lines. They need no display or audio device, and scratch files stay in the build directory. A timed run (`--frames`) never opens the high score file, and on Linux the tests also point the per-user preferences directory into the build tree.
+`ctest` runs 17 tests, and 18 on macOS: the core unit tests (`core_tests`, no display needed), the file handling tests, the same file handling tests built without the system's single-call move-without-replace so that the `link()` fallback other systems use is run everywhere (`safe_files_fallback`), two asset checks, three offscreen render checks, a check that the snapshot tool replaces a symbolic link at its output name instead of writing through it, the layout dump check, a headless run of the real game, and six rejected command lines. On macOS `bundle_layout` also checks the application bundle: a valid `Info.plist` with the identifier and version the game reports, the icon, the assets, and nothing but the game in `Contents/MacOS`. They need no display or audio device, and scratch files stay in the build directory, beside the bundle and never in it. A timed run (`--frames`) never opens the high score file, and on Linux the tests also point the per-user preferences directory into the build tree.
 
 Every pull request must pass seven CI jobs, all with warnings as errors. The first six build SDL3 and Box2D from the pinned sources, which are fetched and verified on every run. Only SDL's compiled objects are cached between runs, never source code, and only runs on `main` write the cache.
 
 - macOS, with and without sanitizers.
-- macOS Release, checked for build paths in the binary, system-only libraries and the hardened runtime.
+- macOS Release, checked for build paths in the binary, system-only libraries, a complete bundle (valid `Info.plist` with the expected identifier and version, the icon, the assets), a signature that verifies over the whole bundle after the tests have run, and the hardened runtime.
 - Linux with GCC and with clang, both under sanitizers.
 - Linux Release with GCC, with the hardening checked: `readelf` on the binary for what the linker decides, and `tools/check_hardening.py` for the compiler flags of the game's own files and the stack-protector and FORTIFY references in two of its objects (the binary cannot show those, because the statically linked SDL has them too).
 - A two minute libFuzzer run over the parsers.
@@ -195,13 +222,15 @@ The background tune (`src/core/Music`) is an original eight-bar loop for bass, a
 
 - `src/core` game state and rules as a static library with no SDL dependency, unit tested without a display.
 - `src/platform` SDL window, input, asset loading and rendering, as a static library shared by the game and the snapshot tool. `TableRenderer` draws the game; `App` owns the window and the loop.
-- `assets` PNG art, copied next to the executable at build time. Sprites are authored at 4x.
-- `tools/gimp` GIMP 3 Python scripts that generate every asset, so art is reproducible.
+- `assets` PNG art, copied at build time next to the executable, or into `Contents/Resources` of the macOS bundle. Sprites are authored at 4x.
+- `packaging/macos` the application icon: `icon_1024.png` as drawn, and `AppIcon.icns` made from it, which the build copies into the bundle.
+- `tools/gimp` GIMP 3 Python scripts that generate every asset and the icon, so art is reproducible.
 - `tools/snapshot` development tool (`pinball_snapshot`) that plays the game headless with scripted input and writes one rendered frame to a PNG, with no window. `ctest` uses it as a rendering smoke test.
-- `tools/layout_dump` development tool (`pinball_layout`) that prints the table geometry as JSON for the art scripts.
+- `tools/layout_dump` development tool (`pinball_layout`) that prints the table geometry as JSON for the art scripts. Both tools are built into the top of the build directory, outside the macOS bundle, where `pinball_snapshot` has an `assets` copy of its own.
+- `tools/make_icns.sh` builds `AppIcon.icns` from the icon PNG with `sips` and `iconutil`. `tools/notarize.sh` notarises a Developer ID signed bundle.
 - `tools/check_assets.py`, `tools/test_asset_integrity.py` asset checks run by `ctest`. `tools/make_font.py` regenerates the pixel font header. `tools/check_pins.sh` compares the pinned dependencies with upstream. `tools/check_hardening.py` and `tools/check_deps_cache.sh` are CI's checks of the compiler hardening and of what its cache restored.
 - `tests` unit tests and headless smoke tests, run by `ctest`. `tests/fuzz` holds the fuzzer, its seed corpus and dictionary.
-- `cmake` hardening flags, the pinned dependencies and the asset manifest generator.
+- `cmake` hardening flags, the pinned dependencies, the asset manifest generator, and the templates for the macOS `Info.plist` and the generated version header. The version and the application identifier are written once, in `CMakeLists.txt`.
 - `.github/workflows` CI and the weekly dependency pin check.
 
 ## Assets
@@ -229,6 +258,20 @@ for script in ("make_ball", "make_table", "make_sprites", "make_panel"):
 | `sprites/glow.png` | `make_sprites.py` | Drawn additively and tinted for every light; also the ball's shadow and halo |
 | `sprites/bar.png` | `make_sprites.py` | Stand-up target face, tinted per bank; its bright outline keeps an unlit target visible |
 | `sprites/plunger.png` | `make_sprites.py` | |
+| `packaging/macos/icon_1024.png` | `make_icon.py` | 1024x1024. The application icon, not a game asset: it is outside `assets` and the manifest. Needs no layout file |
+
+### The application icon
+
+The macOS icon is a chrome pinball over the slatted sunset and the neon grid floor, framed by a neon tube that runs from pink to cyan, on the standard macOS rounded square (824 pixels centred in 1024, transparent outside, with a soft drop shadow). It has no text. `make_icon.py` draws it with the same helpers and export settings as the assets; it reads no layout file, so it can be run on its own. `tools/make_icns.sh` then scales the PNG with `sips` to every standard size (16 to 512 points, at 1x and 2x) and packs them with `iconutil` into `packaging/macos/AppIcon.icns`. Both files are committed, so a build needs neither GIMP nor the script:
+
+```python
+REPO = "/path/to/space-cadet-pinball"
+exec(open(REPO + "/tools/gimp/make_icon.py").read())
+```
+
+```sh
+tools/make_icns.sh
+```
 
 Lights, lit targets, bumper flashes, the lane gate, all text and the About and initials dialogs, with their frames, zigzags and the small sunset, are drawn by the game (`src/platform/TableRenderer.cpp`, `Hud.cpp`, `Text.cpp`). Their colours match the rims and inserts in the art; if you change a palette in one place, change it in the other.
 
@@ -242,7 +285,7 @@ Regeneration is reproducible: two-colour gradients are drawn without dithering (
 
 Two GIMP behaviours the helpers in `tools/gimp/common.py` work around: a selection fill ignores the alpha of the foreground colour (`fill_selection` applies it as the fill opacity), and a two-colour gradient ignores alpha altogether (`alpha_gradient` fades to transparent instead).
 
-To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png` plays 1200 steps (ten seconds) and writes the frame to the current directory, as a new file with ordinary permissions (0644 less the umask, unlike the owner-only score file); a link with that name is replaced, not followed. A third argument, `about` or `initials`, draws that screen instead.
+To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png` (the tool is at the top of the build directory on every system) plays 1200 steps (ten seconds) and writes the frame to the current directory, as a new file with ordinary permissions (0644 less the umask, unlike the owner-only score file); a link with that name is replaced, not followed. A third argument, `about` or `initials`, draws that screen instead.
 
 ### Integrity
 
@@ -254,9 +297,9 @@ Assets are external files, so the game checks them before it runs:
 - The manifest is also the allowlist. A file that is not in it is never opened.
 - `ctest` runs `tools/test_asset_integrity.py`, which flips a bit, appends, truncates, empties and deletes each asset, and replaces it with a FIFO, a symbolic link to a genuine copy and a directory, and confirms every case is refused.
 
-What this does not cover: the hashes live in the executable, so someone able to replace the executable can replace them too. That is the job of code signing at release time (`codesign` and notarisation on macOS), which protects the executable and with it the manifest.
+What this does not cover: the hashes live in the executable, so someone able to replace the executable can replace them too. That is the job of code signing at release time (`codesign` and notarisation on macOS), which protects the executable and with it the manifest. A signed macOS bundle also seals the asset files themselves, but the system checks that seal only when Gatekeeper assesses the app, not at every start; the game's own check runs every time.
 
-The game only opens files inside the `assets` directory next to the executable. Files over 16 MB or images over 4096 pixels on an edge are refused before decoding.
+The game only opens files inside the `assets` directory next to the executable (`Contents/Resources/assets` in the macOS bundle: the fixed directory under SDL's base path). Files over 16 MB or images over 4096 pixels on an edge are refused before decoding.
 
 Assets are exported with all metadata off. `tools/check_assets.py` (run by `ctest`) fails if a PNG carries EXIF, text, timestamp, profile or thumbnail chunks, is malformed, or if anything but a regular `.png` file is in `assets`.
 

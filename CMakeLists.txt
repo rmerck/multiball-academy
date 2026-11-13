@@ -1,4 +1,18 @@
 cmake_minimum_required(VERSION 3.26)
+
+# The oldest macOS a self-contained build (PINBALL_FETCH_DEPS) runs on, and
+# the LSMinimumSystemVersion of its application bundle. 11.0 is the first
+# release for Apple silicon; SDL 3.4 itself asks for 10.13, and the C++ the
+# game uses for nothing newer. It has to be set before project(), which reads
+# it, so the option is read here from the cache, where -D put it. A value
+# given on the command line or in the environment wins. A build against
+# installed libraries is left to target the macOS it is built on, as those
+# libraries do. Other systems ignore all of this.
+if(CMAKE_HOST_APPLE AND PINBALL_FETCH_DEPS AND "${CMAKE_OSX_DEPLOYMENT_TARGET}" STREQUAL ""
+   AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version" FORCE)
+endif()
+
 project(SpaceCadetPinball VERSION 1.0.0 LANGUAGES CXX)
 
 if(CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
@@ -52,6 +66,14 @@ option(PINBALL_REQUIRE_ALL_TESTS
 
 include(cmake/Hardening.cmake)
 
+# The version and the application identifier are written once, here and in
+# project() above. The game reads them from this generated header
+# (src/core/Version.hpp includes it) and the macOS bundle's Info.plist is
+# filled in from the same values, so they cannot drift apart.
+set(PINBALL_BUNDLE_ID "io.github.rmerck.spacecadetpinball")
+set(PINBALL_VERSION_DIR ${CMAKE_BINARY_DIR}/generated_version)
+configure_file(cmake/VersionConfig.hpp.in ${PINBALL_VERSION_DIR}/VersionConfig.hpp @ONLY)
+
 if(PINBALL_FUZZ)
   # The fuzzer exercises the core parsers alone: no SDL, no window.
   if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
@@ -99,7 +121,7 @@ add_library(pinball_core STATIC
   src/core/Sound.cpp
   src/core/TableLayout.cpp
 )
-target_include_directories(pinball_core PUBLIC src)
+target_include_directories(pinball_core PUBLIC src ${PINBALL_VERSION_DIR})
 target_link_libraries(pinball_core PUBLIC box2d::box2d)
 # PUBLIC so the same warnings, hardening and sanitizer flags reach every consumer.
 pinball_apply_hardening(pinball_core PUBLIC)
@@ -126,7 +148,37 @@ if(APPLE)
   target_link_libraries(pinball_platform PRIVATE "-framework Cocoa")
 endif()
 
-add_executable(pinball src/main.cpp)
+if(APPLE)
+  # On macOS the game is an application bundle, "Space Cadet Pinball.app",
+  # with the executable inside under the same name: the Dock, the menu bar
+  # and Activity Monitor all take their label from one or the other. The
+  # CMake target is still called pinball.
+  set(PINBALL_ICON ${CMAKE_SOURCE_DIR}/packaging/macos/AppIcon.icns)
+  add_executable(pinball MACOSX_BUNDLE src/main.cpp ${PINBALL_ICON})
+  set_source_files_properties(${PINBALL_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+  # LSMinimumSystemVersion: the deployment target, or with none set the
+  # macOS this is built on, which is what the compiler then targets.
+  if(CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(PINBALL_MIN_MACOS ${CMAKE_OSX_DEPLOYMENT_TARGET})
+  else()
+    execute_process(COMMAND sw_vers -productVersion OUTPUT_VARIABLE PINBALL_MIN_MACOS
+                    OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(NOT PINBALL_MIN_MACOS MATCHES "^[0-9]+\\.[0-9]+")
+      set(PINBALL_MIN_MACOS "11.0")
+    endif()
+  endif()
+  set_target_properties(pinball PROPERTIES
+    OUTPUT_NAME "Space Cadet Pinball"
+    MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/cmake/Info.plist.in
+    MACOSX_BUNDLE_BUNDLE_NAME "Space Cadet Pinball"
+    MACOSX_BUNDLE_GUI_IDENTIFIER ${PINBALL_BUNDLE_ID}
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+    MACOSX_BUNDLE_ICON_FILE AppIcon
+    MACOSX_BUNDLE_COPYRIGHT "MIT licence. An independent fan project.")
+else()
+  add_executable(pinball src/main.cpp)
+endif()
 target_link_libraries(pinball PRIVATE pinball_platform)
 # A Release game carries no debug map, so it names no directory of the
 # machine that built it.
@@ -137,22 +189,17 @@ elseif(NOT MSVC)
   target_link_options(pinball PRIVATE $<$<CONFIG:Release>:-Wl,-s>)
 endif()
 
-# macOS hardened runtime: the system then ignores DYLD_INSERT_LIBRARIES and
-# refuses to load any library that is not Apple's. That needs the game to be
-# self-contained, so it is tied to the statically linked pinned dependencies.
-# Applied to Release builds. The signature is ad hoc: it turns the protections on but does not identify
-# a publisher, which takes a Developer ID certificate and notarisation.
-if(APPLE AND PINBALL_FETCH_DEPS AND NOT PINBALL_SANITIZE)
-  option(PINBALL_HARDENED_RUNTIME "Ad hoc sign the game with the hardened runtime" ON)
-  if(PINBALL_HARDENED_RUNTIME)
-    # Release only: a debugger cannot attach to a hardened process, so the
-    # configurations meant for debugging are left alone.
-    add_custom_command(TARGET pinball POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,env,true>
-              codesign --force --sign - --options runtime $<TARGET_FILE:pinball>
-      COMMENT "Signing with the hardened runtime (Release only)"
-      VERBATIM)
-  endif()
+# Where the things that sit beside the game go: the development tools, the
+# tests' scratch directories and the frames they render. Beside the bundle
+# on macOS, never inside it, because anything added to a signed bundle
+# breaks its signature. Elsewhere it is the directory of the executable, as
+# before.
+if(APPLE)
+  set(PINBALL_BESIDE_DIR $<TARGET_BUNDLE_DIR:pinball>/..)
+  set(PINBALL_GAME_ASSETS_DIR $<TARGET_BUNDLE_CONTENT_DIR:pinball>/Resources/assets)
+else()
+  set(PINBALL_BESIDE_DIR $<TARGET_FILE_DIR:pinball>)
+  set(PINBALL_GAME_ASSETS_DIR $<TARGET_FILE_DIR:pinball>/assets)
 endif()
 
 # Asset integrity: the size and SHA-256 of every asset are compiled into the
@@ -172,18 +219,66 @@ target_include_directories(pinball_platform PRIVATE ${PINBALL_MANIFEST_DIR})
 set_source_files_properties(src/platform/EmbeddedManifest.cpp PROPERTIES
   OBJECT_DEPENDS ${PINBALL_MANIFEST})
 
-# The game loads assets from an "assets" directory next to the executable.
+# The game loads assets from an "assets" directory under SDL's base path:
+# next to the executable, or Contents/Resources inside the macOS bundle.
 # Copied by a target that runs on every build (not only on relink), so an
 # edited asset is never stale. Nothing is ever deleted: a removed asset leaves
-# an unused file behind in the build tree, which is harmless.
+# an unused file behind in the build tree, which is harmless (on macOS the
+# manifest check never opens it, but a signed bundle lists it until the next
+# clean build).
 add_custom_target(pinball_assets
   COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-          ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:pinball>/assets
+          ${CMAKE_SOURCE_DIR}/assets ${PINBALL_GAME_ASSETS_DIR}
   COMMENT "Copying assets"
   VERBATIM)
-# $<TARGET_FILE_DIR> adds no dependency, so this is not circular. It makes
-# building just the pinball target bring its assets along.
+# The generator expressions add no dependency, so this is not circular. It
+# makes building just the pinball target bring its assets along.
 add_dependencies(pinball pinball_assets)
+
+# macOS hardened runtime: the system then ignores DYLD_INSERT_LIBRARIES and
+# refuses to load any library that is not Apple's. That needs the game to be
+# self-contained, so it is tied to the statically linked pinned dependencies.
+# Applied to Release builds. By default the signature is ad hoc: it turns the
+# protections on but does not identify a publisher. PINBALL_CODESIGN_IDENTITY
+# names a certificate to sign with instead (a Developer ID Application one
+# for a build that is to be notarised: tools/notarize.sh). No entitlements
+# are used: the game needs no network, no JIT and no exemption.
+#
+# The whole bundle is signed, which seals the Info.plist, the icon and the
+# assets with the executable. Signing therefore has to come last, and it is
+# its own target that runs on every build, after the executable is linked and
+# the assets are copied: a POST_BUILD step would only run on a relink and
+# leave the seal stale after an asset changed. Anything that alters the
+# bundle afterwards invalidates the signature until the next build.
+if(APPLE)
+  set(PINBALL_CODESIGN_IDENTITY "" CACHE STRING
+    "Code signing identity for the macOS bundle (empty: ad hoc), e.g. Developer ID Application: NAME (TEAMID)")
+  set(pinball_sign OFF)
+  if(PINBALL_FETCH_DEPS AND NOT PINBALL_SANITIZE)
+    option(PINBALL_HARDENED_RUNTIME "Sign the game with the hardened runtime" ON)
+    set(pinball_sign ${PINBALL_HARDENED_RUNTIME})
+  endif()
+  if(PINBALL_CODESIGN_IDENTITY AND NOT pinball_sign)
+    message(FATAL_ERROR "PINBALL_CODESIGN_IDENTITY signs with the hardened runtime, which needs "
+                        "-DPINBALL_FETCH_DEPS=ON, no sanitizers and PINBALL_HARDENED_RUNTIME left ON")
+  endif()
+  if(pinball_sign)
+    if(PINBALL_CODESIGN_IDENTITY)
+      # A secure timestamp, which notarisation requires (needs the network).
+      set(pinball_sign_args --sign ${PINBALL_CODESIGN_IDENTITY} --options runtime --timestamp)
+    else()
+      set(pinball_sign_args --sign - --options runtime)
+    endif()
+    # Release only: a debugger cannot attach to a hardened process, so the
+    # configurations meant for debugging are left alone.
+    add_custom_target(pinball_sign ALL
+      COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,env,true>
+              codesign --force ${pinball_sign_args} $<TARGET_BUNDLE_DIR:pinball>
+      COMMENT "Signing the bundle with the hardened runtime (Release only)"
+      VERBATIM)
+    add_dependencies(pinball_sign pinball)
+  endif()
+endif()
 
 # Development tool that renders a frame offscreen to a PNG. Not part of the
 # game; built with the tests.
@@ -191,10 +286,22 @@ option(PINBALL_BUILD_TOOLS "Build development tools" ON)
 if(PINBALL_BUILD_TOOLS)
   add_executable(pinball_snapshot tools/snapshot/main.cpp)
   target_link_libraries(pinball_snapshot PRIVATE pinball_platform)
-  # It reads the same assets directory, next to the game.
+  # It sits beside the game and reads an assets directory next to itself,
+  # through the same verifying loader. Off macOS that is the game's own
+  # directory. On macOS the tools stay out of the bundle and get a copy of
+  # their own, kept up to date the same way.
   set_target_properties(pinball_snapshot PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY $<TARGET_FILE_DIR:pinball>)
-  add_dependencies(pinball_snapshot pinball_assets)
+    RUNTIME_OUTPUT_DIRECTORY ${PINBALL_BESIDE_DIR})
+  if(APPLE)
+    add_custom_target(pinball_tool_assets
+      COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+              ${CMAKE_SOURCE_DIR}/assets ${PINBALL_BESIDE_DIR}/assets
+      COMMENT "Copying assets for the tools"
+      VERBATIM)
+    add_dependencies(pinball_snapshot pinball_tool_assets)
+  else()
+    add_dependencies(pinball_snapshot pinball_assets)
+  endif()
 
   # Prints the table geometry as JSON for the art scripts.
   add_executable(pinball_layout tools/layout_dump/main.cpp)
@@ -228,9 +335,10 @@ if(BUILD_TESTING)
   target_link_libraries(core_tests PRIVATE pinball_core)
   add_test(NAME core_tests COMMAND core_tests)
 
-  # Scratch and output files go next to the binaries under test, so with a
-  # multi-config generator each configuration has its own.
-  set(PINBALL_TEST_DIR $<TARGET_FILE_DIR:pinball>)
+  # Scratch and output files go beside the binaries under test (beside the
+  # bundle on macOS, not in it), so with a multi-config generator each
+  # configuration has its own.
+  set(PINBALL_TEST_DIR ${PINBALL_BESIDE_DIR})
   # Whatever a test starts gets a per-user preferences directory inside the
   # build tree, so a test run cannot touch the player's real high score file.
   # XDG_DATA_HOME is how SDL is told on Linux; macOS has no such switch.
@@ -334,6 +442,18 @@ if(BUILD_TESTING)
   add_test(NAME smoke_headless COMMAND pinball --frames 120)
   set_tests_properties(smoke_headless PROPERTIES
     ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 30)
+
+  # The macOS bundle: a valid Info.plist that carries the identifier and
+  # version the game itself reports, the icon, the assets, and no stray
+  # executable.
+  if(APPLE)
+    add_test(NAME bundle_layout
+      COMMAND ${CMAKE_COMMAND} -DBUNDLE=$<TARGET_BUNDLE_DIR:pinball>
+              -DEXECUTABLE=$<TARGET_FILE:pinball>
+              -DIDENTIFIER=${PINBALL_BUNDLE_ID} -DVERSION=${PROJECT_VERSION}
+              -P ${CMAKE_SOURCE_DIR}/tests/CheckBundle.cmake)
+    set_tests_properties(bundle_layout PROPERTIES TIMEOUT 30)
+  endif()
 
   # Bad arguments must be rejected cleanly: exit code 1, usage text, and no
   # sanitizer report. Checked by a script because CTest's WILL_FAIL and
