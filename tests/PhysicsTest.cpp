@@ -429,7 +429,8 @@ void testSeveralBalls() {
   {  // The event list has room for a full step of every ball from the start,
      // so no step allocates, and each ball has its own limit.
     PhysicsWorld world;
-    CHECK(world.events().capacity() >= PhysicsWorld::kMaxEventsPerStep * table::kMaxBalls);
+    CHECK(world.events().capacity() >=
+          PhysicsWorld::kMaxEventsPerStep * table::kMaxBalls + PhysicsWorld::kMaxBallHitsPerStep);
     const std::size_t capacity = world.events().capacity();
     world.resetBall(0, {300.0F, 300.0F}, {400.0F, -200.0F});
     CHECK(world.activateBall(1, {420.0F, 420.0F}, {-300.0F, 100.0F}));
@@ -447,12 +448,162 @@ void testSeveralBalls() {
           withinLimit =
               withinLimit && event.ball < table::kMaxBalls && event.otherBall < table::kMaxBalls;
         }
-        withinLimit = withinLimit && count <= PhysicsWorld::kMaxEventsPerStep;
+        withinLimit = withinLimit &&
+                      count <= PhysicsWorld::kMaxEventsPerStep + PhysicsWorld::kMaxBallHitsPerStep;
       }
     }
     CHECK(withinLimit);
     CHECK(events > 0);
     CHECK(world.events().capacity() == capacity);
+  }
+
+  {  // The limits of the event list. Each ball has its own allowance: one
+     // that fills its own leaves the others theirs.
+    using pinball::PhysicsEventList;
+    const auto hit = [](std::size_t ball) {
+      return PhysicsEvent{PhysicsEvent::Type::Hit,
+                          {table::ElementKind::Bumper, 0},
+                          100.0F,
+                          static_cast<std::uint8_t>(ball),
+                          0};
+    };
+    PhysicsEventList list;
+    const std::size_t capacity = list.events().capacity();
+    CHECK(capacity >=
+          PhysicsEventList::kMaxPerBall * table::kMaxBalls + PhysicsEventList::kMaxBallHits);
+    for (std::size_t i = 0; i < PhysicsEventList::kMaxPerBall; ++i) {
+      CHECK(list.push(hit(0)));
+    }
+    CHECK(!list.push(hit(0)));
+    CHECK(list.events().size() == PhysicsEventList::kMaxPerBall);
+    for (const std::size_t ball : {std::size_t{1}, std::size_t{2}}) {
+      for (std::size_t i = 0; i < PhysicsEventList::kMaxPerBall; ++i) {
+        CHECK(list.push(hit(ball)));
+      }
+      CHECK(!list.push(hit(ball)));
+    }
+    CHECK(list.events().size() == PhysicsEventList::kMaxPerBall * table::kMaxBalls);
+
+    // Touches between balls are counted apart, so they still fit, and a
+    // flood of them does not use up what a ball needs for a capture.
+    const PhysicsEvent touch{PhysicsEvent::Type::BallHit, {}, 50.0F, 0, 1};
+    CHECK(list.push(touch));
+    list.clear();
+    CHECK(list.events().empty());
+    for (std::size_t i = 0; i < PhysicsEventList::kMaxBallHits; ++i) {
+      CHECK(list.push(touch));
+    }
+    CHECK(!list.push(touch));
+    CHECK(!list.push({PhysicsEvent::Type::BallHit, {}, 50.0F, 1, 2}));  // One allowance for all.
+    const PhysicsEvent capture{
+        PhysicsEvent::Type::Capture, {table::ElementKind::Hole, 3}, 10.0F, 0, 0};
+    CHECK(list.push(capture));
+    CHECK(list.events().back().type == PhysicsEvent::Type::Capture);
+    for (std::size_t i = 1; i < PhysicsEventList::kMaxPerBall; ++i) {
+      CHECK(list.push(hit(0)));
+    }
+    CHECK(!list.push(capture));
+    CHECK(list.events().size() == PhysicsEventList::kMaxBallHits + PhysicsEventList::kMaxPerBall);
+    // In the order they came.
+    CHECK(list.events().front().type == PhysicsEvent::Type::BallHit);
+    // A slot that does not exist is not recorded.
+    list.clear();
+    CHECK(!list.push(hit(table::kMaxBalls)));
+    CHECK(!list.push({PhysicsEvent::Type::BallHit, {}, 50.0F, 0, 200}));
+    CHECK(list.events().empty());
+    CHECK(list.events().capacity() == capacity);  // Never grew.
+  }
+
+  {  // A slot's latches belong to the ball in it. The next ball to use the
+     // slot starts clean: on a rollover it counts, at a bumper it is kicked,
+     // and a hole that had let the last ball go takes it.
+    PhysicsWorld world;
+    const Vec2 lane = table::kRollovers[1].zone.center;
+    CHECK(world.activateBall(1, lane, {0.0F, 0.0F}));
+    world.step(kStep);
+    CHECK(countEvents(world, PhysicsEvent::Type::Enter, 1) == 1);
+    world.deactivateBall(1);
+    CHECK(world.activateBall(1, lane, {0.0F, 0.0F}));
+    world.step(kStep);
+    CHECK(countEvents(world, PhysicsEvent::Type::Enter, 1) == 1);
+    world.deactivateBall(1);
+
+    const table::Circle& bumper = table::kBumpers[7].shape;
+    const Vec2 touching = bumper.center + Vec2{bumper.radius + table::kBallRadius + 0.5F, 0.0F};
+    for (int round = 0; round < 2; ++round) {
+      CHECK(world.activateBall(1, touching, {0.0F, 0.0F}));
+      world.step(kStep);
+      CHECK(countEvents(world, PhysicsEvent::Type::Hit, 1) == 1);
+      world.deactivateBall(1);
+    }
+
+    const table::Hole& chute = table::kHoles[4];
+    CHECK(world.activateBall(2, chute.center, {0.0F, 0.0F}));
+    world.step(kStep);
+    CHECK(world.ballHeld(2));
+    world.releaseBall(2, chute.exitPosition, {0.0F, 0.0F});  // The hole now ignores it.
+    world.deactivateBall(2);
+    CHECK(world.activateBall(2, chute.center, {0.0F, 0.0F}));
+    world.step(kStep);
+    CHECK(world.ballHeld(2) && countEvents(world, PhysicsEvent::Type::Capture, 2) == 1);
+  }
+
+  {  // The speed cap is enforced for every slot after each slice. A ball at
+     // top speed that clips a bumper is kicked sideways on top of it. Box2D
+     // takes the excess off in its next slice, so it shows only when the
+     // kick comes in the last slice of a step: hence every start within one
+     // step's travel is tried.
+    for (std::size_t slot = 0; slot < table::kMaxBalls; ++slot) {
+      const table::Circle& bumper = table::kBumpers[7].shape;
+      int kicks = 0;
+      bool capped = true;
+      for (float aside = 34.0F; aside <= 36.5F; aside += 0.5F) {
+        for (float back = 40.0F; back < 66.0F; back += 0.5F) {
+          PhysicsWorld world;
+          const Vec2 from = bumper.center + Vec2{-aside, back};
+          if (slot == 0) {
+            world.resetBall(0, from, {0.0F, -kSpeedCap});
+          } else {
+            CHECK(world.activateBall(slot, from, {0.0F, -kSpeedCap}));
+          }
+          for (int i = 0; i < 4; ++i) {
+            world.step(kStep);
+            kicks += static_cast<int>(countEvents(world, PhysicsEvent::Type::Hit, slot));
+            capped = capped && ballIsFiniteAndCapped(world, slot);
+          }
+        }
+      }
+      CHECK(kicks >= 100);
+      CHECK(capped);
+    }
+  }
+
+  {  // A ball in a hole is off the table: a ball passing close by is not
+     // closing on anything, and moves exactly as if the hole were empty.
+    const table::Hole& hole = table::kHoles[0];
+    const Vec2 from = hole.center + Vec2{110.0F, -20.0F};
+    PhysicsWorld occupied;
+    PhysicsWorld empty;
+    occupied.resetBall(0, hole.center, {0.0F, 0.0F});
+    empty.deactivateBall(0);
+    occupied.step(kStep);
+    empty.step(kStep);
+    CHECK(occupied.ballHeld(0));
+    CHECK(occupied.activateBall(1, from, {-2500.0F, 0.0F}));
+    CHECK(empty.activateBall(1, from, {-2500.0F, 0.0F}));
+    bool identical = true;
+    float nearest = 1.0e9F;
+    for (int i = 0; i < 9; ++i) {
+      occupied.step(kStep);
+      empty.step(kStep);
+      const Vec2 a = occupied.ballPosition(1);
+      const Vec2 b = empty.ballPosition(1);
+      identical = identical && a.x == b.x && a.y == b.y && occupied.events().empty();
+      nearest = std::min(nearest, length(a - hole.center));
+    }
+    CHECK(identical);
+    CHECK(nearest < 2.0F * table::kBallRadius && !occupied.ballHeld(1));
+    CHECK(occupied.ballPosition(1).x < hole.center.x);  // It went past.
   }
 
   {  // Three balls loose on the table: the same world twice gives the same

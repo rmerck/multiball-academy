@@ -97,7 +97,42 @@ b2ShapeDef wallShapeDef() {
   return def;
 }
 
+// Length of a vector, worked out in double so that the squares of even the
+// largest float cannot overflow. Only exactly rounded operations, so every
+// platform gets the same answer; the library's hypot is not held to that.
+float lengthOf(float x, float y) noexcept {
+  const double dx = static_cast<double>(x);
+  const double dy = static_cast<double>(y);
+  return static_cast<float>(std::sqrt(dx * dx + dy * dy));
+}
+
 }  // namespace
+
+PhysicsEventList::PhysicsEventList() {
+  events_.reserve(kMaxPerBall * table::kMaxBalls + kMaxBallHits);
+}
+
+void PhysicsEventList::clear() noexcept {
+  events_.clear();
+  perBall_.fill(0);
+  ballHits_ = 0;
+}
+
+bool PhysicsEventList::push(const PhysicsEvent& event) {
+  if (event.ball >= table::kMaxBalls || event.otherBall >= table::kMaxBalls) {
+    return false;
+  }
+  std::size_t& used =
+      event.type == PhysicsEvent::Type::BallHit ? ballHits_ : perBall_[event.ball];
+  const std::size_t allowed =
+      event.type == PhysicsEvent::Type::BallHit ? kMaxBallHits : kMaxPerBall;
+  if (used >= allowed) {
+    return false;
+  }
+  ++used;
+  events_.push_back(event);
+  return true;
+}
 
 PhysicsWorld::PhysicsWorld() {
   b2WorldDef def = b2DefaultWorldDef();
@@ -130,8 +165,6 @@ PhysicsWorld::PhysicsWorld() {
   for (std::size_t slot = 1; slot < balls_.size(); ++slot) {
     buildBall(slot, false);
   }
-  // All the room the events of a step can need, so a step never allocates.
-  events_.reserve(kMaxEventsPerStep * balls_.size());
 }
 
 PhysicsWorld::~PhysicsWorld() {
@@ -449,7 +482,7 @@ void PhysicsWorld::collectEvents() {
       if (slotA != slotB) {
         const b2Vec2 va = b2Body_GetLinearVelocity(balls_[slotA].body);
         const b2Vec2 vb = b2Body_GetLinearVelocity(balls_[slotB].body);
-        pushEvent(PhysicsEvent::Type::BallHit, {}, toPixels(std::hypot(va.x - vb.x, va.y - vb.y)),
+        pushEvent(PhysicsEvent::Type::BallHit, {}, toPixels(lengthOf(va.x - vb.x, va.y - vb.y)),
                   std::min(slotA, slotB), std::max(slotA, slotB));
       }
       continue;
@@ -494,11 +527,8 @@ std::size_t PhysicsWorld::slotOf(b2BodyId body) const noexcept {
 
 void PhysicsWorld::pushEvent(PhysicsEvent::Type type, table::ElementRef element, float speed,
                              std::size_t slot, std::size_t otherSlot) {
-  if (eventCounts_[slot] < kMaxEventsPerStep) {
-    ++eventCounts_[slot];
-    events_.push_back({type, element, speed, static_cast<std::uint8_t>(slot),
-                       static_cast<std::uint8_t>(otherSlot)});
-  }
+  events_.push(
+      {type, element, speed, static_cast<std::uint8_t>(slot), static_cast<std::uint8_t>(otherSlot)});
 }
 
 void PhysicsWorld::checkZones(std::size_t slot) {
@@ -614,7 +644,6 @@ void PhysicsWorld::drivePlunger(float stepSeconds) {
 void PhysicsWorld::step(float stepSeconds) {
   // Cleared first, so a rejected step never leaves old events behind.
   events_.clear();
-  eventCounts_.fill(0);
   // Written so that NaN fails the test.
   if (!(stepSeconds >= kMinStepSeconds && stepSeconds <= kMaxStepSeconds)) {
     return;
@@ -650,6 +679,15 @@ int PhysicsWorld::partsForBallApproach(float sliceSeconds) const {
   // driving together, is taken in parts short enough that they close no
   // more than kFinePixels in each. With one ball there is no pair and the
   // slice is never divided.
+  //
+  // What this bounds: the closing is judged from the velocities at the
+  // start of the slice. A pair that keeps those is found no more than about
+  // kFinePixels inside each other (1.05 px measured head on at twice the
+  // top speed). A ball that is struck during the slice, by a flipper or
+  // by a third ball, towards a neighbour more than Box2D's 2 px away was
+  // not foreseen and can go in by up to what it then travels in the rest
+  // of the slice: at most 6.25 px at the top speed, for that one slice. The
+  // next slice sees it and the contact pushes the pair apart.
   constexpr float kFinePixels = 1.5F;
   constexpr int kMostParts = 10;
   // A part may not be shorter than the shortest slice step() accepts.
@@ -696,9 +734,10 @@ void PhysicsWorld::clampBallSpeed(std::size_t slot) {
   if (speedSquared <= kMaxBallSpeed * kMaxBallSpeed) {
     return;
   }
-  // The squares overflow for a huge velocity; hypot does not, so the
-  // direction survives. Anything that is still not a number stops the ball.
-  const float speed = std::hypot(v.x, v.y);
+  // The squares overflow for a huge velocity; taken in double they do not,
+  // so the direction survives. Anything that is still not a number stops
+  // the ball.
+  const float speed = lengthOf(v.x, v.y);
   if (!std::isfinite(speed)) {
     b2Body_SetLinearVelocity(body, {0.0F, 0.0F});
     return;

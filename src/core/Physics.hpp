@@ -27,6 +27,31 @@ struct PhysicsEvent {
   std::uint8_t otherBall = 0;  // BallHit only.
 };
 
+// The events of one step, in the order they happened. Each ball has its own
+// allowance, so a busy ball cannot crowd out another's events, and touches
+// between balls have one apart from those, so that a pile-up cannot cost a
+// ball the capture or the hit it scores with. Room for all of it is taken
+// once, at construction.
+class PhysicsEventList {
+ public:
+  // Most events kept for one ball in a step, touches between balls aside.
+  static constexpr std::size_t kMaxPerBall = 32;
+  // Most BallHit events kept in a step, whichever balls they are between.
+  static constexpr std::size_t kMaxBallHits = 16;
+
+  PhysicsEventList();
+  void clear() noexcept;
+  // Keeps the event if its allowance is not used up. Returns whether it was
+  // kept. An event for a slot that does not exist is never kept.
+  bool push(const PhysicsEvent& event);
+  [[nodiscard]] const std::vector<PhysicsEvent>& events() const noexcept { return events_; }
+
+ private:
+  std::vector<PhysicsEvent> events_;
+  std::array<std::size_t, table::kMaxBalls> perBall_{};
+  std::size_t ballHits_ = 0;
+};
+
 // Owns the Box2D world: the static table and the balls. All values crossing
 // this interface are in playfield pixels; Box2D itself runs in metres.
 //
@@ -92,15 +117,18 @@ class PhysicsWorld {
   // Speed added along a slingshot's face normal, in m/s.
   static constexpr float kSlingshotKickSpeed = 4.5F;
   // Most events kept per ball and step. Further events for that ball in the
-  // same step are dropped. A BallHit counts against the lower slot.
-  static constexpr std::size_t kMaxEventsPerStep = 32;
+  // same step are dropped. Touches between balls are counted apart.
+  static constexpr std::size_t kMaxEventsPerStep = PhysicsEventList::kMaxPerBall;
+  static constexpr std::size_t kMaxBallHitsPerStep = PhysicsEventList::kMaxBallHits;
   // Restitution between two balls: steel on steel is livelier than a ball
   // against the table.
   static constexpr float kBallBallRestitution = 0.85F;
 
   // Events from the most recent step, in the order they happened. Cleared at
   // the start of each step.
-  [[nodiscard]] const std::vector<PhysicsEvent>& events() const noexcept { return events_; }
+  [[nodiscard]] const std::vector<PhysicsEvent>& events() const noexcept {
+    return events_.events();
+  }
 
   // Advances by one fixed step. Ignored unless stepSeconds is within
   // [kMinStepSeconds, kMaxStepSeconds].
@@ -228,9 +256,7 @@ class PhysicsWorld {
   };
   std::array<BallSlot, table::kMaxBalls> balls_{};
 
-  std::vector<PhysicsEvent> events_;
-  // Events recorded for each ball this step, for the per-ball limit.
-  std::array<std::size_t, table::kMaxBalls> eventCounts_{};
+  PhysicsEventList events_;
 
   b2BodyId laneGate_{};
   bool laneGateClosed_ = false;
