@@ -56,6 +56,15 @@ static_assert(kNoCourseHint.size() <=
 static_assert(kEnrolHint.size() <=
               display::charsThatFit(display::innerWidth(panel::kMissionWell), kLabelSize));
 
+// The strip's lines are all at one size, larger than the panel's smallest,
+// because a phone shows them smaller. Its own short forms of the two hints.
+constexpr float kStripSize = 3.0F;
+constexpr float kStripInner = strip::kMissionWell.w - 2.0F * kPad;
+constexpr std::string_view kStripNoCourseHint = "HIT A LEFT WALL TARGET";
+constexpr std::string_view kStripEnrolHint = "SHOOT THE RUNWAY";
+static_assert(kStripNoCourseHint.size() <= display::charsThatFit(kStripInner, kStripSize) &&
+              kStripEnrolHint.size() <= display::charsThatFit(kStripInner, kStripSize));
+
 // The review tool's fullest course window: every line at its limit.
 constexpr std::string_view kPreviewCourse = "COURSE NAME AT ITS LIMIT";
 constexpr std::string_view kPreviewGoal = "GOAL LINE AT ITS FULL SIZE";
@@ -124,18 +133,18 @@ CourseView courseView(const MissionControl& missions, const HudPreview* preview)
 
 // The line about locks and balls in play. Empty when there is nothing to say.
 std::string_view multiballLine(const MultiballView& multiball, std::span<char> buffer) noexcept {
-  if (!multiball.known) {
-    return {};
-  }
-  if (multiball.running) {
+  if (multiball.running()) {
     return formatText(buffer.data(), buffer.size(), "MULTIBALL %d", multiball.ballsLive);
+  }
+  if (!multiball.locksKnown) {
+    return {};
   }
   if (multiball.lockLit) {
     return "LOCK IS LIT";
   }
   if (multiball.locksHeld > 0) {
     return formatText(buffer.data(), buffer.size(), "LOCKS %d/%d", multiball.locksHeld,
-                      kLocksForMultiball);
+                      multiball.locksNeeded);
   }
   return {};
 }
@@ -278,7 +287,7 @@ void drawPanel(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
   }
   if (const std::string_view line = multiballLine(c.multiball, buffer); !line.empty()) {
     drawText(r, line, statusWell.x + 190.0F, statusWell.y + 44.0F, kLabelSize,
-             c.multiball.running ? kAmber : kCyan);
+             c.multiball.running() ? kAmber : kCyan);
   }
   drawText(r, formatText(buffer.data(), buffer.size(), "X%d", rules.fieldMultiplier()),
            statusWell.x + statusWell.w - kPad, statusWell.y + 14.0F, 5.0F,
@@ -322,7 +331,7 @@ void drawPanel(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
     const float y = missionWell.y + missionWell.h - 26.0F;
     const bool jackpot = rules.jackpotLit() || c.multiball.jackpotLit || c.multiball.superJackpotLit;
     drawText(r, "JACKPOT", missionX, y, kLabelSize, jackpot ? kAmber : kDim);
-    if (c.multiball.known) {
+    if (c.multiball.locksKnown) {
       // With multiball there is a lock to show, next to the jackpot.
       drawText(r, "LOCK", missionX + 100.0F, y, kLabelSize, c.multiball.lockLit ? kAmber : kDim);
       drawText(r, "OUTLANE BONUS", missionX + 164.0F, y, kLabelSize,
@@ -385,18 +394,28 @@ void drawPlainWell(SDL_Renderer* r, const screen::Rect& well, SDL_Color rim) {
   fill(r, well.x + 2.0F, well.y + 2.0F, well.w - 4.0F, well.h - 4.0F);
 }
 
-// A small labelled lamp: the word, bright when lit. Returns the x where the
-// next one to its left ends.
-float drawLamp(SDL_Renderer* r, std::string_view text, float right, float y, bool lit,
+// A lamp of the strip: two letters in a box, filled when lit. Returns the x
+// where the next one to its left ends.
+float drawLamp(SDL_Renderer* r, std::string_view code, float right, float y, bool lit,
                SDL_Color litColor) {
-  drawText(r, text, right, y, kLabelSize, lit ? litColor : kLampOff, TextAlign::Right);
-  return right - textWidth(text, kLabelSize) - 8.0F;
+  const float width = textWidth(code, kStripSize) + 8.0F;
+  const float height = kStripSize * 7.0F + 2.0F;
+  setColor(r, lit ? litColor : kUnlit);
+  fill(r, right - width, y - 1.0F, width, height);
+  if (!lit) {
+    SDL_SetRenderDrawColor(r, 12, 4, 34, SDL_ALPHA_OPAQUE);
+    fill(r, right - width + 2.0F, y + 1.0F, width - 4.0F, height - 4.0F);
+  }
+  drawText(r, code, right - 4.0F, y, kStripSize, lit ? SDL_Color{12, 4, 34, 255} : kLampOff,
+           TextAlign::Right);
+  return right - width - 6.0F;
 }
 
-// The Stack's strip above the table: the same facts in six small windows.
-// It has no systems line and no title.
+// The Stack's strip above the table: the same facts in five small windows,
+// every line at kStripSize. It has no systems line and no title.
 void drawStrip(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
                const Content& c) {
+  static_assert(kStripSize == 3.0F);  // screen::hudTextSize says so to the tests.
   const float dx = layout.hud.x;
   const float dy = layout.hud.y;
   const auto placed = [dx, dy](const screen::Rect& well) noexcept {
@@ -424,68 +443,99 @@ void drawStrip(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
   const Rules& rules = c.rules;
   std::array<char, 32> buffer{};
 
-  drawScore(r, scoreWell, c, 8.0F, 32.0F, 6.0F);
+  // Score: the best score beside the label while there is room for both.
+  {
+    const float inner = scoreWell.w - 2.0F * kPad;
+    drawText(r, "SCORE", scoreWell.x + kPad, scoreWell.y + 6.0F, kStripSize, kDim);
+    ScoreText bestBuffer{};
+    std::array<char, 48> bestLine{};
+    const std::string_view number = formatScore(c.extras.bestScore, bestBuffer);
+    std::string_view best = c.extras.newHighScore
+                                ? std::string_view("NEW HIGH SCORE")
+                                : formatText(bestLine.data(), bestLine.size(), "HIGH %.*s",
+                                             static_cast<int>(number.size()), number.data());
+    const float room = inner - textWidth("SCORE", kStripSize) - 2.0F * kPad;
+    if (textWidth(best, kStripSize) > room) {
+      best = number;
+    }
+    if (textWidth(best, kStripSize) <= room) {
+      drawText(r, best, scoreWell.x + scoreWell.w - kPad, scoreWell.y + 6.0F, kStripSize,
+               c.extras.newHighScore && c.blinkOn ? kGreen : kDim, TextAlign::Right);
+    }
+    ScoreText scoreBuffer{};
+    const std::string_view score = formatScore(rules.score(), scoreBuffer);
+    const float size = std::max(fittedSize(score, inner, 6.0F), kStripSize);
+    drawText(r, score, scoreWell.x + scoreWell.w - kPad, scoreWell.y + 33.0F, size, kWhite,
+             TextAlign::Right);
+  }
 
-  // Ball and multiplier, then extra balls, then locks or balls in play.
+  // Ball; multiplier and extra balls; locks or balls in play.
   drawText(r,
            formatText(buffer.data(), buffer.size(), "BALL %d OF %d", rules.ball(),
                       Rules::kBallsPerGame),
-           statusWell.x + kPad, statusWell.y + 10.0F, kLabelSize, kWhite);
+           statusWell.x + kPad, statusWell.y + 6.0F, kStripSize, kWhite);
   drawText(r, formatText(buffer.data(), buffer.size(), "X%d", rules.fieldMultiplier()),
-           statusWell.x + statusWell.w - kPad, statusWell.y + 8.0F, 3.0F,
-           rules.fieldMultiplier() > 1 ? kAmber : kDim, TextAlign::Right);
+           statusWell.x + kPad, statusWell.y + 31.0F, kStripSize,
+           rules.fieldMultiplier() > 1 ? kAmber : kDim);
   if (rules.extraBalls() > 0) {
-    drawText(r, formatText(buffer.data(), buffer.size(), "EXTRA BALLS %d", rules.extraBalls()),
-             statusWell.x + kPad, statusWell.y + 35.0F, kLabelSize, kGreen);
+    drawText(r, formatText(buffer.data(), buffer.size(), "EXTRA %d", rules.extraBalls()),
+             statusWell.x + statusWell.w - kPad, statusWell.y + 31.0F, kStripSize, kGreen,
+             TextAlign::Right);
   }
   if (const std::string_view line = multiballLine(c.multiball, buffer); !line.empty()) {
-    drawText(r, line, statusWell.x + kPad, statusWell.y + 60.0F, kLabelSize,
-             c.multiball.running ? kAmber : kCyan);
+    drawText(r, line, statusWell.x + kPad, statusWell.y + 56.0F, kStripSize,
+             c.multiball.running() ? kAmber : kCyan);
   }
 
   // Rank and progress towards the next one.
   const MissionControl& missions = rules.missions();
-  drawText(r, "RANK", rankWell.x + kPad, rankWell.y + 8.0F, kLabelSize, kDim);
-  drawText(r, rankName(missions.rank()), rankWell.x + kPad, rankWell.y + 28.0F,
-           display::kMissionSize, kCyan);
-  drawRankGauge(r, rankWell, rankWell.y + 58.0F, missions.progress());
+  drawText(r, "RANK", rankWell.x + kPad, rankWell.y + 6.0F, kStripSize, kDim);
+  drawText(r, rankName(missions.rank()), rankWell.x + kPad, rankWell.y + 31.0F, kStripSize,
+           kCyan);
+  drawRankGauge(r, rankWell, rankWell.y + 60.0F, missions.progress());
 
-  // Course: name, goal and count, and along the bottom the energy and the
+  // Course: its name; the goal; then the count to go, the energy, and the
   // lit awards as lamps.
   const float missionX = missionWell.x + kPad;
   const float missionRight = missionWell.x + missionWell.w - kPad;
-  const float goalY = missionWell.y + 34.0F;
-  const float lampY = missionWell.y + 55.0F;
+  const float nameY = missionWell.y + 5.0F;
+  const float goalY = missionWell.y + 28.0F;
+  const float lampY = missionWell.y + 51.0F;
   const CourseView& course = c.course;
   if (course.phase != MissionControl::Phase::Idle) {
-    drawText(r, course.name, missionX, missionWell.y + 8.0F, display::kMissionSize, kAmber);
+    drawText(r, course.name, missionX, nameY, kStripSize, kAmber);
     if (course.phase == MissionControl::Phase::Selected) {
       if (c.blinkOn) {
-        drawText(r, kEnrolHint, missionX, goalY, kLabelSize, kGreen);
+        drawText(r, kStripEnrolHint, missionX, goalY, kStripSize, kGreen);
       }
     } else if (!course.goal.empty()) {
-      drawText(r, course.goal, missionX, goalY, kLabelSize, kWhite);
-      drawText(r, formatText(buffer.data(), buffer.size(), "%d TO GO", course.remaining),
-               missionRight, goalY, kLabelSize, kWhite, TextAlign::Right);
-      drawText(r, "ENERGY", missionX, lampY, kLabelSize, kDim);
-      drawEnergy(r, missionX + 78.0F, lampY + 1.0F, 10.0F, 12.0F, 2.0F, course.energy, c.blinkOn);
+      // Every goal there is fits at this size; one at the very limit of
+      // what the rules allow would be drawn a size smaller.
+      drawText(r, course.goal, missionX, goalY,
+               fittedSize(course.goal, kStripInner, kStripSize), kWhite);
+      const std::string_view count =
+          formatText(buffer.data(), buffer.size(), "%d TO GO", course.remaining);
+      drawText(r, count, missionX, lampY, kStripSize, kWhite);
+      drawEnergy(r, missionX + textWidth("255 TO GO", kStripSize) + 14.0F, lampY + 3.0F, 11.0F,
+                 15.0F, 2.0F, course.energy, c.blinkOn);
     }
   } else {
-    drawText(r, kNoCourse, missionX, missionWell.y + 8.0F, display::kMissionSize, kDim);
-    drawText(r, kNoCourseHint, missionX, goalY, kLabelSize, kDim);
+    drawText(r, kNoCourse, missionX, nameY, kStripSize, kDim);
+    drawText(r, kStripNoCourseHint, missionX, goalY, kStripSize, kDim);
   }
   {
+    // JP jackpot, LK lock, OL outlane bonus, SV ball save.
     float right = missionRight;
-    right = drawLamp(r, "SAVE", right, lampY, rules.ballSaveActive(), kGreen);
-    right = drawLamp(r, "OUTLANE", right, lampY, rules.bonusLaneLit(), kAmber);
-    if (c.multiball.known) {
-      right = drawLamp(r, "LOCK", right, lampY, c.multiball.lockLit, kAmber);
+    right = drawLamp(r, "SV", right, lampY, rules.ballSaveActive(), kGreen);
+    right = drawLamp(r, "OL", right, lampY, rules.bonusLaneLit(), kAmber);
+    if (c.multiball.locksKnown) {
+      right = drawLamp(r, "LK", right, lampY, c.multiball.lockLit, kAmber);
     }
     const bool jackpot = rules.jackpotLit() || c.multiball.jackpotLit || c.multiball.superJackpotLit;
-    drawLamp(r, "JACKPOT", right, lampY, jackpot, kAmber);
+    drawLamp(r, "JP", right, lampY, jackpot, kAmber);
   }
 
-  drawMessage(r, messageWell, c, display::kMissionSize);
+  drawMessage(r, messageWell, c, kStripSize);
 }
 
 }  // namespace
@@ -502,7 +552,7 @@ void drawHud(SDL_Renderer* r, const HudArt& art, const Game& game, const screen:
                   .course = courseView(rules.missions(), preview),
                   .multiball = preview != nullptr && preview->multiball
                                    ? *preview->multiball
-                                   : multiballView(rules),
+                                   : multiballView(game),
                   .message = rules.message(),
                   // Slow blink for things waiting on the player.
                   .blinkOn = (game.stepCount() / 30U) % 2U == 0U};

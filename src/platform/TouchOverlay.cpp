@@ -66,13 +66,19 @@ void caption(SDL_Renderer* r, const screen::Rect& face, std::string_view text, f
   drawText(r, text, at.x + at.w * 0.5F, at.y + top, size, color, TextAlign::Center);
 }
 
-// A nudge button: an arrow for the way the ball goes, over the word.
+// A nudge button: an arrow for the way the ball goes. Where the face has
+// room for it at a readable size (the panel's row, on a tablet) the word
+// goes under the arrow; the deck's button is the arrow alone, large.
 void drawNudge(SDL_Renderer* r, SDL_Texture* sprite, const screen::Rect& face,
-               std::string_view arrow, bool pressed) {
+               std::string_view arrow, bool pressed, bool withWord) {
   drawButton(r, sprite, face, kViolet, pressed);
-  const bool tall = face.h >= 90.0F;
-  caption(r, face, arrow, tall ? 5.0F : 4.0F, tall ? 14.0F : 8.0F, kWhite, pressed);
-  caption(r, face, "NUDGE", 2.0F, face.h - (tall ? 30.0F : 24.0F), kWhite, pressed);
+  if (withWord) {
+    caption(r, face, arrow, 4.0F, 8.0F, kWhite, pressed);
+    caption(r, face, "NUDGE", 2.0F, face.h - 24.0F, kWhite, pressed);
+  } else {
+    const float size = 8.0F;
+    caption(r, face, arrow, size, (face.h - 7.0F * size) * 0.5F, kWhite, pressed);
+  }
 }
 
 void drawCentre(SDL_Renderer* r, SDL_Texture* sprite, const screen::Rect& face,
@@ -94,7 +100,7 @@ void drawCentre(SDL_Renderer* r, SDL_Texture* sprite, const screen::Rect& face,
   }
   drawButton(r, sprite, face, tint, view.centre);
   float size = 5.0F;
-  while (size > 2.0F && textWidth(text, size) > face.w - 24.0F) {
+  while (size > 3.0F && textWidth(text, size) > face.w - 24.0F) {
     size -= 1.0F;
   }
   caption(r, face, text, size, (face.h - 7.0F * size) * 0.5F, kWhite, view.centre);
@@ -131,10 +137,11 @@ void drawPad(SDL_Renderer* r, const screen::Rect& pad, SDL_Color tint, bool pres
 }
 
 void padCaption(SDL_Renderer* r, const screen::Rect& pad, bool pressed) {
-  if (pad.h < 30.0F || pad.w < 60.0F) {
+  constexpr float kSize = 3.0F;
+  if (pad.h < 7.0F * kSize + 12.0F || pad.w < textWidth("FLIP", kSize) + 12.0F) {
     return;
   }
-  drawText(r, "FLIP", pad.x + pad.w * 0.5F, pad.y + (pad.h - 14.0F) * 0.5F, 2.0F,
+  drawText(r, "FLIP", pad.x + pad.w * 0.5F, pad.y + (pad.h - 7.0F * kSize) * 0.5F, kSize,
            pressed ? kWhite : SDL_Color{190, 170, 236, 255}, TextAlign::Center);
 }
 
@@ -169,13 +176,13 @@ void drawPlainButton(SDL_Renderer* r, const screen::Rect& face, SDL_Color tint, 
 }
 
 void drawCaptionButton(SDL_Renderer* r, const screen::Rect& face, std::string_view text,
-                       SDL_Color tint, bool pressed, float largest) {
+                       SDL_Color tint, bool pressed, float largest, float smallest) {
   if (r == nullptr) {
     return;
   }
   drawPlainButton(r, face, tint, pressed);
   float size = largest;
-  while (size > 2.0F && textWidth(text, size) > face.w - 24.0F) {
+  while (size > smallest && textWidth(text, size) > face.w - 24.0F) {
     size -= 1.0F;
   }
   caption(r, face, text, size, (face.h - 7.0F * size) * 0.5F, kWhite, pressed);
@@ -240,27 +247,33 @@ void TableRenderer::drawTouchOverlay(SDL_Renderer* r, const screen::Layout& layo
       padCaption(r, leftCorner, view.left);
       padCaption(r, rightCorner, view.right);
     }
-    drawNudge(r, sprite, moved(deck::kNudgeLeftButton, bed.x, bed.y), "<", view.nudgeLeft);
+    drawNudge(r, sprite, moved(deck::kNudgeLeftButton, bed.x, bed.y), "<", view.nudgeLeft, false);
     drawCentre(r, sprite, moved(deck::kCentreButton, bed.x, bed.y), view);
-    drawNudge(r, sprite, moved(deck::kNudgeRightButton, bed.x, bed.y), ">", view.nudgeRight);
+    drawNudge(r, sprite, moved(deck::kNudgeRightButton, bed.x, bed.y), ">", view.nudgeRight,
+              false);
     drawPause(r, sprite, moved(strip::kPauseButton, layout.hud.x, layout.hud.y), view.pause);
     return;
   }
 
   // Classic: the row at the foot of the panel, the pause button at its head,
-  // and a mark in each bottom corner of the composition for the thumbs.
+  // and a mark for each thumb: the corner of the panel beside the row, and
+  // across the table the margin beside its foot, if the window leaves one.
+  // Nothing is drawn over the table itself.
   const float dx = layout.playfield.x;
   const float dy = layout.playfield.y;
-  drawNudge(r, sprite, moved(panel::kNudgeLeftButton, dx, dy), "<", view.nudgeLeft);
+  // The word under the arrow is at the panel's smallest size: only where
+  // that is large enough on this screen.
+  const bool words = screen::smallestTextSize(layout) == 2.0F;
+  drawNudge(r, sprite, moved(panel::kNudgeLeftButton, dx, dy), "<", view.nudgeLeft, words);
   drawCentre(r, sprite, moved(panel::kCentreButton, dx, dy), view);
-  drawNudge(r, sprite, moved(panel::kNudgeRightButton, dx, dy), ">", view.nudgeRight);
+  drawNudge(r, sprite, moved(panel::kNudgeRightButton, dx, dy), ">", view.nudgeRight, words);
   drawPause(r, sprite, moved(panel::kPauseButton, dx, dy), view.pause);
   const screen::Rect rightCorner = moved(panel::kFlipperCorner, dx, dy);
-  const screen::Rect leftCorner{dx + 4.0F, rightCorner.y, 64.0F, rightCorner.h};
-  drawPad(r, leftCorner, kCyan, view.left);
   drawPad(r, rightCorner, kPink, view.right);
-  padCaption(r, leftCorner, view.left);
   padCaption(r, rightCorner, view.right);
+  if (dx >= 16.0F) {
+    drawPad(r, {4.0F, rightCorner.y, dx - 8.0F, rightCorner.h}, kCyan, view.left);
+  }
 }
 
 }  // namespace pinball

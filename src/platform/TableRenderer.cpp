@@ -329,7 +329,7 @@ void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls) 
   // balls themselves.
   for (const bool raised : {false, true}) {
     const auto inRound = [raised](const BallView& ball) noexcept {
-      return ball.visible && (ball.scale > 1.0F) == raised;
+      return ball.visible && ball.raised == raised;
     };
     if (std::ranges::none_of(balls, inRound)) {
       continue;
@@ -398,6 +398,15 @@ void TableRenderer::drawBackdrop(SDL_Renderer* r, const screen::Layout& layout) 
   constexpr float kPitch = 32.0F;
   constexpr float kDot = 4.0F;
   SDL_SetRenderDrawColor(r, 38, 16, 78, SDL_ALPHA_OPAQUE);
+  // Handed over in batches: one call for hundreds of dots, not one each.
+  std::array<SDL_FRect, 256> dots{};
+  std::size_t count = 0;
+  const auto flush = [&]() {
+    if (count > 0) {
+      SDL_RenderFillRects(r, dots.data(), static_cast<int>(count));
+      count = 0;
+    }
+  };
   int row = 0;
   for (float y = kPitch * 0.5F; y < layout.canvasHeight; y += kPitch * 0.5F, ++row) {
     const bool rowCovered = y >= coveredTop && y + kDot <= coveredBottom;
@@ -407,10 +416,13 @@ void TableRenderer::drawBackdrop(SDL_Renderer* r, const screen::Layout& layout) 
         x += std::floor((coveredRight - x) / kPitch) * kPitch;
         continue;
       }
-      const SDL_FRect dot{x, y, kDot, kDot};
-      SDL_RenderFillRect(r, &dot);
+      dots[count++] = {x, y, kDot, kDot};
+      if (count == dots.size()) {
+        flush();
+      }
     }
   }
+  flush();
 }
 
 void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
@@ -450,10 +462,7 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
   {
     // The shadows and the halos follow the same in-between positions as
     // the balls.
-    DrawnBalls balls = ballsToDraw(game, alpha);
-    for (const BallView& extra : options.extraBalls) {
-      balls.add(extra);
-    }
+    const DrawnBalls balls = ballsToDraw(game, alpha, options.extraBalls);
     drawBalls(r, balls.span());
   }
 

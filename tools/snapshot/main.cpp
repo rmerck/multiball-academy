@@ -6,7 +6,10 @@
 // Usage: pinball_snapshot <steps> <name.png> [state] [options]
 //
 // state    play (the default), launch, pause, interrupted, confirm, about,
-//          about-info, licences, initials, gameover, course, multiball
+//          about-info, licences, initials, gameover, course, multiball,
+//          or check: draw the layout's screens one after another and fail
+//          unless every control, window and dialog is really drawn (see
+//          checkLayout below); the picture written is the play frame
 // options  --layout <preset | WxH[@scale][+top,bottom,left,right]>
 //          --surface WxH  --insets top,bottom,left,right
 //          --idiom desktop|touch
@@ -35,6 +38,8 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "core/Args.hpp"
 #include "core/DisplayText.hpp"
@@ -42,6 +47,7 @@
 #include "core/HighScores.hpp"
 #include "core/InitialsEntry.hpp"
 #include "core/OverlayLayout.hpp"
+#include "core/PanelLayout.hpp"
 #include "core/ScreenLayout.hpp"
 #include "core/SurfaceSpec.hpp"
 #include "core/TouchControls.hpp"
@@ -139,13 +145,14 @@ enum class State : std::uint8_t {
   GameOver,
   Course,
   Multiball,
+  Check,
 };
 
 struct StateName {
   std::string_view name;
   State state;
 };
-constexpr std::array<StateName, 12> kStates{{
+constexpr std::array<StateName, 13> kStates{{
     {"play", State::Play},
     {"launch", State::Launch},
     {"pause", State::Pause},
@@ -158,6 +165,7 @@ constexpr std::array<StateName, 12> kStates{{
     {"gameover", State::GameOver},
     {"course", State::Course},
     {"multiball", State::Multiball},
+    {"check", State::Check},
 }};
 
 // What the command line asked for.
@@ -180,8 +188,9 @@ constexpr float kMaxPictureSide = 8192.0F;
 constexpr const char* kUsage =
     "Usage: pinball_snapshot <steps 1..1000000> <name.png> [state] [options]\n"
     "  state: play launch pause interrupted confirm about about-info licences\n"
-    "         initials gameover course multiball\n"
-    "  --layout <preset | WxH[@scale][+top,bottom,left,right]>   points, 100..4096; scale 1..4\n"
+    "         initials gameover course multiball check\n"
+    "  --layout <preset | WxH[@scale][+top,bottom,left,right]>   points, 100..4096; scale 1..4,\n"
+    "           and no more than 8192 pixels a side at that scale\n"
     "  --surface WxH   --insets top,bottom,left,right\n"
     "  --idiom desktop|touch\n"
     "  --page <1..99>   --message <TEXT>   --zones\n"
@@ -331,6 +340,13 @@ std::optional<Request> parseArguments(std::span<char* const> args) {
   if (idiom) {
     request.idiom = *idiom;
   }
+  // A scale that would make the picture larger than is ever drawn is a
+  // mistake in the command line, found before anything is loaded.
+  const auto scale = static_cast<float>(request.scale);
+  if (request.surface.width * scale > kMaxPictureSide ||
+      request.surface.height * scale > kMaxPictureSide) {
+    return std::nullopt;
+  }
   return request;
 }
 
@@ -374,12 +390,412 @@ pinball::HighScores sampleScores() {
   return sample;
 }
 
+// Two more balls for the multiball scene: one low on the table, one riding
+// the ramp.
+constexpr std::array<pinball::BallView, 2> kMoreBalls{{
+    {.position = {250.0F, 640.0F}},
+    {.position = {120.0F, 330.0F}, .scale = 1.3F, .raised = true},
+}};
+
+// One picture: what to draw over the game.
+struct Scene {
+  State state = State::Play;
+  pinball::TouchControls::View pressed{};
+  std::size_t licencePage = 0;
+  std::string_view message{};
+  bool zones = false;
+  // Leave out the touch controls, or the dialog of the state (the table is
+  // still dimmed for a pause): only the checks ask for these.
+  bool withoutControls = false;
+  bool withoutDialog = false;
+};
+
+// Draws the scene for the game onto the renderer's canvas.
+void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
+               const pinball::screen::Layout& layout, const pinball::Game& game,
+               const Scene& scene) {
+  // What a scripted game cannot be steered into is shown by asking.
+  pinball::HudPreview preview;
+  preview.message = scene.message;
+  preview.course = scene.state == State::Course;
+  pinball::DrawOptions options;
+  if (scene.state == State::Multiball) {
+    pinball::MultiballView multiball;
+    multiball.locksKnown = true;
+    multiball.ballsLive = static_cast<int>(game.ballCount() + kMoreBalls.size());
+    multiball.jackpotLit = true;
+    preview.multiball = multiball;
+    options.extraBalls = kMoreBalls;
+  }
+  options.dimmed = scene.state == State::Pause || scene.state == State::Interrupted ||
+                   scene.state == State::Confirm;
+
+  SDL_SetRenderDrawColor(r, 0, 0, 0, SDL_ALPHA_OPAQUE);
+  SDL_RenderClear(r);
+  // Alpha 1: the latest step exactly, so the picture depends only on the
+  // step count.
+  table.drawBackdrop(r, layout);
+  table.draw(r, game, 1.0F, layout, options,
+             pinball::HudExtras{.bestScore = 0, .newHighScore = false, .preview = &preview});
+  if (!scene.withoutControls) {
+    pinball::TouchControls::View view = scene.pressed;
+    view.centreRole = pinball::TouchControls().view(pinball::touchContext(game)).centreRole;
+    table.drawTouchOverlay(r, layout, view);
+  }
+  if (scene.zones) {
+    drawZones(r, layout);
+  }
+
+  switch (scene.withoutDialog ? State::Play : scene.state) {
+    case State::Pause:
+    case State::Interrupted:
+    case State::Confirm:
+      pinball::drawPauseMenu(
+          r, layout,
+          pinball::MenuState{.muted = false,
+                             .musicOn = true,
+                             .confirmNewGame = scene.state == State::Confirm,
+                             .afterInterruption = scene.state == State::Interrupted});
+      break;
+    case State::About:
+    case State::AboutInfo:
+    case State::Licences: {
+      const pinball::AboutPage page = scene.state == State::About
+                                          ? pinball::AboutPage::Scores
+                                          : scene.state == State::AboutInfo
+                                                ? pinball::AboutPage::About
+                                                : pinball::AboutPage::Licences;
+      pinball::drawAbout(r, sampleScores(), layout,
+                         pinball::AboutState{.page = page, .licencePage = scene.licencePage});
+      break;
+    }
+    case State::Initials: {
+      pinball::InitialsEntry entry(pinball::Initials{'W', 'M', 'A'});
+      entry.right();
+      pinball::drawInitialsEntry(r, entry, 12'345'678, true, layout);
+      break;
+    }
+    case State::Play:
+    case State::Launch:
+    case State::GameOver:
+    case State::Course:
+    case State::Multiball:
+    case State::Check:
+      break;
+  }
+  SDL_RenderPresent(r);
+}
+
+// --- The check: a drawer that draws nothing must not pass.
+//
+// Every picture below is drawn for the same layout and compared with
+// another in the places where the two must differ: a control with the
+// picture that leaves the controls out, a pressed control with the same one
+// at rest, a dialog with the game behind it, one page with the next. A
+// window of the status display must hold text over its face, and must
+// change when what it shows changes. A caption, an arrow or a line of body
+// text is looked for by its own colour, which nothing behind it has.
+
+using Pixels = std::vector<std::uint32_t>;
+
+struct Checker {
+  SDL_Surface* surface;
+  SDL_Renderer* renderer;
+  const pinball::TableRenderer& table;
+  const pinball::screen::Layout& layout;
+  int failures = 0;
+
+  [[nodiscard]] Pixels picture(const pinball::Game& game, const Scene& scene) const {
+    drawScene(renderer, table, layout, game, scene);
+    Pixels pixels(static_cast<std::size_t>(surface->w) * static_cast<std::size_t>(surface->h));
+    if (SDL_LockSurface(surface)) {
+      const auto* bytes = static_cast<const std::uint8_t*>(surface->pixels);
+      for (int y = 0; y < surface->h; ++y) {
+        std::memcpy(pixels.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(surface->w),
+                    bytes + static_cast<std::size_t>(y) * static_cast<std::size_t>(surface->pitch),
+                    static_cast<std::size_t>(surface->w) * sizeof(std::uint32_t));
+      }
+      SDL_UnlockSurface(surface);
+    }
+    return pixels;
+  }
+
+  // The rectangle's pixels, kept inside the picture: left, top, right, bottom.
+  [[nodiscard]] std::array<int, 4> bounds(const pinball::screen::Rect& rect) const noexcept {
+    const int left = std::clamp(static_cast<int>(std::ceil(rect.x)), 0, surface->w);
+    const int top = std::clamp(static_cast<int>(std::ceil(rect.y)), 0, surface->h);
+    return {left, top,
+            std::clamp(static_cast<int>(std::floor(rect.x + rect.w)), left, surface->w),
+            std::clamp(static_cast<int>(std::floor(rect.y + rect.h)), top, surface->h)};
+  }
+
+  // The share of the rectangle's pixels that differ between two pictures.
+  [[nodiscard]] double changed(const Pixels& a, const Pixels& b,
+                               const pinball::screen::Rect& rect) const noexcept {
+    const auto [left, top, right, bottom] = bounds(rect);
+    std::size_t different = 0;
+    for (int y = top; y < bottom; ++y) {
+      const std::size_t row = static_cast<std::size_t>(y) * static_cast<std::size_t>(surface->w);
+      for (int x = left; x < right; ++x) {
+        const std::size_t at = row + static_cast<std::size_t>(x);
+        different += a[at] != b[at] ? 1U : 0U;
+      }
+    }
+    const double area = static_cast<double>(right - left) * static_cast<double>(bottom - top);
+    return area > 0.0 ? static_cast<double>(different) / area : 0.0;
+  }
+
+  // The share of the rectangle that is not its commonest colour: lettering
+  // and edges over a face. A flat fill gives 0.
+  [[nodiscard]] double inked(const Pixels& a, const pinball::screen::Rect& rect) const {
+    const auto [left, top, right, bottom] = bounds(rect);
+    std::vector<std::uint32_t> values;
+    for (int y = top; y < bottom; ++y) {
+      const std::size_t row = static_cast<std::size_t>(y) * static_cast<std::size_t>(surface->w);
+      values.insert(values.end(), a.begin() + static_cast<std::ptrdiff_t>(row) + left,
+                    a.begin() + static_cast<std::ptrdiff_t>(row) + right);
+    }
+    if (values.empty()) {
+      return 0.0;
+    }
+    std::ranges::sort(values);
+    std::size_t best = 0;
+    for (std::size_t i = 0; i < values.size();) {
+      std::size_t j = i;
+      while (j < values.size() && values[j] == values[i]) {
+        ++j;
+      }
+      best = std::max(best, j - i);
+      i = j;
+    }
+    return 1.0 - static_cast<double>(best) / static_cast<double>(values.size());
+  }
+
+  // The share of the rectangle in the colour captions, arrows and body
+  // text are drawn in.
+  [[nodiscard]] double captionInk(const Pixels& a, const pinball::screen::Rect& rect) const {
+    const SDL_PixelFormatDetails* const format = SDL_GetPixelFormatDetails(surface->format);
+    const std::uint32_t ink = SDL_MapRGBA(format, nullptr, 248, 240, 255, 255);
+    const auto [left, top, right, bottom] = bounds(rect);
+    std::size_t count = 0;
+    for (int y = top; y < bottom; ++y) {
+      const std::size_t row = static_cast<std::size_t>(y) * static_cast<std::size_t>(surface->w);
+      for (int x = left; x < right; ++x) {
+        count += a[row + static_cast<std::size_t>(x)] == ink ? 1U : 0U;
+      }
+    }
+    const double area = static_cast<double>(right - left) * static_cast<double>(bottom - top);
+    return area > 0.0 ? static_cast<double>(count) / area : 0.0;
+  }
+
+  void expect(bool ok, const char* what) {
+    if (!ok) {
+      std::fprintf(stderr, "check failed: %s\n", what);
+      ++failures;
+    }
+  }
+  // At least this share of a rectangle must differ, or be lettering.
+  static constexpr double kSome = 0.01;
+  void differs(const Pixels& a, const Pixels& b, const pinball::screen::Rect& rect,
+               const char* what) {
+    expect(changed(a, b, rect) >= kSome, what);
+  }
+  void same(const Pixels& a, const Pixels& b, const pinball::screen::Rect& rect,
+            const char* what) {
+    expect(changed(a, b, rect) == 0.0, what);
+  }
+  void lettered(const Pixels& a, const pinball::screen::Rect& rect, const char* what) {
+    expect(inked(a, rect) >= kSome, what);
+  }
+  void captioned(const Pixels& a, const pinball::screen::Rect& rect, const char* what) {
+    expect(captionInk(a, rect) >= kSome, what);
+  }
+};
+
+constexpr pinball::screen::Rect placed(const pinball::screen::Rect& r, float dx,
+                                       float dy) noexcept {
+  return {r.x + dx, r.y + dy, r.w, r.h};
+}
+
+// Runs every check for the layout. game is some way into play; fresh has
+// not started. Returns the number of failures.
+int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& fresh) {
+  namespace screen = pinball::screen;
+  const screen::Layout& layout = check.layout;
+  const bool touch = layout.idiom == screen::Idiom::Touch;
+  const bool stack = layout.composition == screen::Composition::Stack;
+  using View = pinball::TouchControls::View;
+
+  const Pixels play = check.picture(game, {});
+  const Pixels again = check.picture(game, {});
+  check.same(play, again, {0.0F, 0.0F, layout.canvasWidth, layout.canvasHeight},
+             "the same scene draws the same picture twice");
+
+  // --- The status display: each window lettered, and following the game.
+  const float hx = stack ? layout.hud.x : layout.hud.x - pinball::panel::kLeft;
+  const float hy = layout.hud.y;
+  const screen::Rect score = placed(stack ? pinball::strip::kScoreWell : pinball::panel::kScoreWell, hx, hy);
+  const screen::Rect status = placed(stack ? pinball::strip::kStatusWell : pinball::panel::kStatusWell, hx, hy);
+  const screen::Rect rank = placed(stack ? pinball::strip::kRankWell : pinball::panel::kRankWell, hx, hy);
+  const screen::Rect course = placed(stack ? pinball::strip::kMissionWell : pinball::panel::kMissionWell, hx, hy);
+  const screen::Rect message = placed(stack ? pinball::strip::kMessageWell : pinball::panel::kMessageWell, hx, hy);
+  check.lettered(play, score, "score window has lettering");
+  check.lettered(play, status, "status window has lettering");
+  check.lettered(play, rank, "rank window has lettering");
+  check.lettered(play, course, "course window has lettering");
+  const Pixels start = check.picture(fresh, {});
+  check.differs(play, start, score, "score window follows the score");
+  check.differs(play, start, message, "message window follows the message");
+  const Pixels running = check.picture(game, {.state = State::Course, .message = "CLASS IN SESSION"});
+  check.differs(play, running, course, "course window shows a running course");
+  check.lettered(running, message, "message window shows a message");
+  const Pixels many = check.picture(game, {.state = State::Multiball});
+  check.differs(play, many, status, "status window shows a multiball");
+  for (const pinball::BallView& ball : kMoreBalls) {
+    check.differs(play, many,
+                  {layout.playfield.x + ball.position.x - 20.0F,
+                   layout.playfield.y + ball.position.y - 20.0F, 40.0F, 40.0F},
+                  "each extra ball is drawn on the table");
+  }
+
+  // --- The touch controls.
+  if (touch) {
+    const Pixels bare = check.picture(game, {.withoutControls = true});
+    View all{};
+    all.left = all.right = all.centre = all.nudgeLeft = all.nudgeRight = all.pause = true;
+    const Pixels held = check.picture(game, {.pressed = all});
+    // What is drawn of each control lies inside what a touch may land in.
+    const std::array<std::pair<screen::Rect, const char*>, 4> buttons{{
+        {layout.pauseButton, "pause button"},
+        {layout.nudgeLeftButton, "left nudge button"},
+        {layout.centreButton, "centre button"},
+        {layout.nudgeRightButton, "right nudge button"},
+    }};
+    for (const auto& [rect, name] : buttons) {
+      std::string what = std::string(name) + " is drawn";
+      check.differs(bare, play, rect, what.c_str());
+      what = std::string(name) + " has its caption or mark";
+      check.captioned(play, rect, what.c_str());
+      what = std::string(name) + " looks pressed when held";
+      check.differs(play, held, rect, what.c_str());
+    }
+    check.differs(play, start, layout.centreButton, "centre button says what it will do");
+    if (stack) {
+      const screen::Rect left = placed(pinball::deck::kLeftCorner, layout.deck.x, layout.deck.y);
+      const screen::Rect right = placed(pinball::deck::kRightCorner, layout.deck.x, layout.deck.y);
+      check.differs(bare, play, layout.deck, "deck is drawn");
+      check.differs(play, held, left, "left flipper pad lights when held");
+      check.differs(play, held, right, "right flipper pad lights when held");
+      // The corners are their own: not part of a button's face.
+      View leftOnly{};
+      leftOnly.left = true;
+      const Pixels one = check.picture(game, {.pressed = leftOnly});
+      check.same(play, one, layout.nudgeLeftButton, "a held flipper leaves the nudge button alone");
+      check.same(play, one, right, "the left flipper leaves the right pad alone");
+    } else {
+      const screen::Rect corner =
+          placed(pinball::panel::kFlipperCorner, layout.playfield.x, layout.playfield.y);
+      check.differs(bare, play, corner, "flipper corner is marked");
+      check.differs(play, held, corner, "flipper corner lights when held");
+      check.same(bare, held, layout.playfield, "nothing is drawn over the table");
+    }
+  }
+
+  // --- Pause. The table is dimmed either way; the menu or the word must
+  // be there on top of that.
+  const Pixels dimmed = check.picture(game, {.state = State::Pause, .withoutDialog = true});
+  const Pixels paused = check.picture(game, {.state = State::Pause});
+  check.differs(play, dimmed, layout.playfield, "the paused table is dimmed");
+  if (touch) {
+    const screen::MenuLayout menu = screen::menuLayout(layout);
+    check.differs(dimmed, paused, menu.box, "pause menu is drawn");
+    const std::array<std::pair<screen::Rect, const char*>, 5> rows{{
+        {menu.resume, "menu: resume"},
+        {menu.newGame, "menu: new game"},
+        {menu.sound, "menu: sound"},
+        {menu.music, "menu: music"},
+        {menu.about, "menu: scores and about"},
+    }};
+    for (const auto& [rect, name] : rows) {
+      check.differs(dimmed, paused, rect, name);
+      check.captioned(paused, rect, name);
+    }
+    check.differs(dimmed, paused, layout.hud, "pausing dims the status display too");
+    const Pixels confirm = check.picture(game, {.state = State::Confirm});
+    check.differs(paused, confirm, menu.newGame, "menu: new game asks to confirm");
+    check.same(paused, confirm, menu.resume, "menu: confirming changes only its own button");
+    const Pixels interrupted = check.picture(game, {.state = State::Interrupted});
+    check.differs(paused, interrupted, menu.box, "after an interruption there is no menu");
+    check.differs(dimmed, interrupted, layout.playfield, "after an interruption the table says so");
+  } else {
+    check.differs(dimmed, paused, {layout.playfield.x + 150.0F, layout.playfield.y + 420.0F,
+                                   468.0F, 130.0F}, "PAUSED is drawn over the table");
+  }
+
+  // --- About: every page its own, and the licences more than one.
+  const screen::AboutLayout about = screen::aboutLayout(layout);
+  const Pixels scores = check.picture(game, {.state = State::About});
+  const Pixels info = check.picture(game, {.state = State::AboutInfo});
+  const Pixels licences = check.picture(game, {.state = State::Licences});
+  check.differs(play, scores, about.box, "About is drawn");
+  check.differs(scores, info, about.box, "About: scores and about pages differ");
+  check.differs(info, licences, about.box, "About: about and licence pages differ");
+  check.differs(scores, licences, about.box, "About: scores and licence pages differ");
+  // The licence text itself, where every layout has it.
+  check.captioned(licences, about.body, "About: the licence page has its text");
+  const std::size_t pages = pinball::licencePageCount(layout);
+  check.expect(pages >= 2, "the licences take more than one page");
+  const Pixels last = check.picture(game, {.state = State::Licences, .licencePage = pages - 1});
+  check.differs(licences, last, about.body, "About: first and last licence pages differ");
+  check.captioned(last, about.body, "About: the last licence page has its text");
+  const Pixels beyond = check.picture(game, {.state = State::Licences, .licencePage = pages + 7});
+  check.same(last, beyond, about.box, "About: a page past the last is the last");
+  if (touch) {
+    for (const screen::Rect& tab : about.tabs) {
+      check.captioned(scores, tab, "About: tab has a caption");
+    }
+    check.differs(scores, info, about.tabs[0], "About: the tab of the page shown is marked");
+    check.captioned(scores, about.close, "About: close button");
+    check.captioned(licences, about.previous, "About: previous page button");
+    check.captioned(licences, about.next, "About: next page button");
+    check.differs(licences, last, about.next, "About: next is greyed on the last page");
+    check.differs(licences, last, about.previous, "About: previous is greyed on the first page");
+    check.same(scores, info, about.close, "About: close stays put");
+  }
+
+  // --- Initials.
+  const screen::InitialsLayout initials = screen::initialsLayout(layout);
+  const Pixels entry = check.picture(game, {.state = State::Initials});
+  check.differs(play, entry, initials.box, "initials prompt is drawn");
+  for (const screen::Rect& slot : initials.slot) {
+    check.lettered(entry, slot, "initials: a letter in each slot");
+  }
+  if (touch) {
+    for (std::size_t i = 0; i < initials.up.size(); ++i) {
+      check.captioned(entry, initials.up[i], "initials: up arrow");
+      check.captioned(entry, initials.down[i], "initials: down arrow");
+    }
+    check.captioned(entry, initials.ok, "initials: OK button");
+  }
+
+  // Leave the play frame on the canvas: it is the picture written.
+  (void)check.picture(game, {});
+  return check.failures;
+}
+
 int run(const Request& request) {
   namespace screen = pinball::screen;
   const screen::Layout layout = screen::computeLayout(request.surface, request.idiom);
   const bool touch = layout.idiom == screen::Idiom::Touch;
+  // Refused before anything is loaded or drawn.
   if (layout.canvasWidth > kMaxPictureSide || layout.canvasHeight > kMaxPictureSide) {
     std::fputs("that window needs a larger canvas than this tool draws\n", stderr);
+    return EXIT_FAILURE;
+  }
+  const float scaledWidth = request.surface.width * static_cast<float>(request.scale);
+  const float scaledHeight = request.surface.height * static_cast<float>(request.scale);
+  if (scaledWidth > kMaxPictureSide || scaledHeight > kMaxPictureSide) {
+    std::fputs("that window is too large to draw at that scale\n", stderr);
     return EXIT_FAILURE;
   }
 
@@ -432,81 +848,25 @@ int run(const Request& request) {
       game.step(idle ? pinball::InputState{} : scriptedInput(step++));
     }
 
-    // What a scripted game cannot be steered into is shown by asking.
-    pinball::HudPreview preview;
-    preview.message = request.message;
-    preview.course = request.state == State::Course;
-    // Two more balls: one low on the table, one riding the ramp.
-    constexpr std::array<pinball::BallView, 2> kMoreBalls{{
-        {.position = {250.0F, 640.0F}},
-        {.position = {120.0F, 330.0F}, .scale = 1.3F},
-    }};
-    pinball::DrawOptions options;
-    if (request.state == State::Multiball) {
-      preview.multiball = pinball::MultiballView{.known = true,
-                                                 .ballsLive = 3,
-                                                 .locksHeld = 0,
-                                                 .lockLit = false,
-                                                 .running = true,
-                                                 .jackpotLit = true,
-                                                 .superJackpotLit = false};
-      options.extraBalls = kMoreBalls;
-    }
-    const bool paused = request.state == State::Pause || request.state == State::Interrupted ||
-                        request.state == State::Confirm;
-    options.dimmed = paused;
-
-    SDL_SetRenderDrawColor(r, 0, 0, 0, SDL_ALPHA_OPAQUE);
-    SDL_RenderClear(r);
-    // Alpha 1: the latest step exactly, so the picture depends only on the
-    // step count.
-    table->drawBackdrop(r, layout);
-    table->draw(r, game, 1.0F, layout, options,
-                pinball::HudExtras{.bestScore = 0, .newHighScore = false, .preview = &preview});
-    pinball::TouchControls::View view = request.pressed;
-    view.centreRole = pinball::TouchControls().view(pinball::touchContext(game)).centreRole;
-    table->drawTouchOverlay(r, layout, view);
-    if (request.zones) {
-      drawZones(r, layout);
-    }
-
-    switch (request.state) {
-      case State::Pause:
-      case State::Interrupted:
-      case State::Confirm:
-        pinball::drawPauseMenu(
-            r, layout,
-            pinball::MenuState{.muted = false,
-                               .musicOn = true,
-                               .confirmNewGame = request.state == State::Confirm,
-                               .afterInterruption = request.state == State::Interrupted});
-        break;
-      case State::About:
-      case State::AboutInfo:
-      case State::Licences: {
-        const pinball::AboutPage page = request.state == State::About
-                                            ? pinball::AboutPage::Scores
-                                            : request.state == State::AboutInfo
-                                                  ? pinball::AboutPage::About
-                                                  : pinball::AboutPage::Licences;
-        pinball::drawAbout(r, sampleScores(), layout,
-                           pinball::AboutState{.page = page, .licencePage = request.licencePage});
-        break;
+    if (request.state == State::Check) {
+      const pinball::Game fresh;
+      if (game.rules().score() == fresh.rules().score() || !game.rules().ballInPlay()) {
+        std::fputs("check needs enough steps for a ball in play and a score: try 1200\n", stderr);
+        return EXIT_FAILURE;
       }
-      case State::Initials: {
-        pinball::InitialsEntry entry(pinball::Initials{'W', 'M', 'A'});
-        entry.right();
-        pinball::drawInitialsEntry(r, entry, 12'345'678, true, layout);
-        break;
+      Checker checker{surface.get(), r, *table, layout};
+      if (const int failures = checkLayout(checker, game, fresh); failures > 0) {
+        std::fprintf(stderr, "%d check(s) failed for this layout\n", failures);
+        return EXIT_FAILURE;
       }
-      case State::Play:
-      case State::Launch:
-      case State::GameOver:
-      case State::Course:
-      case State::Multiball:
-        break;
+    } else {
+      drawScene(r, *table, layout, game,
+                Scene{.state = request.state,
+                      .pressed = request.pressed,
+                      .licencePage = request.licencePage,
+                      .message = request.message,
+                      .zones = request.zones});
     }
-    SDL_RenderPresent(r);
   }
 
   if (!hasContent(surface.get(), layout.playfield)) {
@@ -518,14 +878,8 @@ int run(const Request& request) {
   std::unique_ptr<SDL_Surface, SurfaceDeleter> scaled;
   SDL_Surface* picture = surface.get();
   if (request.scale > 0) {
-    const float width = request.surface.width * static_cast<float>(request.scale);
-    const float height = request.surface.height * static_cast<float>(request.scale);
-    if (width > kMaxPictureSide || height > kMaxPictureSide) {
-      std::fputs("that window is too large to draw at that scale\n", stderr);
-      return EXIT_FAILURE;
-    }
-    scaled.reset(SDL_CreateSurface(static_cast<int>(std::lround(width)),
-                                   static_cast<int>(std::lround(height)),
+    scaled.reset(SDL_CreateSurface(static_cast<int>(std::lround(scaledWidth)),
+                                   static_cast<int>(std::lround(scaledHeight)),
                                    SDL_PIXELFORMAT_RGBA32));
     if (!scaled || !SDL_BlitSurfaceScaled(surface.get(), nullptr, scaled.get(), nullptr,
                                           SDL_SCALEMODE_LINEAR)) {

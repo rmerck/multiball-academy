@@ -7,18 +7,17 @@
 #include "core/Game.hpp"
 #include "core/TouchControls.hpp"
 
-// What the drawing code asks of the game where the game's own interface is
-// still on its way: several balls at once, and the multiball rules. Each
-// function uses the call the game is to have (Game::balls,
-// Game::ballAwaitingLaunch, the multiball queries of Rules) when the type it
-// is given has it, and today's single ball when it does not. They are
-// templates so that the choice is made by the compiler for the type in hand;
-// no SDL, so they are unit tested with stand-ins for both kinds of game.
+// What the drawing code asks of the game. The balls come straight from
+// Game::balls. Two things the rules cannot say yet are asked through
+// templates that use the call when the type in hand has it and a stand-in
+// until then: whether a ball waits in the launch lane, and the locks and
+// lit jackpots of multiball. No SDL, so they are unit tested with stand-ins
+// for both kinds of game.
 namespace pinball {
 
-// More than any table holds; a game that offered more would have the rest
-// left out of the picture, never written past the end.
-inline constexpr std::size_t kMaxDrawnBalls = 8;
+// The game's balls and a few more: the review tool adds some to look at a
+// crowded table.
+inline constexpr std::size_t kMaxDrawnBalls = Game::kMaxBalls + 4;
 
 struct DrawnBalls {
   std::array<BallView, kMaxDrawnBalls> items{};
@@ -36,16 +35,16 @@ struct DrawnBalls {
   }
 };
 
-// Every ball to draw, as it is alpha of a step after the one before.
-template <typename GameType>
-[[nodiscard]] DrawnBalls ballsToDraw(const GameType& game, float alpha) {
+// Every ball to draw, as it is alpha of a step after the one before, and
+// after them the extra ones.
+[[nodiscard]] inline DrawnBalls ballsToDraw(const Game& game, float alpha,
+                                            std::span<const BallView> extra = {}) {
   DrawnBalls drawn;
-  if constexpr (requires { game.balls(alpha); }) {
-    for (const BallView& ball : game.balls(alpha)) {
-      drawn.add(ball);
-    }
-  } else {
-    drawn.add(game.ball(alpha));
+  for (const BallView& ball : game.balls(alpha)) {
+    drawn.add(ball);
+  }
+  for (const BallView& ball : extra) {
+    drawn.add(ball);
   }
   return drawn;
 }
@@ -63,39 +62,47 @@ template <typename GameType>
   }
 }
 
+// PLACEHOLDER until the rules say how many locks start a multiball
+// (Rules::locksNeeded, if they come to have it): the number the multiball
+// design gives. Used for nothing but the "LOCKS n/m" line.
+inline constexpr int kPlaceholderLocksNeeded = 2;
+
 // The multiball part of the status display.
 struct MultiballView {
-  // The rules have multiball. When false the display leaves out its lock
-  // and ball-count indicators altogether.
-  bool known = false;
+  // The rules have locks. When false the display leaves out its lock lamp
+  // and lock count altogether.
+  bool locksKnown = false;
+  // Balls on the table, from the game: more than one is a multiball.
   int ballsLive = 1;
   int locksHeld = 0;
+  int locksNeeded = kPlaceholderLocksNeeded;
   bool lockLit = false;
-  bool running = false;
   bool jackpotLit = false;
   bool superJackpotLit = false;
+
+  [[nodiscard]] bool running() const noexcept { return ballsLive > 1; }
 };
 
-inline constexpr int kLocksForMultiball = 2;
-
-template <typename RulesType>
-[[nodiscard]] MultiballView multiballView(const RulesType& rules) {
+template <typename GameType>
+[[nodiscard]] MultiballView multiballView(const GameType& game) {
   MultiballView view;
+  view.ballsLive = static_cast<int>(game.ballCount());
+  const auto& rules = game.rules();
   if constexpr (requires {
-                  rules.ballsLive();
                   rules.locksHeld();
                   rules.lockLit();
-                  rules.multiball();
-                  rules.multiballJackpotLit();
-                  rules.superJackpotLit();
                 }) {
-    view.known = true;
-    view.ballsLive = static_cast<int>(rules.ballsLive());
+    view.locksKnown = true;
     view.locksHeld = static_cast<int>(rules.locksHeld());
     view.lockLit = rules.lockLit();
-    // The first value of the mode is "none".
-    view.running = static_cast<int>(rules.multiball()) != 0;
+  }
+  if constexpr (requires { rules.locksNeeded(); }) {
+    view.locksNeeded = static_cast<int>(rules.locksNeeded());
+  }
+  if constexpr (requires { rules.multiballJackpotLit(); }) {
     view.jackpotLit = rules.multiballJackpotLit();
+  }
+  if constexpr (requires { rules.superJackpotLit(); }) {
     view.superJackpotLit = rules.superJackpotLit();
   }
   return view;

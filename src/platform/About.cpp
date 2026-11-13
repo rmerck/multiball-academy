@@ -25,8 +25,6 @@ constexpr SDL_Color kDim{176, 150, 226, 255};
 constexpr SDL_Color kPink{255, 60, 170, 255};
 constexpr SDL_Color kViolet{150, 90, 255, 255};
 
-// Where the source lives. The screen names no person.
-constexpr std::string_view kSource = "GITHUB.COM/RMERCK";
 constexpr std::string_view kCredit =
     "AN ORIGINAL GAME BY RMERCK. ALL ART AND SOUND ARE ORIGINAL.";
 // The same in two lines, for the narrow dialog.
@@ -36,18 +34,25 @@ constexpr std::string_view kCreditLines =
 constexpr std::string_view kPrivacy =
     "THIS GAME COLLECTS NOTHING AND SENDS NOTHING. IT HAS NO ACCOUNTS, NO ADS AND NO "
     "ANALYTICS, AND IT NEVER GOES ONLINE. YOUR HIGH SCORES STAY ON THIS DEVICE.";
-constexpr std::string_view kPolicyNote =
-    "THE PRIVACY POLICY IS IN THE PROJECT'S DOCS FOLDER AT THE ADDRESS ABOVE.";
 
-// Body text: the smallest size, and the distance from one line to the next.
-constexpr float kBodySize = 2.0F;
-constexpr float kLineStep = 20.0F;
-constexpr float kAdvance = 6.0F * kBodySize;
+// The build's address for the privacy policy. Empty if it has none: then
+// nothing on the screen refers to one.
+std::string_view privacyUrl() noexcept { return kPrivacyUrl; }
 
-// Characters of body text that fit a width.
-std::size_t charsAcross(float width) noexcept {
-  return width < kAdvance ? 1 : static_cast<std::size_t>((width + kBodySize) / kAdvance);
-}
+// Body text in a layout: its size (the smallest that is large enough on
+// that screen), the distance from one line to the next, and how many
+// characters fit a width.
+struct Body {
+  float size;
+  float step;
+
+  explicit Body(const screen::Layout& layout) noexcept
+      : size(screen::smallestTextSize(layout)), step(size * 10.0F) {}
+  [[nodiscard]] std::size_t across(float width) const noexcept {
+    const float advance = 6.0F * size;
+    return width < advance ? 1 : static_cast<std::size_t>((width + size) / advance);
+  }
+};
 
 // Breaks text into lines of at most maxChars and hands each to fn with its
 // number. A line feed ends a paragraph; an empty paragraph is an empty line.
@@ -81,14 +86,14 @@ std::size_t wrapLines(std::string_view text, std::size_t maxChars, Fn&& fn) {
 }
 
 // Draws wrapped body text centred on x from y down. Returns the y below it.
-float drawParagraph(SDL_Renderer* r, std::string_view text, float x, float y, float width,
-                    SDL_Color color) {
+float drawParagraph(SDL_Renderer* r, const Body& body, std::string_view text, float x, float y,
+                    float width, SDL_Color color) {
   const std::size_t lines =
-      wrapLines(text, charsAcross(width), [&](std::size_t line, std::string_view part) {
-        drawText(r, part, x, y + static_cast<float>(line) * kLineStep, kBodySize, color,
+      wrapLines(text, body.across(width), [&](std::size_t line, std::string_view part) {
+        drawText(r, part, x, y + static_cast<float>(line) * body.step, body.size, color,
                  TextAlign::Center);
       });
-  return y + static_cast<float>(lines) * kLineStep;
+  return y + static_cast<float>(lines) * body.step;
 }
 
 float fittedSize(std::string_view text, float width, float start) noexcept {
@@ -104,44 +109,59 @@ bool isTouch(const screen::Layout& layout) noexcept {
 }
 
 // Where the licence text goes. A touch screen has no privacy button on that
-// page, so the text takes its row as well.
+// page, so the text takes its row as well, less a line for the page count.
 screen::Rect licenceArea(const screen::Layout& layout) noexcept {
   const screen::AboutLayout about = screen::aboutLayout(layout);
   if (isTouch(layout)) {
     const float bottom = about.privacyLink.y + about.privacyLink.h;
-    // The last line is the page count.
-    return {about.body.x, about.body.y, about.body.w, bottom - about.body.y - kLineStep};
+    return {about.body.x, about.body.y, about.body.w,
+            bottom - about.body.y - Body(layout).step};
   }
   const screen::Rect& box = about.box;
   return {box.x + 90.0F, box.y + 166.0F, box.w - 180.0F, box.h - 166.0F - 136.0F};
 }
 
-std::size_t linesPerPage(const screen::Rect& area) noexcept {
-  return std::max<std::size_t>(static_cast<std::size_t>(area.h / kLineStep), 1);
+// How the licence text is paged in a layout: as few pages as hold it, with
+// the lines shared out evenly so the last page is never a line or two.
+struct Paging {
+  std::size_t pages;
+  std::size_t perPage;
+};
+
+Paging licencePaging(const screen::Layout& layout) noexcept {
+  const screen::Rect area = licenceArea(layout);
+  const Body body(layout);
+  const std::size_t lines =
+      wrapLines(licenceText(), body.across(area.w), [](std::size_t, std::string_view) {});
+  const std::size_t most = std::max<std::size_t>(static_cast<std::size_t>(area.h / body.step), 1);
+  const std::size_t pages = std::max<std::size_t>((lines + most - 1) / most, 1);
+  return {pages, (lines + pages - 1) / pages};
 }
 
-// The title, the version and build, and a rule under them. Returns the y
-// below the rule.
-float drawHeading(SDL_Renderer* r, float middle, float y, float width, float largest) {
+// The title, the version, and a rule under them. Returns the y below the
+// rule.
+float drawHeading(SDL_Renderer* r, const Body& body, float middle, float y, float width,
+                  float largest) {
   const float size = fittedSize(kGameTitle, width, largest);
   drawNeonText(r, kGameTitle, middle, y, size, kAmber, kPink, {120, 30, 200, 255},
                TextAlign::Center);
   y += 64.0F;
   std::array<char, 48> version{};
   drawText(r, formatText(version.data(), version.size(), "VERSION %s", kGameVersion), middle, y,
-           2.0F, kDim, TextAlign::Center);
-  drawNeonRule(r, middle, y + 24.0F, 300.0F);
-  return y + 54.0F;
+           body.size, kDim, TextAlign::Center);
+  y += 7.0F * body.size + 10.0F;
+  drawNeonRule(r, middle, y, 300.0F);
+  return y + 30.0F;
 }
 
 // The high score table from y down, centred on middle.
-void drawScoreTable(SDL_Renderer* r, const HighScores& scores, float middle, float y,
-                    bool narrow) {
+void drawScoreTable(SDL_Renderer* r, const Body& body, const HighScores& scores, float middle,
+                    float y, bool narrow) {
   drawNeonText(r, "HIGH SCORES", middle, y, 3.0F, kWhite, kCyan, {200, 40, 150, 255},
                TextAlign::Center);
   y += 38.0F;
   if (scores.size() == 0) {
-    drawText(r, "NO GAMES FINISHED YET", middle, y, 2.0F, kDim, TextAlign::Center);
+    drawText(r, "NO GAMES FINISHED YET", middle, y, body.size, kDim, TextAlign::Center);
     return;
   }
   // Place, initials, score and rank. The narrow dialog draws them closer.
@@ -163,44 +183,43 @@ void drawScoreTable(SDL_Renderer* r, const HighScores& scores, float middle, flo
   }
 }
 
-// The About page's facts from y down: build, source, and the privacy
-// statement. Returns the y below them.
-float drawFacts(SDL_Renderer* r, float middle, float y, float width) {
+// The About page's facts from y down: the build and the privacy statement,
+// and where the policy is if the build knows and showAddress asks for it.
+void drawFacts(SDL_Renderer* r, const Body& body, float middle, float y, float width,
+               bool showAddress) {
   std::array<char, 48> build{};
-  drawText(r, formatText(build.data(), build.size(), "BUILD %s", kBuildNumber), middle, y, 2.0F,
-           kDim, TextAlign::Center);
-  y += 34.0F;
-  drawText(r, "SOURCE AND SUPPORT", middle, y, 2.0F, kDim, TextAlign::Center);
-  y += 26.0F;
-  drawText(r, kSource, middle, y, 3.0F, kAmber, TextAlign::Center);
-  y += 48.0F;
+  drawText(r, formatText(build.data(), build.size(), "BUILD %s", kBuildNumber), middle, y,
+           body.size, kDim, TextAlign::Center);
+  y += 7.0F * body.size + 20.0F;
   drawNeonText(r, "YOUR PRIVACY", middle, y, 3.0F, kWhite, kCyan, {200, 40, 150, 255},
                TextAlign::Center);
   y += 38.0F;
-  y = drawParagraph(r, kPrivacy, middle, y, width, kWhite);
-  return y + 14.0F;
+  y = drawParagraph(r, body, kPrivacy, middle, y, width, kWhite) + 14.0F;
+  if (showAddress && !privacyUrl().empty()) {
+    drawText(r, "PRIVACY POLICY", middle, y, body.size, kDim, TextAlign::Center);
+    drawParagraph(r, body, privacyUrl(), middle, y + body.step, width, kAmber);
+  }
 }
 
-// One page of the licence text, and under it which page it is.
+// One page of the licence text, set from the left like any legal text.
 void drawLicences(SDL_Renderer* r, const screen::Layout& layout, std::size_t page) {
   const screen::Rect area = licenceArea(layout);
-  const std::size_t perPage = linesPerPage(area);
-  const std::size_t pages = licencePageCount(layout);
-  page = std::min(page, pages - 1);
-  const std::size_t first = page * perPage;
-  const float middle = area.x + area.w * 0.5F;
-  wrapLines(licenceText(), charsAcross(area.w), [&](std::size_t line, std::string_view part) {
-    if (line >= first && line < first + perPage) {
-      drawText(r, part, middle, area.y + static_cast<float>(line - first) * kLineStep, kBodySize,
-               kWhite, TextAlign::Center);
+  const Body body(layout);
+  const Paging paging = licencePaging(layout);
+  page = std::min(page, paging.pages - 1);
+  const std::size_t first = page * paging.perPage;
+  wrapLines(licenceText(), body.across(area.w), [&](std::size_t line, std::string_view part) {
+    if (line >= first && line < first + paging.perPage) {
+      drawText(r, part, area.x, area.y + static_cast<float>(line - first) * body.step, body.size,
+               kWhite);
     }
   });
   if (isTouch(layout)) {
     std::array<char, 32> count{};
     drawText(r,
              formatText(count.data(), count.size(), "PAGE %u OF %u",
-                        static_cast<unsigned>(page + 1), static_cast<unsigned>(pages)),
-             middle, area.y + area.h + 4.0F, kBodySize, kDim, TextAlign::Center);
+                        static_cast<unsigned>(page + 1), static_cast<unsigned>(paging.pages)),
+             area.x + area.w * 0.5F, area.y + area.h + 4.0F, body.size, kDim, TextAlign::Center);
   }
 }
 
@@ -208,6 +227,7 @@ void drawLicences(SDL_Renderer* r, const screen::Layout& layout, std::size_t pag
 // page, and along the foot the credit and the keys.
 void drawDesktop(SDL_Renderer* r, const HighScores& scores, const screen::Layout& layout,
                  const AboutState& state) {
+  const Body body(layout);
   const screen::Rect dialog = screen::aboutLayout(layout).box;
   const SDL_FRect box{dialog.x, dialog.y, dialog.w, dialog.h};
   drawNeonFrame(r, box);
@@ -220,25 +240,17 @@ void drawDesktop(SDL_Renderer* r, const HighScores& scores, const screen::Layout
   if (state.page == AboutPage::Scores) {
     drawNeonSunset(r, {middle - 300.0F, box.y + box.h - 258.0F, 600.0F, 118.0F});
   }
-  float y = drawHeading(r, middle, box.y + 36.0F, box.w - 120.0F, 6.0F);
+  const float y = drawHeading(r, body, middle, box.y + 36.0F, box.w - 120.0F, 6.0F);
 
   const std::size_t licencePages = licencePageCount(layout);
-  std::size_t number = 1;
   switch (state.page) {
     case AboutPage::Scores:
-      drawText(r, "SOURCE", middle, y, 2.0F, kDim, TextAlign::Center);
-      y += 26.0F;
-      drawText(r, kSource, middle, y, 3.0F, kAmber, TextAlign::Center);
-      y += 96.0F;
-      drawScoreTable(r, scores, middle, y, false);
+      drawScoreTable(r, body, scores, middle, y + 122.0F, false);
       break;
     case AboutPage::About:
-      number = 2;
-      y = drawFacts(r, middle, y + 12.0F, box.w - 220.0F);
-      drawParagraph(r, kPolicyNote, middle, y, box.w - 220.0F, kDim);
+      drawFacts(r, body, middle, y + 12.0F, box.w - 220.0F, true);
       break;
     case AboutPage::Licences:
-      number = 3 + std::min(state.licencePage, licencePages - 1);
       drawLicences(r, layout, state.licencePage);
       break;
   }
@@ -248,14 +260,27 @@ void drawDesktop(SDL_Renderer* r, const HighScores& scores, const screen::Layout
   std::array<char, 64> pages{};
   drawText(r,
            formatText(pages.data(), pages.size(), "LEFT AND RIGHT ARROWS: PAGE %u OF %u",
-                      static_cast<unsigned>(number), static_cast<unsigned>(2 + licencePages)),
+                      static_cast<unsigned>(aboutPageNumber(state, licencePages) + 1),
+                      static_cast<unsigned>(aboutPageTotal(licencePages))),
            middle, box.y + box.h - 78.0F, 2.0F, kDim, TextAlign::Center);
   drawText(r, "PRESS F1 TO CLOSE", middle, box.y + box.h - 42.0F, 3.0F, kWhite, TextAlign::Center);
+}
+
+// A page-turning button; greyed, and without its shadow, when it leads
+// nowhere.
+void drawTurnButton(SDL_Renderer* r, const screen::Rect& face, std::string_view arrow,
+                    bool enabled) {
+  if (enabled) {
+    drawCaptionButton(r, face, arrow, kViolet, false, 5.0F);
+  } else {
+    drawCaptionButton(r, face, arrow, SDL_Color{70, 56, 104, 255}, true, 5.0F);
+  }
 }
 
 // The dialog with the controls a touch screen needs.
 void drawTouch(SDL_Renderer* r, const HighScores& scores, const screen::Layout& layout,
                const AboutState& state) {
+  const Body text(layout);
   const screen::AboutLayout about = screen::aboutLayout(layout);
   drawNeonFrame(r, {about.box.x, about.box.y, about.box.w, about.box.h});
 
@@ -270,19 +295,18 @@ void drawTouch(SDL_Renderer* r, const HighScores& scores, const screen::Layout& 
   const float middle = body.x + body.w * 0.5F;
   switch (state.page) {
     case AboutPage::Scores: {
-      const float y = drawHeading(r, middle, body.y + 8.0F, body.w, 6.0F);
-      drawScoreTable(r, scores, middle, y + 8.0F, body.w < 700.0F);
-      drawParagraph(r, textWidth(kCredit, kBodySize) <= body.w ? kCredit : kCreditLines, middle,
-                    about.privacyLink.y + 30.0F, body.w, kDim);
+      const float y = drawHeading(r, text, middle, body.y + 8.0F, body.w, 6.0F);
+      drawScoreTable(r, text, scores, middle, y, body.w < 700.0F);
+      drawParagraph(r, text, textWidth(kCredit, text.size) <= body.w ? kCredit : kCreditLines,
+                    middle, about.privacyLink.y + 24.0F, body.w, kDim);
       break;
     }
     case AboutPage::About: {
-      const float y = drawHeading(r, middle, body.y + 8.0F, body.w, 6.0F);
-      drawFacts(r, middle, y, body.w);
+      const float y = drawHeading(r, text, middle, body.y + 8.0F, body.w, 6.0F);
+      // The button is the address here; the text of it is for a desktop.
+      drawFacts(r, text, middle, y, body.w, false);
       if (privacyButtonShown(layout, state)) {
         drawCaptionButton(r, about.privacyLink, "PRIVACY POLICY", kCyan, false, 3.0F);
-      } else {
-        drawParagraph(r, kPolicyNote, middle, about.privacyLink.y + 30.0F, body.w, kDim);
       }
       break;
     }
@@ -292,8 +316,10 @@ void drawTouch(SDL_Renderer* r, const HighScores& scores, const screen::Layout& 
   }
 
   if (pageButtonsShown(layout, state)) {
-    drawCaptionButton(r, about.previous, "<", kViolet, false, 5.0F);
-    drawCaptionButton(r, about.next, ">", kViolet, false, 5.0F);
+    const std::size_t pages = licencePageCount(layout);
+    const std::size_t page = std::min(state.licencePage, pages - 1);
+    drawTurnButton(r, about.previous, "<", page > 0);
+    drawTurnButton(r, about.next, ">", page + 1 < pages);
   }
   drawCaptionButton(r, about.close, "CLOSE", kPink, false, 4.0F);
 }
@@ -303,15 +329,11 @@ void drawTouch(SDL_Renderer* r, const HighScores& scores, const screen::Layout& 
 std::string_view licenceText() noexcept { return notices::kText; }
 
 std::size_t licencePageCount(const screen::Layout& layout) noexcept {
-  const screen::Rect area = licenceArea(layout);
-  const std::size_t lines =
-      wrapLines(licenceText(), charsAcross(area.w), [](std::size_t, std::string_view) {});
-  const std::size_t perPage = linesPerPage(area);
-  return std::max<std::size_t>((lines + perPage - 1) / perPage, 1);
+  return licencePaging(layout).pages;
 }
 
 bool privacyButtonShown(const screen::Layout& layout, const AboutState& state) noexcept {
-  return isTouch(layout) && state.page == AboutPage::About && kPrivacyUrl[0] != '\0';
+  return isTouch(layout) && state.page == AboutPage::About && !privacyUrl().empty();
 }
 
 bool pageButtonsShown(const screen::Layout& layout, const AboutState& state) noexcept {

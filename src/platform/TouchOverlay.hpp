@@ -18,9 +18,11 @@ void drawPlainButton(SDL_Renderer* renderer, const screen::Rect& face, SDL_Color
                      bool pressed);
 
 // drawPlainButton with a caption centred on it, at the largest whole text
-// size up to `largest` that fits the face.
+// size from `largest` down to `smallest` that fits the face. Every caption
+// there is fits at 3.
 void drawCaptionButton(SDL_Renderer* renderer, const screen::Rect& face, std::string_view caption,
-                       SDL_Color tint, bool pressed, float largest = 4.0F);
+                       SDL_Color tint, bool pressed, float largest = 4.0F,
+                       float smallest = 3.0F);
 
 // The same dimming the paused table gets, over everything on the canvas but
 // the table: the status display, the deck and the backdrop.

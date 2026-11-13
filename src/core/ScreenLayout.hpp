@@ -96,6 +96,24 @@ inline constexpr float kMinSceneHeight = 602.0F;
 // True if the surface's safe area is at least the smallest scene.
 [[nodiscard]] bool meetsMinimumScene(const Surface& surface) noexcept;
 
+// Text. The display's font is seven font pixels high and is drawn at a
+// whole number of units to the font pixel, its "size". A line should be at
+// least kMinTextPoints high on the screen: the capitals of 8 point type,
+// about what the smallest system captions use.
+inline constexpr float kFontRows = 7.0F;
+inline constexpr float kMinTextPoints = 8.0F;
+// The smallest size the dialogs draw at in this layout: 2 where that is
+// kMinTextPoints or more (a desktop, a tablet), else 3, which is enough
+// down to the smallest scene.
+[[nodiscard]] constexpr float smallestTextSize(const Layout& layout) noexcept {
+  return 2.0F * kFontRows * layout.pointsPerUnit >= kMinTextPoints ? 2.0F : 3.0F;
+}
+// The smallest size the status display draws at: the Stack's strip, which
+// phones show, is all at 3; the Classic panel has lines at 2.
+[[nodiscard]] constexpr float hudTextSize(const Layout& layout) noexcept {
+  return layout.composition == Composition::Stack ? 3.0F : 2.0F;
+}
+
 // The layout for a window. Never fails: a side that is not a usable size
 // (under kMinSurfacePoints, negative, not a number) counts as
 // kMinSurfacePoints, one over kMaxSurfacePoints as that, and insets that
@@ -158,9 +176,10 @@ inline constexpr float kPadTop = 120.0F;
 // The pads also come up beside the row, into the two corners the buttons
 // leave free: on a short deck (a 16:9 phone) those corners are the whole
 // pad, and they keep the thumbs below the table and off the buttons.
-inline constexpr float kCornerWidth = 124.0F;
+// A clear gap is left between a corner and the nudge button next to it.
+inline constexpr float kCornerWidth = 108.0F;
 inline constexpr screen::Rect kLeftCorner{8.0F, 12.0F, kCornerWidth - 8.0F, 96.0F};
-inline constexpr screen::Rect kRightCorner{screen::kStackWidth - kCornerWidth, 12.0F, kCornerWidth - 8.0F,
-                                           96.0F};
+inline constexpr screen::Rect kRightCorner{screen::kStackWidth - kCornerWidth, 12.0F,
+                                           kCornerWidth - 8.0F, 96.0F};
 
 }  // namespace pinball::deck

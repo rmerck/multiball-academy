@@ -25,6 +25,18 @@ foreach(preset IN ITEMS desktop phone phone-pro phone-short phone-max duo-outer 
   pinball_layout_render(${name} 1200 play --layout ${preset})
 endforeach()
 
+# The same again as a check: the tool draws every screen of the layout and
+# fails unless each control, each window of the status display and each
+# dialog is really there, changes when it should (pressed, paused, each
+# About page) and stays put when it should not. A drawer that drew nothing
+# would pass the renders above; it does not pass these.
+foreach(preset IN ITEMS desktop phone phone-pro phone-short phone-max duo-outer duo-inner
+                        pad-portrait pad-portrait-11 pad-split pad-landscape pad-landscape-11
+                        352x602 700x602)
+  string(REGEX REPLACE "[^a-z0-9]" "_" name "${preset}")
+  pinball_layout_render(check_${name} 1200 check --layout ${preset})
+endforeach()
+
 # Every state on one Stack and one Classic touch layout; the pages only the
 # desktop draws its own way on the desktop as well.
 foreach(preset IN ITEMS phone-pro pad-landscape)
@@ -63,6 +75,7 @@ pinball_layout_render(any_surface_option 60 launch --surface 820x1180 --insets 2
 set(layout_bad_args
   "no_arguments:"
   "bad_steps:0|x.png"
+  "scale_too_large_for_window:60|x.png|--layout|4096x4096@4"
   "bad_name:60|../x.png"
   "unknown_state:60|x.png|paused"
   "unknown_option:60|x.png|--bogus"
@@ -96,6 +109,24 @@ foreach(case IN LISTS layout_bad_args)
   set_tests_properties(layout_rejects_${name} PROPERTIES
     WORKING_DIRECTORY ${PINBALL_TEST_DIR} TIMEOUT 30 LABELS layout)
 endforeach()
+
+# The licence notices on the About screen say what the licence files say:
+# this repository's always, and those of the pinned libraries when their
+# sources are in the build tree (PINBALL_FETCH_DEPS).
+if(Python3_Interpreter_FOUND)
+  set(layout_licences ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
+  foreach(candidate IN ITEMS "${box2d_SOURCE_DIR}/LICENSE" "${sdl3_SOURCE_DIR}/LICENSE.txt"
+                             "${SDL3_SOURCE_DIR}/LICENSE.txt")
+    if(EXISTS "${candidate}" AND NOT IS_DIRECTORY "${candidate}")
+      list(APPEND layout_licences "${candidate}")
+    endif()
+  endforeach()
+  list(REMOVE_DUPLICATES layout_licences)
+  add_test(NAME layout_notices
+    COMMAND Python3::Interpreter -I ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_notices.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/Notices.hpp ${layout_licences})
+  set_tests_properties(layout_notices PROPERTIES TIMEOUT 30 LABELS layout)
+endif()
 
 # The layout dump carries the screen layouts, and they say what the header
 # says: the playfield is the table in every preset, the canvas is the window

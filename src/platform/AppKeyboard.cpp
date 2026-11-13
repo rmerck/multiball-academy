@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <span>
 
+#include "platform/About.hpp"
+
 namespace pinball {
 
 namespace {
@@ -53,7 +55,11 @@ void App::handleKeyDown(const SDL_KeyboardEvent& key) {
   latchKey(key.scancode);
   if (key.key == SDLK_F1) {
     aboutOpen_ = !aboutOpen_;
+    aboutPage_ = AboutState{};
     latched_ = InputState{};
+  } else if (aboutOpen_ && (key.key == SDLK_LEFT || key.key == SDLK_RIGHT)) {
+    // The arrows turn the pages: scores, about, then each licence page.
+    aboutPage_ = turnAboutPage(aboutPage_, key.key == SDLK_RIGHT, licencePageCount(layout_));
   } else if (key.key == SDLK_ESCAPE && aboutOpen_) {
     aboutOpen_ = false;
     latched_ = InputState{};

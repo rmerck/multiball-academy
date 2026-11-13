@@ -297,6 +297,7 @@ void App::handleEvent(const SDL_Event& event) {
       // Not over the initials prompt, which must be answered first, as with F1.
       if (aboutEvent_ != 0 && event.type == aboutEvent_ && !aboutOpen_ && !entry_) {
         aboutOpen_ = true;
+        aboutPage_ = AboutState{};
         latched_ = InputState{};
       }
       break;
@@ -403,7 +404,7 @@ void App::render(double alpha) {
                             .afterInterruption = !paused_});
   }
   if (aboutOpen_) {
-    drawAbout(r, highScores_, layout_, AboutState{});
+    drawAbout(r, highScores_, layout_, aboutPage_);
   } else if (entry_) {
     drawInitialsEntry(r, *entry_, pending_.score, (SDL_GetTicks() / kCursorBlinkMs) % 2U == 0U,
                       layout_);

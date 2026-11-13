@@ -7,9 +7,11 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "Check.hpp"
 #include "Suites.hpp"
+#include "core/AboutPages.hpp"
 #include "core/OverlayLayout.hpp"
 #include "core/PanelLayout.hpp"
 #include "core/ScreenLayout.hpp"
@@ -383,14 +385,16 @@ void testStackGeometry() {
     CHECK(near(inset.deck.h, kDeckMinHeight, 1.0F) && inset.playfield.x == 124.0F);
     CHECK(near(inset.safe.h, 1312.0F));
   }
-  {  // A very tall window: the deck stops at its cap and the rest goes
-     // above the strip.
+  {  // A very tall window: the deck stops at its cap and the composition
+     // sits in the middle of the height left over.
     const Layout l = touch(300.0F, 900.0F);
     CHECK(l.composition == Composition::Stack);
     CHECK(near(l.deck.h, kDeckMaxHeight, 1.0F));
-    CHECK(l.hud.y > 600.0F);
-    CHECK(near(l.deck.y + l.deck.h, l.canvasHeight, 1.0F));
+    const float above = l.hud.y;
+    const float below = l.canvasHeight - (l.deck.y + l.deck.h);
+    CHECK(above > 300.0F && near(above, below, 1.5F));
     CHECK(l.flipperLeftZone.y == l.playfield.y);
+    CHECK(near(l.flipperLeftZone.y + l.flipperLeftZone.h, l.canvasHeight));
     checkTouchLayout(l);
   }
   {  // Insets on one side only: the column is centred in the safe area,
@@ -584,6 +588,37 @@ void testMinimumHitSize() {
   CHECK(kMinHitUnits * touch(352.0F, 352.0F).pointsPerUnit < kMinHitPoints);
 }
 
+// Nothing is drawn smaller than 8 points high: on every preset the status
+// display and the dialogs, and from the smallest scene up the Stack's strip
+// and the dialogs. (The Classic panel has lines at size 2, which a window
+// just wide enough for Classic and only 602 points high shows at 7.7.)
+void testSmallestText() {
+  const auto points = [](float size, const Layout& l) noexcept {
+    return size * kFontRows * l.pointsPerUnit;
+  };
+  float smallest = 1000.0F;
+  for (const Preset& preset : presets()) {
+    const Layout l = computeLayout(preset.surface, preset.idiom);
+    CHECK(points(hudTextSize(l), l) >= kMinTextPoints);
+    CHECK(points(smallestTextSize(l), l) >= kMinTextPoints);
+    smallest = std::min({smallest, points(hudTextSize(l), l), points(smallestTextSize(l), l)});
+  }
+  CHECK(smallest >= kMinTextPoints && smallest < 12.0F);
+  for (float width = kMinSceneWidth; width < 1500.0F; width += 13.0F) {
+    for (float height = kMinSceneHeight; height < 1500.0F; height += 17.0F) {
+      const Layout l = touch(width, height);
+      CHECK(points(smallestTextSize(l), l) >= kMinTextPoints);
+      if (l.composition == Composition::Stack) {
+        CHECK(points(hudTextSize(l), l) >= kMinTextPoints);
+      }
+    }
+  }
+  // Size 2 is kept where it is large enough, so a tablet's dialogs do not grow.
+  CHECK(smallestTextSize(desktopLayout()) == 2.0F);
+  CHECK(smallestTextSize(touch(1024.0F, 1366.0F)) == 2.0F);
+  CHECK(smallestTextSize(touch(402.0F, 874.0F)) == 3.0F);
+}
+
 // A block that exactly fills its range never ends past it by more than the
 // slack of the arithmetic, and never starts more than a unit before it.
 void testExactFit() {
@@ -660,96 +695,120 @@ void testSurfaceSpec() {
   }
 }
 
-// Stand-ins for a game with one ball and for one with several, to hold the
-// drawing code's adapters (platform/GameViews.hpp) to both.
-struct OneBallRules {
+// Stand-ins for the game as it is and as it is to be, to hold the drawing
+// code's adapters (platform/GameViews.hpp) to both.
+struct PlainRules {
   bool over = false;
   bool inPlay = false;
   bool gameOver() const noexcept { return over; }
   bool ballInPlay() const noexcept { return inPlay; }
 };
-struct OneBallGame {
-  OneBallRules state;
-  const OneBallRules& rules() const noexcept { return state; }
-  pinball::BallView ball(float alpha) const {
-    return {.position = {alpha, 2.0F}};
-  }
+struct PlainGame {
+  PlainRules state;
+  std::size_t count = 1;
+  const PlainRules& rules() const noexcept { return state; }
+  std::size_t ballCount() const noexcept { return count; }
 };
-struct ManyBalls {
-  std::array<pinball::BallView, 12> items{};
-  std::size_t count = 0;
-  auto begin() const noexcept { return items.begin(); }
-  auto end() const noexcept { return items.begin() + static_cast<std::ptrdiff_t>(count); }
-};
-enum class FakeMode : std::uint8_t { None, Turbo, Academy };
-struct ManyBallRules : OneBallRules {
-  int ballsLive() const noexcept { return 3; }
+struct LockRules : PlainRules {
   int locksHeld() const noexcept { return 1; }
   bool lockLit() const noexcept { return true; }
-  FakeMode multiball() const noexcept { return mode; }
+  int locksNeeded() const noexcept { return 3; }
   bool multiballJackpotLit() const noexcept { return true; }
   bool superJackpotLit() const noexcept { return false; }
-  FakeMode mode = FakeMode::Academy;
 };
-struct ManyBallGame {
-  ManyBallRules state;
-  std::size_t balls_ = 3;
+struct LockGame {
+  LockRules state;
   bool waiting = false;
-  const ManyBallRules& rules() const noexcept { return state; }
-  pinball::BallView ball(float) const { return {.position = {-1.0F, -1.0F}}; }
-  ManyBalls balls(float alpha) const {
-    ManyBalls out;
-    out.count = balls_;
-    for (std::size_t i = 0; i < out.count; ++i) {
-      out.items[i].position = {static_cast<float>(i), alpha};
-    }
-    return out;
-  }
+  std::size_t count = 3;
+  const LockRules& rules() const noexcept { return state; }
+  std::size_t ballCount() const noexcept { return count; }
   bool ballAwaitingLaunch() const noexcept { return waiting; }
 };
 
 void testGameViews() {
   using namespace pinball;
-  {  // One ball: the game's single ball, and guesses from the rules.
-    OneBallGame game;
-    const DrawnBalls drawn = ballsToDraw(game, 0.25F);
-    CHECK(drawn.count == 1 && drawn.span().size() == 1 && drawn.items[0].position.x == 0.25F);
+  {  // Today's rules: guesses from what they do say, and no locks.
+    PlainGame game;
     CHECK(touchContext(game).ballAwaitingLaunch && !touchContext(game).gameOver);
     game.state.inPlay = true;
     CHECK(!touchContext(game).ballAwaitingLaunch);
     game.state.over = true;
     game.state.inPlay = false;
     CHECK(touchContext(game).gameOver && !touchContext(game).ballAwaitingLaunch);
-    const MultiballView view = multiballView(game.rules());
-    CHECK(!view.known && !view.running && view.ballsLive == 1 && view.locksHeld == 0);
+    MultiballView view = multiballView(game);
+    CHECK(!view.locksKnown && !view.running() && view.ballsLive == 1 && view.locksHeld == 0);
+    CHECK(view.locksNeeded == kPlaceholderLocksNeeded && !view.jackpotLit);
+    // Several balls are a multiball whatever the rules can say.
+    game.count = 2;
+    view = multiballView(game);
+    CHECK(view.running() && view.ballsLive == 2 && !view.locksKnown);
   }
-  {  // Several: every ball the game gives, in its order, and its own word
-     // on the launch lane.
-    ManyBallGame game;
-    const DrawnBalls drawn = ballsToDraw(game, 0.5F);
-    CHECK(drawn.count == 3 && drawn.items[2].position.x == 2.0F &&
-          drawn.items[0].position.y == 0.5F);
+  {  // Rules with locks: their own word on everything.
+    LockGame game;
     CHECK(!touchContext(game).ballAwaitingLaunch);
     game.waiting = true;
     CHECK(touchContext(game).ballAwaitingLaunch);
-    // More than can be drawn: the rest are left out.
-    game.balls_ = 12;
-    DrawnBalls many = ballsToDraw(game, 1.0F);
-    CHECK(many.count == kMaxDrawnBalls && many.span().size() == kMaxDrawnBalls);
-    many.add({});
-    CHECK(many.count == kMaxDrawnBalls);
-    const MultiballView view = multiballView(game.rules());
-    CHECK(view.known && view.running && view.ballsLive == 3 && view.locksHeld == 1 &&
-          view.lockLit && view.jackpotLit && !view.superJackpotLit);
-    game.state.mode = FakeMode::None;
-    CHECK(!multiballView(game.rules()).running);
+    game.state.over = true;
+    CHECK(!touchContext(game).ballAwaitingLaunch && touchContext(game).gameOver);
+    const MultiballView view = multiballView(game);
+    CHECK(view.locksKnown && view.running() && view.ballsLive == 3 && view.locksHeld == 1 &&
+          view.locksNeeded == 3 && view.lockLit && view.jackpotLit && !view.superJackpotLit);
+    game.count = 1;
+    CHECK(!multiballView(game).running());
   }
-  {  // The real game, whichever kind it is today.
+  {  // The real game: its balls in its order, then the extra ones, and
+     // never more than there is room for.
     const Game game;
+    const BallViews own = game.balls(1.0F);
     const DrawnBalls drawn = ballsToDraw(game, 1.0F);
-    CHECK(drawn.count >= 1 && drawn.items[0].position.x == game.ball(1.0F).position.x);
+    CHECK(drawn.count == own.size() && drawn.count == game.ballCount() && drawn.count >= 1);
+    CHECK(drawn.items[0].position.x == own.items[0].position.x && drawn.items[0].id == 0);
+    std::array<BallView, 12> extra{};
+    extra[0].position = {5.0F, 6.0F};
+    const DrawnBalls crowded = ballsToDraw(game, 1.0F, extra);
+    CHECK(crowded.count == kMaxDrawnBalls && crowded.span().size() == kMaxDrawnBalls);
+    CHECK(crowded.items[own.size()].position.x == 5.0F);
+    CHECK(kMaxDrawnBalls > Game::kMaxBalls);
     CHECK(touchContext(game).ballAwaitingLaunch && !touchContext(game).gameOver);
+    CHECK(!multiballView(game).running() && multiballView(game).ballsLive == 1);
   }
+}
+
+// The About screen's pages in a row: scores, about, each licence page.
+void testAboutPages() {
+  using namespace pinball;
+  constexpr std::size_t kLicencePages = 3;
+  static_assert(aboutPageTotal(kLicencePages) == 5 && aboutPageTotal(0) == 3);
+  AboutState state{};
+  CHECK(aboutPageNumber(state, kLicencePages) == 0);
+  // Back from the first page stays there.
+  state = turnAboutPage(state, false, kLicencePages);
+  CHECK(state.page == AboutPage::Scores && state.licencePage == 0);
+  // Forward through all five, and no further.
+  const std::array<std::pair<AboutPage, std::size_t>, 5> order{{{AboutPage::Scores, 0},
+                                                                {AboutPage::About, 0},
+                                                                {AboutPage::Licences, 0},
+                                                                {AboutPage::Licences, 1},
+                                                                {AboutPage::Licences, 2}}};
+  for (std::size_t i = 0; i < order.size(); ++i) {
+    CHECK(state.page == order[i].first && state.licencePage == order[i].second);
+    CHECK(aboutPageNumber(state, kLicencePages) == i);
+    state = turnAboutPage(state, true, kLicencePages);
+  }
+  CHECK(state.page == AboutPage::Licences && state.licencePage == 2);
+  // And back again.
+  for (std::size_t i = order.size() - 1; i > 0; --i) {
+    state = turnAboutPage(state, false, kLicencePages);
+    CHECK(state.page == order[i - 1].first && state.licencePage == order[i - 1].second);
+  }
+  // A licence page past the last (the layout changed under it) counts as
+  // the last, and a count of none as one.
+  const AboutState stale{AboutPage::Licences, 9};
+  CHECK(aboutPageNumber(stale, kLicencePages) == 4);
+  CHECK(turnAboutPage(stale, false, kLicencePages).licencePage == 1);
+  CHECK(turnAboutPage(stale, true, kLicencePages).licencePage == 2);
+  CHECK(turnAboutPage({AboutPage::About, 0}, true, 0).page == AboutPage::Licences);
+  CHECK(turnAboutPage({AboutPage::Licences, 0}, true, 0).licencePage == 0);
 }
 
 void testContains() {
@@ -778,8 +837,10 @@ void testScreenLayout() {
   testAnyWindow();
   testDegenerate();
   testMinimumHitSize();
+  testSmallestText();
   testExactFit();
   testSurfaceSpec();
   testGameViews();
+  testAboutPages();
   testContains();
 }

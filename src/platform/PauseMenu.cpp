@@ -52,7 +52,8 @@ void drawPauseMenu(SDL_Renderer* r, const screen::Layout& layout, const MenuStat
   const float middle = menu.box.x + menu.box.w * 0.5F;
   drawNeonText(r, "PAUSED", middle, menu.box.y + 30.0F, 6.0F, kAmber, kPink, {120, 30, 200, 255},
                TextAlign::Center);
-  drawText(r, kGameTitle, middle, menu.box.y + 88.0F, 2.0F, kDim, TextAlign::Center);
+  drawText(r, kGameTitle, middle, menu.box.y + 84.0F, screen::smallestTextSize(layout), kDim,
+           TextAlign::Center);
   drawCaptionButton(r, menu.resume, "RESUME", kGreen, false);
   if (state.confirmNewGame) {
     drawCaptionButton(r, menu.newGame, "TAP AGAIN TO CONFIRM", kAmber, true);

@@ -98,14 +98,14 @@ Layout classicTouch(Layout layout) noexcept {
 Layout stack(Layout layout) noexcept {
   const Rect& safe = layout.safe;
   const float safeBottom = safe.y + safe.h;
-  // The deck takes all the spare height up to its cap; what is left over
-  // goes above the strip, which pushes the content down toward the thumbs.
+  // The deck takes all the spare height up to its cap. A window taller
+  // still has the composition in the middle of what is left over.
   const float spare = std::max(safe.h - kStripHeight - kPlayfieldHeight, kDeckMinHeight);
   const float spacer = spare - std::min(spare, kDeckMaxHeight);
   const float blocks = kStripHeight + kPlayfieldHeight + kDeckMinHeight;
   const float x =
       snapped(safe.x + (safe.w - kStackWidth) * 0.5F, kStackWidth, safe.x, safe.x + safe.w);
-  const float y = snapped(safe.y + spacer, blocks, safe.y, safeBottom);
+  const float y = snapped(safe.y + spacer * 0.5F, blocks, safe.y, safeBottom);
   layout.composition = Composition::Stack;
   layout.hud = {x, y, kStackWidth, kStripHeight};
   layout.playfield = {x, y + kStripHeight, kPlayfieldWidth, kPlayfieldHeight};

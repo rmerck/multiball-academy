@@ -74,8 +74,14 @@ void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_
   ScoreText scoreBuffer{};
   drawText(r, formatScore(score, scoreBuffer), middle, box.y + 96.0F, 4.0F, kWhite,
            TextAlign::Center);
-  drawText(r, touch ? "TAP A LETTER, THEN THE ARROWS TO CHANGE IT" : "ENTER YOUR INITIALS", middle,
-           box.y + 150.0F, 2.0F, kDim, TextAlign::Center);
+  if (touch) {
+    // Short enough for the box at either size.
+    const float size = screen::smallestTextSize(layout);
+    drawText(r, "ARROWS CHANGE A LETTER", middle, box.y + 157.0F - 3.5F * size, size,
+             kDim, TextAlign::Center);
+  } else {
+    drawText(r, "ENTER YOUR INITIALS", middle, box.y + 150.0F, 2.0F, kDim, TextAlign::Center);
+  }
 
   drawNeonRule(r, middle, box.y + 174.0F, 200.0F);
 
