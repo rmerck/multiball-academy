@@ -8,7 +8,13 @@ cmake_minimum_required(VERSION 3.26)
 # given on the command line or in the environment wins. A build against
 # installed libraries is left to target the macOS it is built on, as those
 # libraries do. Other systems ignore all of this.
-if(CMAKE_HOST_APPLE AND PINBALL_FETCH_DEPS AND "${CMAKE_OSX_DEPLOYMENT_TARGET}" STREQUAL ""
+# SPIKE: on iOS the macOS default (11.0) must not apply; the iOS minimum is
+# its own number.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  if("${CMAKE_OSX_DEPLOYMENT_TARGET}" STREQUAL "")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "16.0" CACHE STRING "Minimum iOS version" FORCE)
+  endif()
+elseif(CMAKE_HOST_APPLE AND PINBALL_FETCH_DEPS AND "${CMAKE_OSX_DEPLOYMENT_TARGET}" STREQUAL ""
    AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
   set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version" FORCE)
 endif()
@@ -17,6 +23,13 @@ project(SpaceCadetPinball VERSION 1.0.0 LANGUAGES CXX)
 
 if(CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
   message(FATAL_ERROR "In-source builds are not supported. Use: cmake -S . -B build")
+endif()
+
+# SPIKE: one switch for "this is the iOS target". APPLE is true on iOS too,
+# so every if(APPLE) below that means macOS has to be told apart.
+set(PINBALL_IOS OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  set(PINBALL_IOS ON)
 endif()
 
 if(APPLE)
@@ -71,6 +84,11 @@ include(cmake/Hardening.cmake)
 # (src/core/Version.hpp includes it) and the macOS bundle's Info.plist is
 # filled in from the same values, so they cannot drift apart.
 set(PINBALL_BUNDLE_ID "io.github.rmerck.spacecadetpinball")
+if(PINBALL_IOS)
+  # SPIKE: working title and identifier, in one place.
+  set(PINBALL_BUNDLE_ID "io.github.rmerck.pinball.spike")
+  set(PINBALL_IOS_NAME "Pinball")
+endif()
 set(PINBALL_VERSION_DIR ${CMAKE_BINARY_DIR}/generated_version)
 configure_file(cmake/VersionConfig.hpp.in ${PINBALL_VERSION_DIR}/VersionConfig.hpp @ONLY)
 
@@ -141,14 +159,40 @@ add_library(pinball_platform STATIC
   src/platform/Text.cpp
 )
 target_link_libraries(pinball_platform PUBLIC pinball_core SDL3::SDL3)
-if(APPLE)
+if(APPLE AND NOT PINBALL_IOS)
   # The menu bar's About item is routed to the game's own About screen.
   target_sources(pinball_platform PRIVATE src/platform/MacMenu.mm)
   set_source_files_properties(src/platform/MacMenu.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
   target_link_libraries(pinball_platform PRIVATE "-framework Cocoa")
 endif()
 
-if(APPLE)
+if(PINBALL_IOS)
+  # SPIKE: an iOS application bundle. Flat layout: the executable, Info.plist
+  # and the assets directory sit directly in Pinball.app. Not signed here
+  # (the simulator needs no signature; a device build is only compiled).
+  # The assets directory goes in as an Xcode folder reference, copied by the
+  # app target's own "Copy Bundle Resources" phase (on iOS "Resources" is the
+  # bundle root). The pinball_assets custom target cannot be used with the
+  # Xcode generator for iOS: $<TARGET_BUNDLE_DIR> expands to
+  # Release${EFFECTIVE_PLATFORM_NAME}/Pinball.app and a VERBATIM custom
+  # command escapes the "$", so the copy lands in a directory literally
+  # named "Release${EFFECTIVE_PLATFORM_NAME}".
+  add_executable(pinball MACOSX_BUNDLE src/main.cpp ${CMAKE_SOURCE_DIR}/assets)
+  set_source_files_properties(${CMAKE_SOURCE_DIR}/assets PROPERTIES
+    MACOSX_PACKAGE_LOCATION Resources)
+  set_target_properties(pinball PROPERTIES
+    OUTPUT_NAME "${PINBALL_IOS_NAME}"
+    MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/cmake/Info-iOS.plist.in
+    MACOSX_BUNDLE_BUNDLE_NAME "${PINBALL_IOS_NAME}"
+    MACOSX_BUNDLE_GUI_IDENTIFIER ${PINBALL_BUNDLE_ID}
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER ${PINBALL_BUNDLE_ID}
+    XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+    XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
+    XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
+    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "")
+elseif(APPLE)
   # On macOS the game is an application bundle, "Space Cadet Pinball.app",
   # with the executable inside under the same name: the Dock, the menu bar
   # and Activity Monitor all take their label from one or the other. The
@@ -194,7 +238,11 @@ endif()
 # on macOS, never inside it, because anything added to a signed bundle
 # breaks its signature. Elsewhere it is the directory of the executable, as
 # before.
-if(APPLE)
+if(PINBALL_IOS)
+  # SPIKE: SDL_GetBasePath() is the bundle directory itself on iOS.
+  set(PINBALL_BESIDE_DIR $<TARGET_BUNDLE_DIR:pinball>/..)
+  set(PINBALL_GAME_ASSETS_DIR $<TARGET_BUNDLE_DIR:pinball>/assets)
+elseif(APPLE)
   set(PINBALL_BESIDE_DIR $<TARGET_BUNDLE_DIR:pinball>/..)
   set(PINBALL_GAME_ASSETS_DIR $<TARGET_BUNDLE_CONTENT_DIR:pinball>/Resources/assets)
 else()
@@ -226,6 +274,7 @@ set_source_files_properties(src/platform/EmbeddedManifest.cpp PROPERTIES
 # an unused file behind in the build tree, which is harmless (on macOS the
 # manifest check never opens it, but a signed bundle lists it until the next
 # clean build).
+if(NOT PINBALL_IOS)
 add_custom_target(pinball_assets
   COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
           ${CMAKE_SOURCE_DIR}/assets ${PINBALL_GAME_ASSETS_DIR}
@@ -234,6 +283,7 @@ add_custom_target(pinball_assets
 # The generator expressions add no dependency, so this is not circular. It
 # makes building just the pinball target bring its assets along.
 add_dependencies(pinball pinball_assets)
+endif()
 
 # macOS hardened runtime: the system then ignores DYLD_INSERT_LIBRARIES and
 # refuses to load any library that is not Apple's. That needs the game to be
@@ -250,7 +300,7 @@ add_dependencies(pinball pinball_assets)
 # the assets are copied: a POST_BUILD step would only run on a relink and
 # leave the seal stale after an asset changed. Anything that alters the
 # bundle afterwards invalidates the signature until the next build.
-if(APPLE)
+if(APPLE AND NOT PINBALL_IOS)
   set(PINBALL_CODESIGN_IDENTITY "" CACHE STRING
     "Code signing identity for the macOS bundle (empty: ad hoc), e.g. Developer ID Application: NAME (TEAMID)")
   set(pinball_sign OFF)

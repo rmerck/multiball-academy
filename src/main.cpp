@@ -50,6 +50,7 @@ int main(int argc, char* argv[]) {
     std::fputs("Fatal: unknown error\n", stderr);
     exitCode = EXIT_FAILURE;
   }
+  SDL_Log("SPIKE main returning %d", exitCode);
   SDL_Quit();
   return exitCode;
 }

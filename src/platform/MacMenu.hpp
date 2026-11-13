@@ -11,7 +11,7 @@ namespace pinball {
 //
 // Call after the video subsystem is up. Returns false if there was no such
 // menu item, which is normal with an offscreen video driver.
-#if defined(__APPLE__)
+#if defined(SDL_PLATFORM_MACOS)  // SPIKE: was __APPLE__, which is iOS too
 bool routeAboutMenu(Uint32 eventType);
 #else
 inline bool routeAboutMenu(Uint32 /*eventType*/) { return false; }

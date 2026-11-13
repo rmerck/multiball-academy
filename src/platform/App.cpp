@@ -87,6 +87,34 @@ std::unique_ptr<App> App::create(const AppOptions& options) {
     return nullptr;
   }
 
+  // SPIKE: temporary measurements for the iOS port.
+  {
+    int w = 0, h = 0, pw = 0, ph = 0, ow = 0, oh = 0;
+    SDL_GetWindowSize(window.get(), &w, &h);
+    SDL_GetWindowSizeInPixels(window.get(), &pw, &ph);
+    SDL_GetCurrentRenderOutputSize(renderer.get(), &ow, &oh);
+    SDL_Rect safe{};
+    SDL_GetWindowSafeArea(window.get(), &safe);
+    const SDL_DisplayID display = SDL_GetDisplayForWindow(window.get());
+    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(display);
+    char* pref = SDL_GetPrefPath("space-cadet-pinball", "Space Cadet Pinball");
+    SDL_Log("SPIKE platform=%s video=%s renderer=%s", SDL_GetPlatform(),
+            SDL_GetCurrentVideoDriver(), SDL_GetRendererName(renderer.get()));
+    SDL_Log("SPIKE basePath=%s", SDL_GetBasePath());
+    SDL_Log("SPIKE prefPath=%s", pref ? pref : SDL_GetError());
+    SDL_Log("SPIKE window=%dx%d pixels=%dx%d renderOutput=%dx%d pixelDensity=%.3f displayScale=%.3f",
+            w, h, pw, ph, ow, oh, static_cast<double>(SDL_GetWindowPixelDensity(window.get())),
+            static_cast<double>(SDL_GetWindowDisplayScale(window.get())));
+    SDL_Log("SPIKE safeArea x=%d y=%d w=%d h=%d flags=0x%llx", safe.x, safe.y, safe.w, safe.h,
+            static_cast<unsigned long long>(SDL_GetWindowFlags(window.get())));
+    if (mode != nullptr) {
+      SDL_Log("SPIKE displayMode=%dx%d density=%.3f refresh=%.2f orientation=%d", mode->w, mode->h,
+              static_cast<double>(mode->pixel_density), static_cast<double>(mode->refresh_rate),
+              static_cast<int>(SDL_GetCurrentDisplayOrientation(display)));
+    }
+    SDL_free(pref);
+  }
+
   // VSync and letterboxing are best-effort: the game still runs without them.
   const bool vsync = SDL_SetRenderVSync(renderer.get(), 1);
   if (!vsync) {
@@ -124,6 +152,8 @@ App::App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, 
       // neither read (which can also set a bad file aside) nor written.
       highScores_(options.frameLimit ? HighScores{} : scoreStore_.load()),
       aboutEvent_(SDL_RegisterEvents(1)) {
+  SDL_Log("SPIKE audio=%s driver=%s", audio_ ? "open" : "none",
+          SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "(null)");
   const bool routed = routeAboutMenu(aboutEvent_);
   SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "About menu item routed to the game: %s",
                routed ? "yes" : "no");
