@@ -18,9 +18,9 @@ namespace table = pinball::table;
 constexpr float kStep = 1.0F / 120.0F;
 
 struct LaunchResult {
-  float peakSpeed = 0.0F;   // Fastest upward speed, pixels per second.
-  float highest = 1e9F;     // Smallest y reached.
-  float leftmost = 1e9F;    // Smallest x reached.
+  float peakSpeed = 0.0F;  // Fastest upward speed, pixels per second.
+  float highest = 1e9F;    // Smallest y reached.
+  float leftmost = 1e9F;   // Smallest x reached.
 };
 
 // Holds the plunger for holdSteps, releases, and follows the ball.
@@ -98,6 +98,44 @@ void testPlunger() {
     const float commanded = PhysicsWorld::kPlungerMaxSpeed * PhysicsWorld::kPixelsPerMeter;
     CHECK(full.peakSpeed > commanded);
     CHECK(full.peakSpeed < commanded * 1.45F);
+  }
+
+  {  // A tap does not half-launch. The plunger has to be drawn back for
+     // kShortestLaunch steps (a twentieth of a second) before it can throw
+     // the ball: let go sooner and the ball settles back on it, having gone
+     // nowhere. From there on, every hold up to the full draw and past it
+     // sends the ball out of the lane and through the arch. There is no
+     // hold between the two that leaves the ball part of the way up.
+    constexpr int kShortestLaunch = 6;
+    int returned = 0;
+    int launched = 0;
+    for (int hold = 1; hold <= 130; ++hold) {
+      PhysicsWorld world;
+      world.resetBall(table::kBallStart, {0.0F, 0.0F});
+      for (int i = 0; i < 30; ++i) {
+        world.step(kStep);
+      }
+      const Vec2 rest = world.ballPosition();
+      world.setPlunger(true);
+      for (int i = 0; i < hold; ++i) {
+        world.step(kStep);
+      }
+      world.setPlunger(false);
+      bool out = false;
+      for (int i = 0; i < 120 * 4 && !out; ++i) {
+        world.step(kStep);
+        out = world.ballPosition().x < table::kLaneWallX - 40.0F;
+      }
+      const Vec2 p = world.ballPosition();
+      const Vec2 v = world.ballVelocity();
+      const bool back = !out && std::fabs(p.y - rest.y) < 1.0F && std::fabs(p.x - rest.x) < 1.0F &&
+                        std::fabs(v.x) + std::fabs(v.y) < 5.0F;
+      CHECK(out || back);
+      CHECK(out == (hold >= kShortestLaunch));
+      returned += back ? 1 : 0;
+      launched += out ? 1 : 0;
+    }
+    CHECK(returned == kShortestLaunch - 1 && launched == 131 - kShortestLaunch);
   }
 
   {  // No launch is an unavoidable drain: for every hold that leaves the lane,
