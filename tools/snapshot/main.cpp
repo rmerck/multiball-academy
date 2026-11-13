@@ -23,9 +23,9 @@
 #include "core/Game.hpp"
 #include "core/HighScores.hpp"
 #include "core/InitialsEntry.hpp"
+#include "core/ScreenLayout.hpp"
 #include "platform/About.hpp"
 #include "platform/Assets.hpp"
-#include "platform/Canvas.hpp"
 #include "platform/InitialsScreen.hpp"
 #include "platform/SafeFile.hpp"
 #include "platform/TableRenderer.hpp"
@@ -64,10 +64,9 @@ pinball::InputState scriptedInput(std::uint32_t step) noexcept {
 }
 
 // True if the playfield part of the frame holds a real picture: many
-// different colours, not a flat fill or a few lines. The panel area is ignored, because it
-// is filled even when nothing else draws.
-bool hasContent(SDL_Surface* surface) {
-  constexpr int kPlayfieldWidth = 768;
+// different colours, not a flat fill or a few lines. The rest is ignored,
+// because the panel is filled even when nothing else draws.
+bool hasContent(SDL_Surface* surface, const pinball::screen::Rect& playfield) {
   constexpr std::size_t kNeeded = 16;
   if (!SDL_LockSurface(surface)) {
     return false;
@@ -75,12 +74,16 @@ bool hasContent(SDL_Surface* surface) {
   std::array<std::uint32_t, kNeeded> seen{};
   std::size_t distinct = 0;
   const auto* pixels = static_cast<const std::uint8_t*>(surface->pixels);
-  const int width = surface->w < kPlayfieldWidth ? surface->w : kPlayfieldWidth;
+  // The playfield's part of the surface, kept inside it.
+  const int left = std::clamp(static_cast<int>(playfield.x), 0, surface->w);
+  const int top = std::clamp(static_cast<int>(playfield.y), 0, surface->h);
+  const int right = std::clamp(static_cast<int>(playfield.x + playfield.w), left, surface->w);
+  const int bottom = std::clamp(static_cast<int>(playfield.y + playfield.h), top, surface->h);
   // Sample every fourth pixel of every fourth row: plenty, and quick.
-  for (int y = 0; y < surface->h && distinct < kNeeded; y += 4) {
+  for (int y = top; y < bottom && distinct < kNeeded; y += 4) {
     const std::uint8_t* row =
         pixels + static_cast<std::size_t>(y) * static_cast<std::size_t>(surface->pitch);
-    for (int x = 0; x < width && distinct < kNeeded; x += 4) {
+    for (int x = left; x < right && distinct < kNeeded; x += 4) {
       std::uint32_t value = 0;
       std::memcpy(&value, row + static_cast<std::size_t>(x) * 4U, sizeof value);
       const auto known = std::span(seen).first(distinct);
@@ -102,8 +105,11 @@ int run(std::uint32_t steps, const std::string& outputName, Overlay overlay) {
     return EXIT_FAILURE;
   }
 
+  // The desktop's layout: the frame is its canvas, unit for pixel.
+  const pinball::screen::Layout layout = pinball::screen::desktopLayout();
   const std::unique_ptr<SDL_Surface, SurfaceDeleter> surface(
-      SDL_CreateSurface(pinball::kCanvasWidth, pinball::kCanvasHeight, SDL_PIXELFORMAT_RGBA32));
+      SDL_CreateSurface(static_cast<int>(layout.canvasWidth),
+                        static_cast<int>(layout.canvasHeight), SDL_PIXELFORMAT_RGBA32));
   if (!surface) {
     std::fprintf(stderr, "SDL_CreateSurface failed: %s\n", SDL_GetError());
     return EXIT_FAILURE;
@@ -118,7 +124,7 @@ int run(std::uint32_t steps, const std::string& outputName, Overlay overlay) {
 
   {
     const std::unique_ptr<pinball::TableRenderer> table =
-        pinball::TableRenderer::create(renderer.get(), assets);
+        pinball::TableRenderer::create(renderer.get(), assets, pinball::TextureSet::Desktop);
     if (!table) {
       return EXIT_FAILURE;
     }
@@ -132,7 +138,8 @@ int run(std::uint32_t steps, const std::string& outputName, Overlay overlay) {
     SDL_RenderClear(renderer.get());
     // Alpha 1: the latest step exactly, so the picture depends only on the
     // step count.
-    table->draw(renderer.get(), game, 1.0F, false);
+    table->drawBackdrop(renderer.get(), layout);
+    table->draw(renderer.get(), game, 1.0F, layout, pinball::DrawOptions{});
     if (overlay == Overlay::About) {
       // With a sample table, so the layout of a full list can be checked.
       pinball::HighScores sample;
@@ -141,16 +148,16 @@ int run(std::uint32_t steps, const std::string& outputName, Overlay overlay) {
       sample.submit({987'500, 2, {'J', 'E', 'T'}});
       sample.submit({400'000, 1});
       sample.submit({182'500, 0, {'W', 'M', 'W'}});
-      pinball::drawAbout(renderer.get(), sample);
+      pinball::drawAbout(renderer.get(), sample, layout, pinball::AboutState{});
     } else if (overlay == Overlay::Initials) {
       pinball::InitialsEntry entry(pinball::Initials{'W', 'M', 'A'});
       entry.right();
-      pinball::drawInitialsEntry(renderer.get(), entry, 12'345'678, true);
+      pinball::drawInitialsEntry(renderer.get(), entry, 12'345'678, true, layout);
     }
     SDL_RenderPresent(renderer.get());
   }
 
-  if (!hasContent(surface.get())) {
+  if (!hasContent(surface.get(), layout.playfield)) {
     std::fputs("rendered frame is blank\n", stderr);
     return EXIT_FAILURE;
   }

@@ -132,6 +132,9 @@ class Rules {
 
   // Text for the message display. Empty when there is nothing to say.
   std::string_view message() const noexcept { return message_; }
+  // What it says once the last ball has drained. It names no key: how a new
+  // game is started depends on the device, so the platform adds that.
+  static constexpr std::string_view kGameOverMessage = "GAME OVER";
 
  private:
   void award(std::uint64_t basePoints) noexcept;

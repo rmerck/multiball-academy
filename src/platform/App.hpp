@@ -13,6 +13,7 @@
 #include "core/HighScores.hpp"
 #include "core/InitialsEntry.hpp"
 #include "core/LoopPolicy.hpp"
+#include "core/ScreenLayout.hpp"
 #include "core/Sound.hpp"
 #include "platform/AudioOutput.hpp"
 #include "platform/ScoreStore.hpp"
@@ -23,9 +24,16 @@ namespace pinball {
 struct AppOptions {
   // Exit after this many rendered frames. Used by automated smoke tests.
   std::optional<std::uint32_t> frameLimit;
+  // Keyboard and a fixed canvas, or touch controls and a canvas that
+  // follows the window.
+  screen::Idiom idiom = screen::Idiom::Desktop;
 };
 
-// Owns the SDL video subsystem, the window and the renderer, and runs the main loop.
+enum class FrameResult : std::uint8_t { Continue, Quit };
+
+// Owns the SDL video subsystem, the window and the renderer, and runs the
+// main loop: run() on a desktop, or frame() once per display refresh where
+// the system owns the loop.
 class App {
  public:
   // Returns nullptr and logs the SDL error if any resource fails to initialise.
@@ -35,7 +43,18 @@ class App {
   App(const App&) = delete;
   App& operator=(const App&) = delete;
 
-  // Runs until the user quits or the frame limit is reached. Returns exit code.
+  // Takes one event. Events from SDL's queue are read by frame() itself;
+  // this is for those the system delivers outside the queue.
+  void handleEvent(const SDL_Event& event);
+  // One turn of the loop: pending events, input, the simulation steps that
+  // are due, sound, and a drawn frame. Never sleeps. Quit once the player
+  // has quit or the frame limit is reached.
+  [[nodiscard]] FrameResult frame();
+  // To be called once, after the last frame: keeps a score that is waiting
+  // at the initials prompt and returns the exit code.
+  [[nodiscard]] int finish();
+  // The desktop's loop: frame() until it says Quit, sleeping while nothing
+  // moves and pacing the frames when the display does not, then finish().
   [[nodiscard]] int run();
 
  private:
@@ -46,10 +65,11 @@ class App {
     void operator()(SDL_Renderer* r) const noexcept { SDL_DestroyRenderer(r); }
   };
 
-  App(const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer, bool vsync,
-      std::unique_ptr<TableRenderer> table);
+  App(const AppOptions& options, const screen::Layout& layout, SDL_Window* window,
+      SDL_Renderer* renderer, bool vsync, std::unique_ptr<TableRenderer> table);
 
-  void handleEvent(const SDL_Event& event);
+  // In AppKeyboard.cpp.
+  void handleKeyDown(const SDL_KeyboardEvent& key);
   void readInput();
   // True when the simulation should stand still.
   bool halted() const noexcept {
@@ -62,6 +82,11 @@ class App {
   void commitInitials();
   void recordFinishedGame();
   void latchKey(SDL_Scancode scancode);
+  // In AppTouch.cpp: a finger went down, moved or lifted.
+  void handleTouch(const SDL_Event& event);
+  // In AppLifecycle.cpp: the window gained or lost focus, or was minimised
+  // or restored.
+  void handleFocusChange();
   void render(double alpha);
   // Notes a failed renderer call, logging the first one only.
   void noteRenderFailure(const char* call);
@@ -73,6 +98,8 @@ class App {
   bool needsManualPacing() const;
 
   AppOptions options_;
+  // Where everything is drawn. Fixed for the desktop idiom.
+  screen::Layout layout_;
   // Members are destroyed in reverse order: textures, renderer, then window.
   std::unique_ptr<SDL_Window, WindowDeleter> window_;
   std::unique_ptr<SDL_Renderer, RendererDeleter> renderer_;
@@ -80,8 +107,14 @@ class App {
   // destroyed first.
   std::unique_ptr<TableRenderer> table_;
   FixedTimestep timestep_{Game::kStepSeconds, 8};
-  // Keeps time spent standing still out of the simulation (see run()).
+  // Keeps time spent standing still out of the simulation (see frame()).
   PauseClock clock_;
+  // SDL_GetTicksNS() when the previous frame and this one began.
+  std::uint64_t previousNs_ = 0;
+  std::uint64_t frameStartNs_ = 0;
+  // Frames drawn, and how many of the latest in a row were halted.
+  std::uint32_t frames_ = 0;
+  std::uint32_t haltedFrames_ = 0;
   bool vsync_ = false;
   // The last frame was presented. When it was not, presenting did not wait
   // for the display either.

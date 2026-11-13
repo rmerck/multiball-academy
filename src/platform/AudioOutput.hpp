@@ -23,6 +23,12 @@ class AudioOutput {
   // Keeps the device supplied with sound. Call once per frame.
   void pump(SoundMixer& mixer);
 
+  // Stops the device and drops what is queued, for when no frames will run
+  // to keep it supplied (the application is in the background). resume
+  // starts it again; pump then refills the queue.
+  void suspend();
+  void resume();
+
  private:
   explicit AudioOutput(SDL_AudioStream* stream) : stream_(stream) {}
 

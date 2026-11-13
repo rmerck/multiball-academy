@@ -474,7 +474,7 @@ void testRules() {
     }
     CHECK(over.gameOver());
     over.onBallReturned();
-    CHECK(over.message() == std::string_view("GAME OVER   PRESS F2"));
+    CHECK(over.message() == std::string_view("GAME OVER"));
   }
 
   {  // Through the game: a full game ends after three balls and F2 restarts.

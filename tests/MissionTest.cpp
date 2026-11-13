@@ -257,11 +257,11 @@ void testMissions() {
     }
     last.onTarget(missionTarget(0));
     CHECK(last.onDrain() == Rules::DrainResult::GameOver);
-    CHECK(last.message() == std::string_view("GAME OVER   PRESS F2"));
+    CHECK(last.message() == std::string_view("GAME OVER"));
     for (int i = 0; i < 120 * 10; ++i) {
       last.tick();
     }
-    CHECK(last.message() == std::string_view("GAME OVER   PRESS F2"));
+    CHECK(last.message() == std::string_view("GAME OVER"));
   }
 
   {  // The mission table is well formed: every mission has a name that fits
@@ -460,7 +460,7 @@ void testMissions() {
       const int progress = rules.missions().progress();
       CHECK(drainOut(rules));
       CHECK(dark(rules));
-      CHECK(rules.message() == std::string_view("GAME OVER   PRESS F2"));
+      CHECK(rules.message() == std::string_view("GAME OVER"));
       // What was earned stays on show; nothing more happens on a dead table.
       CHECK(rules.missions().progress() == progress);
       CHECK(rules.missions().completedMissions() == (scenario == 3 ? 1U : 0U));
@@ -470,7 +470,7 @@ void testMissions() {
         rules.tick();
       }
       CHECK(dark(rules));
-      CHECK(rules.message() == std::string_view("GAME OVER   PRESS F2"));
+      CHECK(rules.message() == std::string_view("GAME OVER"));
 
       rules.startGame();
       CHECK(dark(rules) && !rules.gameOver());

@@ -133,15 +133,20 @@ pinball_apply_hardening(pinball_core PUBLIC)
 add_library(pinball_platform STATIC
   src/platform/About.cpp
   src/platform/App.cpp
+  src/platform/AppKeyboard.cpp
+  src/platform/AppLifecycle.cpp
+  src/platform/AppTouch.cpp
   src/platform/Assets.cpp
   src/platform/AudioOutput.cpp
   src/platform/EmbeddedManifest.cpp
   src/platform/Hud.cpp
   src/platform/InitialsScreen.cpp
+  src/platform/PauseMenu.cpp
   src/platform/SafeFile.cpp
   src/platform/ScoreStore.cpp
   src/platform/TableRenderer.cpp
   src/platform/Text.cpp
+  src/platform/TouchOverlay.cpp
 )
 target_link_libraries(pinball_platform PUBLIC pinball_core SDL3::SDL3)
 if(APPLE)

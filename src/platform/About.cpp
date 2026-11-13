@@ -6,8 +6,8 @@
 
 #include "core/Format.hpp"
 #include "core/Missions.hpp"
+#include "core/OverlayLayout.hpp"
 #include "core/Version.hpp"
-#include "platform/Canvas.hpp"
 #include "platform/Text.hpp"
 
 namespace pinball {
@@ -26,21 +26,26 @@ constexpr std::string_view kSource = "GITHUB.COM/RMERCK";
 
 }  // namespace
 
-void drawAbout(SDL_Renderer* r, const HighScores& scores) {
+std::size_t licencePageCount(const screen::Layout& /*layout*/) noexcept { return 1; }
+
+std::string_view licenceText() noexcept { return {}; }
+
+void drawAbout(SDL_Renderer* r, const HighScores& scores, const screen::Layout& layout,
+               const AboutState& /*state*/) {
   if (r == nullptr) {
     return;
   }
   // Dim everything behind.
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(r, 10, 0, 26, 205);
-  const SDL_FRect whole{0.0F, 0.0F, static_cast<float>(kCanvasWidth),
-                        static_cast<float>(kCanvasHeight)};
+  const SDL_FRect whole{0.0F, 0.0F, layout.canvasWidth, layout.canvasHeight};
   SDL_RenderFillRect(r, &whole);
   // Only the dimming needs blending; the dialog's own fills are opaque.
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
-  // The dialog: a bordered box in the middle of the canvas.
-  const SDL_FRect box{190.0F, 90.0F, 900.0F, 780.0F};
+  // The dialog: a bordered box in the middle of the composition.
+  const screen::Rect dialog = screen::aboutLayout(layout).box;
+  const SDL_FRect box{dialog.x, dialog.y, dialog.w, dialog.h};
   drawNeonFrame(r, box);
 
   const float middle = box.x + box.w * 0.5F;
@@ -51,7 +56,7 @@ void drawAbout(SDL_Renderer* r, const HighScores& scores) {
   drawNeonSunset(r, {middle - 300.0F, box.y + box.h - 258.0F, 600.0F, 118.0F});
   float y = box.y + 36.0F;
 
-  drawNeonText(r, "SPACE CADET PINBALL", middle, y, 6.0F, kAmber, kPink, {120, 30, 200, 255},
+  drawNeonText(r, kGameTitle, middle, y, 6.0F, kAmber, kPink, {120, 30, 200, 255},
                TextAlign::Center);
   y += 64.0F;
   std::array<char, 32> version{};

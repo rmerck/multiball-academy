@@ -483,7 +483,7 @@ Rules::DrainResult Rules::onDrain() noexcept {
     // running on a dead table.
     clearBank(table::TargetBank::Mission);
     missions_.standDown();
-    say("GAME OVER   PRESS F2");
+    say(kGameOverMessage);
     cue(Sound::GameOver);
     return DrainResult::GameOver;
   }
