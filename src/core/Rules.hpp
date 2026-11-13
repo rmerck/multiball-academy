@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string_view>
 
+#include "core/DisplayText.hpp"
 #include "core/Missions.hpp"
 #include "core/Sound.hpp"
 #include "core/TableLayout.hpp"
@@ -137,11 +138,12 @@ class Rules {
   void award(std::uint64_t basePoints) noexcept;
   void addScore(std::uint64_t amount) noexcept;
   void addBonus() noexcept;
-  void say(std::string_view text) noexcept;
+  // Every message is checked against the display when it is compiled.
+  void say(display::Message text) noexcept;
   void cue(Sound sound) noexcept { sounds_ |= soundBit(sound); }
   // A mission announcement. It is not replaced by lesser messages from the
   // same event (the bank award that the completing hit also earned, say).
-  void sayMission(std::string_view text) noexcept;
+  void sayMission(display::Message text) noexcept;
   // False if the most allowed are already held.
   bool awardExtraBall() noexcept;
   void clearBank(table::TargetBank bank) noexcept;
