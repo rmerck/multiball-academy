@@ -27,6 +27,7 @@ void runSuites() {
   testSha256();
   testMusic();
   testSound();
+  testTableGeometry();
   testTargets();
   testTouchControls();
 }

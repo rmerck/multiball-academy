@@ -1,27 +1,31 @@
 # Art and assets
 
-The game wears a 1980s neon arcade look: a slatted sun setting behind a mountain ridge, a city skyline and palm silhouettes, a perspective grid for a floor, neon tube rails with bloom, a starfield with nebula clouds, Memphis confetti on the cabinet, and faint CRT raster lines and grain over everything. Each part of the table has its own motif and colour: a hot pink starburst diamond under the attack bumpers, a cyan delta and dial round the engine bumpers, yellow orbits round the satellite bumper, spiral wormholes, an accretion disc for the black hole, nested diamonds for hyperspace, and an orange ramp: a flared scoop at the ramp's mouth with chevrons along the line of the shot from the right flipper, and rails that climb from it past the wormhole and round the arch to the exit. The mouth is drawn from `rampMouth` in the layout, so it is exactly as wide as the strip the physics tests.
+The table's layout is new and its art is still to be drawn. Until it is, the game draws the playfield itself from `src/core/TableLayout.hpp`, in plain colours: the field inside the shell, every wall and guide as the physics has it (teal), the dead posts and slingshot vanes (grey), the slingshots (pink), the lane switches, the boxes of the Briefing room, the Hangar and the two ramp mouths with their rails and exits, the spinner line, the kickback zone, the lock bays, and every lamp at its place, unlit. Bumpers, targets, bay doors, flippers, plunger and balls are the sprites, as before. That drawing is used whenever the asset manifest has no `table/background.png`, so the picture always matches the table being played; putting a `table/background.png` into `assets` switches to the art (`TableRenderer`).
 
-All art is original. It is generated in GIMP 3 by the scripts in `tools/gimp`, with one exception described below. The table art is drawn from the same geometry the physics uses: `pinball_layout` prints `src/core/TableLayout.hpp` and `src/core/PanelLayout.hpp` as JSON and the scripts read it. To regenerate everything, build the project, then in GIMP's Python console run:
+The panel and the sprites still wear the old 1980s neon look and are to be redrawn with the table.
+
+All art is original. It is generated in GIMP 3 by the scripts in `tools/gimp`, with one exception described below. The art is drawn from the same geometry the physics uses: `pinball_layout` prints `src/core/TableLayout.hpp` and `src/core/PanelLayout.hpp` as JSON and the scripts read it.
+
+What `pinball_layout` prints for the table: `width`, `height`, `ballRadius`, `fieldCenterX`, `lane`, `plunger`, `flipper`, `arch` (centre and radii of the ellipse the arch follows), `ramp` (least speed, ride time), `spinner`, `kickback`, `lampSizes`; the chains `shell` and `laneIsland` (closed loops of points) and `innerArch`, `slingVaneLeft`, `slingVaneRight` (open and one-sided: the first and last point of each are ghosts, not wall); `walls` and `deadPosts` (capsules `a`, `b`, `r`), `slingshots`, `flippers`, `bumpers`, `targets` (with `id`), `bayDoors`, `lockBays`, `rollovers` (centre, radius, the half size of the switch strip, group `rollCall`, `inlane` or `outlane`), `holes` (centre, half size of the box, type `scoop`, `hangar`, `rampLeft` or `rampRight`, exit and exit velocity), `runwayRail` and `skywayRail`, and `lamps` (id in `LampId` order, kind `arrow`, `course` or `status`, centre). The old keys `fuelLights`, `hole.radius`, `rampExit`, `rampMouth`, `laneGate`, `medalIsland` and the `group` of a bumper and `bank` of a target are gone. `tools/gimp/make_table.py` still draws the old table from the old keys and does not run against this output; it is to be rewritten with the new art. The other scripts read only the panel and sprite parts, which are unchanged. To regenerate those, build the project, then in GIMP's Python console run:
 
 ```python
-REPO = "/path/to/space-cadet-pinball"
+REPO = "/path/to/multiball-academy"
 LAYOUT = REPO + "/build/layout.json"   # from: build/pinball_layout > build/layout.json
-for script in ("make_ball", "make_table", "make_sprites", "make_panel"):
+for script in ("make_ball", "make_sprites", "make_panel"):
     exec(open(REPO + "/tools/gimp/" + script + ".py").read())
 ```
 
-`make_table.py` takes a couple of minutes: it builds about forty layers and several blur passes at 1536x1920. `tools/gimp/common.py` holds the shared helpers. Each script refuses to run without the layout file, sets every GIMP context setting it depends on, and puts your context back and deletes its working image when it ends, whether or not it succeeded. The export fails loudly if GIMP lacks any of the options that switch metadata off.
+`tools/gimp/common.py` holds the shared helpers. Each script refuses to run without the layout file, sets every GIMP context setting it depends on, and puts your context back and deletes its working image when it ends, whether or not it succeeded. The export fails loudly if GIMP lacks any of the options that switch metadata off.
 
 | Asset | Script | Notes |
 |---|---|---|
-| `table/background.png` | `make_table.py` | 1536x1920 (2x). Sky, sun, horizon, grid floor, area motifs, neon rails, islands, hole wells, unlit inserts |
+| `table/background.png` | (to be drawn) | 1536x1920 (2x). Not in the tree: the game draws the table from its layout until the art for the new table exists |
 | `ui/panel.png` | `make_panel.py` | 1024x1920 (2x). Information panel beside the playfield: backglass illustration behind the title, neon-framed display windows from `src/core/PanelLayout.hpp`, grid and accents |
 | `sprites/ball.png` | `make_ball.py` | 4x. Chrome ball with a bright rim so it stays visible on any part of the art |
 | `sprites/flipper.png` | `make_sprites.py` | Rotated about its pivot; mirrored for the right flipper. A dark halo under a cyan glow lifts it off the grid |
-| `sprites/bumper.png` | `make_sprites.py` | White starburst on a dark skirt, tinted per bumper group |
+| `sprites/bumper.png` | `make_sprites.py` | White starburst on a dark skirt, tinted |
 | `sprites/glow.png` | `make_sprites.py` | Drawn additively and tinted for every light; also the ball's shadow and halo |
-| `sprites/bar.png` | `make_sprites.py` | Stand-up target face, tinted per bank; its bright outline keeps an unlit target visible |
+| `sprites/bar.png` | `make_sprites.py` | Stand-up target and bay door face, tinted; its bright outline keeps an unlit one visible |
 | `sprites/plunger.png` | `make_sprites.py` | |
 | `packaging/macos/icon_1024.png` | `make_icon.py` | 1024x1024. The application icon, not a game asset: it is outside `assets` and the manifest. Needs no layout file |
 
@@ -38,7 +42,7 @@ exec(open(REPO + "/tools/gimp/make_icon.py").read())
 tools/make_icns.sh
 ```
 
-Lights, lit targets, bumper flashes, the lane gate, all text and the About and initials dialogs, with their frames, zigzags and the small sunset, are drawn by the game (`src/platform/TableRenderer.cpp`, `Hud.cpp`, `Text.cpp`). Their colours match the rims and inserts in the art; if you change a palette in one place, change it in the other.
+The playfield (for now), bumper and slingshot flashes, all text and the About and initials dialogs, with their frames, zigzags and the small sunset, are drawn by the game (`src/platform/TableRenderer.cpp`, `Hud.cpp`, `Text.cpp`). Their colours match the rims and inserts in the art; if you change a palette in one place, change it in the other.
 
 ## The Canva source
 

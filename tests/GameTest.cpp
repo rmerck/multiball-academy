@@ -8,39 +8,12 @@
 #include <string_view>
 
 #include "Check.hpp"
+#include "GameTestAccess.hpp"
 #include "Suites.hpp"
 #include "core/Game.hpp"
 #include "core/Rules.hpp"
 #include "core/Sound.hpp"
 #include "core/TableLayout.hpp"
-
-// The seam Game leaves for tests: puts the ball somewhere by hand.
-struct pinball::GameTestAccess {
-  static void placeBall(Game& game, Vec2 position) {
-    game.physics_.resetBall(position, {0.0F, 0.0F});
-  }
-  // As if the ball had just left the launch lane.
-  static void putInPlay(Game& game) {
-    game.physics_.setLaneGateClosed(true);
-    game.rules_.onBallInPlay();
-  }
-  // The same for any ball, with a velocity.
-  static void placeBall(Game& game, std::size_t ball, Vec2 position, Vec2 velocity = {}) {
-    game.physics_.resetBall(ball, position, velocity);
-  }
-  // Puts one more ball on the table. Returns its id, or Game::kMaxBalls.
-  static std::size_t addBall(Game& game, Vec2 position, Vec2 velocity = {}) {
-    return game.addBall(position, velocity);
-  }
-  static bool live(const Game& game, std::size_t ball) { return game.physics_.ballActive(ball); }
-  static bool held(const Game& game, std::size_t ball) { return game.physics_.ballHeld(ball); }
-  static Vec2 velocity(const Game& game, std::size_t ball) {
-    return game.physics_.ballVelocity(ball);
-  }
-  static bool passesGate(const Game& game, std::size_t ball) {
-    return game.physics_.ballPassesGate(ball);
-  }
-};
 
 namespace {
 
@@ -67,7 +40,7 @@ bool same(const BallView& a, const BallView& b) {
 InputState play(const Game& game, std::uint64_t step) {
   InputState input;
   const Vec2 p = game.ball().position;
-  input.plunger = !game.laneGateClosed() && (step % 240U) < 150U;
+  input.plunger = !game.rules().ballInPlay() && (step % 240U) < 150U;
   const float reactY = 780.0F + 10.0F * static_cast<float>((step / 4800U) % 5U);
   const auto within = [p, reactY](const table::Flipper& flipper, float direction) {
     const float along = (p.x - flipper.pivot.x) * direction;
@@ -239,7 +212,7 @@ void testSeveralBalls() {
     game.step(input);
     CHECK(game.ballCount() == 1 && game.balls().count == 1);
     CHECK(game.ball().id == 0 && distance(game.ball().position, table::kBallStart) < 2.0F);
-    CHECK(!game.laneGateClosed());
+    CHECK(!game.rules().ballInPlay());
     CHECK(ballsAreSound(game));
   }
 
@@ -321,7 +294,7 @@ void testSeveralBalls() {
     alone.step(input);
     CHECK(game.ballCount() == 1 && game.drainCount() == 1);
     CHECK(game.ball().id == 0 && distance(game.ball().position, table::kBallStart) > 100.0F);
-    CHECK(game.laneGateClosed() && game.rules().ballInPlay());
+    CHECK(game.rules().ballInPlay() && game.rules().ballInPlay());
     CHECK(game.rules().ball() == 1 && game.rules().score() == score);
     CHECK(std::string_view(game.rules().message()) == std::string_view(alone.rules().message()));
 
@@ -335,7 +308,7 @@ void testSeveralBalls() {
     CHECK(game.ball().id == 1 && game.balls().items[0].id == 1);
     CHECK(distance(game.ball().position, kOpenField + Vec2{70.0F, 0.0F}) < 5.0F);
     CHECK(game.ballHeld() == Seam::held(game, 1));
-    CHECK(game.rules().ball() == 1 && game.rules().ballInPlay() && game.laneGateClosed());
+    CHECK(game.rules().ball() == 1 && game.rules().ballInPlay() && game.rules().ballInPlay());
     CHECK(ballsAreSound(game));
 
     // The last ball drains: the end of the ball, as ever.
@@ -346,7 +319,7 @@ void testSeveralBalls() {
     CHECK(game.ballCount() == 1 && game.drainCount() == 3 && alone.drainCount() == 1);
     CHECK(game.ball().id == 0 && distance(game.ball().position, table::kBallStart) < 2.0F);
     CHECK(same(game.ball(0.0F), game.ball()));  // Served: not drawn along the jump.
-    CHECK(!game.laneGateClosed() && !Seam::passesGate(game, 0));
+    CHECK(!game.rules().ballInPlay() && !game.ballInPlay(0));
     CHECK(game.rules().ball() == alone.rules().ball() && game.rules().ball() == 2);
     CHECK(game.rules().ballInPlay() == alone.rules().ballInPlay());
     CHECK(game.rules().score() == alone.rules().score());
@@ -363,7 +336,7 @@ void testSeveralBalls() {
     game.step(input);
     CHECK(game.drainCount() == 5 && game.ballCount() == 1);
     CHECK(game.ball().id == 0 && distance(game.ball().position, table::kBallStart) < 2.0F);
-    CHECK(!game.laneGateClosed());
+    CHECK(!game.rules().ballInPlay());
     CHECK(ballsAreSound(game));
   }
 
@@ -383,13 +356,13 @@ void testSeveralBalls() {
     CHECK(views.count == 2 && views.items[0].id == 0 && views.items[1].id == 2);
     CHECK(find(views, 1).id == kNoBall);
     CHECK(distance(views.items[0].position, kOpenField + Vec2{-70.0F, 0.0F}) < 10.0F);
-    CHECK(game.laneGateClosed() && game.rules().ballInPlay() && game.rules().ball() == 1);
+    CHECK(game.rules().ballInPlay() && game.rules().ballInPlay() && game.rules().ball() == 1);
     // A ball that drains while others play on leaves by the same door: the
     // difference is only that it is counted.
     Seam::placeBall(game, 2, {table::kFieldCenterX, table::kDrainY + 5.0F});
     game.step(input);
     CHECK(game.ballCount() == 1 && game.drainCount() == 1 && game.ball().id == 0);
-    CHECK(game.laneGateClosed() && game.rules().ballInPlay() && game.rules().ball() == 1);
+    CHECK(game.rules().ballInPlay() && game.rules().ballInPlay() && game.rules().ball() == 1);
     CHECK(Seam::addBall(game, kOpenField + Vec2{70.0F, 0.0F}) == 1);
     Seam::placeBall(game, 1, {300.0F, 2000.0F});  // Below the drain, and outside the shell.
     game.step(input);
@@ -399,27 +372,16 @@ void testSeveralBalls() {
     CHECK(ballsAreSound(game));
   }
 
-  {  // A single ball is never given the pass through the lane gate.
-    Game game;
-    bool passed = false;
-    for (int i = 0; i < 120 * 30; ++i) {
-      game.step(soakInput(game, i));
-      passed = passed || Seam::passesGate(game, 0);
-    }
-    CHECK(!passed);
-    CHECK(game.laneGateClosed() || game.drainCount() > 0);
-  }
-
-  {  // With a ball already in play the gate is shut, and a ball waiting on
-     // the plunger is let through it: it can still be launched, and once it
-     // is out the gate is solid for it too.
+  {  // With a ball already in play, a ball waiting on the plunger can still
+     // be launched: nothing shuts behind the first one. Each ball is in
+     // play from when it is itself clear of the launch channel.
     Game game;
     InputState input;
     game.step(input);
     CHECK(Seam::addBall(game, kOpenField) == 1);
     game.step(input);
-    CHECK(game.laneGateClosed() && game.rules().ballInPlay());
-    CHECK(Seam::passesGate(game, 0) && !Seam::passesGate(game, 1));
+    CHECK(game.rules().ballInPlay());
+    CHECK(!game.ballInPlay(0) && game.ballInPlay(1));
     input.plunger = true;
     for (int i = 0; i < 150; ++i) {
       game.step(input);
@@ -429,28 +391,26 @@ void testSeveralBalls() {
     for (int i = 0; i < 360 && !out; ++i) {
       game.step(input);
       out = Seam::live(game, 0) && game.balls().items[0].id == 0 &&
-            game.balls().items[0].position.x < table::kLaneGateCloseX;
+            table::inPlayArea(game.balls().items[0].position);
     }
     CHECK(out);
-    CHECK(game.laneGateClosed());
-    CHECK(!Seam::passesGate(game, 0) && !Seam::passesGate(game, 1));
+    CHECK(game.ballInPlay(0));
   }
 
   {  // The last ball in play drains on the very step a new ball arrives on
-     // the plunger. The gate is shut and nothing will open it, so the ball
-     // in the lane, now the only ball, must be let through.
+     // the plunger. That ball, now the only ball, is not in play until it
+     // has been launched.
     Game game;
     InputState input;
     Seam::placeBall(game, kOpenField);
     Seam::putInPlay(game);
     game.step(input);
-    CHECK(game.laneGateClosed());
+    CHECK(game.rules().ballInPlay());
     Seam::placeBall(game, 0, {table::kFieldCenterX, table::kDrainY + 5.0F});
     CHECK(Seam::addBall(game, table::kBallStart) == 1);
     game.step(input);
     CHECK(game.ballCount() == 1 && game.ball().id == 1 && game.drainCount() == 1);
-    CHECK(game.laneGateClosed());
-    CHECK(Seam::passesGate(game, 1));
+    CHECK(!game.ballInPlay(1));
     input.plunger = true;
     for (int i = 0; i < 150; ++i) {
       game.step(input);
@@ -459,10 +419,10 @@ void testSeveralBalls() {
     bool out = false;
     for (int i = 0; i < 360 && !out; ++i) {
       game.step(input);
-      out = game.ball().id == 1 && game.ball().position.x < table::kLaneGateCloseX;
+      out = game.ball().id == 1 && table::inPlayArea(game.ball().position);
     }
     CHECK(out);
-    CHECK(!Seam::passesGate(game, 1) && game.laneGateClosed());
+    CHECK(game.ballInPlay(1));
   }
 
   {  // A slot keeps nothing of the ball that left it. The next ball in it,
@@ -473,14 +433,117 @@ void testSeveralBalls() {
     Seam::putInPlay(game);
     CHECK(Seam::addBall(game, kOpenField + Vec2{70.0F, 0.0F}) == 1);
     game.step(input);
-    CHECK(!Seam::passesGate(game, 1));
+    CHECK(game.ballInPlay(1));
     Seam::placeBall(game, 1, {table::kFieldCenterX, table::kDrainY + 5.0F});
     game.step(input);
     CHECK(game.ballCount() == 1);
     CHECK(Seam::addBall(game, table::kBallStart) == 1);
     Seam::placeBall(game, 0, kOpenField);
     game.step(input);
-    CHECK(Seam::passesGate(game, 1) && !Seam::passesGate(game, 0));
+    CHECK(!game.ballInPlay(1) && game.ballInPlay(0));
+    CHECK(!game.ballInPlay(2) && !game.ballInPlay(99));
+  }
+
+  {  // Balls asked for are served to the plunger one at a time and launched
+     // without the player: each when the lane is empty, a while after the
+     // last, and each laps the arch into play. Never more than three balls
+     // on the table and waiting together.
+    Game game;
+    InputState input;
+    CHECK(game.queuedBalls() == 0);
+    // The player's own ball must leave the lane first.
+    CHECK(game.requestBall() && game.requestBall());
+    CHECK(!game.requestBall());  // One on the table and two waiting: full.
+    CHECK(game.queuedBalls() == 2 && game.ballCount() == 1);
+    for (int i = 0; i < 240; ++i) {
+      game.step(input);
+    }
+    CHECK(game.ballCount() == 1 && game.queuedBalls() == 2);  // The lane is not empty.
+    input.plunger = true;
+    for (int i = 0; i < 150; ++i) {
+      game.step(input);
+    }
+    input.plunger = false;
+    std::array<int, 3> servedAt{-1, -1, -1};
+    std::array<int, 3> inPlayAt{-1, -1, -1};
+    bool sound = true;
+    for (int i = 0; i < 120 * 6; ++i) {
+      game.step(input);
+      sound = sound && ballsAreSound(game) && game.ballCount() + game.queuedBalls() <= 3;
+      for (std::size_t slot = 0; slot < 3; ++slot) {
+        if (servedAt[slot] < 0 && Seam::live(game, slot)) {
+          servedAt[slot] = i;
+          if (slot != 0) {
+            // On the plunger, drawn there at once.
+            CHECK(distance(find(game.balls(0.0F), slot).position, table::kBallStart) < 2.0F);
+          }
+        }
+        if (inPlayAt[slot] < 0 && game.ballInPlay(slot)) {
+          inPlayAt[slot] = i;
+        }
+      }
+      // Kept on the table: the test is of the serving, not of the play.
+      for (std::size_t slot = 0; slot < 3; ++slot) {
+        if (game.ballInPlay(slot) && Seam::position(game, slot).y > 800.0F) {
+          Seam::placeBall(game, slot, kOpenField + Vec2{0.0F, -40.0F});
+        }
+      }
+    }
+    CHECK(sound);
+    CHECK(game.queuedBalls() == 0 && game.ballCount() == 3);
+    CHECK(inPlayAt[0] >= 0 && inPlayAt[1] > inPlayAt[0] && inPlayAt[2] > inPlayAt[1]);
+    // The second waits for the first to clear the lane, the third for the
+    // second, and never sooner than the spacing after it.
+    CHECK(servedAt[1] >= inPlayAt[0] && servedAt[2] >= inPlayAt[1]);
+    CHECK(servedAt[2] - servedAt[1] >=
+          static_cast<int>(Game::kAutoServeSpacingSeconds * 120.0) - 1);
+    // Launched a quarter of a second after it is served, and once is enough.
+    CHECK(game.autoLaunchCount() == 2 && game.autoRelaunchCount() == 0);
+    CHECK(inPlayAt[1] - servedAt[1] > static_cast<int>(Game::kAutoLaunchDelaySeconds * 120.0));
+    CHECK(inPlayAt[1] - servedAt[1] < 120);
+    // A new game forgets what was asked for.
+    CHECK(!game.requestBall());
+    input.newGame = true;
+    game.step(input);
+    input.newGame = false;
+    CHECK(game.ballCount() == 1 && game.queuedBalls() == 0);
+    CHECK(game.requestBall());
+    input.newGame = true;
+    game.step(InputState{});
+    game.step(input);
+    CHECK(game.queuedBalls() == 0);
+  }
+
+  {  // The last ball on the table drains while another is still waiting to
+     // be served: it is not the end of the ball. The waiting one takes its
+     // place at once and is launched, so there is always a ball on the table.
+    Game game;
+    InputState input;
+    Seam::placeBall(game, kOpenField);
+    Seam::putInPlay(game);
+    game.step(input);
+    CHECK(game.requestBall());
+    Seam::placeBall(game, 0, {table::kFieldCenterX, table::kDrainY + 5.0F});
+    game.step(input);
+    CHECK(game.drainCount() == 1 && game.ballCount() == 1 && game.queuedBalls() == 0);
+    CHECK(game.rules().ball() == 1 && game.rules().ballInPlay());
+    CHECK(distance(game.ball().position, table::kBallStart) < 2.0F);
+    bool out = false;
+    for (int i = 0; i < 240 && !out; ++i) {
+      game.step(input);
+      out = game.ballInPlay(0);
+    }
+    CHECK(out && game.autoLaunchCount() == 1);
+    // Not once the game is over.
+    for (int i = 0; i < pinball::Rules::kBallsPerGame + 1 && !game.gameOver(); ++i) {
+      for (int wait = 0; wait < 120 * 8; ++wait) {
+        game.step(input);  // Past the ball save.
+      }
+      Seam::placeBall(game, 0, {table::kFieldCenterX, table::kDrainY + 5.0F});
+      game.step(input);
+    }
+    CHECK(game.gameOver());
+    CHECK(!game.requestBall());
   }
 
   {  // The ball search watches every ball: two stuck balls are each shoved
@@ -508,7 +571,7 @@ void testSeveralBalls() {
 
   {  // A ball returned by the ramp is drawn at the exit at once, whichever
      // slot it is in: not part-way back along the last step of its ride.
-    const table::Hole& rampHole = table::kHoles[holeOfType(table::HoleType::Ramp)];
+    const table::Hole& rampHole = table::kHoles[table::kRunwayHole];
     for (const std::size_t slot : {std::size_t{1}, std::size_t{2}}) {
       Game game;
       const InputState input;
@@ -517,7 +580,7 @@ void testSeveralBalls() {
       Seam::placeBall(game, slot, rampHole.center + Vec2{12.0F, 30.0F}, {-420.0F, -1300.0F});
       bool ridden = false;
       bool returned = false;
-      for (int i = 0; i < 200 && !returned; ++i) {
+      for (int i = 0; i < 260 && !returned; ++i) {
         // The other added ball is kept out of the way.
         Seam::placeBall(game, 3 - slot, kOpenField + Vec2{100.0F, 0.0F});
         const BallView before = find(game.balls(), slot);
@@ -543,8 +606,8 @@ void testSeveralBalls() {
      // both waiting the lower id goes first.
     Game game;
     const InputState input;
-    const std::size_t hole = holeOfType(table::HoleType::BlackHole);
-    const table::Hole& blackHole = table::kHoles[hole];
+    const std::size_t hole = holeOfType(table::HoleType::Scoop);
+    const table::Hole& scoop = table::kHoles[hole];
     Seam::placeBall(game, kOpenField);
     Seam::putInPlay(game);
     CHECK(Seam::addBall(game, kOpenField + Vec2{70.0F, 0.0F}) == 1);
@@ -558,7 +621,7 @@ void testSeveralBalls() {
     for (int i = 0; i < 400; ++i) {
       for (std::size_t b = 0; b < 3; ++b) {
         if (i == 5 * static_cast<int>(2 - b)) {
-          Seam::placeBall(game, b, blackHole.center);
+          Seam::placeBall(game, b, scoop.center);
         } else if (captured[b] < 0) {
           // Kept out of the way until its turn.
           Seam::placeBall(game, b, kOpenField + Vec2{70.0F * (static_cast<float>(b) - 1.0F), 0.0F});
@@ -576,7 +639,7 @@ void testSeveralBalls() {
           released[b] = i;
           const BallView view = find(game.balls(), b);
           CHECK(view.id == b && view.visible);
-          CHECK(distance(view.position, blackHole.exitPosition) < 0.01F);
+          CHECK(distance(view.position, scoop.exitPosition) < 0.01F);
           CHECK(same(find(game.balls(0.0F), b), view));
           CHECK(!view.raised);
         }
@@ -594,46 +657,52 @@ void testSeveralBalls() {
     CHECK(deepest <= 2.0F);
   }
 
-  {  // Three balls into the three wormholes in the same step: each comes out
-     // of the next one along, and is not swallowed again where it appears,
-     // though another ball's arrival there would be.
+  {  // Three balls into three holes in the same step: each is held by its
+     // own hole for that hole's time and comes out at that hole's exit.
     Game game;
     const InputState input;
-    Seam::placeBall(game, 0, table::kHoles[0].center);
+    const table::Hole& skyway = table::kHoles[table::kSkywayHole];
+    Seam::placeBall(game, 0, table::kHoles[table::kScoopHole].center);
     Seam::putInPlay(game);
-    CHECK(Seam::addBall(game, table::kHoles[1].center) == 1);
-    CHECK(Seam::addBall(game, table::kHoles[2].center) == 2);
+    CHECK(Seam::addBall(game, table::kHoles[table::kHangarHole].center) == 1);
+    CHECK(Seam::addBall(game, skyway.center + Vec2{0.0F, 4.0F}, {0.0F, -900.0F}) == 2);
     game.step(input);
+    const std::array<std::size_t, 3> holes{table::kScoopHole, table::kHangarHole,
+                                           table::kSkywayHole};
     for (std::size_t b = 0; b < 3; ++b) {
-      CHECK(Seam::held(game, b) && game.holeCount(b) == 1);
-      CHECK(table::kHoles[b].type == table::HoleType::Wormhole);
+      CHECK(Seam::held(game, b) && game.holeCount(holes[b]) == 1);
     }
     CHECK(game.ballHeld());
+    // In the two pockets the ball is out of sight; on the rail it is not.
+    CHECK(!find(game.balls(), 0).visible && !find(game.balls(), 1).visible);
+    CHECK(find(game.balls(), 2).visible && find(game.balls(), 2).raised);
     int steps = 1;
-    while (steps < 200 && (Seam::held(game, 0) || Seam::held(game, 1) || Seam::held(game, 2))) {
+    while (steps < 200 && (Seam::held(game, 0) || Seam::held(game, 1))) {
       game.step(input);
       ++steps;
     }
     CHECK(steps == 108);
-    const pinball::BallViews views = game.balls();
-    CHECK(views.count == 3);
-    for (std::size_t b = 0; b < 3; ++b) {
-      CHECK(views.items[b].visible);
-      CHECK(distance(views.items[b].position, table::kHoles[b].exitPosition) < 0.01F);
-      CHECK(distance(table::kHoles[b].exitPosition, table::kHoles[(b + 1) % 3].center) < 0.01F);
+    CHECK(Seam::held(game, 2));
+    for (std::size_t b = 0; b < 2; ++b) {
+      const BallView view = find(game.balls(), b);
+      CHECK(view.visible && !view.raised);
+      CHECK(distance(view.position, table::kHoles[holes[b]].exitPosition) < 0.01F);
     }
-    for (int i = 0; i < 20; ++i) {
+    while (steps < 300 && Seam::held(game, 2)) {
       game.step(input);
-      CHECK(!Seam::held(game, 0) && !Seam::held(game, 1) && !Seam::held(game, 2));
+      ++steps;
     }
-    CHECK(game.holeCount(0) + game.holeCount(1) + game.holeCount(2) == 3);
+    // The ride is 1.25 s: 150 steps.
+    CHECK(steps == 150);
+    CHECK(distance(find(game.balls(), 2).position, skyway.exitPosition) < 0.01F);
+    CHECK(game.holeCount(0) + game.holeCount(1) + game.holeCount(2) + game.holeCount(3) == 3);
     CHECK(ballsAreSound(game));
   }
 
   {  // Two balls up the ramp one behind the other: both stay in sight, each
      // drawn on its own ride, and the exit lets them out 0.3 s apart. A ball
      // sitting on the exit holds the next one back until it has moved off.
-    const std::size_t ramp = holeOfType(table::HoleType::Ramp);
+    const std::size_t ramp = table::kRunwayHole;
     const table::Hole& rampHole = table::kHoles[ramp];
     const Vec2 from = rampHole.center + Vec2{12.0F, 30.0F};
     const Vec2 shot{-420.0F, -1300.0F};
@@ -647,7 +716,10 @@ void testSeveralBalls() {
     std::array<int, 2> out{-1, -1};
     int bothRiding = 0;
     int sitter = -1;  // The step at which the third ball left the exit.
-    for (int i = 0; i < 500; ++i) {
+    // The riders are due out after 150 steps and a little; the third ball
+    // sits on the exit until well after that.
+    constexpr int kSitterLeaves = 260;
+    for (int i = 0; i < 560; ++i) {
       if (i == 10) {
         Seam::placeBall(game, 1, from, shot);
       } else if (i < 10) {
@@ -655,7 +727,7 @@ void testSeveralBalls() {
       }
       // The third ball is put on the exit, and held there until well after
       // the second rider is due out.
-      if (i < 200) {
+      if (i < kSitterLeaves) {
         Seam::placeBall(game, 2,
                         i < 100 ? kOpenField + Vec2{-100.0F, -20.0F} : rampHole.exitPosition);
       }
@@ -681,30 +753,31 @@ void testSeveralBalls() {
         CHECK(a.visible && b.visible && a.scale > 1.0F && b.scale > 1.0F);
         CHECK(a.raised && b.raised && !find(now, 2).raised);
         CHECK(find(half, 0).raised && find(half, 1).raised);
-        CHECK(a.position.y < b.position.y);  // The first is further along.
+        // Each at its own place along the rail, never one on the other.
+        CHECK(distance(a.position, b.position) > 2.0F * table::kBallRadius);
         for (std::size_t each = 0; each < 2; ++each) {
           CHECK(distance(find(half, each).position,
                          (find(before, each).position + find(now, each).position) * 0.5F) < 0.01F);
         }
       }
-      if (i >= 200 && sitter < 0 &&
+      if (i >= kSitterLeaves && sitter < 0 &&
           distance(find(now, 2).position, rampHole.exitPosition) >= Game::kHoleExitClearance) {
         sitter = i;
       }
       // A rider kept waiting is drawn at the exit, full size.
-      if (i > 150 && i < 200) {
+      if (i > 180 && i < kSitterLeaves) {
         CHECK(Seam::held(game, 0) && Seam::held(game, 1));
         CHECK(distance(find(now, 0).position, rampHole.exitPosition) < 0.01F);
         CHECK(find(now, 0).scale == 1.0F && find(now, 0).visible);
-        // Still up on the ramp, not on the playfield under the ball there.
+        // Still up on the rail, not on the playfield under the ball there.
         CHECK(find(now, 0).raised && find(now, 1).raised && !find(now, 2).raised);
       }
     }
     CHECK(taken[0] >= 0 && taken[0] < 6 && taken[1] > taken[0] && taken[1] < 16);
     CHECK(game.holeCount(ramp) == 2);
     CHECK(bothRiding > 60);
-    CHECK(sitter >= 200);
-    // Not at 0.9 s: only once the exit was clear, lowest id first, and the
+    CHECK(sitter >= kSitterLeaves);
+    // Not at the end of the ride: only once the exit was clear, lowest id first, and the
     // other 0.3 s later.
     CHECK(out[0] >= sitter && out[0] <= sitter + 1);
     CHECK(out[1] >= out[0] + 36 && out[1] <= out[0] + 40);
@@ -734,7 +807,7 @@ void testSeveralBalls() {
       }
     }
     CHECK(identical);
-    CHECK(added >= 6);
+    CHECK(added >= 4);
   }
 
   {  // Soak with several balls: two minutes of the scripted player, the
@@ -794,8 +867,10 @@ void testSeveralBalls() {
     CHECK(worstStill < 120 * 3);
     CHECK(game.ballSearchCount() == 0);
     CHECK(game.drainCount() >= 12);
-    CHECK(game.bumperHits() > 30);
-    CHECK(holes > 0);
+    // This player's full plunges lap the arch to the left inlane, so the
+    // bumpers see only what its flipping sends into the nest.
+    CHECK(game.bumperHits() > 0);
+    CHECK(holes > 10);
   }
 }
 
@@ -884,14 +959,9 @@ void testGame() {
 
   {  // Through a whole game with a player at the flippers: the picture never
      // shows the ball part-way along a jump (a serve, a hole's return), and
-     // a ball on the ramp is carried in sight from the mouth to the exit.
-    const auto ramp = static_cast<std::size_t>(
-        std::ranges::find(table::kHoles, table::HoleType::Ramp, &table::Hole::type) -
-        table::kHoles.begin());
-    CHECK(ramp < table::kHoles.size());
-    const table::Hole& rampHole = table::kHoles[ramp];
-    // The furthest a ball can travel in a step, plus the first step of a
-    // ramp ride and some slack.
+     // a ball on a ramp is carried in sight along the rail from the mouth
+     // to the exit.
+    // The furthest a ball can travel in a step, plus some slack.
     constexpr float kLongestMove = 3000.0F / 120.0F + 8.0F;
 
     Game game;
@@ -900,11 +970,11 @@ void testGame() {
     std::uint32_t rampRides = 0;
     int hiddenSteps = 0;
     int rideSteps = 0;
-    float rideTop = 0.0F;
-    float rideLastY = 0.0F;
-    bool riding = false;
-    for (std::uint64_t i = 0; i < 120U * 600U && (rampRides < 2 || drains < 3); ++i) {
-      const std::uint32_t rampBefore = game.holeCount(ramp);
+    Vec2 rideLast{};
+    std::size_t ramp = table::kHoles.size();
+    for (std::uint64_t i = 0; i < 120U * 900U && (rampRides < 2 || drains < 3); ++i) {
+      const std::array<std::uint32_t, 2> before{game.holeCount(table::kRunwayHole),
+                                                game.holeCount(table::kSkywayHole)};
       game.step(play(game, i));
       const BallView from = game.ball(0.0F);
       const BallView now = game.ball();
@@ -921,37 +991,38 @@ void testGame() {
       }
       hiddenSteps += now.visible ? 0 : 1;
 
-      if (game.holeCount(ramp) != rampBefore) {
+      const bool taken = game.holeCount(table::kRunwayHole) != before[0] ||
+                         game.holeCount(table::kSkywayHole) != before[1];
+      if (taken) {
+        ramp = game.holeCount(table::kRunwayHole) != before[0] ? table::kRunwayHole
+                                                               : table::kSkywayHole;
+        const table::Hole& hole = table::kHoles[ramp];
         // Taken somewhere across the mouth.
         CHECK(game.ballHeld());
-        CHECK(std::fabs(now.position.x - rampHole.center.x) < table::kRampMouthReach + 2.0F);
-        CHECK(std::fabs(now.position.y - rampHole.center.y) < table::kHoleCaptureRadius + 6.0F);
-        riding = true;
+        CHECK(std::fabs(now.position.x - hole.center.x) < hole.halfSize.x + 6.0F);
+        CHECK(std::fabs(now.position.y - hole.center.y) < hole.halfSize.y + 6.0F);
+        CHECK(now.visible && now.raised);
         rideSteps = 0;
-        rideTop = 1.0F;
-        rideLastY = now.position.y;
-      } else if (riding && game.ballHeld()) {
-        // Always in sight, always moving up the table towards the exit, and
-        // never outside the span between the mouth and the exit.
-        CHECK(now.visible);
-        CHECK(now.position.y < rideLastY);
-        CHECK(now.position.y > rampHole.exitPosition.y - 0.01F);
-        CHECK(now.position.x > rampHole.center.x - table::kRampMouthReach - 2.0F);
-        CHECK(now.position.x < rampHole.center.x + table::kRampMouthReach + 2.0F);
-        CHECK(now.scale >= 1.0F && now.scale <= 1.351F);
-        rideLastY = now.position.y;
-        rideTop = std::max(rideTop, now.scale);
+        rideLast = now.position;
+      } else if (ramp < table::kHoles.size() && game.ballHeld()) {
+        // Always in sight, above the table, and moving steadily along the
+        // rail: never a jump.
+        CHECK(now.visible && now.raised);
+        CHECK(now.scale == Game::kRailScale);
+        CHECK(distance(now.position, rideLast) > 1.0F);
+        CHECK(distance(now.position, rideLast) < 8.0F);
+        rideLast = now.position;
         ++rideSteps;
-      } else if (riding) {
+      } else if (ramp < table::kHoles.size()) {
         // Let go at the exit, full size, and not drawn back along the ride.
-        riding = false;
+        const table::Hole& hole = table::kHoles[ramp];
+        ramp = table::kHoles.size();
         ++rampRides;
-        CHECK(distance(now.position, rampHole.exitPosition) < 2.0F);
-        CHECK(now.scale == 1.0F && now.visible);
+        CHECK(distance(now.position, hole.exitPosition) < 2.0F);
+        CHECK(now.scale == 1.0F && now.visible && !now.raised);
         CHECK(same(game.ball(0.0F), now));
-        CHECK(distance(Vec2{rampHole.exitPosition.x, rideLastY}, rampHole.exitPosition) < 8.0F);
-        CHECK(rideTop > 1.3F);
-        CHECK(rideSteps > 60);
+        CHECK(distance(rideLast, hole.exitPosition) < 8.0F);
+        CHECK(rideSteps > 140);
       }
       captures = 0;
       for (std::size_t h = 0; h < table::kHoles.size(); ++h) {
@@ -980,7 +1051,7 @@ void testGame() {
     pinball::GameTestAccess::placeBall(game, {-500.0F, 300.0F});
     game.step(input);
     CHECK(distance(game.ball().position, table::kBallStart) < 2.0F);
-    CHECK(!game.laneGateClosed());
+    CHECK(!game.rules().ballInPlay());
     CHECK(!game.rules().tilted());
     CHECK(game.drainCount() == 0);
     CHECK(game.rules().ball() == 1);
@@ -1001,51 +1072,36 @@ void testGame() {
     bool launched = false;
     for (int i = 0; i < 360 && !launched; ++i) {
       game.step(input);
-      launched = game.laneGateClosed();
+      launched = game.rules().ballInPlay();
     }
     CHECK(launched);
   }
 
-  {  // In play means on the playfield, wherever that is. The right-hand
-     // channel (hyperspace chute, booster targets, right outlane) lies
-     // between the lane wall and the line the gate used to wait for.
-    const Vec2 channel[] = {
-        {650.0F, 500.0F}, {table::kHyperspace.x + 4.0F, 420.0F}, {646.0F, 680.0F}};
-    for (const Vec2 place : channel) {
+  {  // In play means out of the launch channel, wherever that is: past the
+     // top of the arch, in the right circuit lane below the one-way arch, or
+     // anywhere on the field.
+    const Vec2 field[] = {{300.0F, 100.0F}, {600.0F, 400.0F}, {450.0F, 500.0F}};
+    for (const Vec2 place : field) {
       Game game;
       const InputState input;
       game.step(input);
-      CHECK(!game.rules().ballInPlay() && !game.laneGateClosed());
-      CHECK(place.x >= table::kLaneGateCloseX);
+      CHECK(!game.rules().ballInPlay() && !game.ballInPlay(0));
       pinball::GameTestAccess::placeBall(game, place);
       game.step(input);
-      CHECK(game.rules().ballInPlay());
-      CHECK(game.laneGateClosed());
+      CHECK(game.rules().ballInPlay() && game.ballInPlay(0));
       CHECK(game.rules().ballSaveActive());
     }
   }
 
-  {  // A ball taken by the hyperspace chute straight from the launch is in
-     // play by the time it scores: the gate is shut and the ball save is on
-     // while the chute holds it.
+  {  // Anything the ball can touch is on the playfield, so the first thing
+     // it touches puts it in play even where the place alone does not say
+     // so: a ball that turns up in the right outlane and drains gets the
+     // ball save.
     Game game;
     const InputState input;
-    pinball::GameTestAccess::placeBall(game, {table::kHyperspace.x + 5.0F, 425.0F});
-    bool taken = false;
-    for (int i = 0; i < 240 && !taken; ++i) {
-      game.step(input);
-      taken = game.ballHeld();
-      CHECK(game.rules().score() == 0 || game.rules().ballInPlay());
-    }
-    CHECK(taken);
-    CHECK(game.rules().score() > 0);
-    CHECK(game.rules().ballInPlay() && game.laneGateClosed());
-  }
-
-  {  // A right-outlane drain straight from the launch gets the ball save.
-    Game game;
-    const InputState input;
-    pinball::GameTestAccess::placeBall(game, {646.0F, 760.0F});
+    const Vec2 outlane = table::mirrored(table::kLeftOutlane);
+    CHECK(!table::inPlayArea(outlane));
+    pinball::GameTestAccess::placeBall(game, {outlane.x, outlane.y - 16.0F});
     for (int i = 0; i < 600 && game.drainCount() == 0; ++i) {
       game.step(input);
     }
@@ -1054,14 +1110,13 @@ void testGame() {
     CHECK(game.rules().message() == std::string_view("BALL SAVED"));
   }
 
-  {  // A ball still in the lane, or passing the open gate, is not in play,
-     // and the gate does not shut on it.
+  {  // A ball still in the lane, or riding the launch curve and the arch
+     // towards the top, is not in play.
     const Vec2 lane[] = {table::kBallStart,
                          {table::kLaneCenterX, 500.0F},
                          {table::kLaneCenterX, table::kLaneWallTopY - 20.0F},
-                         {table::kLaneWallX + 2.0F, 180.0F},
-                         {table::kLaneWallX - 14.0F, table::kLaneWallTopY - 30.0F},
-                         {table::kLaneGateCloseX + 1.0F, 200.0F}};
+                         {650.0F, 190.0F},
+                         {table::kInPlayX + 1.0F, 100.0F}};
     for (const Vec2 place : lane) {
       Game game;
       const InputState input;
@@ -1070,7 +1125,7 @@ void testGame() {
       game.step(input);
       CHECK(distance(before, game.ball().position) < 3.0F);
       CHECK(!game.rules().ballInPlay());
-      CHECK(!game.laneGateClosed());
+      CHECK(!game.rules().ballInPlay());
       CHECK(!game.rules().ballSaveActive());
     }
     // Waiting on the plunger for a long time changes nothing.
@@ -1079,7 +1134,7 @@ void testGame() {
     for (int i = 0; i < 1200; ++i) {
       game.step(input);
     }
-    CHECK(!game.rules().ballInPlay() && !game.laneGateClosed());
+    CHECK(!game.rules().ballInPlay() && !game.rules().ballInPlay());
   }
 
   {  // A tilted or finished table is dead: hits that do not score make no
@@ -1112,7 +1167,7 @@ void testGame() {
       }
       const std::uint64_t scoreBefore = game.rules().score();
       const std::uint32_t hitsBefore = game.bumperHits();
-      // Dropped through the middle re-entry lane onto the top attack bumper,
+      // Dropped through the middle roll call lane onto the centre bumper,
       // and left to rattle around for a while.
       pinball::GameTestAccess::placeBall(game, {table::kFieldCenterX + 3.0F, 140.0F});
       pinball::SoundSet heard = 0;

@@ -9,7 +9,6 @@
 #include <cstdio>
 #include <ranges>
 #include <span>
-#include <vector>
 
 #include "core/OverlayLayout.hpp"
 #include "core/PanelLayout.hpp"
@@ -40,30 +39,13 @@ void triangle(const table::Triangle& t) {
   std::printf("]");
 }
 
-const char* name(table::BumperGroup g) {
-  switch (g) {
-    using enum table::BumperGroup;
-    case Attack:
-      return "attack";
-    case Engine:
-      return "engine";
-    case Satellite:
-      return "satellite";
-  }
-  return "unknown";
-}
-
-const char* name(table::TargetBank b) {
-  switch (b) {
-    using enum table::TargetBank;
-    case Booster:
-      return "booster";
-    case Medal:
-      return "medal";
-    case Mission:
-      return "mission";
-    case Multiplier:
-      return "multiplier";
+const char* name(table::TargetId id) {
+  switch (id) {
+    using enum table::TargetId;
+    case NestLeft:
+      return "nestLeft";
+    case NestRight:
+      return "nestRight";
   }
   return "unknown";
 }
@@ -71,8 +53,8 @@ const char* name(table::TargetBank b) {
 const char* name(table::RolloverGroup g) {
   switch (g) {
     using enum table::RolloverGroup;
-    case ReEntry:
-      return "reentry";
+    case TopLane:
+      return "rollCall";
     case Outlane:
       return "outlane";
     case Inlane:
@@ -84,14 +66,14 @@ const char* name(table::RolloverGroup g) {
 const char* name(table::HoleType t) {
   switch (t) {
     using enum table::HoleType;
-    case Wormhole:
-      return "wormhole";
-    case BlackHole:
-      return "blackhole";
-    case Hyperspace:
-      return "hyperspace";
-    case Ramp:
-      return "ramp";
+    case Scoop:
+      return "scoop";
+    case Hangar:
+      return "hangar";
+    case RampLeft:
+      return "rampLeft";
+    case RampRight:
+      return "rampRight";
   }
   return "unknown";
 }
@@ -279,14 +261,6 @@ int main() {
               static_cast<double>(table::kFlipperLength),
               static_cast<double>(table::kFlipperBaseRadius),
               static_cast<double>(table::kFlipperTipRadius));
-  std::printf("  \"hole\": {\"radius\": %.1f},\n", static_cast<double>(table::kHoleRadius));
-  std::printf("  \"fuelLights\": {\"radius\": %.1f, \"centers\": [",
-              static_cast<double>(table::kFuelLightRadius));
-  for (std::size_t i = 0; i < table::kFuelLightCount; ++i) {
-    point(table::fuelLight(i));
-    std::printf(i + 1 < table::kFuelLightCount ? ", " : "");
-  }
-  std::printf("]},\n");
   std::printf("  \"panel\": {\"left\": %.1f, \"width\": %.1f, \"height\": %.1f, \"wells\": [",
               static_cast<double>(panel::kLeft), static_cast<double>(panel::kWidth),
               static_cast<double>(panel::kHeight));
@@ -300,22 +274,34 @@ int main() {
   }
   std::printf("]},\n");
   screenLayouts();
-  std::printf("  \"rampExit\": ");
-  point(table::kRampExit);
-  // The ramp's mouth: a strip this far either side of the ramp hole's
-  // centre, facing down and to the right by at least this lean (dx/dy).
-  std::printf(",\n  \"rampMouth\": {\"reach\": %.1f, \"minLeftLean\": %.2f}",
-              static_cast<double>(table::kRampMouthReach),
-              static_cast<double>(table::kRampMinLeftLean));
-  std::printf(",\n  \"laneGate\": ");
-  capsule(table::kLaneGate);
-  std::printf(",\n  \"medalIsland\": ");
-  triangle(table::kMedalIsland);
-  std::printf(",\n");
+  // Where a ball has left the launch channel, for anyone drawing the lane.
+  std::printf("  \"arch\": {\"center\": ");
+  point(table::kArchCenter);
+  std::printf(", \"radiusX\": %.1f, \"radiusY\": %.1f},\n",
+              static_cast<double>(table::kArchRadiusX), static_cast<double>(table::kArchRadiusY));
+  std::printf("  \"ramp\": {\"minUpwardSpeed\": %.1f, \"rideSeconds\": %.2f},\n",
+              static_cast<double>(table::kRampMinUpwardSpeed), table::kRampRideSeconds);
+  std::printf("  \"spinner\": {\"a\": ");
+  point(table::kSpinner.a);
+  std::printf(", \"b\": ");
+  point(table::kSpinner.b);
+  std::printf("},\n  \"kickback\": {\"c\": ");
+  point(table::kKickbackZone.center);
+  std::printf(", \"r\": %.1f},\n", static_cast<double>(table::kKickbackZone.radius));
+  std::printf("  \"lampSizes\": {\"arrowLength\": %.1f, \"course\": %.1f, \"status\": %.1f},\n",
+              static_cast<double>(table::kArrowLampLength),
+              static_cast<double>(table::kCourseLampDiameter),
+              static_cast<double>(table::kStatusLampDiameter));
 
-  const std::vector<Vec2> shell = table::outerBoundary();
-  list("shell", shell, [](Vec2 p) { point(p); });
-  list("walls", table::kWalls, [](const table::Capsule& c) { capsule(c); });
+  // The three chains. "innerArch" and the vanes are one-sided and open: the
+  // first and last points of each are ghosts, not part of the wall.
+  list("shell", table::kShell, [](Vec2 p) { point(p); });
+  list("laneIsland", table::kLaneIsland, [](Vec2 p) { point(p); });
+  list("innerArch", table::kInnerArch, [](Vec2 p) { point(p); });
+  list("slingVaneLeft", table::kSlingVaneLeft, [](Vec2 p) { point(p); });
+  list("slingVaneRight", table::kSlingVaneRight, [](Vec2 p) { point(p); });
+  list("walls", table::kAllWalls, [](const table::Capsule& c) { capsule(c); });
+  list("deadPosts", table::kDeadPosts, [](const table::Capsule& c) { capsule(c); });
   list("slingshots", table::kSlingshots, [](const table::Triangle& t) { triangle(t); });
   list("flippers", table::kFlippers, [](const table::Flipper& f) {
     std::printf("{\"pivot\": ");
@@ -326,26 +312,46 @@ int main() {
   list("bumpers", table::kBumpers, [](const table::Bumper& b) {
     std::printf("{\"c\": ");
     point(b.shape.center);
-    std::printf(", \"r\": %.1f, \"group\": \"%s\"}", static_cast<double>(b.shape.radius),
-                name(b.group));
+    std::printf(", \"r\": %.1f}", static_cast<double>(b.shape.radius));
   });
   list("targets", table::kTargets, [](const table::Target& t) {
     std::printf("{\"shape\": ");
     capsule(t.shape);
-    std::printf(", \"bank\": \"%s\"}", name(t.bank));
+    std::printf(", \"id\": \"%s\"}", name(t.id));
   });
+  list("bayDoors", table::kDropTargets, [](const table::Capsule& c) { capsule(c); });
+  list("lockBays", table::kLockBays, [](Vec2 p) { point(p); });
   list("rollovers", table::kRollovers, [](const table::Rollover& r) {
+    const Vec2 half = table::rolloverHalfSize(r);
     std::printf("{\"c\": ");
     point(r.zone.center);
-    std::printf(", \"r\": %.1f, \"group\": \"%s\"}", static_cast<double>(r.zone.radius),
-                name(r.group));
+    std::printf(", \"r\": %.1f, \"halfSize\": ", static_cast<double>(r.zone.radius));
+    point(half);
+    std::printf(", \"group\": \"%s\"}", name(r.group));
   });
+  list("holes", table::kHoles, [](const table::Hole& h) {
+    std::printf("{\"c\": ");
+    point(h.center);
+    std::printf(", \"halfSize\": ");
+    point(h.halfSize);
+    std::printf(", \"type\": \"%s\", \"exit\": ", name(h.type));
+    point(h.exitPosition);
+    std::printf(", \"exitVelocity\": ");
+    point(h.exitVelocity);
+    std::printf("}");
+  });
+  list("runwayRail", table::kRunwayRail, [](Vec2 p) { point(p); });
+  list("skywayRail", table::kSkywayRail, [](Vec2 p) { point(p); });
+  // Lamps in LampId order; "kind" is arrow, course or status.
   list(
-      "holes", table::kHoles,
-      [](const table::Hole& h) {
-        std::printf("{\"c\": ");
-        point(h.center);
-        std::printf(", \"type\": \"%s\"}", name(h.type));
+      "lamps", table::kLamps,
+      [](const table::Lamp& lamp) {
+        std::printf("{\"id\": %d, \"kind\": \"%s\", \"c\": ", static_cast<int>(lamp.id),
+                    table::isArrowLamp(lamp.id)
+                        ? "arrow"
+                        : (table::isCourseLamp(lamp.id) ? "course" : "status"));
+        point(lamp.position);
+        std::printf("}");
       },
       true);
   std::printf("}\n");

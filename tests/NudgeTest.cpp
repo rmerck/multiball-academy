@@ -31,7 +31,7 @@ void launch(Game& game) {
     game.step(input);
   }
   input.plunger = false;
-  for (int i = 0; i < 600 && !game.laneGateClosed(); ++i) {
+  for (int i = 0; i < 600 && !game.rules().ballInPlay(); ++i) {
     game.step(input);
   }
 }
@@ -65,12 +65,12 @@ void testNudge() {
     CHECK(rules.tiltWarning() < 0.05);
   }
 
-  {  // While tilted nothing scores, the end-of-ball bonus is lost, no ball
-     // save applies, and the next ball starts clean.
+  {  // While tilted nothing scores, no ball save applies, and the next ball
+     // starts clean.
     Rules rules(kStep);
     rules.onBumper(0);
     const std::uint64_t before = rules.score();
-    CHECK(rules.bonus() > 0);
+    CHECK(before > 0);
     rules.onBallInPlay();
     rules.onNudge();
     rules.onNudge();
@@ -79,6 +79,7 @@ void testNudge() {
     CHECK(!rules.ballSaveActive());
     rules.onBumper(0);
     rules.onTarget(0);
+    rules.onDropTarget(0);
     rules.onRollover(0);
     rules.onHole(0);
     rules.onSlingshot(0);
@@ -87,7 +88,7 @@ void testNudge() {
     CHECK(rules.tilted());
     CHECK(rules.message() == std::string_view("TILT"));  // Stays up.
     CHECK(rules.onDrain() == Rules::DrainResult::NextBall);
-    CHECK(rules.score() == before);  // Bonus forfeited.
+    CHECK(rules.score() == before);
     CHECK(!rules.tilted());
     CHECK(rules.tiltWarning() == 0.0);
     rules.onBumper(0);
@@ -200,7 +201,7 @@ void testNudge() {
     }
     CHECK(!game.rules().tilted());
     launch(game);
-    CHECK(game.laneGateClosed());
+    CHECK(game.rules().ballInPlay());
   }
 
   {  // A tilt never outlives its ball, and a tilted ball is not saved: tilt

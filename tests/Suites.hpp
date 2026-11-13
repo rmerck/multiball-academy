@@ -22,5 +22,6 @@ void testScreenLayout();
 void testSha256();
 void testMusic();
 void testSound();
+void testTableGeometry();
 void testTargets();
 void testTouchControls();

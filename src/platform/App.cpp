@@ -586,7 +586,7 @@ void App::recordFinishedGame() {
   if (over && !wasGameOver_) {
     // The game has just ended: enter it in the table if it made it.
     const HighScore entry{game_.rules().score(),
-                          static_cast<std::uint8_t>(game_.rules().missions().rank())};
+                          static_cast<std::uint8_t>(game_.rules().rank())};
     if (!highScores_.qualifies(entry.score)) {
       newHighScore_ = false;
     } else if (options_.frameLimit) {

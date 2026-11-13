@@ -9,6 +9,7 @@
 #include <span>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "core/AssetManifest.hpp"
 #include "core/TableLayout.hpp"
@@ -42,35 +43,234 @@ Uint8 toByte(float unit) noexcept {
   return static_cast<Uint8>(std::min(unit, 1.0F) * 255.0F + 0.5F);
 }
 
-// Where a target's bar sprite goes. The targets never move, so this is worked
-// out once instead of every frame.
-struct TargetSprite {
+// Where a bar sprite goes: the turbo targets, then the bay doors. They never
+// move, so this is worked out once instead of every frame.
+struct BarSprite {
   SDL_FRect dst;
-  Vec2 mid;
-  float length;
   double angleDegrees;
 };
+constexpr std::size_t kBarCount = table::kTargets.size() + table::kDropTargets.size();
 
-std::array<TargetSprite, table::kTargets.size()> makeTargetSprites() noexcept {
-  std::array<TargetSprite, table::kTargets.size()> sprites{};
+std::array<BarSprite, kBarCount> makeBarSprites() noexcept {
+  std::array<BarSprite, kBarCount> sprites{};
   for (std::size_t i = 0; i < sprites.size(); ++i) {
-    const Vec2 a = table::kTargets[i].shape.a;
-    const Vec2 b = table::kTargets[i].shape.b;
+    const table::Capsule& shape = i < table::kTargets.size()
+                                      ? table::kTargets[i].shape
+                                      : table::kDropTargets[i - table::kTargets.size()];
+    const Vec2 a = shape.a;
+    const Vec2 b = shape.b;
     const Vec2 mid = (a + b) * 0.5F;
     const float length = std::sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
-    // Stretch the bar sprite to the target's own length.
+    // Stretch the bar sprite to the bar's own length.
     const float spriteWidth = (kBarSpriteLength + 2.0F * (kBarSpriteRadius + kBarSpriteMargin)) *
                               (length / kBarSpriteLength);
     const float spriteHeight = 2.0F * (kBarSpriteRadius + kBarSpriteMargin);
     sprites[i] = {
         .dst = {mid.x - spriteWidth * 0.5F, mid.y - spriteHeight * 0.5F, spriteWidth,
                 spriteHeight},
-        .mid = mid,
-        .length = length,
         .angleDegrees =
             static_cast<double>(std::atan2(b.y - a.y, b.x - a.x) * kRadiansToDegrees)};
   }
   return sprites;
+}
+
+// --- The table drawn from its layout -------------------------------------------------
+// Plain colours, no art: what a build shows until the playfield art for the
+// layout exists. Everything is turned into triangles once.
+
+constexpr SDL_FColor rgb(int r, int g, int b) noexcept {
+  return {static_cast<float>(r) / 255.0F, static_cast<float>(g) / 255.0F,
+          static_cast<float>(b) / 255.0F, 1.0F};
+}
+constexpr SDL_FColor kOutsideColor = rgb(10, 0, 26);    // Off the playfield.
+constexpr SDL_FColor kFieldColor = rgb(36, 27, 74);     // Where the ball rolls.
+constexpr SDL_FColor kWallColor = rgb(40, 210, 200);    // Walls and guides: teal.
+constexpr SDL_FColor kDeadColor = rgb(176, 176, 190);   // Dead posts and vanes: metal.
+constexpr SDL_FColor kSlingColor = rgb(232, 60, 150);   // Slingshots: hot pink.
+constexpr SDL_FColor kSwitchColor = rgb(90, 255, 180);  // Rollover strips.
+constexpr SDL_FColor kHoleColor = rgb(255, 150, 40);    // Scoop and hangar boxes.
+constexpr SDL_FColor kRampColor = rgb(255, 225, 70);    // Ramp mouths and rails.
+constexpr SDL_FColor kLampColor = rgb(120, 96, 176);    // Unlit lamps.
+constexpr SDL_FColor kMarkColor = rgb(84, 64, 132);     // Spinner, kickback, lock bays.
+
+class Mesh {
+ public:
+  explicit Mesh(std::vector<SDL_Vertex>& out) noexcept : out_(out) {}
+
+  void triangle(Vec2 a, Vec2 b, Vec2 c, SDL_FColor color) {
+    for (const Vec2 p : {a, b, c}) {
+      out_.push_back({{p.x, p.y}, color, {0.0F, 0.0F}});
+    }
+  }
+  // A filled circle as a fan.
+  void disc(Vec2 centre, float radius, SDL_FColor color) {
+    constexpr int kSides = 20;
+    Vec2 previous{centre.x + radius, centre.y};
+    for (int i = 1; i <= kSides; ++i) {
+      const float angle = 2.0F * table::kPi * static_cast<float>(i) / static_cast<float>(kSides);
+      const Vec2 next{centre.x + radius * std::cos(angle), centre.y + radius * std::sin(angle)};
+      triangle(centre, previous, next, color);
+      previous = next;
+    }
+  }
+  // A straight line of a width, square ended.
+  void line(Vec2 a, Vec2 b, float width, SDL_FColor color) {
+    const Vec2 d = b - a;
+    const float length = std::sqrt(d.x * d.x + d.y * d.y);
+    if (!(length > 0.0F)) {
+      return;
+    }
+    const Vec2 n{-d.y / length * width * 0.5F, d.x / length * width * 0.5F};
+    triangle(a + n, b + n, b - n, color);
+    triangle(a + n, b - n, a - n, color);
+  }
+  // A thick line with round ends: a wall as the physics has it.
+  void capsule(const table::Capsule& c, SDL_FColor color) {
+    line(c.a, c.b, 2.0F * c.radius, color);
+    disc(c.a, c.radius, color);
+    disc(c.b, c.radius, color);
+  }
+  void polyline(std::span<const Vec2> points, float width, SDL_FColor color, bool closed) {
+    for (std::size_t i = 0; i + 1 < points.size(); ++i) {
+      line(points[i], points[i + 1], width, color);
+      disc(points[i + 1], width * 0.5F, color);
+    }
+    if (closed && points.size() > 2) {
+      line(points.back(), points.front(), width, color);
+      disc(points.front(), width * 0.5F, color);
+    }
+  }
+  // The outline of a box.
+  void box(Vec2 centre, Vec2 half, float width, SDL_FColor color) {
+    const std::array<Vec2, 4> corners{{{centre.x - half.x, centre.y - half.y},
+                                       {centre.x + half.x, centre.y - half.y},
+                                       {centre.x + half.x, centre.y + half.y},
+                                       {centre.x - half.x, centre.y + half.y}}};
+    polyline(corners, width, color, true);
+  }
+  void ring(Vec2 centre, float radius, float width, SDL_FColor color) {
+    constexpr int kSides = 20;
+    std::array<Vec2, kSides> points{};
+    for (int i = 0; i < kSides; ++i) {
+      const float angle = 2.0F * table::kPi * static_cast<float>(i) / static_cast<float>(kSides);
+      points[static_cast<std::size_t>(i)] = {centre.x + radius * std::cos(angle),
+                                             centre.y + radius * std::sin(angle)};
+    }
+    polyline(points, width, color, true);
+  }
+  // A simple polygon, filled, by clipping ears. Either winding.
+  void polygon(std::span<const Vec2> outline, SDL_FColor color) {
+    std::vector<Vec2> points(outline.begin(), outline.end());
+    const auto cross = [](Vec2 o, Vec2 a, Vec2 b) {
+      return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    };
+    float doubleArea = 0.0F;
+    for (std::size_t i = 0; i < points.size(); ++i) {
+      const Vec2 a = points[i];
+      const Vec2 b = points[(i + 1) % points.size()];
+      doubleArea += a.x * b.y - b.x * a.y;
+    }
+    const float turn = doubleArea >= 0.0F ? 1.0F : -1.0F;
+    while (points.size() > 3) {
+      bool clipped = false;
+      for (std::size_t i = 0; i < points.size() && !clipped; ++i) {
+        const Vec2 a = points[(i + points.size() - 1) % points.size()];
+        const Vec2 b = points[i];
+        const Vec2 c = points[(i + 1) % points.size()];
+        if (cross(a, b, c) * turn <= 0.0F) {
+          continue;  // A reflex corner is not an ear.
+        }
+        bool empty = true;
+        for (const Vec2 p : points) {
+          const bool corner = (p.x == a.x && p.y == a.y) || (p.x == b.x && p.y == b.y) ||
+                              (p.x == c.x && p.y == c.y);
+          if (!corner && cross(a, b, p) * turn >= 0.0F && cross(b, c, p) * turn >= 0.0F &&
+              cross(c, a, p) * turn >= 0.0F) {
+            empty = false;
+            break;
+          }
+        }
+        if (empty) {
+          triangle(a, b, c, color);
+          points.erase(points.begin() + static_cast<std::ptrdiff_t>(i));
+          clipped = true;
+        }
+      }
+      if (!clipped) {
+        return;  // Not a simple polygon: leave the rest unfilled.
+      }
+    }
+    if (points.size() == 3) {
+      triangle(points[0], points[1], points[2], color);
+    }
+  }
+
+ private:
+  std::vector<SDL_Vertex>& out_;
+};
+
+std::vector<SDL_Vertex> makePlayfieldMesh() {
+  std::vector<SDL_Vertex> vertices;
+  Mesh mesh(vertices);
+  constexpr float kChainWidth = 4.0F;
+
+  // The field inside the shell, with the lane island cut back out of it.
+  mesh.polygon(table::kShell, kFieldColor);
+  mesh.polygon(table::kLaneIsland, kOutsideColor);
+  mesh.polyline(table::kShell, kChainWidth, kWallColor, true);
+  mesh.polyline(table::kLaneIsland, kChainWidth, kWallColor, true);
+  // The inner arch without its ghost points; the vanes likewise.
+  mesh.polyline(std::span(table::kInnerArch).subspan(1, table::kInnerArch.size() - 2), kChainWidth,
+                kWallColor, false);
+  for (const auto& vane : {table::kSlingVaneLeft, table::kSlingVaneRight}) {
+    mesh.polyline(std::span(vane).subspan(1, vane.size() - 2), 2.0F, kDeadColor, false);
+  }
+
+  // Marks under everything that stands on the table: lamps, switches, the
+  // boxes that take the ball, the rails.
+  for (const table::Lamp& lamp : table::kLamps) {
+    const Vec2 at = lamp.position;
+    if (table::isArrowLamp(lamp.id)) {
+      // An arrow pointing up the table at its shot.
+      const float half = table::kArrowLampLength * 0.5F;
+      mesh.triangle({at.x, at.y - half}, {at.x + half * 0.7F, at.y + half},
+                    {at.x - half * 0.7F, at.y + half}, kLampColor);
+    } else {
+      const float radius = (table::isCourseLamp(lamp.id) ? table::kCourseLampDiameter
+                                                          : table::kStatusLampDiameter) *
+                           0.5F;
+      mesh.disc(at, radius, kLampColor);
+    }
+  }
+  for (const table::Rollover& rollover : table::kRollovers) {
+    mesh.box(rollover.zone.center, table::rolloverHalfSize(rollover), 2.0F, kSwitchColor);
+  }
+  for (const Vec2 bay : table::kLockBays) {
+    mesh.ring(bay, table::kBallRadius, 2.0F, kMarkColor);
+  }
+  for (const table::Hole& hole : table::kHoles) {
+    const bool ramp = table::isRamp(hole.type);
+    mesh.box(hole.center, hole.halfSize, 2.0F, ramp ? kRampColor : kHoleColor);
+    if (ramp) {
+      mesh.polyline(table::rampRail(hole.type), 3.0F, kRampColor, false);
+    }
+    // Where the ball comes back.
+    mesh.ring(hole.exitPosition, 5.0F, 2.0F, ramp ? kRampColor : kHoleColor);
+  }
+  mesh.line(table::kSpinner.a, table::kSpinner.b, 3.0F, kMarkColor);
+  mesh.ring(table::kKickbackZone.center, table::kKickbackZone.radius, 2.0F, kMarkColor);
+
+  for (const table::Capsule& wall : table::kAllWalls) {
+    mesh.capsule(wall, kWallColor);
+  }
+  for (const table::Capsule& post : table::kDeadPosts) {
+    mesh.capsule(post, kDeadColor);
+  }
+  for (const table::Triangle& sling : table::kSlingshots) {
+    mesh.triangle(sling.points[0], sling.points[1], sling.points[2], kSlingColor);
+    mesh.polyline(sling.points, 2.0F * sling.cornerRadius, kSlingColor, true);
+  }
+  return vertices;
 }
 
 }  // namespace
@@ -83,7 +283,20 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   }
   // A missing or damaged asset is fatal: fail at startup, not mid-game.
   Textures t;
-  t.background = assets.loadTexture(renderer, "table/background.png");
+  // Art that may not have been drawn yet. One the manifest lists must load
+  // like any other; one it does not list is simply not there.
+  bool failed = false;
+  const auto optional = [&](std::string_view name) -> TexturePtr {
+    if (findAsset(embeddedAssets(), name) == nullptr) {
+      return nullptr;
+    }
+    TexturePtr texture = assets.loadTexture(renderer, name);
+    failed = failed || !texture;
+    return texture;
+  };
+  // The playfield art belongs to one layout of the table. A build without
+  // it draws the table from the layout itself.
+  t.background = optional("table/background.png");
   t.ball = assets.loadTexture(renderer, "sprites/ball.png");
   t.flipper = assets.loadTexture(renderer, "sprites/flipper.png");
   t.bumper = assets.loadTexture(renderer, "sprites/bumper.png");
@@ -91,22 +304,11 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   t.bar = assets.loadTexture(renderer, "sprites/bar.png");
   t.plunger = assets.loadTexture(renderer, "sprites/plunger.png");
   t.panel = assets.loadTexture(renderer, "ui/panel.png");
-  if (!t.background || !t.ball || !t.flipper || !t.bumper || !t.glow || !t.bar || !t.plunger ||
+  if (failed || !t.ball || !t.flipper || !t.bumper || !t.glow || !t.bar || !t.plunger ||
       !t.panel) {
     return nullptr;
   }
   if (set == TextureSet::All) {
-    // Art that may not have been drawn yet. One the manifest lists must
-    // load like any other; one it does not list is simply not there.
-    bool failed = false;
-    const auto optional = [&](std::string_view name) -> TexturePtr {
-      if (findAsset(embeddedAssets(), name) == nullptr) {
-        return nullptr;
-      }
-      TexturePtr texture = assets.loadTexture(renderer, name);
-      failed = failed || !texture;
-      return texture;
-    };
     t.strip = optional("ui/strip.png");
     t.deck = optional("ui/deck.png");
     t.backdrop = optional("ui/backdrop.png");
@@ -122,7 +324,9 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
     }
   }
   // The background is opaque: skip blending for the largest draw of the frame.
-  SDL_SetTextureBlendMode(t.background.get(), SDL_BLENDMODE_NONE);
+  if (t.background) {
+    SDL_SetTextureBlendMode(t.background.get(), SDL_BLENDMODE_NONE);
+  }
   SDL_SetTextureBlendMode(t.panel.get(), SDL_BLENDMODE_NONE);
   // The glow is additive everywhere except the ball's shadow, which switches
   // it for one draw and switches it back.
@@ -130,7 +334,20 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   return std::unique_ptr<TableRenderer>(new TableRenderer(std::move(t)));
 }
 
-TableRenderer::TableRenderer(Textures textures) : textures_(std::move(textures)) {}
+TableRenderer::TableRenderer(Textures textures) : textures_(std::move(textures)) {
+  if (!textures_.background) {
+    playfield_ = makePlayfieldMesh();
+  }
+}
+
+void TableRenderer::drawPlayfield(SDL_Renderer* r) const {
+  const SDL_FRect whole{0.0F, 0.0F, table::kWidth, table::kHeight};
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+  SDL_SetRenderDrawColor(r, 10, 0, 26, SDL_ALPHA_OPAQUE);
+  SDL_RenderFillRect(r, &whole);
+  SDL_RenderGeometry(r, nullptr, playfield_.data(), static_cast<int>(playfield_.size()), nullptr,
+                     0);
+}
 
 void TableRenderer::drawGlow(SDL_Renderer* r, Vec2 center, float radius, Rgb color,
                              float strength) const {
@@ -144,72 +361,12 @@ void TableRenderer::drawGlow(SDL_Renderer* r, Vec2 center, float radius, Rgb col
   SDL_RenderTexture(r, glow, nullptr, &dst);
 }
 
-void TableRenderer::drawLights(SDL_Renderer* r, const Game& game) const {
-  const Rules& rules = game.rules();
-  const MissionControl& missions = rules.missions();
-  const bool blinkOn = (game.stepCount() / 30U) % 2U == 0U;
-
-  // Fuel gauge: lit from the bottom up, green fading to red as it empties.
-  const int fuel = missions.fuelLights();
-  for (std::size_t i = 0; i < table::kFuelLightCount; ++i) {
-    // Light 0 is the top of the column and the last to go out when full.
-    const int rank = static_cast<int>(table::kFuelLightCount - i);
-    if (rank <= fuel) {
-      const float t = static_cast<float>(i) / static_cast<float>(table::kFuelLightCount - 1);
-      // Laser yellow at the top of the column, hot pink at the bottom.
-      const Vec2 at = table::fuelLight(i);
-      drawGlow(r, at, 24.0F,
-               {255, static_cast<Uint8>(235.0F - 190.0F * t), static_cast<Uint8>(60.0F + 95.0F * t)},
-               0.95F);
-      drawGlow(r, at, 10.0F, {255, 255, 255}, 0.6F);
-    }
-  }
-
-  // A selected mission waits on the ramp: pulse the whole width of its mouth.
-  if (missions.phase() == MissionControl::Phase::Selected && blinkOn) {
-    for (const float side : {-1.0F, 0.0F, 1.0F}) {
-      const Vec2 at{table::kRampEntry.x + side * table::kRampMouthReach * 0.62F,
-                    table::kRampEntry.y};
-      drawGlow(r, at, 40.0F, {255, 140, 40}, 0.8F);
-      drawGlow(r, at, 16.0F, {255, 240, 200}, 0.55F);
-    }
-  }
-
-  std::size_t lane = 0;
-  for (const table::Rollover& rollover : table::kRollovers) {
-    switch (rollover.group) {
-      using enum table::RolloverGroup;
-      case ReEntry:
-        if (rules.laneLit(lane)) {
-          drawGlow(r, rollover.zone.center, 28.0F, {77, 255, 178}, 0.95F);
-          drawGlow(r, rollover.zone.center, 11.0F, {255, 255, 255}, 0.55F);
-        }
-        ++lane;
-        break;
-      case Outlane:
-        if (rules.bonusLaneLit()) {
-          drawGlow(r, rollover.zone.center, 28.0F, {255, 41, 153}, 0.95F);
-          drawGlow(r, rollover.zone.center, 11.0F, {255, 255, 255}, 0.55F);
-        }
-        break;
-      case Inlane:
-        break;
-    }
-  }
-}
-
 void TableRenderer::drawBumpers(SDL_Renderer* r, const Game& game) const {
   SDL_Texture* const cap = textures_.bumper.get();
   for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
     const table::Bumper& bumper = table::kBumpers[i];
-    // Hot pink attack bumpers, cyan engines, a laser yellow satellite. These
-    // match the rims drawn by tools/gimp/make_table.py.
-    Rgb color{255, 50, 160};
-    if (bumper.group == table::BumperGroup::Engine) {
-      color = {40, 232, 255};
-    } else if (bumper.group == table::BumperGroup::Satellite) {
-      color = {255, 235, 60};
-    }
+    // The thrusters are all one colour.
+    const Rgb color{40, 232, 255};
     const float flash = game.bumperFlash(i);
 
     // The cap pops slightly when struck.
@@ -229,79 +386,36 @@ void TableRenderer::drawBumpers(SDL_Renderer* r, const Game& game) const {
   }
 }
 
-void TableRenderer::drawTargets(SDL_Renderer* r, const Game& game) const {
+void TableRenderer::drawTargets(SDL_Renderer* r) const {
   SDL_Texture* const bar = textures_.bar.get();
-  static const std::array<TargetSprite, table::kTargets.size()> kSprites = makeTargetSprites();
-  std::size_t missionTargetsSeen = 0;
-  for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
-    const table::Target& target = table::kTargets[i];
-    Rgb color{255, 150, 40};  // Booster: orange.
-    switch (target.bank) {
-      case table::TargetBank::Medal:
-        color = {40, 235, 255};  // Cyan.
-        break;
-      case table::TargetBank::Mission:
-        color = {255, 50, 230};  // Magenta.
-        break;
-      case table::TargetBank::Multiplier:
-        color = {77, 255, 178};  // Mint.
-        break;
-      case table::TargetBank::Booster:
-        break;
-    }
-    bool lit = game.targetLit(i);
-    if (target.bank == table::TargetBank::Mission) {
-      // The mission bank shows the choice instead: the chosen target (or all
-      // three for the special mission) blinks until the mission is accepted
-      // and stays lit while it runs.
-      const MissionControl& missions = game.rules().missions();
-      if (missions.phase() != MissionControl::Phase::Idle) {
-        const bool chosen = missions.missionIndex() == kSpecialMission ||
-                            missions.missionIndex() == missionTargetsSeen;
-        const bool blinkOn = (game.stepCount() / 30U) % 2U == 0U;
-        lit = chosen && (missions.phase() == MissionControl::Phase::Active || blinkOn);
-      }
-      ++missionTargetsSeen;
-    }
-    // Unlit bars stay visible as a dim tube; lit ones are full and glow.
-    const float level = lit ? 1.0F : 0.50F;
-    const TargetSprite& sprite = kSprites[i];
-    const Vec2 mid = sprite.mid;
-    const float length = sprite.length;
-    SDL_SetTextureColorMod(bar, toByte(static_cast<float>(color.r) / 255.0F * level),
-                           toByte(static_cast<float>(color.g) / 255.0F * level),
-                           toByte(static_cast<float>(color.b) / 255.0F * level));
-    SDL_RenderTextureRotated(r, bar, nullptr, &sprite.dst, sprite.angleDegrees, nullptr,
+  static const std::array<BarSprite, kBarCount> kSprites = makeBarSprites();
+  for (std::size_t i = 0; i < kSprites.size(); ++i) {
+    // Turbo targets mint, bay doors orange. Nothing lights them yet, so
+    // each is the dim tube of an unlit bar.
+    const Rgb color = i < table::kTargets.size() ? Rgb{77, 255, 178} : Rgb{255, 150, 40};
+    constexpr float kLevel = 0.6F;
+    SDL_SetTextureColorMod(bar, toByte(static_cast<float>(color.r) / 255.0F * kLevel),
+                           toByte(static_cast<float>(color.g) / 255.0F * kLevel),
+                           toByte(static_cast<float>(color.b) / 255.0F * kLevel));
+    SDL_RenderTextureRotated(r, bar, nullptr, &kSprites[i].dst, kSprites[i].angleDegrees, nullptr,
                              SDL_FLIP_NONE);
-    if (lit) {
-      drawGlow(r, mid, length * 1.0F, color, 0.7F);
-      drawGlow(r, mid, length * 0.4F, {255, 255, 255}, 0.4F);
-    }
   }
 }
 
-void TableRenderer::drawPlungerAndGate(SDL_Renderer* r, const Game& game) const {
+void TableRenderer::drawSlingshotFlashes(SDL_Renderer* r, const Game& game) const {
+  for (std::size_t i = 0; i < table::kSlingshots.size(); ++i) {
+    // On the middle of the kicking face.
+    const table::Triangle& sling = table::kSlingshots[i];
+    drawGlow(r, (sling.points[0] + sling.points[2]) * 0.5F, 60.0F, {255, 60, 170},
+             game.slingshotFlash(i) * 0.8F);
+  }
+}
+
+void TableRenderer::drawPlunger(SDL_Renderer* r, const Game& game) const {
   const SDL_FRect plunger{table::kLaneCenterX - table::kPlungerWidth * 0.5F,
                           table::kPlungerRestTopY + game.plungerPull(), table::kPlungerWidth,
                           table::kPlungerHeight};
   SDL_RenderTexture(r, textures_.plunger.get(), nullptr, &plunger);
-
-  if (game.laneGateClosed()) {
-    // A laser yellow tube across the top of the lane, with a white core.
-    const table::Capsule& gate = table::kLaneGate;
-    for (int offset = -2; offset <= 2; ++offset) {
-      const float dx = static_cast<float>(offset);
-      if (offset == 0) {
-        SDL_SetRenderDrawColor(r, 255, 255, 235, SDL_ALPHA_OPAQUE);
-      } else if (offset == -1 || offset == 1) {
-        SDL_SetRenderDrawColor(r, 255, 232, 60, SDL_ALPHA_OPAQUE);
-      } else {
-        SDL_SetRenderDrawColor(r, 150, 110, 20, SDL_ALPHA_OPAQUE);
-      }
-      SDL_RenderLine(r, gate.a.x + dx, gate.a.y, gate.b.x + dx, gate.b.y);
-    }
-    drawGlow(r, (gate.a + gate.b) * 0.5F, 44.0F, {255, 232, 60}, 0.35F);
-  }
 }
 
 void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game, float alpha) const {
@@ -324,7 +438,7 @@ void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game, float alpha)
 
 void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls) const {
   SDL_Texture* const glow = textures_.glow.get();
-  // Two rounds, so that a ball up on the ramp passes over one on the table.
+  // Two rounds, so that a ball up on a rail passes over one on the table.
   // Within a round all the shadows go down first, then the halos, then the
   // balls themselves.
   for (const bool raised : {false, true}) {
@@ -334,7 +448,7 @@ void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls) 
     if (std::ranges::none_of(balls, inRound)) {
       continue;
     }
-    // Soft contact shadows, offset further when the ball is up on the ramp.
+    // Soft contact shadows, offset further when the ball is up on a rail.
     // The glow texture is additive everywhere else: switched once for all of
     // them, and back.
     SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_BLEND);
@@ -453,11 +567,15 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
   const SDL_Rect clip{-shakeX, -shakeY, view.w, view.h};
   SDL_SetRenderClipRect(r, &clip);
 
-  SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
-  drawLights(r, game);
-  drawTargets(r, game);
+  if (textures_.background) {
+    SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
+  } else {
+    drawPlayfield(r);
+  }
+  drawTargets(r);
   drawBumpers(r, game);
-  drawPlungerAndGate(r, game);
+  drawSlingshotFlashes(r, game);
+  drawPlunger(r, game);
   drawFlippers(r, game, alpha);
   {
     // The shadows and the halos follow the same in-between positions as

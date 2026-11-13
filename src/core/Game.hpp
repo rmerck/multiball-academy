@@ -19,12 +19,12 @@ struct BallView {
   Vec2 position;        // Playfield pixels.
   float angle = 0.0F;   // Radians.
   bool visible = true;  // False while a hole holds it out of sight.
-  float scale = 1.0F;   // Above 1 while it rides the ramp over the table.
+  float scale = 1.0F;   // Above 1 while it rides a ramp's rail over the table.
   // Which ball: its slot, 0 to kMaxBalls - 1. A ball keeps its id for as
   // long as it is on the table.
   std::uint8_t id = 0;
-  // Riding the ramp over the table, or waiting at its top for the exit to
-  // clear: to be drawn above everything on the playfield.
+  // Riding a ramp's rail over the table, or waiting at its end for the exit
+  // to clear: to be drawn above everything on the playfield.
   bool raised = false;
 };
 
@@ -101,7 +101,6 @@ class Game {
   [[nodiscard]] FlipperView flipper(std::size_t index, float alpha) const;
   // How far the plunger is drawn back, in pixels.
   [[nodiscard]] float plungerPull() const noexcept { return physics_.plungerPull(); }
-  [[nodiscard]] bool laneGateClosed() const noexcept { return physics_.laneGateClosed(); }
   // 1 just after a bumper was hit, fading to 0. Drives its light.
   [[nodiscard]] float bumperFlash(std::size_t index) const noexcept {
     return index < bumperFlash_.size() ? bumperFlash_[index] : 0.0F;
@@ -112,8 +111,14 @@ class Game {
   // Times the ball search has fired.
   [[nodiscard]] std::uint32_t ballSearchCount() const noexcept { return ballSearchCount_; }
 
-  // How long a hole keeps the ball, in seconds.
+  // How long the scoop and the hangar keep the ball, in seconds. A ramp
+  // keeps it for table::kRampRideSeconds, the ride along its rail.
   static constexpr double kHoleHoldSeconds = 0.9;
+  [[nodiscard]] static constexpr double holdSeconds(table::HoleType type) noexcept {
+    return table::isRamp(type) ? table::kRampRideSeconds : kHoleHoldSeconds;
+  }
+  // A ball on a rail is drawn this much larger.
+  static constexpr float kRailScale = 1.15F;
   // With several balls a hole returns its ball only when no other ball is
   // within this distance of the exit, in pixels, and this long after the
   // last ball left by the same exit. A single ball never waits for either.
@@ -145,7 +150,6 @@ class Game {
   // Score, lights, balls and messages.
   [[nodiscard]] const Rules& rules() const noexcept { return rules_; }
   [[nodiscard]] bool gameOver() const noexcept { return rules_.gameOver(); }
-  [[nodiscard]] bool targetLit(std::size_t index) const noexcept { return rules_.targetLit(index); }
   // 1 just after a slingshot fired, fading to 0.
   [[nodiscard]] float slingshotFlash(std::size_t index) const noexcept {
     return index < slingshotFlash_.size() ? slingshotFlash_[index] : 0.0F;
@@ -154,13 +158,38 @@ class Game {
   [[nodiscard]] std::uint32_t bumperHits() const noexcept { return bumperHits_; }
   // Number of balls lost down the drain so far, every ball counted.
   [[nodiscard]] std::uint32_t drainCount() const noexcept { return drainCount_; }
+  // What the balls did during the latest step, as the physics reported it.
+  // For tests and for the players that test the table.
+  [[nodiscard]] std::span<const PhysicsEvent> events() const noexcept { return physics_.events(); }
+  // Whether a ball has left the launch channel since it was put on the
+  // table. False for a slot with no ball.
+  [[nodiscard]] bool ballInPlay(std::size_t slot) const noexcept {
+    return slot < kMaxBalls && physics_.ballActive(slot) && balls_[slot].inPlay;
+  }
+
+  // Asks for another ball. It is served to the plunger when the lane is
+  // empty, kAutoServeSpacingSeconds after the last ball served this way, and
+  // kAutoLaunchDelaySeconds later it is launched without the player at
+  // table::kAutoLaunchSpeed. Refused (false) when the game is over or the
+  // balls on the table and those still waiting would exceed kMaxBalls.
+  bool requestBall() noexcept;
+  // Balls asked for and not yet served.
+  [[nodiscard]] std::size_t queuedBalls() const noexcept { return queuedBalls_; }
+  static constexpr double kAutoServeSpacingSeconds = 0.75;
+  static constexpr double kAutoLaunchDelaySeconds = 0.25;
+  // An auto-launched ball found at rest on the plunger for this long is
+  // launched again.
+  static constexpr double kAutoRelaunchSeconds = 0.5;
+  // Times an auto-launched ball has been launched, second launches included.
+  [[nodiscard]] std::uint32_t autoLaunchCount() const noexcept { return autoLaunchCount_; }
+  [[nodiscard]] std::uint32_t autoRelaunchCount() const noexcept { return autoRelaunchCount_; }
 
  private:
   // The tests force states that play cannot reach (a ball lost outside the
   // table) through this. It is defined only in the tests.
   friend struct GameTestAccess;
 
-  // Leaves exactly one ball on the table, on the plunger, with the gate open.
+  // Leaves exactly one ball on the table, on the plunger, and nothing waiting.
   void serveBall();
   void snapshotForDrawing();
   void handleEvents();
@@ -181,8 +210,15 @@ class Game {
   // Puts another ball on the table, in the lowest free slot. Returns the
   // slot, or kMaxBalls if every slot is in use or the input is not finite.
   std::size_t addBall(Vec2 position, Vec2 velocity);
-  void updateLaneGate();
+  // Notes which balls have left the launch channel.
+  void updateInPlay();
+  // Serves and launches the balls asked for with requestBall().
+  void updateAutoLaunch();
+  // Puts a waiting ball on the plunger, in the given free slot.
+  void serveQueuedBall(std::size_t slot);
   void updateHeldBall(std::size_t slot);
+  // The next number from the game's generator.
+  [[nodiscard]] std::uint64_t nextRandom() noexcept;
   // Whether a ball held by this hole may leave now.
   [[nodiscard]] bool exitIsClear(std::size_t slot, std::size_t hole) const;
   // The flags say which flippers are actually raised: the keys count only
@@ -216,14 +252,30 @@ class Game {
     BallView previous{};
     // The ball was placed somewhere during the latest step.
     bool placed = false;
-    // Seen clear of the launch lane since it was put on the table.
+    // Seen clear of the launch channel since it was put on the table.
     bool inPlay = false;
+    // Where it was when a hole took it: a rail's ride starts there.
+    Vec2 takenAt{};
+    // Served by requestBall(): launched without the player.
+    bool autoLaunch = false;
+    // Steps until the launch, while waiting for it; then steps spent at
+    // rest on the plunger since.
+    std::uint32_t launchSteps = 0;
+    bool launched = false;
   };
   std::array<BallState, kMaxBalls> balls_{};
   // For each hole, one more than the step at which it last returned a ball;
   // 0 if it never has.
   std::array<std::uint64_t, table::kHoles.size()> lastReleaseStep_{};
   std::uint32_t ballSearchCount_ = 0;
+  // The game's own source of chance: xorshift64 from a fixed seed, so the
+  // same input always gives the same game. Advanced only by nextRandom().
+  std::uint64_t random_ = 0x9E3779B97F4A7C15ULL;
+  std::size_t queuedBalls_ = 0;
+  // One more than the step of the last serve by requestBall(); 0 if none.
+  std::uint64_t lastAutoServeStep_ = 0;
+  std::uint32_t autoLaunchCount_ = 0;
+  std::uint32_t autoRelaunchCount_ = 0;
   Vec2 shake_{};
   SoundSet sounds_ = 0;
   // Flipper angles one step ago, for drawing between steps.

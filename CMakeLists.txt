@@ -262,7 +262,6 @@ add_library(pinball_core STATIC
   src/core/Sha256.cpp
   src/core/Music.cpp
   src/core/Sound.cpp
-  src/core/TableLayout.cpp
   src/core/TouchControls.cpp
 )
 target_include_directories(pinball_core PUBLIC src ${PINBALL_VERSION_DIR})
@@ -556,9 +555,11 @@ if(BUILD_TESTING)
     tests/Sha256Test.cpp
     tests/MusicTest.cpp
     tests/SoundTest.cpp
+    tests/TableGeometryTest.cpp
     tests/TargetTest.cpp
     tests/TouchControlsTest.cpp
   )
+  target_include_directories(core_tests PRIVATE tests)
   target_link_libraries(core_tests PRIVATE pinball_core)
   # (No test is registered for iOS: see below, where an iOS build stops.)
   if(NOT PINBALL_IOS)
