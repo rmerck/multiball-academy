@@ -17,10 +17,10 @@ endif()
 # given on the command line or in the environment wins. A build against
 # installed libraries is left to target the macOS it is built on, as those
 # libraries do. Other systems ignore all of this. On iOS the variable means
-# the oldest iOS instead, and the app asks for the latest major release.
+# the oldest iOS instead.
 if(PINBALL_IOS)
   if("${CMAKE_OSX_DEPLOYMENT_TARGET}" STREQUAL "")
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "27.0" CACHE STRING "Minimum iOS version" FORCE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "26.0" CACHE STRING "Minimum iOS version" FORCE)
   endif()
 elseif(CMAKE_HOST_APPLE AND PINBALL_FETCH_DEPS AND "${CMAKE_OSX_DEPLOYMENT_TARGET}" STREQUAL ""
    AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
