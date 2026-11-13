@@ -37,18 +37,10 @@ float distance(Vec2 a, Vec2 b) {
 // changed the game. To regenerate, run core_tests: on a mismatch it prints
 // the value it got.
 //
-// Recorded on x86-64, where g++ 13 and clang 18 give the same value with and
-// without optimisation and under the sanitizers. Other processors may round
-// differently (a compiler is free to fuse a multiply and an add where the
-// processor has an instruction for it), so there the value is printed and
-// only checked once it has been recorded here.
-#if defined(__x86_64__) || defined(_M_X64)
+// The same on every platform the game is built for: the core is compiled
+// without fused multiply-add (-ffp-contract=off, as Box2D is) and uses only
+// exactly rounded arithmetic where it touches the ball.
 constexpr std::uint64_t kSoakTrajectory = 0xe84f9acc5335bb8fULL;
-constexpr bool kSoakTrajectoryKnown = true;
-#else
-constexpr std::uint64_t kSoakTrajectory = 0;
-constexpr bool kSoakTrajectoryKnown = false;
-#endif
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {
@@ -475,12 +467,11 @@ void testHoles() {
     CHECK(rollovers > 20);
 
     // The single-ball game is exactly the game it was.
-    if (!kSoakTrajectoryKnown || trajectory != kSoakTrajectory) {
-      std::fprintf(stderr, "soak trajectory 0x%016llx, score %llu%s\n",
+    if (trajectory != kSoakTrajectory) {
+      std::fprintf(stderr, "soak trajectory 0x%016llx, score %llu\n",
                    static_cast<unsigned long long>(trajectory),
-                   static_cast<unsigned long long>(game.rules().score()),
-                   kSoakTrajectoryKnown ? "" : " (not recorded for this processor)");
+                   static_cast<unsigned long long>(game.rules().score()));
     }
-    CHECK(!kSoakTrajectoryKnown || trajectory == kSoakTrajectory);
+    CHECK(trajectory == kSoakTrajectory);
   }
 }
