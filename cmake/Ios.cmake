@@ -4,27 +4,28 @@
 # which CMakeLists.txt allows with the Xcode generator alone: the resources
 # below are copied, compiled and sealed by Xcode's own build phases.
 
-# TEMPORARY, until src/main_ios.cpp is written: without an entry point the
-# application does not link, so a stand-in is compiled. It goes by itself
-# once the real file defines SDL_AppInit; then delete this block and
-# packaging/ios/TemporaryMain.cpp.
-#
 # A build with a team id is one that can be signed, archived and sent to the
-# App Store, and neither stand-in may ever get there: with PINBALL_IOS_TEAM_ID
-# set, the temporary entry point and the placeholder icon each stop the
-# configuration. Without one they are warnings.
+# App Store. What must never get there stops such a configuration: the
+# placeholder icon and the test switch below. Without a team id they are
+# allowed, the icon with a warning.
 if(PINBALL_IOS_TEAM_ID)
   set(pinball_ios_standin FATAL_ERROR)
 else()
   set(pinball_ios_standin WARNING)
 endif()
-file(STRINGS ${CMAKE_SOURCE_DIR}/src/main_ios.cpp pinball_ios_entry REGEX "SDL_AppInit *\\(")
-if(NOT pinball_ios_entry)
-  message(${pinball_ios_standin}
-    "src/main_ios.cpp has no entry point yet: the temporary one, "
-    "packaging/ios/TemporaryMain.cpp, is built in its place. It must not be shipped, "
-    "so a build with PINBALL_IOS_TEAM_ID is refused")
-  target_sources(pinball PRIVATE ${CMAKE_SOURCE_DIR}/packaging/ios/TemporaryMain.cpp)
+
+# For automated runs on a simulator: a Release application that honours
+# "--frames N" and ends by itself, as debug builds do (src/main_ios.cpp).
+# The application that is submitted has no such path, so this cannot be
+# combined with a team id.
+option(PINBALL_IOS_TEST_EXIT "iOS: a Release build honours --frames and exits (tests only)" OFF)
+if(PINBALL_IOS_TEST_EXIT)
+  if(PINBALL_IOS_TEAM_ID)
+    message(FATAL_ERROR "PINBALL_IOS_TEST_EXIT builds an application that can end itself, for "
+                        "tests. It must not be shipped, so a build with PINBALL_IOS_TEAM_ID "
+                        "is refused")
+  endif()
+  target_compile_definitions(pinball PRIVATE PINBALL_IOS_TEST_EXIT=1)
 endif()
 
 # The icon in the asset catalog is a placeholder until the art is drawn. It

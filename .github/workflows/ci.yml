@@ -172,9 +172,9 @@ jobs:
 
   # The iOS application, built as it would be for release: optimised,
   # warnings as errors, nothing signed. Once for the simulator and once for a
-  # device, from one configuration. It is not started here; each bundle is
-  # taken apart instead, and the core and file handling tests are run inside
-  # a simulator, compiled with the iOS SDK. The image's Xcode is named, not
+  # device, from one configuration. Each bundle is taken apart, and inside a
+  # simulator the core and file handling tests are run, compiled with the
+  # iOS SDK, and the game is started for a timed run. The image's Xcode is named, not
   # left to the image's default.
   #
   # Nothing is cached. What takes the time is SDL asking the compiler some
@@ -207,6 +207,7 @@ jobs:
           -C cmake/IosPreseed.cmake
           -DPINBALL_FETCH_DEPS=ON
           -DPINBALL_WERROR=ON
+          -DPINBALL_IOS_TEST_EXIT=ON
       - name: Record SDL's configure results if none were applied
         id: preseed
         run: |
@@ -239,7 +240,10 @@ jobs:
           ls -la "$app" "$app/assets"
           plutil -p "$app/Info.plist"
           bash tools/ios/check_bundle.sh "$app" build-ios-sim/product.env . --release
-      - name: Core and file handling tests on a simulator
+      # The game itself is started too, for 300 frames: this build honours
+      # --frames and ends by itself (PINBALL_IOS_TEST_EXIT), which the one
+      # that is submitted does not.
+      - name: Tests and a timed run of the game on a simulator
         run: bash tools/ios/simulator_tests.sh build-ios-sim Release
       # The slice that is shipped. Same project, the device SDK.
       - name: Build for a device
