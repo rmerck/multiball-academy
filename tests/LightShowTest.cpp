@@ -236,9 +236,12 @@ void testHitFlashes() {
   }
   CHECK(show.targetFlash(0) < 1.0F);
   // Down a lane: the rollover and its lamp flash.
-  Seam::placeBall(game, slot, {table::kRollovers[1].zone.center.x, 120.0F}, {0.0F, 300.0F});
+  // (Again until the nest's gate, which the roll call lanes share, is open.)
   bool lane = false;
-  for (int i = 0; i < 90 && !lane; ++i) {
+  for (int i = 0; i < 1200 && !lane; ++i) {
+    if (i % 150 == 0) {
+      Seam::placeBall(game, slot, {table::kRollovers[1].zone.center.x, 120.0F}, {0.0F, 300.0F});
+    }
     step(game, show);
     lane = show.rolloverFlash(1) > 0.9F && show.lampLevel(LampId::RollCall2) > 0.9F;
   }
@@ -356,7 +359,8 @@ void testTiltShow() {
     step(game, show, input);
   }
   CHECK(game.rules().tilted());
-  for (int i = 0; i < 90; ++i) {
+  // (Soon after the tilt warning's dip the lights fade over 150 steps.)
+  for (int i = 0; i < 170; ++i) {
     step(game, show);
   }
   if (game.rules().tilted()) {
@@ -750,6 +754,95 @@ void testTrailsFollowTheDrawnBall() {
   CHECK(follows);
 }
 
+void testFirstLookTakesTheTableAsFound() {
+  // A restored game already in Graduation Day: the show's first look (or
+  // its first after a reset) does not play the start show again.
+  Game game;
+  CHECK(pinball::stageScene(game, pinball::Scene::Graduation));
+  CHECK(game.rules().multiball() == pinball::Multiball::Graduation);
+  LightShow show;
+  for (int i = 0; i < 30; ++i) {
+    step(game, show);
+  }
+  CHECK(show.show() != fx::Show::Graduation);
+  show.reset();
+  step(game, show);
+  CHECK(show.show() != fx::Show::Graduation);
+}
+
+void testDomeGates() {
+  // A dome asked for every ten steps starts a flash at most once in
+  // kMinDomeSteps; domes elsewhere are not held by it.
+  Game game;
+  LightShow show;
+  step(game, show);
+  std::vector<std::uint64_t> starts;
+  std::uint32_t seen = 0;
+  for (std::uint32_t i = 0; i < 600; ++i) {
+    if (i % 10 == 0) {
+      show.burst(fx::Flasher::Academy, fx::Colour::Violet, 0.8F, 60.0F, 30);
+    }
+    step(game, show);
+    if (show.burstsStarted() != seen) {
+      seen = show.burstsStarted();
+      starts.push_back(show.step());
+    }
+  }
+  CHECK(starts.size() >= 4);
+  bool spaced = true;
+  for (std::size_t k = 1; k < starts.size(); ++k) {
+    spaced = spaced && starts[k] - starts[k - 1] >= fx::kMinDomeSteps;
+  }
+  CHECK(spaced);
+  Game g2;
+  LightShow s2;
+  step(g2, s2);
+  s2.burst(fx::Flasher::Academy, fx::Colour::Violet, 0.8F, 60.0F, 30);
+  step(g2, s2);
+  s2.burst(fx::Flasher::TopLanes, fx::Colour::Cyan, 0.8F, 60.0F, 30);
+  step(g2, s2);
+  CHECK(s2.burstsStarted() == 2);
+}
+
+void testDrainDipThroughTheLimiter() {
+  // A drain right after a large flash: its lights fade slowly, no dip.
+  Game game;
+  LightShow show;
+  step(game, show);
+  show.burst(fx::Flasher::Table, fx::Colour::White, 0.4F, 0.0F, 30);
+  step(game, show);
+  CHECK(show.largeFlashes() == 1);
+  step(game, show);
+  show.startShow(fx::Show::Drain);
+  float worst = 0.0F;
+  float previous = show.giLevel();
+  for (int i = 0; i < 60; ++i) {
+    step(game, show);
+    worst = std::max(worst, std::fabs(show.giLevel() - previous));
+    previous = show.giLevel();
+  }
+  CHECK(show.show() == fx::Show::Drain);
+  CHECK(worst < 0.01F);
+  // With reduce motion, the same however long since the last.
+  CHECK(show.giLevel() < 0.9F);  // It does fade.
+  Game g2;
+  LightShow s2;
+  s2.setReduceMotion(true);
+  step(g2, s2);
+  for (int i = 0; i < 300; ++i) {
+    step(g2, s2);
+  }
+  s2.startShow(fx::Show::Drain);
+  worst = 0.0F;
+  previous = s2.giLevel();
+  for (int i = 0; i < 60; ++i) {
+    step(g2, s2);
+    worst = std::max(worst, std::fabs(s2.giLevel() - previous));
+    previous = s2.giLevel();
+  }
+  CHECK(worst < 0.01F);
+}
+
 }  // namespace
 
 void testLightShow() {
@@ -775,4 +868,7 @@ void testLightShow() {
   testSmallDomesAddUp();
   testDrainKeepsLitLamps();
   testTrailsFollowTheDrawnBall();
+  testFirstLookTakesTheTableAsFound();
+  testDomeGates();
+  testDrainDipThroughTheLimiter();
 }

@@ -22,6 +22,7 @@ void testMultiball();
 void testNudge();
 void testPhysics();
 void testPlunger();
+void testPolygon();
 void testPngHeader();
 void testRuleFuzz();
 void testRules();
