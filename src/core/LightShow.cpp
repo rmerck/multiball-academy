@@ -235,6 +235,14 @@ void LightShow::observe(const Game& game) noexcept {
   if (!seen_ && attract_) {
     attractStart_ = step;
   }
+  if (!seen_) {
+    // The first look (a new show, or one reset for a restored game) takes
+    // the table as it finds it: a multiball, tilt or game over already
+    // running is not an edge, and its start show is not played again.
+    wasTilted_ = game.rules().tilted();
+    wasGameOver_ = game.rules().gameOver();
+    wasMultiball_ = game.rules().multiball();
+  }
   seen_ = true;
   now_ = step;
   readEvents(game);
@@ -280,7 +288,8 @@ void LightShow::readEvents(const Game& game) noexcept {
         break;
       case PhysicsEvent::Type::Enter:
         if (event.element.kind == table::ElementKind::Rollover && i < rolloverHit_.size()) {
-          strike(i < 3 ? kGateTopLanes : (i < 5 ? kGateLanesLeft : kGateLanesRight),
+          // The roll call lanes light the same part of the table as the nest.
+          strike(i < 3 ? kGateNest : (i < 5 ? kGateLanesLeft : kGateLanesRight),
                  rolloverHit_[i]);
         }
         break;
@@ -592,6 +601,25 @@ void LightShow::updateBursts() noexcept {
     b.large = reduceMotion_ || b.where == Flasher::Table || b.where == Flasher::Lights ||
               reach >= kLargeRadius ||
               recent + area > kSmallAreaShare * table::kWidth * table::kHeight;
+    // Each dome has a gate of its own, as the hit flashes have: one place
+    // starts a flash at most once in kMinDomeSteps, large or small, so the
+    // small-area budget and the large limiter together cannot make it flash
+    // more than three times a second. Domes lit in the same step pass
+    // together.
+    const auto place = static_cast<std::size_t>(b.where);
+    if (place < domeGates_.size() && b.where != Flasher::Table && b.where != Flasher::Lights) {
+      const std::uint64_t gate = domeGates_[place];
+      const std::uint64_t domeGap = reduceMotion_ ? kMinLargeFadeSteps : kMinDomeSteps;
+      if (gate != 0 && gate != now_ + 1 && now_ + 1 - gate < domeGap) {
+        ++b.late;
+        if (b.late > 60) {
+          b.used = false;
+        } else {
+          b.start = now_ + 1;
+        }
+        continue;
+      }
+    }
     if (b.large) {
       const bool sameFlash = lastLarge_ == now_ + 1;  // Lit together: one flash.
       if (!sameFlash && lastLarge_ != 0 && now_ + 1 - lastLarge_ < gap) {
@@ -612,6 +640,9 @@ void LightShow::updateBursts() noexcept {
         ++largeFlashes_;
         lastLarge_ = now_ + 1;
       }
+    }
+    if (place < domeGates_.size() && b.where != Flasher::Table && b.where != Flasher::Lights) {
+      domeGates_[place] = now_ + 1;
     }
     if (!b.large) {
       smallAreas_[smallNext_] = {now_ + 1, area};
@@ -712,6 +743,13 @@ void LightShow::startShow(Show show, Vec2 at) noexcept {
       return;
     }
   }
+  // The drain's and the tilt's fall of the lights is a large change too:
+  // too soon after the last large flash (or with reduce motion) the show
+  // still runs, its lights only fading slowly, with no dip.
+  quiet_ = false;
+  if (show == Show::Drain || show == Show::Tilt) {
+    quiet_ = reduceMotion_ || !largeOnset();
+  }
   show_ = show;
   showStart_ = now_;
   showAt_ = at;
@@ -756,15 +794,15 @@ void LightShow::startShow(Show show, Vec2 at) noexcept {
       }
       break;
     case Show::Drain:
-      burst(Flasher::Lights, Colour::Warm, 0.55F, 0.0F, 40);
-      if (!rm) {
+      if (!quiet_) {
+        burst(Flasher::Lights, Colour::Warm, 0.55F, 0.0F, 40);
         burst(Flasher::Lights, Colour::Warm, 0.45F, 0.0F, 40,
               static_cast<std::uint32_t>(kPulseSpacing));
       }
       break;
     case Show::Tilt:
-      burst(Flasher::Lights, Colour::Warm, 0.8F, 0.0F, 30);
-      if (!rm) {
+      if (!quiet_) {
+        burst(Flasher::Lights, Colour::Warm, 0.8F, 0.0F, 30);
         burst(Flasher::Lights, Colour::Warm, 0.8F, 0.0F, 30,
               static_cast<std::uint32_t>(kPulseSpacing));
       }
@@ -819,16 +857,18 @@ void LightShow::updateShow(const Game& game) noexcept {
       }
       break;
     case Show::Drain: {
-      // Down to half for the count, back up at the end.
-      const float down = std::min(1.0F, static_cast<float>(t) / 30.0F);
+      // Down to half for the count, back up at the end; slowly when quiet.
+      const float fall = quiet_ ? 150.0F : 30.0F;
+      const float down = std::min(1.0F, static_cast<float>(t) / fall);
       const float up = t > 240 ? static_cast<float>(t - 240) / 60.0F : 0.0F;
       gi = 1.0F - 0.5F * down * (1.0F - clamp01(up));
       break;
     }
-    case Show::Tilt:
-      gi = 0.3F + 0.7F * (1.0F - std::min(1.0F, static_cast<float>(t) / 30.0F));
-      gi = std::min(gi, t > 60 ? 0.3F : 1.0F);
+    case Show::Tilt: {
+      const float fall = quiet_ ? 150.0F : 30.0F;
+      gi = 0.3F + 0.7F * (1.0F - std::min(1.0F, static_cast<float>(t) / fall));
       break;
+    }
     case Show::GameOver:
       gi = 1.0F - 0.45F * std::min(1.0F, static_cast<float>(t) / 120.0F);
       break;

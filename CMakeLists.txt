@@ -317,6 +317,7 @@ add_library(pinball_core STATIC
   src/core/HighScores.cpp
   src/core/Courses.cpp
   src/core/LightShow.cpp
+  src/core/Polygon.cpp
   src/core/OverlayLayout.cpp
   src/core/Physics.cpp
   src/core/PngHeader.cpp
@@ -667,6 +668,7 @@ if(BUILD_TESTING)
     tests/NudgeTest.cpp
     tests/PhysicsTest.cpp
     tests/PlungerTest.cpp
+    tests/PolygonTest.cpp
     tests/PngHeaderTest.cpp
     tests/RuleFuzzTest.cpp
     tests/RulesTest.cpp
@@ -829,18 +831,21 @@ if(BUILD_TESTING)
   # Rendering smoke test: play ten seconds headless and draw a frame. The
   # tool fails if the frame is blank.
   if(PINBALL_BUILD_TOOLS)
-    # WCAG 2.3.1: the light show's worst case, multiball with a jackpot every
-    # 30 steps and the bumper nest struck every 20, rendered at 60 frames a
-    # second and measured per pixel (tools/fxreel/FlashMeter.hpp). No more
-    # than 6 percent of the playfield may flash over three times a second
-    # (the general flash threshold at phone scale is about 12); with reduce
-    # motion, 2 percent.
-    add_test(NAME fx_wcag_storm
-      COMMAND pinball_fxreel storm - --wcag 0.06 --frames 360)
-    add_test(NAME fx_wcag_storm_reduce_motion
-      COMMAND pinball_fxreel storm - --wcag 0.02 --frames 360 --reduce-motion)
-    set_tests_properties(fx_wcag_storm fx_wcag_storm_reduce_motion PROPERTIES
-      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 600 LABELS slow)
+    # WCAG 2.3.1: the light show's worst cases, rendered at 60 frames a
+    # second and measured per pixel (tools/fxreel/FlashMeter.hpp) against a
+    # 10 degree field at the largest scale the game is shown at (iPad Pro 13,
+    # 40 cm): no more than 15 percent of any such field (the limit is 25)
+    # may flash over three times a second; with reduce motion, 5. Any red
+    # flash fails. storm: multiball, a jackpot every 30 steps, the bumper
+    # nest every 20; domes: small domes in turn every 8 steps and the nest.
+    foreach(scene storm domes)
+      add_test(NAME fx_wcag_${scene}
+        COMMAND pinball_fxreel ${scene} - --wcag 0.15 --frames 360)
+      add_test(NAME fx_wcag_${scene}_reduce_motion
+        COMMAND pinball_fxreel ${scene} - --wcag 0.05 --frames 360 --reduce-motion)
+      set_tests_properties(fx_wcag_${scene} fx_wcag_${scene}_reduce_motion PROPERTIES
+        ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 600 LABELS slow)
+    endforeach()
     add_test(NAME render_snapshot
       COMMAND pinball_snapshot 1200 render_snapshot.png
       WORKING_DIRECTORY ${PINBALL_TEST_DIR})
