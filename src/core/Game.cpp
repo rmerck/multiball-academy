@@ -916,7 +916,9 @@ BallView Game::ballView(std::size_t slot) const {
     // Carried up the outlane and over the divider: fast at first, slowing
     // to a stop where it is set down. From where it was taken.
     const auto& path = table::kKickbackPath;
-    const auto point = [&path, &state](std::size_t i) { return i == 0 ? state.takenAt : path[i]; };
+    const auto point = [&state](std::size_t i) {
+      return i == 0 ? state.takenAt : table::kKickbackPath[i];
+    };
     float length = 0.0F;
     for (std::size_t i = 1; i < path.size(); ++i) {
       length += lengthOf(point(i) - point(i - 1));

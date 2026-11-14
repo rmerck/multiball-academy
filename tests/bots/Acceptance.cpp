@@ -671,6 +671,8 @@ struct Followed {
   bool decided = false;
   Touch first = Touch::None;
   std::uint64_t flipperStepAtStart = 0;
+  // Another ball struck it before it had met anything.
+  bool struck = false;
 };
 
 // Sends the ball in a slot up the middle of the open Hangar.
@@ -842,6 +844,14 @@ ScoopPairResult scoopPairs(int pairs) {
           followed[event.ball] = {true, false, Touch::None, harness.lastFlipperStep(event.ball)};
         }
       }
+      for (const PhysicsEvent& event : game.events()) {
+        if (event.type == PhysicsEvent::Type::BallHit) {
+          for (const std::size_t slot : {std::size_t{event.ball}, std::size_t{event.otherBall}}) {
+            followed[slot].struck = followed[slot].struck ||
+                                    (followed[slot].following && !followed[slot].decided);
+          }
+        }
+      }
       for (const TouchEvent& event : std::span(harness.events).subspan(eventsBefore)) {
         Followed& ball = followed[event.ball];
         if (ball.following && !ball.decided && !isPassedThrough(event.touch)) {
@@ -882,12 +892,17 @@ ScoopPairResult scoopPairs(int pairs) {
       result.tooClose += out == 2 && outAt[1] - outAt[0] < hold ? 1 : 0;
     }
     for (const Followed& ball : followed) {
+      const bool safe = ball.decided &&
+                        (ball.first == Touch::Flipper || ball.first == Touch::InlaneLeft ||
+                         ball.first == Touch::InlaneRight);
+      if (ball.struck && !safe) {
+        // The other ball ran into it on its way down and knocked it
+        // elsewhere: that says nothing about the kick.
+        result.struck += ball.following ? 1 : 0;
+        continue;
+      }
       result.returned += ball.following ? 1 : 0;
-      result.safe += ball.decided && (ball.first == Touch::Flipper ||
-                                      ball.first == Touch::InlaneLeft ||
-                                      ball.first == Touch::InlaneRight)
-                         ? 1
-                         : 0;
+      result.safe += safe ? 1 : 0;
     }
   }
   return result;

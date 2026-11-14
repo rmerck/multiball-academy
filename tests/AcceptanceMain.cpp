@@ -326,9 +326,10 @@ void sectionExits(bool quick) {
       "S1", "Briefing room, two balls: both returned, a full hold apart, each to a flipper or inlane",
       "all; 98 percent safe",
       text("%d of %d pairs out (%d more turned away at the mouth), %d too close, %d of %d "
-           "returned balls safe, longest overlap %d steps",
+           "returned balls safe (%d more knocked aside by the other ball), longest overlap %d "
+           "steps",
            pairs.bothOut, pairs.pairs, pairs.turnedAway, pairs.tooClose, pairs.safe,
-           pairs.returned, pairs.longestOverlap));
+           pairs.returned, pairs.struck, pairs.longestOverlap));
   // B6, the mechanism: every ball that comes down the lit left outlane.
   const KickbackResult kick = kickbackSweep(quick ? 120 : 600);
   row(Kind::Hard,

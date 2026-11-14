@@ -153,7 +153,8 @@ struct ScoopPairResult {
   int turnedAway = 0; // The second ball met the first coming out and never got in.
   int bothOut = 0;
   int tooClose = 0;  // Second out less than a full hold after the first.
-  int returned = 0;  // Balls returned by the scoop,
+  int struck = 0;    // Returned balls knocked off their way by the other ball.
+  int returned = 0;  // The other balls returned by the scoop,
   int safe = 0;      // and of those, the ones whose first touch was a flipper or an inlane.
   int longestOverlap = 0;  // Steps running with the two more than 2 units into each other.
 };
