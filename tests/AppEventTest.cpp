@@ -372,6 +372,259 @@ void testStagedSceneKeepsNoScore() {
   SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME");
 }
 
+// The saved game (docs/RESUME.md), with the player's preferences directory
+// sent to a scratch place (Linux: XDG_DATA_HOME; skipped elsewhere, where it
+// would be the player's own).
+class ScratchPrefs {
+ public:
+  ScratchPrefs() {
+    namespace fs = std::filesystem;
+    std::error_code error;
+    const fs::path base = fs::temp_directory_path(error);
+    path_ = base / ("pinball-app-save-" + std::to_string(SDL_GetTicksNS()));
+    if (error || !fs::create_directory(path_, error)) {
+      path_.clear();
+      return;
+    }
+    const std::string scratch = path_.string();
+    SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME", scratch.c_str(), true);
+    char* const pref = SDL_GetPrefPath(pinball::kDataOrganisation, pinball::kDataDirectory);
+    directory_ = pref != nullptr ? pref : "";
+    SDL_free(pref);
+    if (directory_.rfind(scratch, 0) != 0) {
+      directory_.clear();
+    }
+  }
+  ~ScratchPrefs() {
+    SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME");
+    if (!path_.empty()) {
+      std::error_code ignored;
+      std::filesystem::remove_all(path_, ignored);
+    }
+  }
+  ScratchPrefs(const ScratchPrefs&) = delete;
+  ScratchPrefs& operator=(const ScratchPrefs&) = delete;
+  [[nodiscard]] bool usable() const { return !directory_.empty(); }
+  [[nodiscard]] std::string file(const char* name) const { return directory_ + name; }
+
+ private:
+  std::filesystem::path path_;
+  std::string directory_;
+};
+
+bool exists(const std::string& file) { return SDL_GetPathInfo(file.c_str(), nullptr); }
+
+// Launches the ball and plays a few seconds without flipping.
+void launchAndPlay(App& app) {
+  for (int i = 0; i < 12; ++i) {
+    key(app, SDLK_SPACE, SDL_SCANCODE_SPACE);
+    CHECK(frames(app, 1));
+  }
+  CHECK(frames(app, 30));
+}
+
+void testSavedGame() {
+  const ScratchPrefs prefs;
+  if (!prefs.usable()) {
+    std::puts("app_tests: saved-game checks skipped (no scratch preferences directory)");
+    return;
+  }
+  const std::string file = prefs.file("savedgame.bin");
+  AppOptions options = playerOptions(pinball::screen::Idiom::Desktop);
+  options.keepScores = true;
+
+  std::uint64_t savedSteps = 0;
+  {
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(!app->hasSavedGame());
+    // Not a game in progress until a ball is played: nothing to keep.
+    system(*app, SDL_EVENT_WILL_ENTER_BACKGROUND);
+    CHECK(!exists(file));
+    system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
+    launchAndPlay(*app);
+    // On the way to the background the game is written, at once.
+    const std::uint64_t before = SDL_GetTicksNS();
+    system(*app, SDL_EVENT_WILL_ENTER_BACKGROUND);
+    const double ms = static_cast<double>(SDL_GetTicksNS() - before) / 1e6;
+    std::printf("app_tests: going to the background with a game took %.2f ms\n", ms);
+    CHECK(exists(file));
+    savedSteps = app->status().steps;
+    // Back in front with the game in memory: the copy goes.
+    system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
+    CHECK(!exists(file));
+    // Out again, and ended there by the system.
+    system(*app, SDL_EVENT_WILL_ENTER_BACKGROUND);
+    system(*app, SDL_EVENT_DID_ENTER_BACKGROUND);
+    CHECK(exists(file));
+    system(*app, SDL_EVENT_TERMINATING);
+    CHECK(app->finish() == 0);
+    CHECK(exists(file));
+  }
+  {
+    // Next launch: offered; resumed paused, where it was; the file is gone
+    // the moment it is resumed, and it resumes once.
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(app->hasSavedGame());
+    CHECK(exists(file));
+    CHECK(app->resumeSavedGame());
+    CHECK(!exists(file));
+    CHECK(!app->hasSavedGame());
+    CHECK(!app->resumeSavedGame());
+    App::Status status = app->status();
+    CHECK(status.paused);
+    CHECK(status.steps == savedSteps);
+    CHECK(!status.gameOver);
+    CHECK(frames(*app, 10));
+    CHECK(app->status().steps == savedSteps);
+    // Played on, then the Mac's Quit: kept again.
+    key(*app, SDLK_F3, SDL_SCANCODE_F3);
+    CHECK(frames(*app, 10));
+    CHECK(app->status().steps > savedSteps);
+    CHECK(app->finish() == 0);
+    CHECK(exists(file));
+  }
+  {
+    // A new game asked for instead: the save goes at once.
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr && app->hasSavedGame());
+    if (!app) {
+      return;
+    }
+    CHECK(frames(*app, 2));
+    CHECK(exists(file));
+    key(*app, SDLK_F2, SDL_SCANCODE_F2);
+    CHECK(frames(*app, 3));
+    CHECK(!app->hasSavedGame());
+    CHECK(!exists(file));
+    // And nothing is kept for a game not yet played.
+    CHECK(app->finish() == 0);
+    CHECK(!exists(file));
+    // Played, it is kept.
+    launchAndPlay(*app);
+    CHECK(app->finish() == 0);
+    CHECK(exists(file));
+  }
+  {
+    // The table's own game played instead: the save goes when the ball
+    // goes into play.
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr && app->hasSavedGame());
+    if (!app) {
+      return;
+    }
+    CHECK(frames(*app, 5));
+    CHECK(exists(file));
+    launchAndPlay(*app);
+    CHECK(!app->hasSavedGame());
+    CHECK(!exists(file));
+    CHECK(app->finish() == 0);
+    CHECK(exists(file));
+  }
+  {
+    // A menu's PLAY that starts nothing yet discards it by hand.
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr && app->hasSavedGame());
+    if (!app) {
+      return;
+    }
+    app->discardSavedGame();
+    CHECK(!app->hasSavedGame());
+    CHECK(!exists(file));
+    launchAndPlay(*app);
+    CHECK(app->finish() == 0);
+    CHECK(exists(file));
+  }
+  {
+    // Resumed and played to the end: over, so nothing is kept, now or at
+    // quitting.
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr && app->hasSavedGame());
+    if (!app) {
+      return;
+    }
+    CHECK(app->resumeSavedGame());
+    key(*app, SDLK_F3, SDL_SCANCODE_F3);
+    CHECK(playToGameOver(
+        *app, [&app] { key(*app, SDLK_SPACE, SDL_SCANCODE_SPACE); }, [] {}));
+    system(*app, SDL_EVENT_WILL_ENTER_BACKGROUND);
+    system(*app, SDL_EVENT_DID_ENTER_BACKGROUND);
+    CHECK(!exists(file));
+    system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
+    CHECK(app->finish() == 0);
+    CHECK(!exists(file));
+  }
+  {
+    // A file that is not a good save (here: one cut short) is not offered,
+    // and is deleted.
+    {
+      const std::unique_ptr<App> app = App::create(options);
+      CHECK(app != nullptr);
+      if (!app) {
+        return;
+      }
+      launchAndPlay(*app);
+      CHECK(app->finish() == 0);
+    }
+    CHECK(exists(file));
+    std::filesystem::resize_file(file, 100);
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(!app->hasSavedGame());
+    CHECK(!exists(file));
+  }
+  {
+    // A run that is not the player's keeps nothing: a timed run, and one
+    // with the player's files turned off.
+    AppOptions timed = options;
+    timed.frameLimit = 400;
+    const std::unique_ptr<App> app = App::create(timed);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    launchAndPlay(*app);
+    system(*app, SDL_EVENT_WILL_ENTER_BACKGROUND);
+    CHECK(!exists(file));
+    system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
+    AppOptions none = playerOptions(pinball::screen::Idiom::Desktop);
+    const std::unique_ptr<App> other = App::create(none);
+    CHECK(other != nullptr);
+    if (!other) {
+      return;
+    }
+    launchAndPlay(*other);
+    system(*other, SDL_EVENT_WILL_ENTER_BACKGROUND);
+    CHECK(other->finish() == 0);
+    CHECK(!exists(file));
+  }
+  {
+    // A staged scene is not the player's game either.
+    AppOptions staged = options;
+    staged.scene = pinball::Scene::Multiball;
+    const std::unique_ptr<App> app = App::create(staged);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    launchAndPlay(*app);
+    system(*app, SDL_EVENT_WILL_ENTER_BACKGROUND);
+    system(*app, SDL_EVENT_DID_ENTER_BACKGROUND);
+    CHECK(app->finish() == 0);
+    CHECK(!exists(file));
+  }
+}
+
 void testLifecycle() {
   const std::unique_ptr<App> app = App::create(playerOptions(pinball::screen::Idiom::Touch));
   CHECK(app != nullptr);
@@ -1055,12 +1308,20 @@ void runAll() {
 
 }  // namespace
 
-int main() {
+// With the argument "saved-game", only the saved game's checks (registered
+// as a test of their own, app_saved_game, so the two run side by side);
+// without, everything else.
+int main(int argc, char* argv[]) {
   // No window on a screen, no sound, whatever the environment says.
   SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "dummy", SDL_HINT_OVERRIDE);
   setAudioDriver("dummy");
+  const bool savedGameOnly = argc > 1 && std::string(argv[1]) == "saved-game";
   try {
-    runAll();
+    if (savedGameOnly) {
+      testSavedGame();
+    } else {
+      runAll();
+    }
   } catch (const std::exception& e) {
     std::fprintf(stderr, "app_tests: uncaught exception: %s\n", e.what());
     return EXIT_FAILURE;

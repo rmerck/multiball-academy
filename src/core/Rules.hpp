@@ -12,6 +12,10 @@
 
 namespace pinball {
 
+namespace save {
+struct RulesRecord;
+}  // namespace save
+
 // Point values. Every award is multiplied by overdrive unless it says "as
 // stated".
 namespace points {
@@ -235,6 +239,14 @@ class Rules {
 
   // Begins a new game: ball one, score zero.
   void startGame() noexcept;
+
+  // --- A game saved and resumed (core/Snapshot.hpp, core/GameSave.cpp) -------
+  // Everything that carries the game on. The message showing and the sounds
+  // of the step are left out.
+  [[nodiscard]] save::RulesRecord record() const noexcept;
+  // Puts a recorded game back, field for field; no message shows. The
+  // record must be save::valid() (decode() makes sure of it).
+  void restore(const save::RulesRecord& record) noexcept;
 
   // --- What the table tells the rules ---------------------------------------
   // The balls, once a step, before the step's events.

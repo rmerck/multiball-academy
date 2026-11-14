@@ -9,18 +9,21 @@ Multiball Academy collects no data.
 
 ## What is stored on your device
 
-One small file: the high score table, with the five best scores, the rank reached and the three initials entered for each. It is kept in the game's own data directory and is never sent anywhere.
+Two small files, kept in the game's own data directory and never sent anywhere:
 
-If the game finds that file damaged or not in the form it writes, it does not use it and does not delete it: it moves it aside in the same directory as `highscores.txt.bad` (or `highscores.txt.bad.1` to `highscores.txt.bad.9` if earlier ones are still there) and starts a new table. Those copies hold nothing but what the score file held.
+- the high score table (`highscores.txt`), with the five best scores, the rank reached and the three initials entered for each;
+- while a game is left unfinished, that game (`savedgame.bin`): the score, the ball, the state of the table and where the balls were, so that it can be continued. It is written when the game goes to the background or is quit with a game in progress, and deleted when that game is continued, a new one is started, or it ends. It holds nothing about you.
+
+If the game finds the high score file damaged or not in the form it writes, it does not use it and does not delete it: it moves it aside in the same directory as `highscores.txt.bad` (or `highscores.txt.bad.1` to `highscores.txt.bad.9` if earlier ones are still there) and starts a new table. Those copies hold nothing but what the score file held. A saved game that is damaged, or was written by another version, is simply deleted.
 
 - iPhone and iPad: inside the app's own storage, which other apps cannot read. If you back up your device with iCloud or a computer, the file is part of your own backup like the rest of the app's data.
-- macOS: `~/Library/Application Support/multiball-academy/highscores.txt`
-- Linux: `~/.local/share/multiball-academy/highscores.txt` (or under `XDG_DATA_HOME` if that is set)
+- macOS: `~/Library/Application Support/multiball-academy/` (`highscores.txt`, `savedgame.bin`)
+- Linux: `~/.local/share/multiball-academy/` (or under `XDG_DATA_HOME` if that is set)
 
 ## Deleting it
 
-- iPhone and iPad: delete the app. Its storage, including the high score table and any copy set aside, is removed with it.
-- macOS and Linux: delete the file, and any `highscores.txt.bad` files beside it, or the whole `multiball-academy` directory named above. The game starts a new, empty table.
+- iPhone and iPad: delete the app. Its storage, including the high score table, any copy set aside and any saved game, is removed with it.
+- macOS and Linux: delete the files, and any `highscores.txt.bad` files beside them, or the whole `multiball-academy` directory named above. The game starts a new, empty table.
 
 ## Children
 

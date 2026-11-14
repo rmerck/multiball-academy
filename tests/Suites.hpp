@@ -23,6 +23,7 @@ void testPlunger();
 void testPngHeader();
 void testRuleFuzz();
 void testRules();
+void testSaveGame();
 void testScreenLayout();
 void testSha256();
 void testMusic();
