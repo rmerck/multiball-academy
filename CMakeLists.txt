@@ -668,6 +668,10 @@ if(BUILD_TESTING)
               ${CMAKE_SOURCE_DIR}/src/generated/ArtPalette.hpp
               ${CMAKE_SOURCE_DIR}/packaging/ios/Assets.xcassets/LaunchBackground.colorset/Contents.json)
 
+    # The committed art is what tools/art/SHA256SUMS records, file for file.
+    add_test(NAME art_sums
+      COMMAND Python3::Interpreter -I ${CMAKE_SOURCE_DIR}/tools/art/check_sums.py ${CMAKE_SOURCE_DIR})
+
     # The built game must refuse to start if any asset is altered.
     add_test(NAME asset_integrity
       COMMAND Python3::Interpreter -I ${CMAKE_SOURCE_DIR}/tools/test_asset_integrity.py

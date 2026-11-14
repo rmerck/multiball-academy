@@ -1,3 +1,24 @@
-skia-python==144.1
-numpy==2.5.3
-Pillow==12.3.0
+# Pinned by version and by hash (pip install --require-hashes -r tools/art/requirements.txt).
+# Wheels for the platforms the art is verified on: Linux x86_64 and macOS arm64, CPython 3.13 and 3.14.
+# To move a pin: change the version, then replace its hashes with those PyPI lists for the same wheels
+# (https://pypi.org/pypi/<name>/<version>/json), regenerate, and compare with the committed files.
+skia-python==144.1 \
+    --hash=sha256:03e37ffd8988eaa5d30bfd210303ab0e717fe94fa19306e45ddd5f29389b7d2f \
+    --hash=sha256:a008767c16671f3704ea5e1a8cee99854047044632c0d71a37105d6b632b816a \
+    --hash=sha256:3612eff989517e41131e82e71b8a086ed08f0871eae8e9bdd8bb33f86a982c3a \
+    --hash=sha256:5f52862413fae3974c1ffefaf22206af4c0de8cb9912ffb662eaac78d794746e
+numpy==2.5.3 \
+    --hash=sha256:92f30e89b8ee0ecf363033576c422b2f58fed6a80bed0aa48dff6d14c654663e \
+    --hash=sha256:f9a2353b37a1a9e78fd82b27ad7e2a32a2d036604d18f02b05e3136c62ca3b09 \
+    --hash=sha256:a5fa86b80fd24bcd1aff83ad23be44ea323de3f787be8f8b15d4a65621e25321 \
+    --hash=sha256:012e66aca395d795496446e52aeeb5866312a5d4d3f27da270e5a0b43f70dc5c \
+    --hash=sha256:adc1ada2662f8a5f960b8a10d9986897e7499ef07e06d4cfe7197f8cce923c07 \
+    --hash=sha256:b0521d0f4aebb6e06189451025fa17a913287b13c03d5fe05c017333b654ea5b
+Pillow==12.3.0 \
+    --hash=sha256:d69141514cc30b774ceea5e3ed3a6635c8d8a96edf664689b890f4089111fb35 \
+    --hash=sha256:0847a763afefb695bc912d7c131e7e0632d4edc1d8698f58ddabec8e46b8b6d3 \
+    --hash=sha256:e158cb00350dc278f3b91551101aa7d12415a66ebf2c91d8d5ac14e56ddd3ad0 \
+    --hash=sha256:251bf95b67017e27b13d82f5b326234ca62d70f9cf4c2b9032de2358a3b12c7b
+# skia-python needs it at run time (pybind11>=2.6); pure Python, one wheel for every platform.
+pybind11==3.1.0 \
+    --hash=sha256:b8488090f8acffbcb6b5d6a85571a6827a0a2981ffb75e5a0b27b87c4a6b7dd0

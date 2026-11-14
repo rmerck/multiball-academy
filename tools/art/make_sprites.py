@@ -283,7 +283,8 @@ def spinner(frame):
 
 
 def post():
-    """A bare metal post end: marks dead posts and wire-gate pivots. 16 units square."""
+    """A bare metal post end: marks dead posts and wire-gate pivots. 16 units square. Not shipped: the posts
+    are baked into the table background and none moves; kept for a table that has moving posts."""
     st = Stage(16, 16, 4, 4, transparent=True)
     c = st.c
     c.drawCircle(8, 8, 6.6, blur(fill(C(P.INK, 150)), 0.6))
@@ -319,7 +320,7 @@ SPRITES = {
     "ball.png": ball, "glow.png": glow, "flipper.png": flipper, "bumper.png": lambda: bumper("body"),
     "bumper_cap.png": lambda: bumper("cap"), "bar.png": bar, "plunger.png": plunger, "button.png": button, "button_gloss.png": button_gloss,
     "insert_round.png": lambda: insert("round"), "insert_arrow.png": lambda: insert("arrow"), "door.png": door,
-    "spinner_0.png": lambda: spinner(0), "spinner_1.png": lambda: spinner(1), "post.png": post, "kickback.png": kickback,
+    "spinner_0.png": lambda: spinner(0), "spinner_1.png": lambda: spinner(1), "kickback.png": kickback,
 }
 
 

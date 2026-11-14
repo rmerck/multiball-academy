@@ -5,10 +5,15 @@ physics uses. No image editor, no generated painting, no pixels from outside the
 (what each file is, how to regenerate, reproducibility, verification) is in `docs/ASSETS.md`.
 
     python3 -m venv build/art-venv
-    build/art-venv/bin/pip install -r tools/art/requirements.txt
+    build/art-venv/bin/python -m pip install --require-hashes -r tools/art/requirements.txt
     build/pinball_layout > build/layout.json
     build/art-venv/bin/python tools/art/make_all.py      # assets/, both icons, src/generated/ArtPalette.hpp
     python3 tools/check_assets.py assets
+    python3 tools/art/check_sums.py                      # the files are what SHA256SUMS records
+
+`requirements.txt` pins every package (skia-python, its pybind11, numpy, Pillow) by version and by the
+SHA-256 of each wheel for Linux x86_64 and macOS arm64, CPython 3.13 and 3.14; `--require-hashes` makes
+pip refuse anything else, including a package the list does not name.
 
 - `palette.py`: every colour and art constant. `gen_header.py` writes the part the renderer needs to
   `src/generated/ArtPalette.hpp`; `gen_header.py --check` (ctest `art_palette`) fails if the two disagree.
@@ -20,6 +25,8 @@ physics uses. No image editor, no generated painting, no pixels from outside the
 - `hud_layout.py`: the display windows PROPOSED for the HUD rework. Nothing uses it yet: `make_ui.py`
   draws the windows where the game has them (`strip` and `panel` in `layout.json`).
 - `render_sim.py`: draws the table as `TableRenderer` does, from the shipped files.
+- `check_sums.py`, `SHA256SUMS`: the hashes of everything `make_all.py` writes. ctest `art_sums` checks
+  the committed files against them; run on a scratch root it checks a regeneration.
 - `visibility_full.py`: the ball-visibility test over the whole playfield at five device scales
   (writes `build/art-review/visibility_full.md` and `.png`).
 - `sources/fonts`: Russo One, Audiowide, Saira Stencil One and Silkscreen, each with its SIL Open Font
@@ -31,6 +38,6 @@ are read from `layout.json`, so art and physics cannot disagree. Set `PINBALL_LA
 Lamp inserts are baked into the table background: a lamp that moves in `src/core/TableLayout.hpp` needs
 `make_all.py` run again.
 
-Reproducible: fixed seeds, no timestamps, PNGs hold IHDR, IDAT and IEND only, and the versions in
-`requirements.txt` are pinned. The committed files are the reference; regeneration is a check, not a build
+Reproducible: fixed seeds, no timestamps, PNGs hold IHDR, IDAT and IEND only, and the packages in
+`requirements.txt` are pinned by hash. The committed files are the reference; regeneration is a check, not a build
 step (`docs/ASSETS.md`, "Reproducibility").
