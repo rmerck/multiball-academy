@@ -116,7 +116,7 @@ The sum is multiplied by the bonus multiplier, 1X to 5X (from W-I-N-G with the k
 
 Pass all six courses in one game and Graduation Day is lit at the Briefing room.
 
-1. Shoot the Briefing room: `GRADUATION DAY`. Every ball there is comes into play, three in all, and for 30 seconds a ball that drains is launched again.
+1. Shoot the Briefing room: `GRADUATION DAY`. Every ball there is comes into play, three in all, and for 30 seconds a ball that drains is launched again. Nothing locks, no course runs and a full turbo meter pays the turbo bonus instead of a ball; combos, overdrive and the turbo meter go on.
 2. The final exam: all seven major shots are lit (both circuits, both ramps, the Hangar, the Briefing room, the Turbine). Each pays 100,000 and goes out.
 3. Commencement: with all seven made, the Hangar alone is lit: 1,000,000, and the rank of CHANCELLOR.
 4. Victory laps: every major shot pays 50,000 until one ball is left.

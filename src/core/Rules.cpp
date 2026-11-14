@@ -767,9 +767,11 @@ void Rules::addTurbo(int amount) noexcept {
 void Rules::turboFull() noexcept {
   turboMeter_ = 0;
   turboGoal_ = std::min(turboGoal_ + tuning::kTurboMeterStep, 10'000);
-  if (!multiballEnabled_ || ballsInGame() >= static_cast<int>(table::kMaxBalls)) {
+  if (!multiballEnabled_ || graduationRunning() ||
+      ballsInGame() >= static_cast<int>(table::kMaxBalls)) {
     // No room for another ball: the three-ball limit counts every ball
-    // there is, locked and waiting ones too.
+    // there is, locked and waiting ones too. Graduation Day suspends Turbo
+    // multiball.
     award(points::kTurboBonus, Feature::TurboBonus);
     say(display::Message("TURBO BONUS"));
     return;

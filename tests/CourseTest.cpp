@@ -596,4 +596,28 @@ void testCourses() {
       CHECK(rules.graduationRunning() && bench.launched == 2 - locked);
     }
   }
+
+  {  // 4.12 Turbo multiball is suspended on Graduation Day: with room for
+     // a ball, a full meter still pays its bonus and adds none.
+    RulesBench bench = single();
+    Rules& rules = bench.rules;
+    passAll(bench);
+    rules.setMultiballEnabled(true);
+    bench.wait(tuning::kComboSeconds);
+    bench.scoop();
+    CHECK(rules.graduationRunning() && bench.total() == 3);
+    bench.wait(tuning::kGraduationGraceSeconds);
+    CHECK(!bench.lose());
+    bench.step();
+    CHECK(rules.graduationRunning() && bench.total() == 2);
+    const int launched = bench.launched;
+    const std::uint64_t bonus = rules.scoreFrom(Feature::TurboBonus);
+    bench.bumper(rules.turboGoal() - rules.turboMeter());
+    bench.step();
+    CHECK(rules.scoreFrom(Feature::TurboBonus) - bonus == pinball::points::kTurboBonus);
+    CHECK(bench.message() == std::string_view("TURBO BONUS"));
+    CHECK(bench.launched == launched && bench.refused == 0 && bench.total() == 2);
+    CHECK(rules.multiball() == Multiball::Graduation && rules.turboMultiballs() == 0);
+    CHECK(rules.turboMeter() == 0);
+  }
 }
