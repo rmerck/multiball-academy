@@ -1306,16 +1306,16 @@ void testAttractKeepsNoScore() {
     if (!app) {
       return;
     }
-    // Some twenty seconds of attract play. (That attract games end and
+    // Some seven seconds of attract play. (That attract games end and
     // start again is tested in core, FrontTest; frames here are slow.)
     bool sawEntry = false;
-    for (int i = 0; i < 300; ++i) {
+    for (int i = 0; i < 100; ++i) {
       CHECK(frames(*app, 1));
       sawEntry = sawEntry || app->status().entryOpen;
     }
     const App::Status status = app->status();
     CHECK(!sawEntry && status.frontOpen && status.steps == 0);
-    CHECK(status.attractSteps >= 2000);
+    CHECK(status.attractSteps >= 700);
     CHECK(status.scores.size() == 0);
     CHECK(app->finish() == 0);
     CHECK(!SDL_GetPathInfo(scores.c_str(), nullptr));

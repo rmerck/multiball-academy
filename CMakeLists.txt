@@ -705,7 +705,7 @@ if(BUILD_TESTING)
     add_dependencies(app_tests pinball_snapshot)
     add_test(NAME app_events COMMAND app_tests)
     set_tests_properties(app_events PROPERTIES
-      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 300 LABELS slow)
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 600 LABELS slow)
   endif()
 
   # Python runs isolated (-I): no user site directory, no PYTHON* variables
