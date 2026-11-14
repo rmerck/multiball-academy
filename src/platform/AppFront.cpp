@@ -405,7 +405,7 @@ void App::playHaptics(SoundSet sounds) {
   if (!hapticsAvailable_ || !settings_.haptics || sounds == 0 || options_.frameLimit) {
     return;
   }
-  if (const std::optional<Haptic> kind = hapticGate_.take(sounds, SDL_GetTicks())) {
+  if (const std::optional<Haptic> kind = hapticGate_.take(sounds, nowMs())) {
     ios::haptic(*kind);
     ++hapticsPlayed_;
   }
