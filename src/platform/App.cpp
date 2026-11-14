@@ -8,6 +8,7 @@
 
 #include "core/LoopPolicy.hpp"
 #include "core/OverlayLayout.hpp"
+#include "core/Scenes.hpp"
 #include "core/Version.hpp"
 #include "platform/About.hpp"
 #include "platform/Assets.hpp"
@@ -225,11 +226,23 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
       audio_(options.backgroundAudioOpen ? nullptr : AudioOutput::open()),
       // A timed automated run leaves the player's score file alone: it is
       // neither read (which can also set a bad file aside) nor written.
-      highScores_(options.frameLimit || !options.keepScores ? HighScores{} : scoreStore_.load()),
+      highScores_(options.frameLimit || options.scene || !options.keepScores ? HighScores{}
+                                                                             : scoreStore_.load()),
       aboutEvent_(SDL_RegisterEvents(1)) {
   const bool routed = routeAboutMenu(aboutEvent_);
   SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "About menu item routed to the game: %s",
                routed ? "yes" : "no");
+
+  // A staged scene, for screenshots (debug builds only pass one).
+  if (options.scene) {
+    const std::string_view name = sceneName(*options.scene);
+    if (stageScene(game_, *options.scene)) {
+      SDL_Log("Scene %.*s staged", static_cast<int>(name.size()), name.data());
+    } else {
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Scene %.*s could not be staged",
+                  static_cast<int>(name.size()), name.data());
+    }
+  }
 
   reduceMotion_ = ios::reduceMotionEnabled();
   // The player's own music is playing: the game's tune stays out of its
@@ -578,7 +591,7 @@ void App::commitInitials() {
   entry_.reset();
   latched_ = InputState{};
   newHighScore_ = highScores_.submit(pending_) < HighScores::kCapacity;
-  if (newHighScore_ && options_.keepScores) {
+  if (newHighScore_ && options_.keepScores && !options_.scene) {
     scoreStore_.save(highScores_);
   }
 }

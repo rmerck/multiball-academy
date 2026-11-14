@@ -357,6 +357,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     default: {
       const auto frames = pinball::parseFrameLimit(text);
       require(!frames || (*frames >= 1 && *frames <= pinball::kMaxFrameLimit));
+      // The same text as a scene name: only a listed name is one, and it
+      // names itself back.
+      const auto scene = pinball::parseScene(text);
+      require(!scene || pinball::sceneName(*scene) == text);
       break;
     }
   }

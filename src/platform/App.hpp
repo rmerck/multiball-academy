@@ -17,6 +17,7 @@
 #include "core/LoopPolicy.hpp"
 #include "core/ScreenLayout.hpp"
 #include "core/Sound.hpp"
+#include "core/Args.hpp"
 #include "core/TouchControls.hpp"
 #include "platform/About.hpp"
 #include "platform/AudioOutput.hpp"
@@ -44,6 +45,10 @@ struct AppOptions {
   // clock says, so that a test's game runs the same on any machine and as
   // fast as the machine can go.
   std::optional<double> fixedFrameSeconds;
+  // Start in a staged moment of a game (core/Scenes.hpp), for screenshots.
+  // A staged game's score is not the player's: the score file is left alone
+  // as for a timed run. Only debug builds read it from the command line.
+  std::optional<Scene> scene;
 };
 
 enum class FrameResult : std::uint8_t { Continue, Quit };

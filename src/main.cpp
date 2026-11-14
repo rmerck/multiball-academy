@@ -12,10 +12,19 @@
 namespace {
 
 void printUsage() {
-  std::fputs("Usage: pinball [--frames N] [--touch]\n"
+  std::fputs("Usage: pinball [--frames N] [--touch]"
+#ifndef NDEBUG
+             " [--scene NAME]"
+#endif
+             "\n"
              "  --frames N   exit after N frames (1..1000000), for automated tests\n"
              "  --touch      the touch screen's layout and controls, in a window;\n"
-             "               the mouse stands in for a finger\n",
+             "               the mouse stands in for a finger\n"
+#ifndef NDEBUG
+             "  --scene NAME start in a staged moment for screenshots (debug builds):\n"
+             "               table, multiball, hangar, course or graduation\n"
+#endif
+             ,
              stderr);
 }
 
@@ -34,6 +43,15 @@ int main(int argc, char* argv[]) {
       }
     } else if (arg == "--touch") {
       options.idiom = pinball::screen::Idiom::Touch;
+#ifndef NDEBUG
+    } else if (arg == "--scene" && i + 1 < argc) {
+      // Debug builds only, as on iOS: a release build has no staged games.
+      options.scene = pinball::parseScene(argv[++i]);
+      if (!options.scene) {
+        printUsage();
+        return EXIT_FAILURE;
+      }
+#endif
     } else {
       printUsage();
       return EXIT_FAILURE;

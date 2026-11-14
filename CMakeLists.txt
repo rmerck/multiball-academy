@@ -269,6 +269,7 @@ add_library(pinball_core STATIC
   src/core/Physics.cpp
   src/core/PngHeader.cpp
   src/core/Rules.cpp
+  src/core/Scenes.cpp
   src/core/ScreenLayout.cpp
   src/core/Sha256.cpp
   src/core/Music.cpp

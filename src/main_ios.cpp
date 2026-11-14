@@ -20,6 +20,8 @@
 //     for testing: debug builds, and any build compiled with
 //     PINBALL_IOS_TEST_EXIT. A release build ignores them, so the build
 //     that is submitted has no path that ends the process on purpose.
+// The other launch argument, "--scene NAME", starts the game in a staged
+// moment for screenshots (core/Scenes.hpp). It is read under the same rule.
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -96,6 +98,14 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         options.frameLimit = pinball::parseFrameLimit(argv[++i]);
         if (!options.frameLimit) {
           SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "--frames needs a number from 1 to 1000000");
+          return SDL_APP_FAILURE;
+        }
+      } else if (argv[i] != nullptr && std::string_view(argv[i]) == "--scene" && i + 1 < argc &&
+                 argv[i + 1] != nullptr) {
+        options.scene = pinball::parseScene(argv[++i]);
+        if (!options.scene) {
+          SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                       "--scene needs one of: table multiball hangar course graduation");
           return SDL_APP_FAILURE;
         }
       }

@@ -260,6 +260,9 @@ class Game {
   // The tests force states that play cannot reach (a ball lost outside the
   // table) through this. It is defined only in the tests.
   friend struct GameTestAccess;
+  // Stages the scenes of the store screenshots (core/Scenes.hpp) the same
+  // way, for debug builds and the review tool.
+  friend struct SceneStage;
 
   // Leaves exactly one ball on the table, on the plunger, and nothing waiting.
   void serveBall();
