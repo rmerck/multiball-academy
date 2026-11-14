@@ -75,6 +75,14 @@ set(PINBALL_DATA_ORG "")
 set(PINBALL_DATA_DIR "${pinball_name_hyphens}")
 # Where the privacy policy is published: docs/PRIVACY.md, as GitHub shows it.
 set(PINBALL_PRIVACY_URL "https://github.com/rmerck/multiball-academy/blob/main/docs/PRIVACY.md")
+# It goes into the source as a string and, on a touch screen, to the system's
+# browser: a plain page of this repository on GitHub (cmake/ProductUrl.cmake).
+include(cmake/ProductUrl.cmake)
+pinball_check_url("${PINBALL_PRIVACY_URL}" pinball_privacy_url_ok)
+if(NOT pinball_privacy_url_ok)
+  message(FATAL_ERROR "PINBALL_PRIVACY_URL must be a page of https://github.com/rmerck/multiball-academy/ "
+                      "with a plain path (no .., query or fragment). It is '${PINBALL_PRIVACY_URL}'")
+endif()
 # The copyright line of the application bundles.
 set(PINBALL_COPYRIGHT "Copyright 2026 rmerck. MIT licence.")
 project(MultiballAcademy VERSION 2.0.0 LANGUAGES CXX)
@@ -226,7 +234,10 @@ if(PINBALL_FUZZ)
     src/core/Args.cpp
     src/core/AssetName.cpp
     src/core/HighScores.cpp
-    src/core/PngHeader.cpp)
+    src/core/OverlayLayout.cpp
+    src/core/PngHeader.cpp
+    src/core/ScreenLayout.cpp
+    src/core/TouchControls.cpp)
   target_include_directories(pinball_fuzz_core PUBLIC src)
   pinball_apply_hardening(pinball_fuzz_core PUBLIC)
   target_compile_options(pinball_fuzz_core PUBLIC -fsanitize=fuzzer-no-link)
@@ -422,6 +433,14 @@ foreach(value IN ITEMS "${PINBALL_APP_NAME}" "${PINBALL_HOME_NAME}" "${PINBALL_B
                         "product.env. (Is there one in the build directory's path?)")
   endif()
 endforeach()
+# Whether this application ends itself after --frames (cmake/Ios.cmake), as
+# ON or OFF and nothing else, so that scripts compare one word. Off iOS the
+# option does not exist and the answer is OFF.
+if(PINBALL_IOS_TEST_EXIT)
+  set(pinball_test_exit_text ON)
+else()
+  set(pinball_test_exit_text OFF)
+endif()
 file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/product.env @ONLY CONTENT
 "# Written by CMake from the block at the top of CMakeLists.txt. Do not edit.
 PINBALL_APP_NAME='@PINBALL_APP_NAME@'
@@ -429,7 +448,7 @@ PINBALL_HOME_NAME='@PINBALL_HOME_NAME@'
 PINBALL_BUNDLE_ID='@PINBALL_BUNDLE_ID@'
 PINBALL_VERSION='@PROJECT_VERSION@'
 PINBALL_BUILD_NUMBER='@PINBALL_BUILD_NUMBER@'
-PINBALL_IOS_TEST_EXIT='@PINBALL_IOS_TEST_EXIT@'
+PINBALL_IOS_TEST_EXIT='@pinball_test_exit_text@'
 PINBALL_DEPLOYMENT_TARGET='@CMAKE_OSX_DEPLOYMENT_TARGET@'
 PINBALL_ASSET_MANIFEST='@PINBALL_MANIFEST@'
 ")
@@ -667,6 +686,15 @@ if(BUILD_TESTING)
               $<TARGET_FILE:pinball> ${PINBALL_TEST_DIR}/asset_integrity_scratch)
     set_tests_properties(asset_integrity PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 120)
+
+    # The check a signed iOS build gets before upload refuses every
+    # signature, entitlement and provisioning profile it should, tried
+    # against stand-ins for Apple's tools. (Needs bash, so not on Windows.)
+    if(UNIX)
+      add_test(NAME check_signed_stubs
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/CheckSignedStubs.sh ${CMAKE_SOURCE_DIR})
+      set_tests_properties(check_signed_stubs PROPERTIES TIMEOUT 120)
+    endif()
   elseif(PINBALL_REQUIRE_ALL_TESTS)
     message(FATAL_ERROR "Python 3 not found, and PINBALL_REQUIRE_ALL_TESTS is ON: the "
                         "assets_clean, asset_integrity and layout_json tests need it")
@@ -731,6 +759,11 @@ if(BUILD_TESTING)
   add_test(NAME preseed_records
     COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
             -P ${CMAKE_SOURCE_DIR}/tests/CheckPreseed.cmake)
+
+  # The rule the privacy policy's address is held to at configure time.
+  add_test(NAME product_url_rule
+    COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -P ${CMAKE_SOURCE_DIR}/tests/CheckProductUrl.cmake)
 
   # The geometry dump must be valid JSON.
   if(PINBALL_BUILD_TOOLS AND Python3_Interpreter_FOUND)
