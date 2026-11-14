@@ -95,12 +95,15 @@ constexpr double kPinNoFlipperSeconds = 60.0;
 // G1 and C2r, whole games under the table's own rules at E = 5, 600 games:
 // the median game (wanted: 3 to 6 minutes) and the median and 90th
 // percentile of a ball of those games (wanted: 45 to 90 s, at most 300 s).
-// The table's ball is long before any rule adds to it (C2a above), and a
-// multiball or an extra ball can only add; the pins are 10 percent over
-// what was recorded (the standard error of these medians is about 4).
-constexpr double kRecordedGameMedian = 0.0;
-constexpr double kRecordedRuleBallMedian = 0.0;
-constexpr double kRecordedRuleBallNinetieth = 0.0;
+// A known miss that follows from C2's: the table's ball is long before any
+// rule adds to it (C2a above), three of them are over six minutes already,
+// and a multiball or an extra ball can only add. The rules' own levers
+// (TABLE.md 4.15) move the game by tens of seconds, not minutes. The pins
+// are 10 percent over what was recorded (the standard error of these
+// medians is about 4 percent).
+constexpr double kRecordedGameMedian = 641.0;
+constexpr double kRecordedRuleBallMedian = 122.0;
+constexpr double kRecordedRuleBallNinetieth = 380.8;
 constexpr double kPinRulesFactor = 1.10;
 
 enum class Kind { Hard, KnownMiss, Info, Deferred };
@@ -866,22 +869,33 @@ void sectionRules(bool quick, int error) {
            static_cast<unsigned long long>(games.stuck),
            static_cast<unsigned long long>(games.searches)));
 
+  // The research's C3 to C6 (TABLE_RESEARCH.md section 9), each judged at
+  // E = 5.
   const double turbo = pct(games.gamesWithTurbo);
   const double firstTurbo = at(games.firstTurboSeconds, 0.5);
-  row(judged, turbo >= 60.0 && firstTurbo < 120.0, "C3",
+  row(judged, turbo >= 60.0 && firstTurbo < 120.0, "C3a",
       text("%s: Turbo multiball starts; median first start", who.c_str()),
       "at least 60% of games; under 120 s",
       text("%.1f%%; %.0f s", turbo, firstTurbo));
   const double academy = pct(games.gamesWithAcademy);
-  row(judged, academy >= 15.0 && academy <= 40.0, "C4",
+  row(judged, academy >= 15.0 && academy <= 40.0, "C3b",
       text("%s: Academy multiball starts", who.c_str()), "15 to 40% of games",
       text("%.1f%%", academy));
   const double qualified = pct(games.gamesQualified);
-  row(judged, qualified < 2.0 && pct(games.gamesWithCourse) >= 90.0, "C5",
-      text("%s: all six courses passed; a course started", who.c_str()),
-      "under 2% of games; at least 90%",
-      text("%.2f%% (Graduation Day completed %.2f%%); %.1f%%", qualified,
-           pct(games.gamesGraduated), pct(games.gamesWithCourse)));
+  const double started = pct(games.gamesWithCourse);
+  row(judged, started >= 90.0 && qualified < 2.0, "C4",
+      text("%s: a course started; all six courses passed", who.c_str()),
+      "at least 90% of games; under 2%",
+      text("%.1f%%; %.2f%% (Graduation Day completed %.2f%%)", started, qualified,
+           pct(games.gamesGraduated)));
+  const double multiballMedian = at(games.multiballSeconds, 0.5);
+  const double withJackpot =
+      games.multiballs == 0 ? 0.0 : 100.0 * games.multiballsWithJackpot / games.multiballs;
+  row(judged, multiballMedian >= 15.0 && multiballMedian <= 45.0 && withJackpot >= 50.0, "C5",
+      text("%s: multiball length, median; multiballs with a jackpot", who.c_str()),
+      "15 to 45 s; at least 50%",
+      text("%.1f s (90th %.1f s); %.0f%% of %d", multiballMedian, at(games.multiballSeconds, 0.9),
+           withJackpot, games.multiballs));
   Feature largest = Feature::Slingshots;
   for (std::size_t f = 0; f < pinball::kFeatureCount; ++f) {
     if (games.share(static_cast<Feature>(f)) > games.share(largest)) {
@@ -889,10 +903,14 @@ void sectionRules(bool quick, int error) {
     }
   }
   const std::string_view largestName = pinball::featureName(largest);
-  row(judged, games.share(largest) <= 35.0, "C6",
-      text("%s: the largest share of all points from one feature", who.c_str()), "at most 35%",
-      text("%.1f%% (%.*s)", games.share(largest), static_cast<int>(largestName.size()),
-           largestName.data()));
+  const double spread = at(scores, 0.1) > 0.0 ? at(scores, 0.9) / at(scores, 0.1) : 0.0;
+  row(judged, games.share(largest) <= 35.0 && spread >= 8.0, "C6",
+      text("%s: largest share of all points from one feature; score, 90th percentile "
+           "over 10th",
+           who.c_str()),
+      "at most 35%; at least 8",
+      text("%.1f%% (%.*s); %.1f", games.share(largest), static_cast<int>(largestName.size()),
+           largestName.data(), spread));
   std::printf("#   share of score:");
   for (std::size_t f = 0; f < pinball::kFeatureCount; ++f) {
     const std::string_view name = pinball::featureName(static_cast<Feature>(f));
@@ -900,16 +918,6 @@ void sectionRules(bool quick, int error) {
                 games.share(static_cast<Feature>(f)));
   }
   std::printf("\n");
-  row(Kind::Info, true, "C5m",
-      text("%s: multiball length, median; multiballs with a jackpot", who.c_str()),
-      "15 to 45 s; at least 50%",
-      text("%.1f s (90th %.1f s); %.0f%% of %d", at(games.multiballSeconds, 0.5),
-           at(games.multiballSeconds, 0.9),
-           games.multiballs == 0 ? 0.0 : 100.0 * games.multiballsWithJackpot / games.multiballs,
-           games.multiballs));
-  row(Kind::Info, true, "C6r", text("%s: score, 90th percentile over 10th", who.c_str()),
-      "for the record",
-      text("%.1f", at(scores, 0.1) > 0.0 ? at(scores, 0.9) / at(scores, 0.1) : 0.0));
 
   // The length of a game and of its balls, with everything the rules add.
   const double gameMedian = at(games.gameSeconds, 0.5);
