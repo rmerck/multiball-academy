@@ -110,11 +110,14 @@ foreach(case IN LISTS layout_bad_args)
     WORKING_DIRECTORY ${PINBALL_TEST_DIR} TIMEOUT 30 LABELS layout)
 endforeach()
 
-# The licence notices on the About screen say what the licence files say:
-# this repository's always, and those of the pinned libraries when their
-# sources are in the build tree (PINBALL_FETCH_DEPS).
+# The notices on the About screen say what the licence files say: the
+# copyright, licence title and address of this repository's LICENSE and the
+# library licences in THIRD_PARTY_NOTICES.md always, and the pinned
+# libraries' own licence files when their sources are in the build tree
+# (PINBALL_FETCH_DEPS).
 if(Python3_Interpreter_FOUND)
-  set(layout_licences ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
+  set(layout_licences game:${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
+                      ${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md)
   foreach(candidate IN ITEMS "${box2d_SOURCE_DIR}/LICENSE" "${sdl3_SOURCE_DIR}/LICENSE.txt"
                              "${SDL3_SOURCE_DIR}/LICENSE.txt")
     if(EXISTS "${candidate}" AND NOT IS_DIRECTORY "${candidate}")

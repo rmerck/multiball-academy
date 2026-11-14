@@ -118,6 +118,6 @@ Report security issues through "Report a vulnerability" on the repository's Secu
 
 ## License
 
-MIT. See `LICENSE`.
+Copyright (c) 2026 Ryan Merck. The source may be used, copied and modified for noncommercial purposes under the [PolyForm Noncommercial License 1.0.0](LICENSE) (SPDX: `PolyForm-Noncommercial-1.0.0`); the App Store version is sold by the author. Box2D (MIT) and SDL (zlib), which are built into the game, keep their own licences: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Earlier releases, including v1.0.0 for macOS, were published under the MIT licence and remain under those terms.
 
 All code, art and audio in this repository are original. The project is not affiliated with Microsoft, Maxis or Cinematronics.

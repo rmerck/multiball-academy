@@ -90,8 +90,28 @@ set(PINBALL_SUPPORT_EMAIL "dev@mrck.app")
 if(NOT PINBALL_SUPPORT_EMAIL MATCHES "^[a-z0-9]+(\\.[a-z0-9]+)*@[a-z0-9]+(\\.[a-z0-9]+)+$")
   message(FATAL_ERROR "PINBALL_SUPPORT_EMAIL must be a plain address: '${PINBALL_SUPPORT_EMAIL}'")
 endif()
-# The copyright line of the application bundles.
-set(PINBALL_COPYRIGHT "Copyright 2026 rmerck. MIT licence.")
+# The copyright line of the application bundles (NSHumanReadableCopyright),
+# taken from LICENSE so that a change of licence is a change to that file:
+# its "Required Notice:" copyright, less the address, and the licence's
+# title (its first heading). The SPDX id of the game's own licence is
+# PolyForm-Noncommercial-1.0.0; Box2D and SDL keep theirs
+# (THIRD_PARTY_NOTICES.md).
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" pinball_license_lines LIMIT_COUNT 3)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(pinball_license_notice "")
+set(pinball_license_title "")
+foreach(line IN LISTS pinball_license_lines)
+  if(line MATCHES "^Required Notice: (Copyright \\(c\\) [0-9]+ [^\"<>&(]+[^\"<>&( ])")
+    set(pinball_license_notice "${CMAKE_MATCH_1}")
+  elseif(line MATCHES "^# ([^\"<>&]+)$")
+    set(pinball_license_title "${CMAKE_MATCH_1}")
+  endif()
+endforeach()
+if(pinball_license_notice STREQUAL "" OR pinball_license_title STREQUAL "")
+  message(FATAL_ERROR "LICENSE must begin with its 'Required Notice: Copyright (c) ...' line, "
+                      "a blank line and the licence's '# <title>' heading")
+endif()
+set(PINBALL_COPYRIGHT "${pinball_license_notice}. Licensed under the ${pinball_license_title}.")
 project(MultiballAcademy VERSION 2.0.0 LANGUAGES CXX)
 # The bundle version (CFBundleVersion) on iOS and macOS, also shown beside
 # the version. A whole number with no leading zero.
