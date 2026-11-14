@@ -82,8 +82,11 @@ FX = {"cyan": "#1EEBFF", "magenta": "#FF2EC8", "lime": "#9DFF1E", "orange": "#FF
       "violet": "#C45CFF", "white": "#FFF8EC", "gi": "#FFB45C", "gi_bulb": "#FFD9A0", "trail": "#9FF4FF"}
 GLOW_STRENGTH_NEON = 0.95      # glow.png alpha for a lit lamp at full level
 FLASHER_STRENGTH_MAX = 0.95    # strongest flasher burst (flare.png / glow.png); the ball is drawn after it, with its rim
-GI_STRENGTH = 0.40             # gi.png alpha at full level: the warm light over the whole playfield
-BALL_POOL_ALPHA = 0.70        # the dark pool drawn round each ball under the light show (TableEffects::kBallPoolAlpha)
+# The general illumination's colours (gi.png): amber walls, orange slingshots, the bumpers in turn.
+GI_COLOURS = {"walls": "#FF9A3C", "slings": "#FF7A1E", "bumpers": ["#FF3CC8", "#3CE6FF", "#FF3CC8"]}
+GI_STRENGTH = 0.75             # gi.png, drawn additively in its own colours, at full illumination
+BALL_POOL_ALPHA = 0.80        # the dark pool (pool.png) drawn round each ball under the light show
+BALL_POOL_RADII = 3.0         # its radius, in ball radii
 FLARE_UNITS = 64.0             # flare.png and ring.png cover this many units at scale 1
 
 

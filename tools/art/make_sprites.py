@@ -142,21 +142,54 @@ def _light_png(alpha):
 
 
 def gi():
-    """The general illumination as a light map over the whole playfield, white, tinted and scaled by the
-    renderer: warm everywhere inside the shell, brightest along the walls where the bulbs are, pools under
-    the bumpers and slingshots. Nothing outside the shell. Half a pixel per unit (it is soft). numpy/Pillow."""
+    """The general illumination as a coloured light map, drawn additively at full colour by the renderer:
+    amber along the walls where the bulbs are, orange round the slingshots, magenta and cyan pools under the
+    bumpers. The open middle of the table gets nothing, so the lit inserts stand out against its dark.
+    Nothing outside the shell. Half a pixel per unit (it is soft). Straight alpha. numpy/Pillow."""
+    from PIL import Image
     mask, dist, ux, uy = _field_mask(0.5)
-    light = 0.10 + 0.90 * np.exp(-dist / 40.0)
-    for b in L["bumpers"]:
-        light += 0.35 * np.exp(-((ux - b["c"][0]) ** 2 + (uy - b["c"][1]) ** 2) / (2 * 60.0 ** 2))
+
+    def rgb(h):
+        return np.array(P.rgb(h), np.float64) / 255.0
+
+    def pool(cx, cy, sigma):
+        return np.exp(-((ux - cx) ** 2 + (uy - cy) ** 2) / (2 * sigma ** 2))
+
+    light = np.zeros(ux.shape + (3,), np.float64)
+    walls = np.exp(-dist / 30.0)
+    # The launch lane is narrow, all of it near a wall: held down so it does not glare.
+    lane = min(x for x, _ in L["laneIsland"])
+    walls = np.where(ux > lane, walls * 0.4, walls)
+    light += walls[..., None] * rgb(P.GI_COLOURS["walls"]) * 0.85
     for tri in L["slingshots"]:
         cx = sum(p[0] for p in tri) / 3.0
         cy = sum(p[1] for p in tri) / 3.0
-        light += 0.25 * np.exp(-((ux - cx) ** 2 + (uy - cy) ** 2) / (2 * 55.0 ** 2))
-    # The launch lane is narrow, all of it near a wall: held down so it does not glare.
-    lane = min(x for x, _ in L["laneIsland"])
-    light = np.where(ux > lane, light * 0.45, light)
-    return _light_png(np.clip(light, 0, 1) * mask)
+        light += pool(cx, cy, 48.0)[..., None] * rgb(P.GI_COLOURS["slings"]) * 0.7
+    for i, b in enumerate(L["bumpers"]):
+        colour = P.GI_COLOURS["bumpers"][i % len(P.GI_COLOURS["bumpers"])]
+        light += pool(b["c"][0], b["c"][1], 44.0)[..., None] * rgb(colour) * 0.55
+    light *= mask[..., None]
+    alpha = np.clip(light.max(axis=2), 0, 1)
+    colour = np.where(alpha[..., None] > 1e-6, light / np.maximum(alpha[..., None], 1e-6), 0)
+    out = np.empty(ux.shape + (4,), np.float64)
+    out[..., :3] = np.round(np.clip(colour, 0, 1) * 255)
+    out[..., 3] = np.round(alpha * 255)
+    return Image.fromarray(out.astype(np.uint8), "RGBA")
+
+
+def pool():
+    """The dark pool drawn round each ball under the light show, ink, at the renderer's alpha: solid out to a
+    little past the ball's rim, then a smooth fall to nothing at the edge. numpy only."""
+    from PIL import Image
+    n = 128
+    ys, xs = np.mgrid[0:n, 0:n].astype(np.float64)
+    d = np.hypot(xs + 0.5 - n / 2, ys + 0.5 - n / 2) / (n / 2)
+    t = np.clip((d - 0.55) / 0.45, 0, 1)
+    a = 1 - t * t * (3 - 2 * t)
+    out = np.empty((n, n, 4), np.float64)
+    out[..., :3] = P.rgb(P.INK)
+    out[..., 3] = np.round(a * 255)
+    return Image.fromarray(out.astype(np.uint8), "RGBA")
 
 
 def flipper():
@@ -409,7 +442,7 @@ SPRITES = {
     "bumper_cap.png": lambda: bumper("cap"), "bar.png": bar, "plunger.png": plunger, "button.png": button, "button_gloss.png": button_gloss,
     "insert_round.png": lambda: insert("round"), "insert_arrow.png": lambda: insert("arrow"), "door.png": door,
     "spinner_0.png": lambda: spinner(0), "spinner_1.png": lambda: spinner(1), "kickback.png": kickback,
-    "flare.png": flare, "ring.png": ring, "gi.png": gi,
+    "flare.png": flare, "ring.png": ring, "gi.png": gi, "pool.png": pool,
 }
 
 

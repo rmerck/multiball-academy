@@ -174,7 +174,9 @@ void TableEffects::drawUnderlay(SDL_Renderer* r, const LightShow& show, bool lig
   // the shell).
   if (lightMap && textures_.gi != nullptr && gi > 0.0F) {
     const SDL_FRect field{0.0F, 0.0F, table::kWidth, table::kHeight};
-    SDL_SetTextureColorMod(textures_.gi, art::kFxGi.r, art::kFxGi.g, art::kFxGi.b);
+    // In its own colours: amber walls, orange slingshots, magenta and cyan
+    // under the bumpers, nothing over the open middle.
+    SDL_SetTextureColorMod(textures_.gi, 255, 255, 255);
     SDL_SetTextureAlphaModFloat(textures_.gi, std::min(1.0F, art::kGiStrength * gi));
     SDL_RenderTexture(r, textures_.gi, nullptr, &field);
   }
@@ -346,26 +348,20 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
 }
 
 void TableEffects::drawBallPools(SDL_Renderer* r, std::span<const BallView> balls) {
-  SDL_Texture* const glow = textures_.glow;
-  if (glow == nullptr) {
+  SDL_Texture* const pool = textures_.pool;
+  if (pool == nullptr) {
     return;
   }
-  // glow.png is additive everywhere else: switched for these and back.
-  SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_BLEND);
-  SDL_SetTextureColorMod(glow, art::kInk.r, art::kInk.g, art::kInk.b);
-  SDL_SetTextureAlphaModFloat(glow, art::kBallPoolAlpha);
+  SDL_SetTextureAlphaModFloat(pool, art::kBallPoolAlpha);
   for (const BallView& ball : balls) {
     if (!ball.visible) {
       continue;
     }
-    const float radius = table::kBallRadius * ball.scale * 2.3F;
+    const float radius = table::kBallRadius * ball.scale * art::kBallPoolRadii;
     const SDL_FRect dst{ball.position.x - radius, ball.position.y - radius, radius * 2.0F,
                         radius * 2.0F};
-    SDL_RenderTexture(r, glow, nullptr, &dst);
+    SDL_RenderTexture(r, pool, nullptr, &dst);
   }
-  SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_ADD);
-  SDL_SetTextureColorMod(glow, 255, 255, 255);
-  SDL_SetTextureAlphaMod(glow, 255);
 }
 
 void TableEffects::drawBallGlints(SDL_Renderer* r, const Game& game,

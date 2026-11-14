@@ -40,7 +40,7 @@ class Sim:
         self.im = bg.convert("RGB").resize((int(round(768 * k)), int(round(960 * k))), Image.LANCZOS)
         if FX:
             # gi.png over the whole playfield, warm, at full illumination.
-            self.add(384, 480, None, P.FX["gi"], P.GI_STRENGTH, sprite="sprites/gi.png", size=(768, 960))
+            self.add(384, 480, None, "#FFFFFF", P.GI_STRENGTH, sprite="sprites/gi.png", size=(768, 960))
 
     # ---- drawing in units -----------------------------------------------------
     def over(self, sp, cx, cy, w, h=None, angle=0.0, alpha=1.0):
@@ -160,12 +160,11 @@ class Sim:
         a = np.clip(1 - d, 0, 1) ** 1.2 * P.BALL_SHADOW_ALPHA
         sh = np.zeros((n, n, 4), np.uint8); sh[..., :3] = hexrgb("#05030F"); sh[..., 3] = (np.clip(a * 1.25, 0, P.BALL_SHADOW_ALPHA) * 255).astype(np.uint8)
         if FX:
-            # The dark pool round the ball (TableEffects::drawBallPools): glow.png in ink, blended.
-            pr = r * 2.3
-            g = np.asarray(load("sprites/glow.png").resize((int(round(pr * 2 * k)),) * 2, Image.LANCZOS)).astype(np.float32)
-            pool = np.zeros(g.shape, np.uint8); pool[..., :3] = P.rgb(P.INK)
-            pool[..., 3] = np.clip(g[..., 3] * P.BALL_POOL_ALPHA, 0, 255).astype(np.uint8)
-            ps = Image.fromarray(pool, "RGBA")
+            # The dark pool round the ball (TableEffects::drawBallPools): pool.png, blended at its alpha.
+            pr = r * P.BALL_POOL_RADII
+            g = np.asarray(load("sprites/pool.png").resize((int(round(pr * 2 * k)),) * 2, Image.LANCZOS)).astype(np.float32)
+            g[..., 3] *= P.BALL_POOL_ALPHA
+            ps = Image.fromarray(np.clip(g, 0, 255).astype(np.uint8), "RGBA")
             self.im.paste(ps, (int(round(x * k - ps.width / 2)), int(round(y * k - ps.height / 2))), ps)
         lift = (scale - 1.0) * 40.0
         ox, oy = P.BALL_SHADOW_OFFSET

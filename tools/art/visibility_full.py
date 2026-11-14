@@ -108,7 +108,9 @@ def measure(empty, layer, pos, scale, bs=1.0):
 
     def small(arr):
         return np.asarray(Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8)).resize((m, m), Image.BOX))
-    lb, le = lum(small(comp)), lum(small(patch))
+    # Around the ball: the bare table, or with --fx what the game draws there, the dark pool round the ball
+    # (pool.png) included, since that is what the eye sees beside it.
+    lb, le = lum(small(comp)), lum(small(comp if R.FX else patch))
     v = np.asarray(Image.fromarray((valid * 255).astype(np.uint8)).resize((m, m), Image.BOX)) > 250
     yy, xx = np.mgrid[0:m, 0:m]
     dx, dy = (xx + 0.5) / scale - HALF, (yy + 0.5) / scale - HALF

@@ -486,13 +486,17 @@ void drawLitLamps(SDL_Renderer* r, SDL_Texture* arrow, SDL_Texture* round, Table
     }
     const Vec2 at = table::kLamps[i].position;
     const art::Rgb neon = art::kLampNeon[i];
-    // The halo grows faster than the lens: a chase has some, a lit lamp a
-    // big saturated one, and only a lit lamp has the hot core and the star.
+    // The halo grows with the lens. A lamp the rules light has the big
+    // one, a hot core and a star; a chase's head a smaller halo alone.
     const float above = (level - fx::kUnlitFloor) / (1.0F - fx::kUnlitFloor);
     const float halo = above * std::sqrt(above);
-    effects.addGlow(r, at, sprites[i].glowRadius * 3.4F, neon, 0.55F * art::kNeonGlowStrength * halo);
-    effects.addGlow(r, at, sprites[i].glowRadius * 1.7F, neon, art::kNeonGlowStrength * halo);
-    if (level > 0.8F) {
+    const bool lit = show.lampLit(table::kLamps[i].id);
+    const float wide = lit ? 3.4F : 2.2F;
+    const float near = lit ? 1.7F : 1.2F;
+    const float strength = art::kNeonGlowStrength * (lit ? 1.0F : 0.8F);
+    effects.addGlow(r, at, sprites[i].glowRadius * wide, neon, 0.55F * strength * halo);
+    effects.addGlow(r, at, sprites[i].glowRadius * near, neon, strength * halo);
+    if (lit && level > 0.8F) {
       const float hot = (level - 0.8F) / 0.2F;
       effects.addGlow(r, at, sprites[i].glowRadius * 0.6F, mixRgb(neon, art::kFxWhite, 0.55F),
                       0.6F * hot);
@@ -544,6 +548,7 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   t.flare = required("sprites/flare.png");
   t.ring = required("sprites/ring.png");
   t.gi = required("sprites/gi.png");
+  t.pool = required("sprites/pool.png");
   t.bar = required("sprites/bar.png");
   t.door = required("sprites/door.png");
   t.plunger = required("sprites/plunger.png");
@@ -585,6 +590,7 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   SDL_SetTextureBlendMode(t.flare.get(), SDL_BLENDMODE_ADD);
   SDL_SetTextureBlendMode(t.ring.get(), SDL_BLENDMODE_ADD);
   SDL_SetTextureBlendMode(t.gi.get(), SDL_BLENDMODE_ADD);
+  SDL_SetTextureBlendMode(t.pool.get(), SDL_BLENDMODE_BLEND);
   SDL_SetTextureScaleMode(t.gi.get(), SDL_SCALEMODE_LINEAR);
   // What lies outside the playfield's shell, to be drawn back over the
   // light show's glows where they would spill past the cabinet.
@@ -616,7 +622,8 @@ TableRenderer::TableRenderer(Textures textures) : textures_(std::move(textures))
   effects_.setTextures({.glow = textures_.glow.get(),
                         .flare = textures_.flare.get(),
                         .ring = textures_.ring.get(),
-                        .gi = textures_.gi.get()});
+                        .gi = textures_.gi.get(),
+                        .pool = textures_.pool.get()});
 }
 
 OverlayArt TableRenderer::overlayArt() const noexcept {

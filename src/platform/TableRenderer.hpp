@@ -113,6 +113,7 @@ class TableRenderer {
     TexturePtr flare;  // The light show's flasher bursts.
     TexturePtr ring;   // And its shock rings.
     TexturePtr gi;     // And the general illumination's light map.
+    TexturePtr pool;   // And the dark pool round each ball.
     // The background outside the playfield's shell (made at load): trims
     // the light show at the cabinet.
     TexturePtr outside;

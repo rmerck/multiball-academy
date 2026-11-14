@@ -43,10 +43,11 @@ inline constexpr std::uint64_t kMinLargeFadeSteps = 150;
 // Steps a ball's trail remembers.
 inline constexpr std::size_t kTrailLength = 8;
 // An unlit insert is never dark: it shows as dim coloured plastic at this
-// level. Over that the quiet table's chases run, never brighter than
-// kAmbientMax; a lit lamp is 1, with a halo and a hot core the chases lack.
+// level. Over that the quiet table's chases run: each head at 1 with a
+// smaller halo, its tail from kChaseTail down to the floor. A lamp the
+// rules light blinks or holds, and has a star the chases never get.
 inline constexpr float kUnlitFloor = 0.34F;
-inline constexpr float kAmbientMax = 0.74F;
+inline constexpr float kChaseTail = 0.74F;
 // A struck element's flash: about 220 ms.
 inline constexpr std::uint32_t kHitFlashSteps = 26;
 // Bursts in flight at once (pending or lit).
@@ -162,6 +163,9 @@ class LightShow {
   [[nodiscard]] const std::array<float, kLampCount>& lampLevels() const noexcept {
     return levels_;
   }
+  // Whether the rules light the lamp (on, blinking): such a lamp is drawn
+  // with its hot core and star; a chase's head is not.
+  [[nodiscard]] bool lampLit(table::LampId lamp) const noexcept;
   // The state the rules gave each lamp at the latest step.
   [[nodiscard]] LampState lampState(table::LampId lamp) const noexcept;
   // A bay door's face lamp, 0 to 1, and its flash when struck.

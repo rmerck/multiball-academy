@@ -157,10 +157,16 @@ void testAmbientIsFarBelowLit() {
     }
   }
   CHECK(least >= fx::kUnlitFloor - 1e-6F);
-  CHECK(most > 0.6F);
-  CHECK(most <= fx::kAmbientMax + 1e-6F);
+  CHECK(most > 0.99F);  // A chase's head reaches full.
   CHECK(quietWindows == 0);  // Six or more lamps change in every quarter second.
-  CHECK(fx::kAmbientMax + 0.25F <= 1.0F + 1e-6F);
+  // Lit by a chase is not lit by the rules: no star.
+  bool chaseNotLit = true;
+  for (const table::Lamp& lamp : table::kLamps) {
+    if (show.lampState(lamp.id) == LampState::Off) {
+      chaseNotLit = chaseNotLit && !show.lampLit(lamp.id);
+    }
+  }
+  CHECK(chaseNotLit);
 }
 
 void testSameGameSameLights() {

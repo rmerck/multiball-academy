@@ -869,7 +869,8 @@ float LightShow::attractLevel(std::size_t lamp) const noexcept {
 float LightShow::ambientLevel(std::size_t lamp) const noexcept {
   // A machine between shots is never still: every unlit insert shows as dim
   // coloured plastic (kUnlitFloor), and over that the lamps run chases of
-  // their own, never brighter than kAmbientMax, under a lit lamp's 1. With
+  // their own, the head at full, the tail from kChaseTail down. A lamp the
+  // rules light is told apart by its blink and its star (lampLit). With
   // reduce motion the chases run four times slower, as soft waves.
   const auto id = static_cast<LampId>(lamp);
   const float slow = reduceMotion_ ? 4.0F : 1.0F;
@@ -884,8 +885,13 @@ float LightShow::ambientLevel(std::size_t lamp) const noexcept {
     if (ring) {
       d = std::min(d, count - d);
     }
-    const float k = std::max(0.0F, 1.0F - d * 0.75F);
-    return kUnlitFloor + (kAmbientMax - kUnlitFloor) * k * std::sqrt(k);
+    // The head at full, as a lamp lit; the tail from kChaseTail down to the
+    // floor over the next two places.
+    if (d < 0.5F) {
+      return 1.0F - (1.0F - kChaseTail) * d * 2.0F;
+    }
+    const float k = std::max(0.0F, 1.0F - (d - 0.5F) / 2.0F);
+    return kUnlitFloor + (kChaseTail - kUnlitFloor) * k;
   };
   const std::size_t i = lampIndex(id);
   if (table::isArrowLamp(id)) {
@@ -993,6 +999,11 @@ void LightShow::updateLamps(const Game& game) noexcept {
 float LightShow::lampLevel(table::LampId lamp) const noexcept {
   const std::size_t i = lampIndex(lamp);
   return i < levels_.size() ? levels_[i] : 0.0F;
+}
+
+bool LightShow::lampLit(table::LampId lamp) const noexcept {
+  const LampState state = lampState(lamp);
+  return !attract_ && state != LampState::Off;
 }
 
 LampState LightShow::lampState(table::LampId lamp) const noexcept {
