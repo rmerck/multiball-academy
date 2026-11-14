@@ -56,11 +56,17 @@ constexpr int kPinSkillShotDrains = 19;
 // A1e: the third easiest shot's window. Recorded 5 steps (wanted: 6). A
 // sweep of the geometry, not a sample: no margin.
 constexpr int kPinThirdShotWindow = 5;
-// B2a at timing errors 5, 6 and 8: percent of 5,000 balls ending within
-// 5 s (wanted: under 2). Recorded 2.3, 3.5 and 3.2; a share near 3 percent of
-// 5,000 has a standard error of 0.25 points, and the pin is 0.6 over.
+// B2a: percent of 5,000 balls ending within 5 s (wanted: under 2), at the
+// timing errors 3, 4, 5, 6 and 8. At 5, 6 and 8 recorded 2.3, 3.5 and 3.2.
+// At 3 and 4 one sample of 5,000 gave 1.8 and the row was made a plain
+// pass; it is not one. On 30,000 balls each, every ball a fresh game with
+// its own seed, the share is 2.34 and 2.25 percent (standard error 0.09),
+// with and without the table's new elements alike: what a ball does in its
+// first five seconds is decided by the launch, the lanes and the first
+// flip. A share near 2.5 percent of 5,000 has a standard error of 0.22
+// points, and the pin is 0.6 over.
 constexpr double kPinUnder5Margin = 0.6;
-constexpr std::array<double, 3> kRecordedUnder5{2.3, 3.5, 3.2};  // E = 5, 6, 8.
+constexpr std::array<double, 5> kRecordedUnder5{2.34, 2.25, 2.3, 3.5, 3.2};  // E = 3, 4, 5, 6, 8.
 // B3b at E = 6: outlanes apart, in points of 5,000 drains (wanted: within
 // 10). Recorded 8.9, a pass, where an earlier sample missed; the difference of two shares near 25
 // percent has a standard error of 1.0 point.
@@ -74,16 +80,14 @@ constexpr std::array<double, 3> kRecordedMedian{131.4, 100.5, 97.2};
 constexpr std::array<double, 3> kRecordedNinetieth{381.4, 282.8, 288.3};
 constexpr double kPinMedianFactor = 1.15;
 constexpr double kPinNinetiethFactor = 1.13;
-// D3 at E = 3, 5,000 balls: balls that reach the 20 minute cap, recorded 4:
-// a Poisson count, pinned two standard deviations over. And the longest a
-// ball in play went without touching a flipper, recorded 1101.1 s: there is
-// a cycle on this table that needs no player, and a ball in it runs to the
-// cap. (Where it runs was not traced here. The Briefing room kicks every
-// ball out the same way, and the element that varies its kick is to come.) The pin is therefore the
-// cap itself, and says only that this row is measured; bring it down to the 20 s wanted when the
-// cycle is broken.
-constexpr int kPinTimeCapBalls = 8;
-constexpr double kPinNoFlipperSeconds = 1200.0;
+// D3 at E = 3, 5,000 balls: balls that reach the 20 minute cap (recorded
+// 0 with the Briefing room's kick varied; it was 4, all in one safe round
+// through that kick), and the longest a ball in play went without touching
+// a flipper while it was on the table. (That was first measured as the
+// ball left, after its record had been cleared, which gave the length of
+// the longest ball: 1,101 s. No ball was ever that long without a flipper.)
+constexpr int kPinTimeCapBalls = 2;
+constexpr double kPinNoFlipperSeconds = 60.0;
 
 enum class Kind { Hard, KnownMiss, Info, Deferred };
 
@@ -578,11 +582,11 @@ void sectionReflex(bool quick, int onlyError) {
     reportElements(text("P2 E=%d, saver off", error).c_str(), result);
     const double under5 = percentOf(result.under5, result.ballSeconds.size());
     const double under10 = percentOf(result.under10, result.ballSeconds.size());
-    if (error <= 4) {
-      row(Kind::Hard, under5 < 2.0, "B2a", text("P2 E=%d: balls ending within 5 s", error),
-          "under 2 percent", text("%.2f%%", under5));
-    } else {
-      const double pin = kRecordedUnder5[error == 5 ? 0 : (error == 6 ? 1 : 2)] + kPinUnder5Margin;
+    {
+      const std::size_t level = static_cast<std::size_t>(
+          std::ranges::find(kErrors, error) - kErrors.begin());
+      const double pin = kRecordedUnder5[std::min(level, kRecordedUnder5.size() - 1)] +
+                         kPinUnder5Margin;
       pinnedRow(under5 < 2.0, under5 <= pin, "B2a", text("P2 E=%d: balls ending within 5 s", error),
                 text("under 2 percent; pinned %.2f", pin), text("%.2f%%", under5));
     }
