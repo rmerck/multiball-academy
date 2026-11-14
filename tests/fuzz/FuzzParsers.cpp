@@ -6,12 +6,18 @@
 // build/pinball_fuzz -max_total_time=60 -dict=tests/fuzz/parsers.dict <new dir> tests/fuzz/corpus
 //
 // Seeds in tests/fuzz/corpus start with '0', '1', '2' or '3', which select
-// the score, PNG, asset name and argument parsers in that order, or with
-// '4' for the review tools' window description.
+// the score, PNG, asset name and argument parsers in that order, with '4'
+// for the review tools' window description, or with '5' for what the system
+// and the player's fingers give the touch screen: a window size and safe
+// area, then a run of touches (see fuzzTouchScreen).
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -19,9 +25,12 @@
 #include "core/Args.hpp"
 #include "core/AssetName.hpp"
 #include "core/HighScores.hpp"
+#include "core/InitialsEntry.hpp"
+#include "core/OverlayLayout.hpp"
 #include "core/PngHeader.hpp"
 #include "core/Rules.hpp"
 #include "core/SurfaceSpec.hpp"
+#include "core/TouchControls.hpp"
 
 namespace {
 
@@ -110,6 +119,145 @@ void fuzzSurfaceSpec(std::string_view text) {
   }
 }
 
+// Reads a float from the next four bytes, or 0 when they run out. Any bit
+// pattern: NaN, infinities, denormals and negative zero included.
+float takeFloat(std::string_view& bytes) {
+  float value = 0.0F;
+  if (bytes.size() >= sizeof value) {
+    std::memcpy(&value, bytes.data(), sizeof value);
+  }
+  bytes.remove_prefix(std::min(bytes.size(), sizeof value));
+  return value;
+}
+
+std::uint8_t takeByte(std::string_view& bytes) {
+  if (bytes.empty()) {
+    return 0;
+  }
+  const auto value = static_cast<std::uint8_t>(bytes.front());
+  bytes.remove_prefix(1);
+  return value;
+}
+
+bool finiteRect(const pinball::screen::Rect& r) {
+  return std::isfinite(r.x) && std::isfinite(r.y) && std::isfinite(r.w) && std::isfinite(r.h) &&
+         r.w >= 0.0F && r.h >= 0.0F;
+}
+
+// The touch screen's inputs as the iOS application receives them. The
+// window's size and safe area come from the system and are believed only
+// so far (core/ScreenLayout); finger positions are fractions of the window
+// that SDL does not promise to keep in 0..1. The layout that results must be
+// finite and drawable, and the touch state machines must stay consistent
+// whatever order fingers go down, move, lift and are cancelled in.
+void fuzzTouchScreen(std::string_view bytes) {
+  namespace screen = pinball::screen;
+  screen::Surface surface{};
+  surface.width = takeFloat(bytes);
+  surface.height = takeFloat(bytes);
+  surface.safeTop = takeFloat(bytes);
+  surface.safeBottom = takeFloat(bytes);
+  surface.safeLeft = takeFloat(bytes);
+  surface.safeRight = takeFloat(bytes);
+  const screen::Layout layout = screen::computeLayout(surface, screen::Idiom::Touch);
+  require(std::isfinite(layout.canvasWidth) && layout.canvasWidth > 0.0F);
+  require(std::isfinite(layout.canvasHeight) && layout.canvasHeight > 0.0F);
+  // The application hands the canvas to SDL as whole numbers (App.cpp).
+  require(layout.canvasWidth < static_cast<float>(std::numeric_limits<int>::max() / 2));
+  require(layout.canvasHeight < static_cast<float>(std::numeric_limits<int>::max() / 2));
+  require(std::isfinite(layout.pointsPerUnit) && layout.pointsPerUnit > 0.0F);
+  for (const screen::Rect& r :
+       {layout.safe, layout.playfield, layout.hud, layout.deck, layout.dialog, layout.pauseButton,
+        layout.nudgeLeftButton, layout.centreButton, layout.nudgeRightButton,
+        layout.flipperLeftZone, layout.flipperRightZone}) {
+    require(finiteRect(r));
+  }
+  const screen::MenuLayout menu = screen::menuLayout(layout);
+  const screen::AboutLayout about = screen::aboutLayout(layout);
+  const screen::InitialsLayout initials = screen::initialsLayout(layout);
+  for (const screen::Rect& r : {menu.box, menu.resume, menu.newGame, menu.sound, menu.music,
+                                menu.about, about.box, about.close, about.body, about.privacyLink,
+                                about.previous, about.next, initials.box, initials.ok}) {
+    require(finiteRect(r));
+  }
+
+  pinball::TouchControls touch;
+  pinball::OverlayTaps taps;
+  pinball::InitialsEntry entry;
+  std::uint64_t now = 0;
+  while (!bytes.empty()) {
+    const std::uint8_t control = takeByte(bytes);
+    // Ten fingers' worth of ids plus a few far apart, so that both the
+    // slot table and its overflow are reached.
+    const std::uint8_t idByte = takeByte(bytes);
+    const std::uint64_t id = (idByte & 0x80U) != 0 ? std::uint64_t{idByte} << 56U : idByte % 12U;
+    const auto phase = static_cast<pinball::TouchPhase>(control & 3U);
+    const pinball::CanvasPoint at = pinball::canvasPoint(layout, takeFloat(bytes), takeFloat(bytes));
+    now += takeByte(bytes) * 8U;
+    const pinball::TouchControls::Context context{(control & 4U) != 0, (control & 8U) != 0};
+
+    switch ((control >> 4U) & 3U) {
+      case 0: {
+        touch.handle({.id = id, .phase = phase, .x = at.x, .y = at.y}, layout, context);
+        const pinball::InputState held = touch.held();
+        const pinball::TouchControls::View view = touch.view(context);
+        require(view.left == held.leftFlipper && view.right == held.rightFlipper);
+        require(view.nudgeLeft == held.nudgeLeft && view.nudgeRight == held.nudgeRight);
+        (void)touch.takePressed();
+        (void)touch.takePauseRequest();
+        break;
+      }
+      case 1:
+        (void)taps.handle(phase, id, pinball::menuTarget(menu, at.x, at.y), now);
+        break;
+      case 2: {
+        const pinball::OverlayTarget acted =
+            taps.handle(phase, id, pinball::aboutTarget(about, at.x, at.y), now);
+        if (acted.kind == pinball::OverlayTarget::Kind::AboutTab) {
+          require(acted.index < about.tabs.size());
+        }
+        break;
+      }
+      default: {
+        const pinball::OverlayTarget under = pinball::initialsTarget(initials, at.x, at.y);
+        if (under.kind == pinball::OverlayTarget::Kind::InitialUp ||
+            under.kind == pinball::OverlayTarget::Kind::InitialDown ||
+            under.kind == pinball::OverlayTarget::Kind::InitialSlot) {
+          require(under.index < initials.slot.size());
+        }
+        const pinball::OverlayTarget acted = taps.handle(phase, id, under, now);
+        const pinball::OverlayTarget repeated = taps.repeat(now);
+        require(repeated.kind == pinball::OverlayTarget::Kind::None ||
+                repeated.kind == pinball::OverlayTarget::Kind::InitialUp ||
+                repeated.kind == pinball::OverlayTarget::Kind::InitialDown);
+        for (const pinball::OverlayTarget& t : {acted, repeated}) {
+          if (t.kind == pinball::OverlayTarget::Kind::InitialUp) {
+            entry.next();
+          } else if (t.kind == pinball::OverlayTarget::Kind::InitialDown) {
+            entry.previous();
+          } else if (t.kind == pinball::OverlayTarget::Kind::InitialSlot) {
+            entry.right();
+          }
+        }
+        require(entry.cursor() < entry.letters().size());
+        for (const char c : entry.letters()) {
+          require(c >= 'A' && c <= 'Z');
+        }
+        break;
+      }
+    }
+    if ((control & 0xC0U) == 0xC0U && (idByte & 1U) != 0) {
+      // A change of screen or layout lets every finger go (App).
+      touch.cancelAll();
+      taps.cancel();
+      const pinball::InputState held = touch.held();
+      require(!held.leftFlipper && !held.rightFlipper && !held.plunger && !held.nudgeLeft &&
+              !held.nudgeRight && !held.nudgeUp && !held.newGame);
+      require(taps.pressed().kind == pinball::OverlayTarget::Kind::None);
+    }
+  }
+}
+
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) {
@@ -123,6 +271,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
   const std::string text(reinterpret_cast<const char*>(body), length);
   if (data[0] == '4') {
     fuzzSurfaceSpec(text);
+    return 0;
+  }
+  if (data[0] == '5') {
+    fuzzTouchScreen(text);
     return 0;
   }
   switch (which) {

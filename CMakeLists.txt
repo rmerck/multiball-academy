@@ -226,7 +226,10 @@ if(PINBALL_FUZZ)
     src/core/Args.cpp
     src/core/AssetName.cpp
     src/core/HighScores.cpp
-    src/core/PngHeader.cpp)
+    src/core/OverlayLayout.cpp
+    src/core/PngHeader.cpp
+    src/core/ScreenLayout.cpp
+    src/core/TouchControls.cpp)
   target_include_directories(pinball_fuzz_core PUBLIC src)
   pinball_apply_hardening(pinball_fuzz_core PUBLIC)
   target_compile_options(pinball_fuzz_core PUBLIC -fsanitize=fuzzer-no-link)
