@@ -29,6 +29,7 @@
 #include "platform/AudioOutput.hpp"
 #include "platform/SaveStore.hpp"
 #include "platform/ScoreStore.hpp"
+#include "core/LightShow.hpp"
 #include "platform/SettingsStore.hpp"
 #include "platform/TableRenderer.hpp"
 
@@ -285,9 +286,9 @@ class App {
   // the title after kGameOverIdleSeconds, or at once on a tap or a key
   // once kGameOverGuardSeconds have passed.
   [[nodiscard]] bool gameOverStanding() const noexcept;
-  // Attract mode's light show: how the attract table is lit this frame. The
-  // one place the title asks (fx/lightshow plugs its sequence in here);
-  // until then a chase over the game's own lamps (attractChase).
+  // Attract mode's lamps, for the table drawn from its layout: those the
+  // light show's attract sequence (attractShow_) has lit. With the art, the
+  // show itself is drawn.
   [[nodiscard]] TableLights attractLights(const Game& attract) const;
   // The window changed size or safe area: the touch layout follows it.
   void handleLayoutChange();
@@ -419,6 +420,12 @@ class App {
   // The player's choice. The tune also rests whenever the game is halted.
   bool musicOn_ = true;
   Game game_;
+  // The table's lights, fed every step of game_ (core/LightShow.hpp), and
+  // the attract game's, fed every step of attract_ with the attract
+  // sequence on (off on the HOW TO PLAY guide, which shows the table as
+  // played). Reduce motion reaches both from reduceMotion_.
+  LightShow lightShow_;
+  LightShow attractShow_;
   // Declared before the table it loads.
   ScoreStore scoreStore_;
   // The saved game: the one offered to resume, read at start; whether the

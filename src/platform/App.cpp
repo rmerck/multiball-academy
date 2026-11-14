@@ -271,6 +271,8 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
 
   systemCorners_ = options.systemCorners.value_or(SDL_IsTablet());
   reduceMotion_ = options_.reduceMotion.value_or(systemReduceMotion());
+  lightShow_.setReduceMotion(reduceMotion_);
+  attractShow_.setReduceMotion(reduceMotion_);
   ios::attachWindow(window_.get());
   hapticsAvailable_ = ios::hapticsAvailable();
   accessibilityEvent_ = SDL_RegisterEvents(1);
@@ -393,6 +395,7 @@ FrameResult App::iterate(bool restWhenStill) {
     SoundSet sounds = 0;
     for (int i = 0; i < steps; ++i) {
       game_.step(input_);
+      lightShow_.observe(game_);
       sounds |= game_.sounds();
       // Checked per step, so a game that ends and restarts within one
       // frame is still recorded.
@@ -779,17 +782,21 @@ void App::render(double alpha, bool cursorLit) {
     const bool guide = front_.state().page == FrontPage::Guide;
     table_->drawBackdrop(r, layout_);
     if (guide) {
+      attractShow_.setAttract(false);
       table_->draw(r, shown, static_cast<float>(attractTimestep_.alpha()), layout_,
-                   DrawOptions{.reduceMotion = reduceMotion_}, HudExtras{highScores_.best(), false});
+                   DrawOptions{.reduceMotion = reduceMotion(),
+                               .lightShow = attract_ ? &attractShow_ : nullptr},
+                   HudExtras{highScores_.best(), false});
       if (touch) {
         table_->drawTouchOverlay(r, layout_,
                                  TouchControls().view(pinball::touchContext(shown)));
       }
     } else {
+      attractShow_.setAttract(true);
       table_->drawAttract(r, shown, static_cast<float>(attractTimestep_.alpha()),
                           screen::attractArea(layout_), attractLights(shown),
                           front_.state().page == FrontPage::Title ? kTitleVeil : kPageVeil,
-                          reduceMotion_);
+                          reduceMotion(), attract_ ? &attractShow_ : nullptr);
     }
     const OverlayArt art = table_->overlayArt();
     FrontTarget pressed{};
@@ -820,10 +827,12 @@ void App::render(double alpha, bool cursorLit) {
   const bool showPaused = paused_ || autoPaused_;
   // The ball and flippers are drawn part-way between the last two steps.
   table_->drawBackdrop(r, layout_);
+  lightShow_.setReduceMotion(reduceMotion());
   table_->draw(r, game_, static_cast<float>(alpha), layout_,
                DrawOptions{.dimmed = showPaused,
                            .reduceMotion = reduceMotion_,
-                           .flippersAtRest = showPaused},
+                           .flippersAtRest = showPaused,
+                           .lightShow = &lightShow_},
                HudExtras{highScores_.best(), newHighScore_});
   if (touch) {
     table_->drawTouchOverlay(r, layout_, touch_.view(touchContext()));

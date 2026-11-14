@@ -69,6 +69,9 @@ void App::openFront() {
   // A fresh attract game each time: it never carries anything of the
   // player's, and the player's game is never stepped behind it.
   attract_.emplace();
+  attractShow_.reset();
+  attractShow_.setReduceMotion(reduceMotion());
+  attractShow_.setAttract(true);
   pilot_ = AttractPilot{};
   attractTimestep_ = FixedTimestep{Game::kStepSeconds, 8};
   attractSteps_ = 0;
@@ -162,6 +165,7 @@ void App::stepAttract(double seconds) {
   for (int i = 0; i < steps; ++i) {
     const bool wasOver = attract_->gameOver();
     attract_->step(pilot_.next(*attract_));
+    attractShow_.observe(*attract_);
     ++attractSteps_;
     // An attract game that ends is counted, and that is all: it has no
     // initials, no score table and no saved game (recordFinishedGame and
@@ -174,7 +178,14 @@ void App::stepAttract(double seconds) {
 }
 
 TableLights App::attractLights(const Game& attract) const {
-  return attractChase(attract, reduceMotion_);
+  // The light show's attract sequence (core/LightShow.hpp): the lamps it
+  // has lit, for the table drawn from its layout; with art the show itself
+  // is drawn (drawAttract).
+  TableLights lights = tableLights(attract);
+  for (std::size_t i = 0; i < lights.lamps.size(); ++i) {
+    lights.lamps[i] = attractShow_.lampLevels()[i] > 0.5F;
+  }
+  return lights;
 }
 
 void App::frontAct(FrontAction action) {

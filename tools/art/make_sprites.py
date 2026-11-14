@@ -71,6 +71,127 @@ def glow():
     return Image.fromarray(out.astype(np.uint8), "RGBA")
 
 
+def flare():
+    """Additive flasher burst, white, tinted by the renderer: a hot core, a soft bloom and a four-point star
+    with fainter diagonals (the 90s lens flare, kept to flashers; never on a lamp at rest). numpy only."""
+    n = 256
+    ys, xs = np.mgrid[0:n, 0:n].astype(np.float64)
+    dx = (xs + 0.5 - n / 2) / (n / 2)
+    dy = (ys + 0.5 - n / 2) / (n / 2)
+    d = np.hypot(dx, dy)
+    core = np.clip(1 - d / 0.22, 0, 1) ** 1.6
+    bloom = np.clip(1 - d, 0, 1) ** 3.0 * 0.55
+    fade = np.clip(1 - d, 0, 1) ** 1.4
+
+    def ray(u, v, width):
+        return np.exp(-(v / width) ** 2) * fade * np.clip(1 - np.abs(u), 0, 1)
+
+    r2 = np.sqrt(0.5)
+    rays = ray(dx, dy, 0.035) + ray(dy, dx, 0.035)
+    rays += 0.45 * (ray((dx + dy) * r2, (dx - dy) * r2, 0.025) + ray((dx - dy) * r2, (dx + dy) * r2, 0.025))
+    a = np.clip(core + bloom + rays * 0.8, 0, 1)
+    out = np.empty((n, n, 4), np.float64)
+    out[..., :3] = 255
+    out[..., 3] = np.round(a * 255)
+    from PIL import Image
+    return Image.fromarray(out.astype(np.uint8), "RGBA")
+
+
+def ring():
+    """Additive shock ring for a struck bumper or a flasher's edge, white, tinted by the renderer. numpy only."""
+    n = 128
+    ys, xs = np.mgrid[0:n, 0:n].astype(np.float64)
+    d = np.hypot(xs + 0.5 - n / 2, ys + 0.5 - n / 2) / (n / 2)
+    a = np.exp(-((d - 0.78) / 0.10) ** 2) * np.clip((1 - d) / 0.08, 0, 1)
+    out = np.empty((n, n, 4), np.float64)
+    out[..., :3] = 255
+    out[..., 3] = np.round(np.clip(a, 0, 1) * 255)
+    from PIL import Image
+    return Image.fromarray(out.astype(np.uint8), "RGBA")
+
+
+def _field_mask(scale, ss=4):
+    """The playfield inside the shell, the lane island cut out, at `scale` pixels per unit (anti-aliased by
+    drawing `ss` times larger), and each pixel's distance in units to the nearest wall chain."""
+    from PIL import Image, ImageDraw
+    w, h = int(round(L["width"] * scale)), int(round(L["height"] * scale))
+    big = Image.new("L", (w * ss, h * ss), 0)
+    d = ImageDraw.Draw(big)
+    k = scale * ss
+    d.polygon([(x * k, y * k) for x, y in L["shell"]], fill=255)
+    d.polygon([(x * k, y * k) for x, y in L["laneIsland"]], fill=0)
+    mask = np.asarray(big.resize((w, h), Image.BOX), np.float64) / 255.0
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float64)
+    ux, uy = (xs + 0.5) / scale, (ys + 0.5) / scale
+    dist = np.full(ux.shape, 1e9)
+    for chain in (L["shell"], L["laneIsland"]):
+        for i in range(len(chain)):
+            (ax, ay), (bx, by) = chain[i - 1], chain[i]
+            dx, dy = bx - ax, by - ay
+            t = np.clip(((ux - ax) * dx + (uy - ay) * dy) / max(1e-9, dx * dx + dy * dy), 0, 1)
+            dist = np.minimum(dist, np.hypot(ux - ax - t * dx, uy - ay - t * dy))
+    return mask, dist, ux, uy
+
+
+def _light_png(alpha):
+    from PIL import Image
+    out = np.empty(alpha.shape + (4,), np.float64)
+    out[..., :3] = 255
+    out[..., 3] = np.round(np.clip(alpha, 0, 1) * 255)
+    return Image.fromarray(out.astype(np.uint8), "RGBA")
+
+
+def gi():
+    """The general illumination as a coloured light map, drawn additively at full colour by the renderer:
+    amber along the walls where the bulbs are, orange round the slingshots, magenta and cyan pools under the
+    bumpers. The open middle of the table gets nothing, so the lit inserts stand out against its dark.
+    Nothing outside the shell. Half a pixel per unit (it is soft). Straight alpha. numpy/Pillow."""
+    from PIL import Image
+    mask, dist, ux, uy = _field_mask(0.5)
+
+    def rgb(h):
+        return np.array(P.rgb(h), np.float64) / 255.0
+
+    def pool(cx, cy, sigma):
+        return np.exp(-((ux - cx) ** 2 + (uy - cy) ** 2) / (2 * sigma ** 2))
+
+    light = np.zeros(ux.shape + (3,), np.float64)
+    walls = np.exp(-dist / 30.0)
+    # The launch lane is narrow, all of it near a wall: held down so it does not glare.
+    lane = min(x for x, _ in L["laneIsland"])
+    walls = np.where(ux > lane, walls * 0.4, walls)
+    light += walls[..., None] * rgb(P.GI_COLOURS["walls"]) * 0.85
+    for tri in L["slingshots"]:
+        cx = sum(p[0] for p in tri) / 3.0
+        cy = sum(p[1] for p in tri) / 3.0
+        light += pool(cx, cy, 48.0)[..., None] * rgb(P.GI_COLOURS["slings"]) * 0.7
+    for i, b in enumerate(L["bumpers"]):
+        colour = P.GI_COLOURS["bumpers"][i % len(P.GI_COLOURS["bumpers"])]
+        light += pool(b["c"][0], b["c"][1], 44.0)[..., None] * rgb(colour) * 0.55
+    light *= mask[..., None]
+    alpha = np.clip(light.max(axis=2), 0, 1)
+    colour = np.where(alpha[..., None] > 1e-6, light / np.maximum(alpha[..., None], 1e-6), 0)
+    out = np.empty(ux.shape + (4,), np.float64)
+    out[..., :3] = np.round(np.clip(colour, 0, 1) * 255)
+    out[..., 3] = np.round(alpha * 255)
+    return Image.fromarray(out.astype(np.uint8), "RGBA")
+
+
+def pool():
+    """The dark pool drawn round each ball under the light show, ink, at the renderer's alpha: solid out to a
+    little past the ball's rim, then a smooth fall to nothing at the edge. numpy only."""
+    from PIL import Image
+    n = 128
+    ys, xs = np.mgrid[0:n, 0:n].astype(np.float64)
+    d = np.hypot(xs + 0.5 - n / 2, ys + 0.5 - n / 2) / (n / 2)
+    t = np.clip((d - 0.55) / 0.45, 0, 1)
+    a = 1 - t * t * (3 - 2 * t)
+    out = np.empty((n, n, 4), np.float64)
+    out[..., :3] = P.rgb(P.POOL)
+    out[..., 3] = np.round(a * 255)
+    return Image.fromarray(out.astype(np.uint8), "RGBA")
+
+
 def flipper():
     m = 9.0
     w = 2 * m + FLIP["baseRadius"] + FLIP["length"] + FLIP["tipRadius"]
@@ -332,7 +453,7 @@ SPRITES = {
     "bumper_cap.png": lambda: bumper("cap"), "bar.png": bar, "plunger.png": plunger, "button.png": button, "button_gloss.png": button_gloss,
     "insert_round.png": lambda: insert("round"), "insert_arrow.png": lambda: insert("arrow"), "door.png": door,
     "spinner_0.png": lambda: spinner(0), "spinner_1.png": lambda: spinner(1), "kickback.png": kickback,
-    "dot.png": dot,
+    "flare.png": flare, "ring.png": ring, "gi.png": gi, "pool.png": pool, "dot.png": dot,
 }
 
 

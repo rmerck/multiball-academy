@@ -15,6 +15,7 @@ void testFront();
 void testGame();
 void testHighScores();
 void testHoles();
+void testLightShow();
 void testLaunch();
 void testCourses();
 void testMultiball();

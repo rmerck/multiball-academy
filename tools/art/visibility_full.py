@@ -12,7 +12,13 @@ import palette as P
 import render_sim as R
 from common import ROOT, lum, save_png
 
-OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build", "art-review")
+# --fx: with the light show, every lamp lit in neon at full level, the general illumination on, the bumpers
+# flashing as struck.
+# --bare (with --fx): the ball measured against the table as lit, without the dark pool round it.
+ARGS = [a for a in sys.argv[1:] if a not in ("--fx", "--bare")]
+R.FX = "--fx" in sys.argv[1:]
+WITH_POOL = R.FX and "--bare" not in sys.argv[1:]
+OUT = ARGS[0] if ARGS else os.path.join(ROOT, "build", "art-review")
 L = R.L
 K = 4
 SCALES = [("iPhone SE class, 375 pt @2x", 0.488281 * 2), ("iPhone 17e, 393 pt @3x", 0.511719 * 3),
@@ -104,7 +110,9 @@ def measure(empty, layer, pos, scale, bs=1.0):
 
     def small(arr):
         return np.asarray(Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8)).resize((m, m), Image.BOX))
-    lb, le = lum(small(comp)), lum(small(patch))
+    # Around the ball: the bare table, or with --fx what the game draws there, the dark pool round the ball
+    # (pool.png) included, since that is what the eye sees beside it.
+    lb, le = lum(small(comp)), lum(small(comp if WITH_POOL else patch))
     v = np.asarray(Image.fromarray((valid * 255).astype(np.uint8)).resize((m, m), Image.BOX)) > 250
     yy, xx = np.mgrid[0:m, 0:m]
     dx, dy = (xx + 0.5) / scale - HALF, (yy + 0.5) / scale - HALF

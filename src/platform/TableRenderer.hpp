@@ -14,6 +14,7 @@
 #include "generated/ArtPalette.hpp"
 #include "platform/Assets.hpp"
 #include "platform/Hud.hpp"
+#include "platform/TableEffects.hpp"
 #include "platform/TableLights.hpp"
 #include "platform/TouchOverlay.hpp"
 
@@ -31,6 +32,9 @@ struct DrawOptions {
   // For the review tool: balls drawn as well as the game's own, so a table
   // with several can be looked at before the game can be played into one.
   std::span<const BallView> extraBalls{};
+  // The light show to draw (core/LightShow.hpp), fed every step by the
+  // caller. Null: the lamps alone, lit or not, as the rules say.
+  const LightShow* lightShow = nullptr;
 };
 
 // Which textures to load. Desktop: what the Classic composition draws with,
@@ -80,7 +84,8 @@ class TableRenderer {
   // controls), scaled to fill area, lit as lights says, under a veil of the
   // backdrop colour of the given strength (0 to 255).
   void drawAttract(SDL_Renderer* renderer, const Game& game, float alpha, const screen::Rect& area,
-                   const TableLights& lights, std::uint8_t veil, bool reduceMotion) const;
+                   const TableLights& lights, std::uint8_t veil, bool reduceMotion,
+                   const LightShow* show = nullptr) const;
 
   // Draws the touch controls over the frame, held ones pressed in: the
   // Stack's deck with its button row and flipper pads, the Classic panel's
@@ -88,6 +93,13 @@ class TableRenderer {
   // nothing for the desktop idiom.
   void drawTouchOverlay(SDL_Renderer* renderer, const screen::Layout& layout,
                         const TouchControls::View& view) const;
+
+  // Economy: the light show without the general illumination's light map,
+  // its one whole-playfield layer. On by default for the software renderer,
+  // which blends every pixel of it on the processor; the review tools turn
+  // it off to see everything.
+  void setEffectsEconomy(bool on) noexcept { economy_ = on; }
+  [[nodiscard]] bool effectsEconomy() const noexcept { return economy_; }
 
   // The art the dialogs (pause, About, initials) draw with. Valid for as
   // long as this renderer.
@@ -104,6 +116,10 @@ class TableRenderer {
     TexturePtr bumper;
     TexturePtr bumperCap;
     TexturePtr glow;
+    TexturePtr flare;  // The light show's flasher bursts.
+    TexturePtr ring;   // And its shock rings.
+    TexturePtr gi;     // And the general illumination's light map.
+    TexturePtr pool;   // And the dark pool round each ball.
     TexturePtr bar;
     TexturePtr door;
     TexturePtr plunger;
@@ -135,16 +151,21 @@ class TableRenderer {
   // to art::kMaxGlowStrength so that no light outshines the ball).
   void drawGlow(SDL_Renderer* renderer, Vec2 center, float radius, art::Rgb color,
                 float strength) const;
-  // The lit lamps over the art's unlit inserts, each with its glow.
-  void drawLamps(SDL_Renderer* renderer, const TableLights& lights) const;
+  // The lit lamps over the art's unlit inserts, each with its glow. With a
+  // light show, each at its own level, in neon.
+  void drawLamps(SDL_Renderer* renderer, const TableLights& lights, const LightShow* show) const;
   // The spinner's blade by its phase, and the kickback's spring.
   void drawSpinnerAndKickback(SDL_Renderer* renderer, const Game& game) const;
-  void drawBumpers(SDL_Renderer* renderer, const Game& game) const;
+  void drawBumpers(SDL_Renderer* renderer, const Game& game, const LightShow* show) const;
   void drawTargets(SDL_Renderer* renderer, const Game& game, const TableLights& lights) const;
   // What moves or lights among the table's own elements, for the layout
   // drawing: doors lying down, the lock and kickback lamps, the spinner.
   void drawElements(SDL_Renderer* renderer, const Game& game, const TableLights& lights) const;
-  void drawSlingshotFlashes(SDL_Renderer* renderer, const Game& game) const;
+  void drawSlingshotFlashes(SDL_Renderer* renderer, const Game& game, const LightShow* show) const;
+  // With a light show: the bumpers lit, flashing white-hot and pulsing
+  // when struck; the slingshots' kicking faces flashing.
+  void drawLitBumpers(SDL_Renderer* renderer, const Game& game, const LightShow& show) const;
+  void drawLitSlingshots(SDL_Renderer* renderer, const Game& game, const LightShow& show) const;
   void drawPlunger(SDL_Renderer* renderer, const Game& game) const;
   void drawFlippers(SDL_Renderer* renderer, const Game& game, float alpha, bool atRest) const;
   // Every ball that is in sight, those on the table first and those riding
@@ -152,6 +173,9 @@ class TableRenderer {
   void drawBalls(SDL_Renderer* renderer, std::span<const BallView> balls) const;
 
   Textures textures_;
+  // The light show's drawing, with its fixed batches.
+  mutable TableEffects effects_;
+  bool economy_ = false;
   // What attract mode draws the table into before scaling it; made on first
   // use. Its picture is drawn again every frame, so a reset of the render
   // targets loses nothing.

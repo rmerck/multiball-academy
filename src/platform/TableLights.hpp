@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "core/Game.hpp"
+#include "core/LightShow.hpp"
 #include "core/Rules.hpp"
 #include "core/TableLayout.hpp"
 
@@ -32,8 +33,9 @@ struct TableLights {
 };
 
 // Blinking lamps, in steps of the game's clock: on for half of each period.
-inline constexpr std::uint64_t kBlinkSteps = 60;      // Twice a second.
-inline constexpr std::uint64_t kFastBlinkSteps = 24;  // Five times a second.
+// The same clock as the light show (core/LightShow.hpp).
+inline constexpr std::uint64_t kBlinkSteps = fx::kBlinkSteps;          // Twice a second.
+inline constexpr std::uint64_t kFastBlinkSteps = fx::kFastBlinkSteps;  // Five times a second.
 
 // Whether a lamp in this state is lit at this step of the game.
 [[nodiscard]] constexpr bool lampLit(LampState state, std::uint64_t step) noexcept {
@@ -65,38 +67,6 @@ inline constexpr std::uint64_t kFastBlinkSteps = 24;  // Five times a second.
   lights.light(LampId::Lock2, game.bayTaken(1));
   for (std::size_t i = 0; i < lights.doorsMarked.size(); ++i) {
     lights.doorsMarked[i] = lampLit(rules.doorLampState(i), step);
-  }
-  return lights;
-}
-
-// Attract mode's lights, until a fuller light show takes their place: the
-// attract game's own lamps, and over them a chase, a band of light that
-// runs down the table and then a ripple across every third lamp, so the
-// machine reads as lit and alive behind the title. With less motion asked
-// for, the game's own lamps alone.
-inline constexpr std::uint64_t kAttractChaseSteps = 480;  // Four seconds a round.
-[[nodiscard]] inline TableLights attractChase(const Game& game, bool reduceMotion) noexcept {
-  TableLights lights = tableLights(game);
-  if (reduceMotion) {
-    return lights;
-  }
-  const std::uint64_t step = game.stepCount();
-  const std::uint64_t phase = step % kAttractChaseSteps;
-  const std::uint64_t half = kAttractChaseSteps / 2;
-  for (std::size_t i = 0; i < table::kLamps.size(); ++i) {
-    bool on = false;
-    if (phase < half) {
-      // The band: from above the table to below it.
-      const float band = -80.0F + (table::kHeight + 160.0F) * static_cast<float>(phase) /
-                                      static_cast<float>(half);
-      const float d = table::kLamps[i].position.y - band;
-      on = d > -60.0F && d < 60.0F;
-    } else {
-      on = (i + step / 12U) % 3U == 0U;
-    }
-    if (on) {
-      lights.lamps[i] = true;
-    }
   }
   return lights;
 }
