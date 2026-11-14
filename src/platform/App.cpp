@@ -666,6 +666,11 @@ App::Status App::status() const {
   status.reviewRequests = reviewRequests_;
   status.hapticsPlayed = hapticsPlayed_;
   status.scores = highScores_;
+  const bool guideUp = frontOpen_ && front_.state().page == FrontPage::Guide && guideGame_;
+  status.guideTableScore = guideUp ? guideGame_->rules().score() : 0;
+  status.guideTableSteps = guideUp ? guideGame_->stepCount() : 0;
+  status.guideTouch =
+      guideUp ? TouchControls().view(pinball::touchContext(*guideGame_)) : status.touch;
   return status;
 }
 
@@ -776,20 +781,22 @@ void App::render(double alpha, bool cursorLit) {
   if (frontOpen_) {
     // The title and its pages over attract mode: the attract game's table
     // alone, as large as the screen holds it, lit by its light show, under
-    // a light veil. The touch guide, from HOW TO PLAY, is drawn over the
-    // table as it is played, with its controls.
+    // a light veil. The touch guide, from HOW TO PLAY, is drawn over a new
+    // game's table as it is played, with its display and controls: never
+    // attract mode's game, nor one left by MAIN MENU.
     const Game& shown = attract_ ? *attract_ : game_;
     const bool guide = front_.state().page == FrontPage::Guide;
     table_->drawBackdrop(r, layout_);
     if (guide) {
-      attractShow_.setAttract(false);
-      table_->draw(r, shown, static_cast<float>(attractTimestep_.alpha()), layout_,
-                   DrawOptions{.reduceMotion = reduceMotion(),
-                               .lightShow = attract_ ? &attractShow_ : nullptr},
+      if (!guideGame_) {
+        prepareGuideGame();
+      }
+      table_->draw(r, *guideGame_, 0.0F, layout_,
+                   DrawOptions{.reduceMotion = reduceMotion(), .lightShow = &guideShow_},
                    HudExtras{highScores_.best(), false});
       if (touch) {
         table_->drawTouchOverlay(r, layout_,
-                                 TouchControls().view(pinball::touchContext(shown)));
+                                 TouchControls().view(pinball::touchContext(*guideGame_)));
       }
     } else {
       attractShow_.setAttract(true);

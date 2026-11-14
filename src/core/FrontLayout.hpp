@@ -50,7 +50,9 @@ struct SettingsLayout {
 };
 
 // The touch guide: a label beside each control, and the card in the middle
-// that says how to go on.
+// that says how to go on. No label lies on a control, on another label or
+// on the card; the pause button's lies on none of the display's windows
+// either.
 struct GuideLayout {
   Rect card;
   Rect leftLabel;
@@ -59,6 +61,9 @@ struct GuideLayout {
   Rect nudgeLeftLabel;
   Rect nudgeRightLabel;
   Rect pauseLabel;
+  // A line from the pause button to its label where the label cannot sit
+  // right beside it (the Stack's strip is all windows); else empty.
+  Rect pauseLead;
 };
 
 // Where attract mode's table goes behind the front screens: the whole table,

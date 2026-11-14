@@ -32,6 +32,7 @@
 #include "core/LightShow.hpp"
 #include "platform/SettingsStore.hpp"
 #include "platform/TableRenderer.hpp"
+#include "platform/ios/IosSystem.hpp"
 
 namespace pinball {
 
@@ -183,6 +184,12 @@ class App {
     unsigned hapticsPlayed;
     // The high score table, as shown.
     HighScores scores;
+    // The game drawn behind HOW TO PLAY's touch guide while it is up (a new
+    // game's: no score, no step taken), and what its touch controls show.
+    // 0, 0 and the player's controls when that guide is not up.
+    std::uint64_t guideTableScore;
+    std::uint64_t guideTableSteps;
+    TouchControls::View guideTouch;
   };
   [[nodiscard]] Status status() const;
   // How many frames a standing picture is drawn for after each event.
@@ -193,6 +200,19 @@ class App {
   static constexpr double kGameOverIdleSeconds = 8.0;
   static constexpr double kGameOverGuardSeconds = 0.8;
   static constexpr int kMaxAttractStepsPerFrame = 2000;
+
+  // What VoiceOver finds on the screen now: one element for each control,
+  // title and block of text, in reading order. Frames are in canvas units.
+  // Empty on a desktop and while the game is played. The same list is
+  // handed to the system (ios::setAccessibilityElements); for tests too.
+  struct AccessItem {
+    std::string label;
+    screen::Rect frame;
+    std::int32_t code = 0;
+    ios::AccessRole role = ios::AccessRole::Button;
+    bool enabled = true;
+  };
+  [[nodiscard]] std::vector<AccessItem> accessibilityItems() const;
 
   // The system's Reduce Motion setting as the game last read it (at start
   // and on every return to the foreground): the one place everything that
@@ -263,6 +283,8 @@ class App {
   void touchFront(TouchPhase phase, std::uint64_t id, float x, float y);
   // The touch guide before the first game is dismissed.
   void dismissGuide();
+  // HOW TO PLAY's touch guide: a new game for it to show the controls over.
+  void prepareGuideGame();
   // Steps attract mode's game for the time given.
   void stepAttract(double seconds);
   // Settings: applies them to the sound, and saves them if this run keeps
@@ -476,6 +498,10 @@ class App {
   bool frontOnTarget_ = false;
   // Attract mode: a game of its own, never the player's, and its hands.
   std::optional<Game> attract_;
+  // HOW TO PLAY's touch guide shows the controls over a new game of its
+  // own, never attract mode's or a game left by MAIN MENU, with its lights.
+  std::optional<Game> guideGame_;
+  LightShow guideShow_;
   AttractPilot pilot_;
   FixedTimestep attractTimestep_{Game::kStepSeconds, 8};
   std::uint64_t attractSteps_ = 0;

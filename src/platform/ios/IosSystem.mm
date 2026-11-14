@@ -155,6 +155,12 @@ void requestReview() noexcept {
 
 void setAccessibilityElements(std::span<const AccessibleElement> elements, std::uint32_t eventType,
                               bool screenChanged) noexcept {
+  // UIKit's, so on the main thread alone, where the game's loop runs. The
+  // labels are copied into the elements: the caller's strings die with the
+  // call.
+  if (![NSThread isMainThread]) {
+    return;
+  }
   @autoreleasepool {
     UIView* const view = gView;
     if (view == nil) {
@@ -174,9 +180,17 @@ void setAccessibilityElements(std::span<const AccessibleElement> elements, std::
       item.accessibilityFrameInContainerSpace =
           CGRectMake(static_cast<CGFloat>(element.frame.x), static_cast<CGFloat>(element.frame.y),
                      static_cast<CGFloat>(element.frame.w), static_cast<CGFloat>(element.frame.h));
-      item.accessibilityTraits =
-          element.header ? UIAccessibilityTraitHeader : UIAccessibilityTraitButton;
-      item.eventType = element.header ? 0 : eventType;
+      const bool control = element.role == AccessRole::Button;
+      UIAccessibilityTraits traits = UIAccessibilityTraitButton;
+      if (element.role == AccessRole::Header) {
+        traits = UIAccessibilityTraitHeader;
+      } else if (element.role == AccessRole::Text) {
+        traits = UIAccessibilityTraitStaticText;
+      } else if (!element.enabled) {
+        traits |= UIAccessibilityTraitNotEnabled;
+      }
+      item.accessibilityTraits = traits;
+      item.eventType = control && element.enabled ? eventType : 0;
       item.code = element.code;
       [list addObject:item];
     }

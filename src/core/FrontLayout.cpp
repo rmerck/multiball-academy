@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/HowToText.hpp"
 #include "core/OverlayLayout.hpp"
+#include "core/PanelLayout.hpp"
+#include "core/TextWrap.hpp"
 
 namespace pinball::screen {
 
@@ -205,11 +208,30 @@ GuideLayout guideLayout(const Layout& layout) noexcept {
   g.nudgeRightLabel.x = std::max(g.nudgeRightLabel.x, g.centreLabel.x + g.centreLabel.w + 8.0F);
   g.nudgeLeftLabel = keptIn(g.nudgeLeftLabel, safe);
   g.nudgeRightLabel = keptIn(g.nudgeRightLabel, safe);
-  // Beside the pause button, away from the screen's edge.
+  // The pause button's label, on one line, off the button and off the
+  // display's windows. On the Classic panel the button is in the corner,
+  // with the title to its left and the score window below: the label goes
+  // under the button, right above the score window. The Stack's strip is
+  // windows from edge to edge, so there it goes at the top of the table,
+  // under the button, with a lead up to it down the gutter left of the
+  // windows below the button.
   const Rect& pause = layout.pauseButton;
-  g.pauseLabel = keptIn({pause.x + pause.w + 8.0F, pause.y + (pause.h - 60.0F) * 0.5F, 260.0F,
-                         60.0F},
-                        safe);
+  const float size = smallestTextSize(layout);
+  const float textW =
+      static_cast<float>(howto::kGuidePause.size()) * kGlyphAdvance * size - size;
+  const float pauseW = textW + 32.0F;
+  const float pauseH = kLinePitch * size + 12.0F;
+  const float pauseBottom = bottomOf(pause);
+  if (classic(layout)) {
+    const float scoreTop = layout.hud.y + panel::kScoreWell.y;
+    const float top = std::max(scoreTop - 4.0F - pauseH, pauseBottom);
+    g.pauseLabel = keptIn({pause.x + pause.w - pauseW, top, pauseW, pauseH}, safe);
+    g.pauseLead = {pause.x, pauseBottom, kNone, kNone};
+  } else {
+    g.pauseLabel = keptIn({pause.x, bottomOf(layout.hud) + 8.0F, pauseW, pauseH}, safe);
+    g.pauseLead = {pause.x + 2.0F, pauseBottom, 4.0F,
+                   std::max(g.pauseLabel.y - pauseBottom, kNone)};
+  }
   g.card = keptIn(centredAt(field.x + field.w * 0.5F, field.y + 190.0F, 620.0F, 230.0F), safe);
   return g;
 }
