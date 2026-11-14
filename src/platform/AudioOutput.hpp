@@ -31,6 +31,10 @@ class AudioOutput {
   void resume();
   [[nodiscard]] bool suspended() const noexcept { return suspended_; }
 
+  // The player's volume, 0 to 1, applied to everything played from now on.
+  // False if the device refused it.
+  bool setGain(float gain);
+
  private:
   friend class AudioOpener;
   explicit AudioOutput(SDL_AudioStream* stream) : stream_(stream) {}

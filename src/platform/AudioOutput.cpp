@@ -214,4 +214,11 @@ std::unique_ptr<AudioOutput> AudioOpener::take() {
   return std::unique_ptr<AudioOutput>(new AudioOutput(stream));
 }
 
+bool AudioOutput::setGain(float gain) {
+  // Clamped here: SDL takes anything not negative, and more than 1 would
+  // drive the mixer's output past full scale.
+  const float clamped = gain >= 0.0F && gain <= 1.0F ? gain : (gain > 1.0F ? 1.0F : 0.0F);
+  return SDL_SetAudioStreamGain(stream_, clamped);
+}
+
 }  // namespace pinball

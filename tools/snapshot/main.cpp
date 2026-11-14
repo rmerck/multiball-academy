@@ -19,6 +19,11 @@
 //          the step that took it, so a few show it going in and about 110
 //          show it let out), lock-out (a locked ball let go; the steps
 //          count from the step that let it out),
+//          the front screens: title, title-intro (part-way through its
+//          animation), title-still (Reduce Motion), scores (the front
+//          page), howto, settings, settings-confirm, guide (the touch
+//          guide before a first game), mainmenu-confirm (the pause asking
+//          before it leaves the game),
 //          or check: draw the layout's screens one after another and fail
 //          unless every control, window and dialog is really drawn (see
 //          checkLayout below); the picture written is the play frame
@@ -65,7 +70,10 @@
 #include "core/ScreenLayout.hpp"
 #include "core/SurfaceSpec.hpp"
 #include "core/TouchControls.hpp"
+#include "core/FrontLayout.hpp"
+#include "core/FrontMenu.hpp"
 #include "platform/About.hpp"
+#include "platform/FrontScreens.hpp"
 #include "platform/Assets.hpp"
 #include "platform/GameViews.hpp"
 #include "platform/Hud.hpp"
@@ -171,6 +179,15 @@ enum class State : std::uint8_t {
   HangarIn,
   LockIn,
   LockOut,
+  Title,
+  TitleIntro,
+  TitleStill,
+  FrontScores,
+  HowTo,
+  Settings,
+  SettingsConfirm,
+  Guide,
+  MainMenuConfirm,
   Check,
 };
 
@@ -178,7 +195,7 @@ struct StateName {
   std::string_view name;
   State state;
 };
-constexpr std::array<StateName, 24> kStates{{
+constexpr std::array<StateName, 33> kStates{{
     {"play", State::Play},
     {"launch", State::Launch},
     {"pause", State::Pause},
@@ -202,6 +219,15 @@ constexpr std::array<StateName, 24> kStates{{
     {"hangar-in", State::HangarIn},
     {"lock-in", State::LockIn},
     {"lock-out", State::LockOut},
+    {"title", State::Title},
+    {"title-intro", State::TitleIntro},
+    {"title-still", State::TitleStill},
+    {"scores", State::FrontScores},
+    {"howto", State::HowTo},
+    {"settings", State::Settings},
+    {"settings-confirm", State::SettingsConfirm},
+    {"guide", State::Guide},
+    {"mainmenu-confirm", State::MainMenuConfirm},
     {"check", State::Check},
 }};
 
@@ -226,7 +252,9 @@ constexpr const char* kUsage =
     "Usage: pinball_snapshot <steps 1..1000000> <name.png> [state] [options]\n"
     "  state: play launch pause interrupted confirm about about-info licences\n"
     "         initials gameover longest table course multiball hangar graduation\n"
-    "         locked bankdown spinning scoop-in hangar-in lock-in lock-out check\n"
+    "         locked bankdown spinning scoop-in hangar-in lock-in lock-out title\n"
+    "         title-intro title-still scores howto settings settings-confirm guide\n"
+    "         mainmenu-confirm check\n"
     "  --layout <preset | WxH[@scale][+top,bottom,left,right]>   points, 100..4096; scale 1..4,\n"
     "           and no more than 8192 pixels a side at that scale\n"
     "  --surface WxH   --insets top,bottom,left,right\n"
@@ -439,7 +467,66 @@ struct Scene {
   // still dimmed for a pause): only the checks ask for these.
   bool withoutControls = false;
   bool withoutDialog = false;
+  // The front screens: how far into the title's intro, and its clock.
+  double introSeconds = pinball::kTitleIntroSeconds;
+  double frontSeconds = 1.0;
+  // How to play: the page, from 0.
+  std::size_t howToPage = 0;
+  // The keyboard's focus on the front screens (desktop).
+  pinball::TitleItem focus = pinball::TitleItem::Play;
 };
+
+bool isFront(State state) noexcept {
+  switch (state) {
+    case State::Title:
+    case State::TitleIntro:
+    case State::TitleStill:
+    case State::FrontScores:
+    case State::HowTo:
+    case State::Settings:
+    case State::SettingsConfirm:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// What the front screens are given for a scene.
+pinball::FrontView frontView(const pinball::screen::Layout& layout, const Scene& scene,
+                             const pinball::HighScores& scores,
+                             const pinball::Settings& settings) {
+  const bool touch = layout.idiom == pinball::screen::Idiom::Touch;
+  pinball::FrontView view;
+  view.config = {.continueShown = false, .hapticsShown = touch, .guideShown = touch};
+  view.introSeconds = scene.state == State::TitleIntro ? 0.9 : scene.introSeconds;
+  view.seconds = scene.frontSeconds;
+  view.reduceMotion = scene.state == State::TitleStill;
+  if (view.reduceMotion) {
+    view.introSeconds = 0.0;
+  }
+  view.keyboard = !touch;
+  view.scores = &scores;
+  view.settings = &settings;
+  view.state.titleFocus = scene.focus;
+  switch (scene.state) {
+    case State::FrontScores:
+      view.state.page = pinball::FrontPage::Scores;
+      break;
+    case State::HowTo:
+      view.state.page = pinball::FrontPage::HowTo;
+      view.state.howToPage = scene.howToPage;
+      break;
+    case State::Settings:
+    case State::SettingsConfirm:
+      view.state.page = pinball::FrontPage::Settings;
+      view.state.settingsFocus = pinball::SettingsRow::Volume;
+      view.state.confirmReset = scene.state == State::SettingsConfirm;
+      break;
+    default:
+      break;
+  }
+  return view;
+}
 
 // Draws the scene for the game onto the renderer's canvas.
 void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
@@ -451,7 +538,7 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
   preview.course = scene.state == State::Longest;
   pinball::DrawOptions options;
   options.dimmed = scene.state == State::Pause || scene.state == State::Interrupted ||
-                   scene.state == State::Confirm;
+                   scene.state == State::Confirm || scene.state == State::MainMenuConfirm;
   options.flippersAtRest = options.dimmed;
 
   SDL_SetRenderDrawColor(r, pinball::screen::kBackdropRgb[0], pinball::screen::kBackdropRgb[1],
@@ -460,12 +547,24 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
   // Alpha 1: the latest step exactly, so the picture depends only on the
   // step count.
   table.drawBackdrop(r, layout);
-  table.draw(r, game, 1.0F, layout, options,
-             pinball::HudExtras{.bestScore = 0, .newHighScore = false, .preview = &preview});
-  if (!scene.withoutControls) {
-    pinball::TouchControls::View view = scene.pressed;
-    view.centreRole = pinball::TouchControls().view(pinball::touchContext(game)).centreRole;
-    table.drawTouchOverlay(r, layout, view);
+  if (isFront(scene.state)) {
+    // As the game draws the front screens: attract mode's table alone, lit
+    // by its light show, under its veil.
+    const bool still = scene.state == State::TitleStill;
+    table.drawAttract(r, game, 1.0F, pinball::screen::attractArea(layout),
+                      pinball::attractChase(game, still),
+                      scene.state == State::Title || scene.state == State::TitleIntro || still
+                          ? pinball::kTitleVeil
+                          : pinball::kPageVeil,
+                      still);
+  } else {
+    table.draw(r, game, 1.0F, layout, options,
+               pinball::HudExtras{.bestScore = 0, .newHighScore = false, .preview = &preview});
+    if (!scene.withoutControls) {
+      pinball::TouchControls::View view = scene.pressed;
+      view.centreRole = pinball::TouchControls().view(pinball::touchContext(game)).centreRole;
+      table.drawTouchOverlay(r, layout, view);
+    }
   }
   if (scene.zones) {
     drawZones(r, layout);
@@ -476,13 +575,31 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
     case State::Pause:
     case State::Interrupted:
     case State::Confirm:
+    case State::MainMenuConfirm:
       pinball::drawPauseMenu(
           r, layout,
           pinball::MenuState{.muted = false,
                              .musicOn = true,
                              .confirmNewGame = scene.state == State::Confirm,
-                             .afterInterruption = scene.state == State::Interrupted},
+                             .afterInterruption = scene.state == State::Interrupted,
+                             .confirmMainMenu = scene.state == State::MainMenuConfirm},
           art);
+      break;
+    case State::Title:
+    case State::TitleIntro:
+    case State::TitleStill:
+    case State::FrontScores:
+    case State::HowTo:
+    case State::Settings:
+    case State::SettingsConfirm: {
+      pinball::Settings settings;
+      settings.volume = 6;
+      settings.music = false;
+      pinball::drawFront(r, layout, frontView(layout, scene, sampleScores(), settings), art);
+      break;
+    }
+    case State::Guide:
+      pinball::drawTouchGuide(r, layout, true, art);
       break;
     case State::About:
     case State::AboutInfo:
@@ -907,6 +1024,108 @@ int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& 
       check.buttonCaptioned(entry, initials.down[i], "initials: down arrow");
     }
     check.buttonCaptioned(entry, initials.ok, "initials: OK button");
+  }
+
+  // --- The pause menu's way to the title.
+  if (touch) {
+    const screen::MenuLayout menu = screen::menuLayout(layout);
+    check.buttonCaptioned(paused, menu.mainMenu, "menu: main menu");
+    const Pixels leaving = check.picture(game, {.state = State::MainMenuConfirm});
+    check.differs(paused, leaving, menu.mainMenu, "menu: main menu asks to confirm");
+    check.same(paused, leaving, menu.newGame, "menu: confirming the main menu changes only its own button");
+  } else {
+    const Pixels leaving = check.picture(game, {.state = State::MainMenuConfirm});
+    check.differs(paused, leaving, {layout.playfield.x + 50.0F, layout.playfield.y + 550.0F,
+                                    668.0F, 40.0F}, "pause: Escape asks before leaving the game");
+  }
+
+  // --- The front screens: the title, its intro, and each page.
+  {
+    const pinball::FrontConfig config{.hapticsShown = touch, .guideShown = touch};
+    const screen::TitleLayout title = screen::titleLayout(layout, config);
+    const Pixels behind = check.picture(game, {.state = State::Title, .withoutDialog = true});
+    const Pixels built = check.picture(game, {.state = State::Title});
+    check.differs(behind, built, title.logo, "title: the logo is drawn");
+    check.differs(behind, built, title.marquee, "title: the dot display is drawn");
+    for (std::size_t i = 1; i < title.items.size(); ++i) {
+      const std::string what = "title: menu item " + std::to_string(i);
+      check.differs(behind, built, title.items[i], what.c_str());
+      check.buttonCaptioned(built, title.items[i], what.c_str());
+    }
+    // The dot display moves on with its clock.
+    const Pixels later = check.picture(game, {.state = State::Title, .frontSeconds = 3.3});
+    check.differs(built, later, title.marquee, "title: the dot display changes");
+    // Part-way through the intro the menu is not up yet; with less motion
+    // it is all there at once.
+    const Pixels intro = check.picture(game, {.state = State::TitleIntro});
+    const Pixels still = check.picture(game, {.state = State::TitleStill});
+    check.differs(intro, built, title.items[1], "title: the intro builds the menu");
+    check.expect(check.captionInk(intro, title.items[5]) == 0.0,
+                 "title: the last item comes last");
+    check.differs(behind, still, title.items[5], "title: Reduce Motion shows the menu at once");
+    check.differs(behind, still, title.logo, "title: Reduce Motion shows the logo at once");
+    if (!touch) {
+      const Pixels focus = check.picture(game, {.state = State::Title, .focus = pinball::TitleItem::Settings});
+      const screen::Rect& item = title.items[static_cast<std::size_t>(pinball::TitleItem::Settings)];
+      check.differs(built, focus, {item.x - 10.0F, item.y - 10.0F, item.w + 20.0F, 10.0F},
+                    "title: the keyboard focus is drawn");
+    }
+
+    const screen::PageLayout scoresPage = screen::pageLayout(layout, pinball::FrontPage::Scores);
+    const Pixels scoresShown = check.picture(game, {.state = State::FrontScores});
+    check.carded(scoresShown, scoresPage.box, "scores: on its card");
+    check.captioned(scoresShown, {scoresPage.body.x, scoresPage.body.y, scoresPage.body.w, 360.0F},
+                    "scores: the table is drawn");
+    check.buttonCaptioned(scoresShown, scoresPage.back, "scores: back button");
+
+    const screen::PageLayout howPage =
+        screen::pageLayout(layout, pinball::FrontPage::HowTo, touch);
+    const Pixels howFirst = check.picture(game, {.state = State::HowTo});
+    const Pixels howLast =
+        check.picture(game, {.state = State::HowTo, .howToPage = pinball::kHowToPageCount - 1});
+    check.carded(howFirst, howPage.box, "how to play: on its card");
+    check.captioned(howFirst, howPage.body, "how to play: the first page has text");
+    check.captioned(howLast, howPage.body, "how to play: the last page has text");
+    check.differs(howFirst, howLast, howPage.body, "how to play: the pages differ");
+    check.buttonCaptioned(howFirst, howPage.previous, "how to play: previous");
+    check.buttonCaptioned(howFirst, howPage.next, "how to play: next");
+    check.buttonCaptioned(howFirst, howPage.back, "how to play: back");
+    check.differs(howFirst, howLast, howPage.next, "how to play: next is greyed on the last page");
+    if (touch) {
+      check.buttonCaptioned(howFirst, howPage.guide, "how to play: show the touch guide");
+    }
+
+    const screen::SettingsLayout settings = screen::settingsLayout(layout, config);
+    const Pixels set = check.picture(game, {.state = State::Settings});
+    const Pixels asking = check.picture(game, {.state = State::SettingsConfirm});
+    check.carded(set, settings.page.box, "settings: on its card");
+    for (std::size_t i = 0; i < settings.rows.size(); ++i) {
+      if (settings.rows[i].w <= 0.0F || i == static_cast<std::size_t>(pinball::SettingsRow::Volume)) {
+        continue;
+      }
+      const std::string what = "settings: row " + std::to_string(i);
+      check.buttonCaptioned(set, settings.rows[i], what.c_str());
+    }
+    check.buttonCaptioned(set, settings.volumeDown, "settings: volume down");
+    check.buttonCaptioned(set, settings.volumeUp, "settings: volume up");
+    check.captioned(set, settings.rows[static_cast<std::size_t>(pinball::SettingsRow::Volume)],
+                    "settings: the volume says its level");
+    const screen::Rect& reset = settings.rows[static_cast<std::size_t>(pinball::SettingsRow::Reset)];
+    check.differs(set, asking, reset, "settings: reset asks to confirm");
+    check.same(set, asking, settings.rows[0], "settings: confirming changes only the reset row");
+  }
+
+  // --- The touch guide: every control marked and named.
+  if (touch) {
+    const screen::GuideLayout g = screen::guideLayout(layout);
+    const Pixels guide = check.picture(game, {.state = State::Guide});
+    for (const screen::Rect& label : {g.leftLabel, g.rightLabel, g.centreLabel, g.nudgeLeftLabel,
+                                      g.nudgeRightLabel, g.pauseLabel}) {
+      check.captioned(guide, label, "guide: a label with its words");
+    }
+    check.carded(guide, g.card, "guide: its card");
+    check.differs(play, guide, layout.flipperLeftZone, "guide: the left half is marked");
+    check.differs(play, guide, layout.flipperRightZone, "guide: the right half is marked");
   }
 
   // Leave the play frame on the canvas: it is the picture written.

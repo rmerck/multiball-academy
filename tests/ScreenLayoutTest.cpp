@@ -179,7 +179,8 @@ void checkOverlays(const Layout& l) {
   const Rect canvas{0.0F, 0.0F, l.canvasWidth, l.canvasHeight};
 
   const MenuLayout menu = menuLayout(l);
-  const std::array menuButtons{menu.resume, menu.newGame, menu.sound, menu.music, menu.about};
+  const std::array menuButtons{menu.resume, menu.newGame, menu.sound, menu.music, menu.about,
+                               menu.mainMenu};
   CHECK(inside(menu.box, canvas) && inside(menu.box, l.dialog));
   CHECK(noneOverlap(menuButtons));
   for (const Rect& button : menuButtons) {
@@ -593,7 +594,8 @@ void testMinimumHitSize() {
           CHECK(bigEnough(button, l));
         }
         const MenuLayout menu = menuLayout(l);
-        for (const Rect& r : {menu.resume, menu.newGame, menu.sound, menu.music, menu.about}) {
+        for (const Rect& r :
+             {menu.resume, menu.newGame, menu.sound, menu.music, menu.about, menu.mainMenu}) {
           CHECK(bigEnough(r, l));
         }
         const AboutLayout about = aboutLayout(l);

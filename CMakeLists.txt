@@ -280,6 +280,7 @@ if(PINBALL_FUZZ)
     src/core/OverlayLayout.cpp
     src/core/PngHeader.cpp
     src/core/ScreenLayout.cpp
+    src/core/Settings.cpp
     src/core/Sha256.cpp
     src/core/Snapshot.cpp
     src/core/TouchControls.cpp)
@@ -306,7 +307,11 @@ add_library(pinball_core STATIC
   src/core/Args.cpp
   src/core/AssetManifest.cpp
   src/core/AssetName.cpp
+  src/core/Attract.cpp
+  src/core/Feedback.cpp
   src/core/Format.cpp
+  src/core/FrontLayout.cpp
+  src/core/FrontMenu.cpp
   src/core/Game.cpp
   src/core/GameSave.cpp
   src/core/HighScores.cpp
@@ -317,6 +322,7 @@ add_library(pinball_core STATIC
   src/core/Rules.cpp
   src/core/Scenes.cpp
   src/core/ScreenLayout.cpp
+  src/core/Settings.cpp
   src/core/Sha256.cpp
   src/core/Snapshot.cpp
   src/core/Music.cpp
@@ -333,7 +339,7 @@ pinball_apply_hardening(pinball_core PUBLIC)
 # same input gives the same game on x86-64 and arm64, and the trajectory the
 # tests record holds everywhere. Box2D is already built this way.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  target_compile_options(pinball_core PUBLIC -ffp-contract=off)
+  pinball_c_options(pinball_core PUBLIC -ffp-contract=off)
 endif()
 if(PINBALL_IOS)
   # For the few places where the source must tell iOS from macOS.
@@ -344,18 +350,21 @@ endif()
 add_library(pinball_platform STATIC
   src/platform/About.cpp
   src/platform/App.cpp
+  src/platform/AppFront.cpp
   src/platform/AppKeyboard.cpp
   src/platform/AppLifecycle.cpp
   src/platform/AppTouch.cpp
   src/platform/Assets.cpp
   src/platform/AudioOutput.cpp
   src/platform/EmbeddedManifest.cpp
+  src/platform/FrontScreens.cpp
   src/platform/Hud.cpp
   src/platform/InitialsScreen.cpp
   src/platform/PauseMenu.cpp
   src/platform/SafeFile.cpp
   src/platform/SaveStore.cpp
   src/platform/ScoreStore.cpp
+  src/platform/SettingsStore.cpp
   src/platform/TableRenderer.cpp
   src/platform/Text.cpp
   src/platform/TouchOverlay.cpp
@@ -371,9 +380,28 @@ elseif(PINBALL_IOS)
   target_sources(pinball_platform PRIVATE src/platform/ios/IosSystem.mm)
   set_source_files_properties(src/platform/ios/IosSystem.mm PROPERTIES
     COMPILE_OPTIONS "-fobjc-arc")
+  # The store review request: its API (StoreKit's AppStore) is Swift only.
+  # A library of its own, so that none of the C++ flags (warnings,
+  # hardening, sanitizers) reach the Swift compiler.
+  enable_language(Swift)
+  # The game's targets are C++ and stay linked as C++ when they link the
+  # Swift library. Linked as Swift (which a Swift static library otherwise
+  # passes on to whatever links it) CMake adds the C++ and Objective-C++
+  # runtime libraries a second time, which ld warns about and
+  # -fatal_warnings makes an error, and bakes in the simulator SDK's library
+  # directory, which breaks the device build of the same project.
+  set(CMAKE_Swift_LINKER_PREFERENCE_PROPAGATES FALSE)
+  # (cmake/Hardening.cmake scopes every flag it adds to the C languages, so
+  # none reaches the Swift compiler.)
+  add_library(pinball_review STATIC src/platform/ios/Review.swift)
+  set_target_properties(pinball_review PROPERTIES
+    XCODE_ATTRIBUTE_SWIFT_VERSION 5.0
+    XCODE_ATTRIBUTE_SKIP_INSTALL YES)
+  target_link_libraries(pinball_platform PRIVATE pinball_review)
   # Named here, not left to SDL's own list, which follows SDL's options.
   target_link_libraries(pinball_platform PRIVATE
-    "-framework Foundation" "-framework UIKit" "-framework AVFoundation")
+    "-framework Foundation" "-framework UIKit" "-framework AVFoundation"
+    "-framework StoreKit")
 endif()
 
 if(PINBALL_MACOS)
@@ -614,6 +642,7 @@ if(BUILD_TESTING)
     tests/FixedTimestepTest.cpp
     tests/FlipperTest.cpp
     tests/FormatTest.cpp
+    tests/FrontTest.cpp
     tests/GameTest.cpp
     tests/HighScoreTest.cpp
     tests/HoleTest.cpp
@@ -720,10 +749,15 @@ if(BUILD_TESTING)
     add_dependencies(app_tests pinball_snapshot)
     add_test(NAME app_events COMMAND app_tests)
     set_tests_properties(app_events PROPERTIES
-      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 300 LABELS slow)
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 600 LABELS slow)
     # The saved game (docs/RESUME.md): written on the way out, offered,
     # resumed once, deleted by a new game or the end of one. Uses a scratch
     # preferences directory of its own.
+    # The title and the screens in front of the game: attract mode, the
+    # menus, the return to the title, the review prompt's gate.
+    add_test(NAME app_front COMMAND app_tests front)
+    set_tests_properties(app_front PROPERTIES
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 600 LABELS slow)
     add_test(NAME app_saved_game COMMAND app_tests saved-game)
     set_tests_properties(app_saved_game PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 300 LABELS slow)

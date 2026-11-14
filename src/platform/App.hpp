@@ -20,11 +20,16 @@
 #include "core/Snapshot.hpp"
 #include "core/Sound.hpp"
 #include "core/Args.hpp"
+#include "core/Attract.hpp"
+#include "core/Feedback.hpp"
+#include "core/FrontMenu.hpp"
+#include "core/Settings.hpp"
 #include "core/TouchControls.hpp"
 #include "platform/About.hpp"
 #include "platform/AudioOutput.hpp"
 #include "platform/SaveStore.hpp"
 #include "platform/ScoreStore.hpp"
+#include "platform/SettingsStore.hpp"
 #include "platform/TableRenderer.hpp"
 
 namespace pinball {
@@ -57,6 +62,19 @@ struct AppOptions {
   // the system, which resizes the window from there (inSystemCorner). By
   // default where the system does that: on a tablet.
   std::optional<bool> systemCorners;
+  // Open on the title screen, with attract mode behind it, as a player
+  // does. Never for a timed run or a staged scene, which go straight to
+  // the game. Off for tests that start with the game itself.
+  bool showTitle = true;
+  // For tests: attract mode's game takes this many steps every frame,
+  // whatever the clock, so that a test can see attract games end. 1 to
+  // kMaxAttractStepsPerFrame.
+  std::optional<int> attractStepsPerFrame;
+  // Less motion, as the system's Reduce Motion setting asks: given, it is
+  // used instead of the system's, which is read otherwise (at start and on
+  // every return to the foreground). Tests give it, so that they do not
+  // depend on the machine's accessibility settings.
+  std::optional<bool> reduceMotion;
   // Where the high scores and the saved game are kept (a separator is
   // added at the end if missing); empty for the player's preferences
   // directory. For tests,
@@ -144,10 +162,42 @@ class App {
     InputState input;
     screen::Layout layout;
     TouchControls::View touch;
+    // The front screens (title, scores, how to play, settings) are up, and
+    // which; the title has finished building itself.
+    bool frontOpen;
+    FrontState front;
+    bool introDone;
+    // Simulation steps of the attract game since the title last opened,
+    // and attract games that have ended in this run.
+    std::uint64_t attractSteps;
+    unsigned attractGames;
+    // The touch guide before the first game is up.
+    bool guideOpen;
+    // MAIN MENU was chosen once in the pause and waits for a second press.
+    bool confirmMainMenu;
+    Settings settings;
+    // Store reviews asked of the system in this run.
+    unsigned reviewRequests;
+    // Haptics played in this run.
+    unsigned hapticsPlayed;
+    // The high score table, as shown.
+    HighScores scores;
   };
   [[nodiscard]] Status status() const;
   // How many frames a standing picture is drawn for after each event.
   static constexpr std::uint32_t kRedrawsAfterEvent = 3;
+  // A finished game goes back to the title after this long with nothing
+  // touched, or on a touch or key after the guard (fingers still on the
+  // flippers when the last ball drains are not a request).
+  static constexpr double kGameOverIdleSeconds = 8.0;
+  static constexpr double kGameOverGuardSeconds = 0.8;
+  static constexpr int kMaxAttractStepsPerFrame = 2000;
+
+  // The system's Reduce Motion setting as the game last read it (at start
+  // and on every return to the foreground): the one place everything that
+  // moves for show asks, the title's animation and attract mode's lights
+  // included.
+  [[nodiscard]] bool reduceMotion() const noexcept { return reduceMotion_; }
 
  private:
   struct WindowDeleter {
@@ -163,7 +213,7 @@ class App {
   // How long the initials prompt ignores keys and touches after it appears.
   static constexpr Uint64 kEntryGuardMs = 700;
   // What is in front of the player. Fingers on one do not carry to the next.
-  enum class Screen : std::uint8_t { Play, Menu, About, Prompt };
+  enum class Screen : std::uint8_t { Play, Menu, About, Prompt, Front, Guide };
 
   // One turn of the loop. restWhenStill: do not redraw a picture that has
   // not changed.
@@ -173,7 +223,7 @@ class App {
   void readInput();
   // True when the simulation should stand still.
   bool halted() const noexcept {
-    return paused_ || autoPaused_ || aboutOpen_ || entry_.has_value();
+    return paused_ || autoPaused_ || aboutOpen_ || entry_.has_value() || frontOpen_ || guideOpen_;
   }
   // Key presses while the initials prompt is up.
   void handleEntryKey(SDL_Keycode key, SDL_Keymod modifiers);
@@ -196,6 +246,49 @@ class App {
   [[nodiscard]] TouchControls::Context touchContext() const noexcept;
   // Leaves the pause menu for the game.
   void resumePlay();
+  // In AppFront.cpp: the front screens. Opens the title, attract mode
+  // behind it, from the start or from the pause menu.
+  void openFront();
+  // From the title: a new game, after the touch guide if it is the
+  // player's first.
+  void startGame();
+  // Leaves the game for the title (MAIN MENU in the pause).
+  void goToMainMenu();
+  [[nodiscard]] FrontConfig frontConfig() const noexcept;
+  [[nodiscard]] bool introDone() const noexcept;
+  void skipIntro();
+  void frontAct(FrontAction action);
+  void handleFrontKey(const SDL_KeyboardEvent& key);
+  void touchFront(TouchPhase phase, std::uint64_t id, float x, float y);
+  // The touch guide before the first game is dismissed.
+  void dismissGuide();
+  // Steps attract mode's game for the time given.
+  void stepAttract(double seconds);
+  // Settings: applies them to the sound, and saves them if this run keeps
+  // the player's files.
+  void applySettings();
+  void saveSettings();
+  void setSound(bool on);
+  void setMusic(bool on);
+  // A haptic for what the frame's sounds say happened, if one is due.
+  void playHaptics(SoundSet sounds);
+  // At the title, after a game, now and then: the system's review prompt.
+  void maybeRequestReview();
+  // What VoiceOver finds on the screen, when that has changed.
+  void refreshAccessibility();
+  // An accessibility element was activated.
+  void handleAccessibilityAction(std::int32_t code);
+  // CONTINUE on the title: the saved game, paused, in place of the title.
+  void continueSavedGame();
+  // A finished game is on the table with nothing over it (no initials
+  // prompt, pause or About) in a run that has the title: it goes back to
+  // the title after kGameOverIdleSeconds, or at once on a tap or a key
+  // once kGameOverGuardSeconds have passed.
+  [[nodiscard]] bool gameOverStanding() const noexcept;
+  // Attract mode's light show: how the attract table is lit this frame. The
+  // one place the title asks (fx/lightshow plugs its sequence in here);
+  // until then a chase over the game's own lamps (attractChase).
+  [[nodiscard]] TableLights attractLights(const Game& attract) const;
   // The window changed size or safe area: the touch layout follows it.
   void handleLayoutChange();
   // In AppLifecycle.cpp: the window gained or lost focus, or was minimised
@@ -361,6 +454,49 @@ class App {
   TouchControls touch_;
   OverlayTaps overlayTaps_;
   Screen lastScreen_ = Screen::Play;
+
+  // The front screens.
+  FrontMenu front_;
+  bool frontOpen_ = false;
+  // Seconds since the title opened (its intro), and a clock for what moves
+  // on it after that.
+  double introSeconds_ = 0.0;
+  double frontSeconds_ = 0.0;
+  // The finger on a front screen, what it went down on, and whether it is
+  // still there.
+  std::optional<std::uint64_t> frontFinger_;
+  FrontTarget frontDown_{};
+  bool frontOnTarget_ = false;
+  // Attract mode: a game of its own, never the player's, and its hands.
+  std::optional<Game> attract_;
+  AttractPilot pilot_;
+  FixedTimestep attractTimestep_{Game::kStepSeconds, 8};
+  std::uint64_t attractSteps_ = 0;
+  unsigned attractGames_ = 0;
+  // The touch guide before the player's first game.
+  bool guideOpen_ = false;
+  bool confirmMainMenu_ = false;
+  // This run has the title (AppOptions::showTitle, and not a timed run or
+  // a staged scene); and how long a finished game has stood with nothing
+  // over it, after which the title comes back.
+  bool titleRun_ = false;
+  double gameOverIdle_ = 0.0;
+  // The player's settings, and whether this run reads and writes them.
+  Settings settings_;
+  SettingsStore settingsStore_;
+  bool keepFiles_ = false;
+  // Whether the device has haptics.
+  bool hapticsAvailable_ = false;
+  HapticGate hapticGate_;
+  unsigned hapticsPlayed_ = 0;
+  // A player's game ended in this run: the review may be asked for.
+  bool gameEndedThisRun_ = false;
+  unsigned reviewRequests_ = 0;
+  // Event type of an activated accessibility element, and what the
+  // elements last given to the system were made from.
+  Uint32 accessibilityEvent_ = 0;
+  std::uint64_t accessibilityKey_ = ~std::uint64_t{0};
+  std::uint64_t accessibilityPage_ = ~std::uint64_t{0};
 };
 
 }  // namespace pinball

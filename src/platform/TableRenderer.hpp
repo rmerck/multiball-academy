@@ -76,6 +76,12 @@ class TableRenderer {
   void draw(SDL_Renderer* renderer, const Game& game, float alpha, const screen::Layout& layout,
             const DrawOptions& options, const HudExtras& extras = {}) const;
 
+  // Attract mode, behind the title: the table alone (no status display, no
+  // controls), scaled to fill area, lit as lights says, under a veil of the
+  // backdrop colour of the given strength (0 to 255).
+  void drawAttract(SDL_Renderer* renderer, const Game& game, float alpha, const screen::Rect& area,
+                   const TableLights& lights, std::uint8_t veil, bool reduceMotion) const;
+
   // Draws the touch controls over the frame, held ones pressed in: the
   // Stack's deck with its button row and flipper pads, the Classic panel's
   // row, and the pause button. Call after draw and before any dialog. Draws
@@ -110,6 +116,7 @@ class TableRenderer {
     // The rest may be null: see TextureSet.
     TexturePtr title;
     TexturePtr dialog;
+    TexturePtr dot;
     TexturePtr strip;
     TexturePtr deck;
     TexturePtr backdrop;
@@ -118,6 +125,11 @@ class TableRenderer {
   };
 
   explicit TableRenderer(Textures textures);
+
+  // The table and what moves on it, with its top left corner at left, top
+  // on the current target, lit as lights says.
+  void drawTable(SDL_Renderer* renderer, const Game& game, float alpha, int left, int top,
+                 const DrawOptions& options, const TableLights& lights) const;
 
   // A soft additive light of the given colour and strength (0 to 1, held
   // to art::kMaxGlowStrength so that no light outshines the ball).
@@ -140,6 +152,10 @@ class TableRenderer {
   void drawBalls(SDL_Renderer* renderer, std::span<const BallView> balls) const;
 
   Textures textures_;
+  // What attract mode draws the table into before scaling it; made on first
+  // use. Its picture is drawn again every frame, so a reset of the render
+  // targets loses nothing.
+  mutable TexturePtr attractTarget_;
   // Triangles for drawElements, kept between frames so that drawing one
   // allocates nothing.
   mutable std::vector<SDL_Vertex> elements_;

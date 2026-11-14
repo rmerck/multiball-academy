@@ -41,9 +41,13 @@ MenuLayout menuLayout(const Layout& layout) noexcept {
   };
   menu.resume = row(0.0F);
   menu.newGame = row(1.0F);
-  menu.sound = row(2.0F);
-  menu.music = row(3.0F);
-  menu.about = row(4.0F);
+  // Sound and music share a row, half each.
+  const Rect both = row(2.0F);
+  const float half = (both.w - kGap) * 0.5F;
+  menu.sound = {both.x, both.y, half, both.h};
+  menu.music = {both.x + half + kGap, both.y, both.w - half - kGap, both.h};
+  menu.about = row(3.0F);
+  menu.mainMenu = row(4.0F);
   return menu;
 }
 

@@ -213,14 +213,36 @@ fi
 # code (cmake/PinnedDeps.cmake), so the frameworks behind them, and the
 # classes that would make the App Store ask for a camera, motion or Bluetooth
 # purpose string, are not referred to at all.
-if grep -E 'CoreBluetooth|CoreMotion|CoreHaptics|OpenGLES|CoreLocation|Vulkan' <<<"$libraries"; then
+# The Swift runtime and its overlays (/usr/lib/swift/libswift*.dylib): the
+# review request's Swift (src/platform/ios/Review.swift) links the runtime,
+# and auto-links, weakly, the overlay of every module UIKit and StoreKit
+# bring in. Only the overlays expected of those are allowed; CoreLocation's
+# only weakly, and the executable's own references are checked for any
+# location API below, Swift's mangled names included.
+swift_allowed='Core|_Concurrency|_StringProcessing|_Builtin_float|ObjectiveC|Darwin|Dispatch|CoreFoundation|Foundation|CoreGraphics|CoreImage|CoreLocation|Metal|OSLog|os|QuartzCore|Spatial|UniformTypeIdentifiers|XPC|simd|UIKit|Observation|Synchronization|AVFoundation|CoreMedia|CoreAudio|FileProvider|DataDetection|Symbols|StoreKit'
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  path=$(awk '{print $1}' <<<"$line")
+  lib=$(basename "$path" .dylib)
+  lib=${lib#libswift}
+  grep -q -x -E "$swift_allowed" <<<"$lib" || fail "an unexpected Swift library is linked: $path"
+  if [ "$lib" = CoreLocation ] && ! grep -q 'weak)' <<<"$line"; then
+    fail "the Swift CoreLocation overlay is linked other than weakly"
+  fi
+done < <(grep -E '^[[:space:]]+/usr/lib/swift/' <<<"$libraries" || true)
+frameworks=$(grep -v -E '^[[:space:]]+/usr/lib/swift/' <<<"$libraries" || true)
+if grep -E 'CoreBluetooth|CoreMotion|CoreHaptics|OpenGLES|CoreLocation|Vulkan' <<<"$frameworks"; then
   fail "a framework the game has no use for is linked"
 fi
 undefined=$(nm -u "$exe")
 [ -n "$undefined" ] || fail "nm lists no undefined symbol for the executable"
 all_strings=$(strings -a "$exe")
 [ -n "$all_strings" ] || fail "strings finds nothing in the executable"
-if grep -E 'AVCapture|CMMotionManager|CBCentralManager|CBPeripheral|CLLocationManager' <<<"$undefined"; then
+# The Swift overlays' load markers (__swift_FORCE_LOAD_$_swiftCoreLocation)
+# name a module and use nothing in it: any real use of a location API, in
+# C, Objective-C or Swift's mangled names, is what is looked for.
+api_undefined=$(grep -v -E '^__swift_FORCE_LOAD_\$_swift' <<<"$undefined" || true)
+if grep -E 'AVCapture|CMMotionManager|CBCentralManager|CBPeripheral|CLLocation|CoreLocation' <<<"$api_undefined"; then
   fail "the executable refers to a camera, motion, Bluetooth or location class"
 fi
 if grep -E '^(AVCaptureDevice|CMMotionManager|CBCentralManager)$' <<<"$all_strings"; then

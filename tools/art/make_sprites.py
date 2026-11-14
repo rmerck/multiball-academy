@@ -316,11 +316,23 @@ def kickback():
     return st.image()
 
 
+def dot():
+    """One lamp of the title's dot display, 8 units square, neutral and tinted by the renderer: a round lens,
+    brightest in the middle, with a dark rim so that lit dots stay apart at any scale."""
+    st = Stage(8, 8, 4, 4, transparent=True)
+    c = st.c
+    x = y = 4.0
+    c.drawCircle(x, y, 3.6, fill(C(P.INK, 230)))
+    c.drawCircle(x, y, 3.0, shade(rad((x - 0.5, y - 0.6), 3.3, [C(P.WHITE), C("#E6E6E6"), C("#9A9A9A")], [0, 0.45, 1])))
+    return st.image()
+
+
 SPRITES = {
     "ball.png": ball, "glow.png": glow, "flipper.png": flipper, "bumper.png": lambda: bumper("body"),
     "bumper_cap.png": lambda: bumper("cap"), "bar.png": bar, "plunger.png": plunger, "button.png": button, "button_gloss.png": button_gloss,
     "insert_round.png": lambda: insert("round"), "insert_arrow.png": lambda: insert("arrow"), "door.png": door,
     "spinner_0.png": lambda: spinner(0), "spinner_1.png": lambda: spinner(1), "kickback.png": kickback,
+    "dot.png": dot,
 }
 
 
