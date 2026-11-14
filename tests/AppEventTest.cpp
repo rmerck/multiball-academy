@@ -16,6 +16,8 @@
 
 #include "Check.hpp"
 #include "core/Args.hpp"
+#include "core/FrontLayout.hpp"
+#include "core/FrontMenu.hpp"
 #include "core/OverlayLayout.hpp"
 #include "core/ScreenLayout.hpp"
 #include "core/TouchControls.hpp"
@@ -44,6 +46,15 @@ AppOptions playerOptions(pinball::screen::Idiom idiom) {
   options.idiom = idiom;
   options.keepScores = false;
   options.fixedFrameSeconds = kFastFrame;
+  // Straight to the game: the title has tests of its own.
+  options.showTitle = false;
+  return options;
+}
+
+// As a player opens the game: the title first.
+AppOptions titleOptions(pinball::screen::Idiom idiom) {
+  AppOptions options = playerOptions(idiom);
+  options.showTitle = true;
   return options;
 }
 
@@ -1037,6 +1048,303 @@ void testNoAudioRetriesOnReturn() {
   CHECK(app->status().audioOpen);
 }
 
+
+// --- The title and the front screens ----------------------------------------
+
+using pinball::FrontPage;
+using pinball::SettingsRow;
+using pinball::TitleItem;
+
+// Runs frames until the title has built itself. False if it never does.
+bool untilIntroDone(App& app) {
+  for (int i = 0; i < 200 && !app.status().introDone; ++i) {
+    if (!frames(app, 1)) {
+      return false;
+    }
+  }
+  return app.status().introDone;
+}
+
+void testTitleKeys() {
+  const std::unique_ptr<App> app = App::create(titleOptions(pinball::screen::Idiom::Desktop));
+  CHECK(app != nullptr);
+  if (!app) {
+    return;
+  }
+  CHECK(frames(*app, 3));
+  App::Status status = app->status();
+  // The title is up over attract mode: the attract game plays, the
+  // player's does not.
+  CHECK(status.frontOpen && status.front.page == FrontPage::Title);
+  CHECK(!status.introDone);
+  CHECK(status.front.titleFocus == TitleItem::Play);
+  CHECK(status.steps == 0);
+  CHECK(status.attractSteps > 0);
+  // A key while it builds finishes it, and does nothing else.
+  key(*app, SDLK_DOWN, SDL_SCANCODE_DOWN);
+  status = app->status();
+  CHECK(status.introDone && status.front.titleFocus == TitleItem::Play);
+  // The menu by arrows and Enter; Escape goes back.
+  key(*app, SDLK_DOWN, SDL_SCANCODE_DOWN);
+  CHECK(app->status().front.titleFocus == TitleItem::Scores);
+  key(*app, SDLK_RETURN, SDL_SCANCODE_RETURN);
+  CHECK(app->status().front.page == FrontPage::Scores);
+  CHECK(frames(*app, 2));
+  key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+  status = app->status();
+  CHECK(status.front.page == FrontPage::Title && status.front.titleFocus == TitleItem::Scores);
+  key(*app, SDLK_DOWN, SDL_SCANCODE_DOWN);
+  key(*app, SDLK_RETURN, SDL_SCANCODE_RETURN);
+  CHECK(app->status().front.page == FrontPage::HowTo);
+  key(*app, SDLK_RIGHT, SDL_SCANCODE_RIGHT);
+  CHECK(app->status().front.howToPage == 1);
+  CHECK(frames(*app, 2));
+  key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+  // Settings: sound, volume, music, reset with its second press.
+  key(*app, SDLK_DOWN, SDL_SCANCODE_DOWN);
+  CHECK(app->status().front.titleFocus == TitleItem::Settings);
+  key(*app, SDLK_RETURN, SDL_SCANCODE_RETURN);
+  CHECK(app->status().front.page == FrontPage::Settings);
+  key(*app, SDLK_RETURN, SDL_SCANCODE_RETURN);
+  status = app->status();
+  CHECK(!status.settings.sound && status.muted);
+  key(*app, SDLK_RETURN, SDL_SCANCODE_RETURN);
+  CHECK(app->status().settings.sound && !app->status().muted);
+  key(*app, SDLK_DOWN, SDL_SCANCODE_DOWN);
+  key(*app, SDLK_RIGHT, SDL_SCANCODE_RIGHT);
+  key(*app, SDLK_RIGHT, SDL_SCANCODE_RIGHT);
+  key(*app, SDLK_RIGHT, SDL_SCANCODE_RIGHT);
+  CHECK(app->status().settings.volume == pinball::Settings::kMaxVolume);
+  key(*app, SDLK_LEFT, SDL_SCANCODE_LEFT);
+  CHECK(app->status().settings.volume == pinball::Settings::kMaxVolume - 1);
+  key(*app, SDLK_DOWN, SDL_SCANCODE_DOWN);
+  key(*app, SDLK_RETURN, SDL_SCANCODE_RETURN);
+  CHECK(!app->status().settings.music && !app->status().musicOn);
+  // No haptics on this machine: music, then reset.
+  key(*app, SDLK_DOWN, SDL_SCANCODE_DOWN);
+  CHECK(app->status().front.settingsFocus == SettingsRow::Reset);
+  key(*app, SDLK_RETURN, SDL_SCANCODE_RETURN);
+  CHECK(app->status().front.confirmReset);
+  key(*app, SDLK_RETURN, SDL_SCANCODE_RETURN);
+  CHECK(!app->status().front.confirmReset && app->status().scores.size() == 0);
+  CHECK(frames(*app, 2));
+  key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+  // About opens over the title and closes back to it.
+  key(*app, SDLK_DOWN, SDL_SCANCODE_DOWN);
+  CHECK(app->status().front.titleFocus == TitleItem::About);
+  key(*app, SDLK_RETURN, SDL_SCANCODE_RETURN);
+  CHECK(app->status().aboutOpen && app->status().frontOpen);
+  CHECK(frames(*app, 2));
+  key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+  CHECK(!app->status().aboutOpen && app->status().frontOpen);
+  CHECK(app->status().steps == 0);
+
+  // F2 plays at once, from anywhere on the title.
+  key(*app, SDLK_F2, SDL_SCANCODE_F2);
+  CHECK(!app->status().frontOpen && !app->status().guideOpen);
+  CHECK(frames(*app, 5));
+  status = app->status();
+  CHECK(status.steps > 0 && !status.gameOver);
+  // Escape in the pause asks, then leaves for the title.
+  key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+  CHECK(!app->status().confirmMainMenu && !app->status().frontOpen);
+  key(*app, SDLK_F3, SDL_SCANCODE_F3);
+  key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+  CHECK(app->status().confirmMainMenu && app->status().paused);
+  key(*app, SDLK_F3, SDL_SCANCODE_F3);
+  CHECK(!app->status().confirmMainMenu && !app->status().paused);
+  key(*app, SDLK_F3, SDL_SCANCODE_F3);
+  key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+  key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+  status = app->status();
+  CHECK(status.frontOpen && !status.paused && status.front.page == FrontPage::Title);
+  CHECK(status.attractSteps == 0);
+  const std::uint64_t stepsLeft = status.steps;
+  CHECK(frames(*app, 10));
+  CHECK(app->status().steps == stepsLeft);
+  CHECK(app->status().attractSteps > 0);
+  // Enter on PLAY: a new game.
+  CHECK(untilIntroDone(*app));
+  key(*app, SDLK_RETURN, SDL_SCANCODE_RETURN);
+  CHECK(!app->status().frontOpen);
+  CHECK(frames(*app, 3));
+  CHECK(app->status().steps > stepsLeft);
+  CHECK(app->finish() == 0);
+}
+
+void testTitleTouch() {
+  const std::unique_ptr<App> app = App::create(titleOptions(pinball::screen::Idiom::Touch));
+  CHECK(app != nullptr);
+  if (!app) {
+    return;
+  }
+  CHECK(frames(*app, 3));
+  const pinball::screen::Layout layout = app->status().layout;
+  const pinball::FrontConfig config{.guideShown = true};
+  const pinball::screen::TitleLayout title = pinball::screen::titleLayout(layout, config);
+  const auto item = [&title](TitleItem which) {
+    return centreOf(title.items[static_cast<std::size_t>(which)]);
+  };
+  CHECK(app->status().frontOpen && !app->status().introDone);
+  // A tap while it builds finishes it and presses nothing.
+  tap(*app, item(TitleItem::Scores));
+  App::Status status = app->status();
+  CHECK(status.introDone && status.front.page == FrontPage::Title);
+  // How to play, its pages, and the touch guide from its first page.
+  tap(*app, item(TitleItem::HowTo));
+  CHECK(app->status().front.page == FrontPage::HowTo);
+  const pinball::screen::PageLayout first =
+      pinball::screen::pageLayout(layout, FrontPage::HowTo, true);
+  tap(*app, centreOf(first.next));
+  CHECK(app->status().front.howToPage == 1);
+  tap(*app, centreOf(first.previous));
+  CHECK(app->status().front.howToPage == 0);
+  // A finger that slides off a button before it lifts does nothing.
+  finger(*app, SDL_EVENT_FINGER_DOWN, 7, centreOf(first.next));
+  finger(*app, SDL_EVENT_FINGER_MOTION, 7, centreOf(first.back));
+  finger(*app, SDL_EVENT_FINGER_UP, 7, centreOf(first.back));
+  CHECK(app->status().front.howToPage == 0 && app->status().front.page == FrontPage::HowTo);
+  tap(*app, centreOf(first.guide));
+  CHECK(app->status().front.page == FrontPage::Guide);
+  CHECK(frames(*app, 3));
+  tap(*app, {10.0F, 10.0F});
+  CHECK(app->status().front.page == FrontPage::HowTo);
+  tap(*app, centreOf(first.back));
+  CHECK(app->status().front.page == FrontPage::Title);
+  // Settings by touch.
+  tap(*app, item(TitleItem::Settings));
+  const pinball::screen::SettingsLayout settings = pinball::screen::settingsLayout(layout, config);
+  tap(*app, centreOf(settings.volumeDown));
+  CHECK(app->status().settings.volume == 7);
+  tap(*app, centreOf(settings.rows[static_cast<std::size_t>(SettingsRow::Music)]));
+  CHECK(!app->status().settings.music);
+  tap(*app, centreOf(settings.page.back));
+  CHECK(app->status().front.page == FrontPage::Title);
+
+  // PLAY: the first game opens on the touch guide, which holds the game
+  // until a tap; then the game runs and the guide is not shown again.
+  CHECK(!app->status().settings.touchGuideSeen);
+  tap(*app, item(TitleItem::Play));
+  status = app->status();
+  CHECK(!status.frontOpen && status.guideOpen);
+  CHECK(frames(*app, 5));
+  CHECK(app->status().steps == 0);
+  // A flipper press on the guide only dismisses it.
+  tap(*app, flipperPoint(layout, true));
+  status = app->status();
+  CHECK(!status.guideOpen && status.settings.touchGuideSeen);
+  CHECK(frames(*app, 5));
+  CHECK(app->status().steps > 0);
+  // MAIN MENU in the pause asks, then goes.
+  tap(*app, centreOf(layout.pauseButton));
+  CHECK(frames(*app, 2));
+  CHECK(app->status().paused);
+  const pinball::screen::MenuLayout menu = pinball::screen::menuLayout(layout);
+  tap(*app, centreOf(menu.mainMenu));
+  CHECK(app->status().confirmMainMenu && !app->status().frontOpen);
+  tap(*app, centreOf(menu.sound));
+  CHECK(!app->status().confirmMainMenu);
+  tap(*app, centreOf(menu.mainMenu));
+  tap(*app, centreOf(menu.mainMenu));
+  status = app->status();
+  CHECK(status.frontOpen && !status.paused);
+  // Back to a game: no guide this time.
+  CHECK(untilIntroDone(*app));
+  tap(*app, item(TitleItem::Play));
+  CHECK(!app->status().frontOpen && !app->status().guideOpen);
+  // An interruption on the title leaves it as it is.
+  CHECK(app->finish() == 0);
+  const std::unique_ptr<App> again = App::create(titleOptions(pinball::screen::Idiom::Touch));
+  CHECK(again != nullptr);
+  if (again) {
+    CHECK(frames(*again, 2));
+    system(*again, SDL_EVENT_WILL_ENTER_BACKGROUND);
+    system(*again, SDL_EVENT_DID_ENTER_FOREGROUND);
+    status = again->status();
+    CHECK(status.frontOpen && !status.paused && !status.interrupted);
+  }
+}
+
+// Attract mode plays games of its own, and none of it is the player's: no
+// initials, no score file. Watching the title writes no settings either;
+// a setting changed is written, and read back by the next run. Only where
+// the preferences directory can be sent to a scratch place (Linux).
+void testAttractKeepsNoScore() {
+  namespace fs = std::filesystem;
+  std::error_code error;
+  const fs::path base = fs::temp_directory_path(error);
+  const fs::path scratchPath =
+      base / ("pinball-app-attract-" + std::to_string(SDL_GetTicksNS()));
+  if (error || !fs::create_directory(scratchPath, error)) {
+    CHECK(false);
+    return;
+  }
+  const std::string scratch = scratchPath.string();
+  struct Cleanup {
+    fs::path path;
+    ~Cleanup() {
+      std::error_code ignored;
+      fs::remove_all(path, ignored);
+    }
+  } const cleanup{scratchPath};
+  SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME", scratch.c_str(), true);
+  char* const pref = SDL_GetPrefPath(pinball::kDataOrganisation, pinball::kDataDirectory);
+  const std::string directory = pref != nullptr ? pref : "";
+  SDL_free(pref);
+  if (directory.rfind(scratch, 0) != 0) {
+    SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME");
+    std::puts("app_tests: attract score check skipped (no scratch preferences directory)");
+    return;
+  }
+  const std::string scores = directory + "highscores.txt";
+  const std::string settings = directory + "settings.txt";
+  {
+    AppOptions options = titleOptions(pinball::screen::Idiom::Desktop);
+    options.keepScores = true;
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    // Some twenty seconds of attract play. (That attract games end and
+    // start again is tested in core, FrontTest; frames here are slow.)
+    bool sawEntry = false;
+    for (int i = 0; i < 300; ++i) {
+      CHECK(frames(*app, 1));
+      sawEntry = sawEntry || app->status().entryOpen;
+    }
+    const App::Status status = app->status();
+    CHECK(!sawEntry && status.frontOpen && status.steps == 0);
+    CHECK(status.attractSteps >= 2000);
+    CHECK(status.scores.size() == 0);
+    CHECK(app->finish() == 0);
+    CHECK(!SDL_GetPathInfo(scores.c_str(), nullptr));
+    CHECK(!SDL_GetPathInfo(settings.c_str(), nullptr));
+    // A setting changed is kept.
+    key(*app, SDLK_N, SDL_SCANCODE_N);
+    CHECK(SDL_GetPathInfo(settings.c_str(), nullptr));
+  }
+  {
+    AppOptions options = titleOptions(pinball::screen::Idiom::Desktop);
+    options.keepScores = true;
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (app) {
+      CHECK(!app->status().settings.music && !app->status().musicOn);
+    }
+  }
+  // A run that keeps no scores does not read them either.
+  {
+    const std::unique_ptr<App> app = App::create(titleOptions(pinball::screen::Idiom::Desktop));
+    CHECK(app != nullptr);
+    if (app) {
+      CHECK(app->status().settings.music);
+    }
+  }
+  std::remove(settings.c_str());
+  SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME");
+}
+
 void runAll() {
   testDesktopKeys();
   testQuitAtThePromptKeepsTheScore();
@@ -1051,6 +1359,9 @@ void runAll() {
   testBackgroundAudioOpen();
   testAudioOpenedWhileLeavingStaysStopped();
   testNoAudioRetriesOnReturn();
+  testTitleKeys();
+  testTitleTouch();
+  testAttractKeepsNoScore();
 }
 
 }  // namespace

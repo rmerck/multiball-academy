@@ -110,6 +110,7 @@ class TableRenderer {
     // The rest may be null: see TextureSet.
     TexturePtr title;
     TexturePtr dialog;
+    TexturePtr dot;
     TexturePtr strip;
     TexturePtr deck;
     TexturePtr backdrop;

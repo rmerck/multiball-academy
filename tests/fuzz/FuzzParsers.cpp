@@ -30,6 +30,7 @@
 #include "core/InitialsEntry.hpp"
 #include "core/OverlayLayout.hpp"
 #include "core/PngHeader.hpp"
+#include "core/Settings.hpp"
 #include "core/Rules.hpp"
 #include "core/SurfaceSpec.hpp"
 #include "core/TouchControls.hpp"
@@ -338,6 +339,20 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
   }
   if (data[0] == '6') {
     fuzzScoreWriter(text);
+    return 0;
+  }
+  if (data[0] == '7') {
+    // The settings file: anything accepted is in range and comes back the
+    // same; anything refused leaves the defaults.
+    pinball::Settings settings;
+    if (settings.parse(text)) {
+      require(settings.volume <= pinball::Settings::kMaxVolume &&
+              settings.gamesFinished <= pinball::Settings::kMaxGames);
+      pinball::Settings again;
+      require(again.parse(settings.serialize()) && again == settings);
+    } else {
+      require(settings == pinball::Settings{});
+    }
     return 0;
   }
   switch (which) {

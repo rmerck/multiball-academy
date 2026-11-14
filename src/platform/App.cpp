@@ -14,6 +14,9 @@
 #include "core/Version.hpp"
 #include "platform/About.hpp"
 #include "platform/Assets.hpp"
+#include "platform/FrontScreens.hpp"
+#include "platform/GameViews.hpp"
+#include "platform/Motion.hpp"
 #include "platform/InitialsScreen.hpp"
 #include "platform/MacMenu.hpp"
 #include "platform/PauseMenu.hpp"
@@ -251,11 +254,26 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
 #endif
 
   systemCorners_ = options.systemCorners.value_or(SDL_IsTablet());
-  reduceMotion_ = ios::reduceMotionEnabled();
+  reduceMotion_ = systemReduceMotion();
+  ios::attachWindow(window_.get());
+  hapticsAvailable_ = ios::hapticsAvailable();
+  accessibilityEvent_ = SDL_RegisterEvents(1);
+  // The player's settings, read and written by a player's run only: a timed
+  // run, a staged scene or a test that keeps no scores leaves the file
+  // alone, as it does the score file.
+  keepFiles_ = options.keepScores && !options.frameLimit && !options.scene;
+  if (keepFiles_) {
+    settings_ = settingsStore_.load();
+  }
+  applySettings();
   // The player's own music is playing: the game's tune stays out of its
-  // way until the player turns it on.
+  // way until the player turns it on. (For this run: the setting stays.)
   if (ios::otherAudioPlaying()) {
     musicOn_ = false;
+  }
+  front_.configure(frontConfig());
+  if (options.showTitle && !options.frameLimit && !options.scene) {
+    openFront();
   }
   audioRouteChangesSeen_ = ios::audioRouteChanges();
   if (options_.backgroundAudioOpen) {
@@ -339,6 +357,14 @@ FrameResult App::iterate(bool restWhenStill) {
   serviceAudio();
   readInput();
   repeatHeldArrow();
+  if (frontOpen_) {
+    // The title's clocks, never more than a moment a frame, so a stall does
+    // not skip its intro.
+    const double moment = std::clamp(frameSeconds, 0.0, 0.1);
+    introSeconds_ += moment;
+    frontSeconds_ += moment;
+    stepAttract(frameSeconds);
+  }
 
   // While halted the clock keeps moving but nothing accumulates, and the
   // first frame after a halt adds no time either (see PauseClock).
@@ -361,6 +387,7 @@ FrameResult App::iterate(bool restWhenStill) {
       }
     }
     mixer_.trigger(sounds);
+    playHaptics(sounds);
     if (steps > 0) {
       // The simulation has seen every latched press at least once.
       latched_ = InputState{};
@@ -370,8 +397,9 @@ FrameResult App::iterate(bool restWhenStill) {
   // The initials prompt may have opened under the player's fingers.
   syncScreen();
 
-  // The tune plays while the game runs and rests while it stands still.
-  mixer_.setMusicPlaying(musicOn_ && !isHalted);
+  // The tune plays while the game runs and on the title, and rests while
+  // the game stands still.
+  mixer_.setMusicPlaying(musicOn_ && (!isHalted || (frontOpen_ && !backgrounded_)));
   if (audio_) {
     audio_->pump(mixer_);
   }
@@ -383,7 +411,10 @@ FrameResult App::iterate(bool restWhenStill) {
   // system forbids it.
   const bool cursorLit = (SDL_GetTicks() / kCursorBlinkMs) % 2U == 0U;
   const bool blinked = entry_ && !aboutOpen_ && cursorLit != cursorWasLit_;
-  const bool still = isHalted && halted() && redrawsDue_ == 0 && !blinked;
+  // The title moves while it is up: its intro, its dot display, attract
+  // mode. With less motion asked for, only the dot display's pages change.
+  const bool animating = frontOpen_ && (front_.state().page == FrontPage::Title || !reduceMotion_);
+  const bool still = isHalted && halted() && redrawsDue_ == 0 && !blinked && !animating;
   if (!backgrounded_ && (!restWhenStill || options_.frameLimit || !still)) {
     // The accumulator is frozen while halted, so alpha is stable and nothing snaps.
     render(timestep_.alpha(), cursorLit);
@@ -469,6 +500,10 @@ void App::handleEvent(const SDL_Event& event) {
       handleLifecycle(event.type);
       break;
     default:
+      if (accessibilityEvent_ != 0 && event.type == accessibilityEvent_) {
+        handleAccessibilityAction(event.user.code);
+        break;
+      }
       // The About item in the system menu bar. It only ever opens the screen.
       // Not over the initials prompt, which must be answered first, as with F1.
       if (aboutEvent_ != 0 && event.type == aboutEvent_ && !aboutOpen_ && !entry_) {
@@ -519,6 +554,7 @@ void App::serviceAudio() {
   }
   if (std::unique_ptr<AudioOutput> opened = audioOpener_->take()) {
     audio_ = std::move(opened);
+    audio_->setGain(settings_.gain());
     // It may have finished opening after the application left the front.
     if (audioSuspended_) {
       audio_->suspend();
@@ -586,6 +622,16 @@ App::Status App::status() const {
   status.input = input_;
   status.layout = layout_;
   status.touch = touch_.view(touchContext());
+  status.frontOpen = frontOpen_;
+  status.front = front_.state();
+  status.introDone = introDone();
+  status.attractSteps = attractSteps_;
+  status.guideOpen = guideOpen_;
+  status.confirmMainMenu = confirmMainMenu_;
+  status.settings = settings_;
+  status.reviewRequests = reviewRequests_;
+  status.hapticsPlayed = hapticsPlayed_;
+  status.scores = highScores_;
   return status;
 }
 
@@ -605,6 +651,12 @@ void App::commitInitials() {
 
 void App::recordFinishedGame() {
   const bool over = game_.gameOver();
+  if (over && !wasGameOver_ && !options_.frameLimit && !options_.scene) {
+    // A player's game, played to the end: counted for the review prompt.
+    gameEndedThisRun_ = true;
+    settings_.gamesFinished = std::min(settings_.gamesFinished + 1, Settings::kMaxGames);
+    saveSettings();
+  }
   if (over && !wasGameOver_) {
     // The game has just ended: enter it in the table if it made it.
     const HighScore entry{game_.rules().score(),
@@ -676,6 +728,7 @@ void App::reloadTextures() {
 void App::render(double alpha, bool cursorLit) {
   SDL_Renderer* r = renderer_.get();
   const bool touch = layout_.idiom == screen::Idiom::Touch;
+  refreshAccessibility();
 
   // The backdrop's own colour everywhere: the desktop's letterbox bars and
   // what shows at the table's edge when a nudge jolts it, and on a touch
@@ -684,6 +737,50 @@ void App::render(double alpha, bool cursorLit) {
                          screen::kBackdropRgb[2], SDL_ALPHA_OPAQUE);
   if (!SDL_RenderClear(r)) {
     noteRenderFailure("SDL_RenderClear");
+  }
+
+  if (frontOpen_) {
+    // The title and its pages over attract mode: the attract game, dimmed,
+    // with its status display, under the front screen. The touch guide,
+    // from HOW TO PLAY, is drawn over the table as it is played.
+    const Game& shown = attract_ ? *attract_ : game_;
+    const bool guide = front_.state().page == FrontPage::Guide;
+    table_->drawBackdrop(r, layout_);
+    table_->draw(r, shown, static_cast<float>(attractTimestep_.alpha()), layout_,
+                 DrawOptions{.dimmed = !guide, .reduceMotion = reduceMotion_},
+                 HudExtras{highScores_.best(), false});
+    attractLights(r, shown);
+    if (touch) {
+      table_->drawTouchOverlay(r, layout_,
+                               TouchControls().view(pinball::touchContext(shown)));
+    }
+    const OverlayArt art = table_->overlayArt();
+    if (!guide) {
+      dimAround(r, layout_);
+    }
+    FrontTarget pressed{};
+    if (frontFinger_ && frontOnTarget_) {
+      pressed = frontDown_;
+    }
+    drawFront(r, layout_,
+              FrontView{.state = front_.state(),
+                        .config = front_.config(),
+                        .introSeconds = introSeconds_,
+                        .seconds = frontSeconds_,
+                        .reduceMotion = reduceMotion_,
+                        .keyboard = !touch,
+                        .scores = &highScores_,
+                        .settings = &settings_,
+                        .pressed = pressed},
+              art);
+    if (aboutOpen_) {
+      drawAbout(r, highScores_, layout_, aboutPage_, art);
+    }
+    presented_ = SDL_RenderPresent(r);
+    if (!presented_) {
+      noteRenderFailure("SDL_RenderPresent");
+    }
+    return;
   }
 
   const bool showPaused = paused_ || autoPaused_;
@@ -698,12 +795,16 @@ void App::render(double alpha, bool cursorLit) {
     table_->drawTouchOverlay(r, layout_, touch_.view(touchContext()));
   }
   const OverlayArt art = table_->overlayArt();
-  if (showPaused && !aboutOpen_ && !entry_) {
+  if (guideOpen_) {
+    drawTouchGuide(r, layout_, true, art);
+  }
+  if (showPaused && !aboutOpen_ && !entry_ && !guideOpen_) {
     drawPauseMenu(r, layout_,
                   MenuState{.muted = mixer_.muted(),
                             .musicOn = musicOn_,
                             .confirmNewGame = confirmNewGame_,
-                            .afterInterruption = touch ? interrupted_ : !paused_},
+                            .afterInterruption = touch ? interrupted_ : !paused_,
+                            .confirmMainMenu = confirmMainMenu_},
                   art);
   }
   if (aboutOpen_) {

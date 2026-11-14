@@ -52,4 +52,10 @@ bool routeAboutMenu(Uint32 eventType) {
   return routed;
 }
 
+bool macReduceMotionEnabled() noexcept {
+  @autoreleasepool {
+    return [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldReduceMotion] ? true : false;
+  }
+}
+
 }  // namespace pinball

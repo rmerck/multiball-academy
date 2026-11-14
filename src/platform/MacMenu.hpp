@@ -14,8 +14,11 @@ namespace pinball {
 // menu bar on iOS, nor anywhere else but macOS.
 #if defined(__APPLE__) && !defined(PINBALL_IOS)
 bool routeAboutMenu(Uint32 eventType);
+// The system's Reduce Motion setting (Accessibility, Display) is on.
+bool macReduceMotionEnabled() noexcept;
 #else
 inline bool routeAboutMenu(Uint32 /*eventType*/) { return false; }
+inline bool macReduceMotionEnabled() noexcept { return false; }
 #endif
 
 }  // namespace pinball

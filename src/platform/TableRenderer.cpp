@@ -449,6 +449,7 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   }
   t.title = optional("ui/title.png");
   t.dialog = optional("ui/dialog.png");
+  t.dot = optional("sprites/dot.png");
   if (set == TextureSet::All) {
     t.strip = optional("ui/strip.png");
     t.deck = optional("ui/deck.png");
@@ -480,7 +481,9 @@ TableRenderer::TableRenderer(Textures textures) : textures_(std::move(textures))
 OverlayArt TableRenderer::overlayArt() const noexcept {
   return {.dialog = textures_.dialog.get(),
           .title = textures_.title.get(),
-          .button = {.face = textures_.button.get(), .gloss = textures_.buttonGloss.get()}};
+          .button = {.face = textures_.button.get(), .gloss = textures_.buttonGloss.get()},
+          .dot = textures_.dot.get(),
+          .glow = textures_.glow.get()};
 }
 
 void TableRenderer::drawGlow(SDL_Renderer* r, Vec2 center, float radius, art::Rgb color,

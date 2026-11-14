@@ -11,6 +11,7 @@ void testElements();
 void testFixedTimestep();
 void testFlippers();
 void testFormat();
+void testFront();
 void testGame();
 void testHighScores();
 void testHoles();

@@ -132,6 +132,7 @@ struct OverlayTarget {
     InitialSlot,
     InitialDown,
     InitialsOk,
+    MenuMainMenu,
   };
   Kind kind = Kind::None;
   std::uint8_t index = 0;

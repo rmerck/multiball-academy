@@ -202,6 +202,9 @@ OverlayTarget menuTarget(const screen::MenuLayout& menu, float x, float y) noexc
   if (contains(menu.about, x, y)) {
     return {Kind::MenuAbout, 0};
   }
+  if (contains(menu.mainMenu, x, y)) {
+    return {Kind::MenuMainMenu, 0};
+  }
   return {Kind::None, 0};
 }
 

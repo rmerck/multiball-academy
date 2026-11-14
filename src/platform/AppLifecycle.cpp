@@ -3,6 +3,7 @@
 // the application goes to the background and returns.
 #include "platform/App.hpp"
 
+#include "platform/Motion.hpp"
 #include "platform/ios/IosSystem.hpp"
 
 namespace pinball {
@@ -29,7 +30,8 @@ void App::handleFocusChange(Uint32 type) {
 }
 
 void App::interrupt() {
-  if (!options_.frameLimit) {
+  // The title and the touch guide stand still already, and stay up.
+  if (!options_.frameLimit && !frontOpen_ && !guideOpen_) {
     if (layout_.idiom == screen::Idiom::Touch) {
       // The player's own pause, with its menu, so that it takes the player
       // to end it.
@@ -88,7 +90,7 @@ void App::handleLifecycle(Uint32 type) {
         // No device opened before; there may be one now.
         audioRetryWanted_ = true;
       }
-      reduceMotion_ = ios::reduceMotionEnabled();
+      reduceMotion_ = systemReduceMotion();
       // The time away is not played back as a burst of catch-up steps
       // (a timed run is not paused, so the pause does not see to it).
       (void)clock_.simulated(0.0, true);

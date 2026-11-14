@@ -35,6 +35,7 @@ void runSuites() {
   testTableGeometry();
   testTargets();
   testTouchControls();
+  testFront();
 }
 
 }  // namespace

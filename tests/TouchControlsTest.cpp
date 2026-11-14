@@ -472,6 +472,7 @@ void testOverlayTargets(const Layout& layout) {
   CHECK(menuAt(at(menu.sound)) == Kind::MenuSound);
   CHECK(menuAt(at(menu.music)) == Kind::MenuMusic);
   CHECK(menuAt(at(menu.about)) == Kind::MenuAbout);
+  CHECK(menuAt(at(menu.mainMenu)) == Kind::MenuMainMenu);
   CHECK(menuAt({menu.box.x - 1.0F, menu.box.y + 10.0F}) == Kind::Outside);
   CHECK(menuAt({menu.box.x + 10.0F, menu.box.y + menu.box.h + 1.0F}) == Kind::Outside);
   // Inside the box and on no button: the box's own corner.

@@ -33,6 +33,12 @@ App::Screen App::screen() const noexcept {
   if (entry_) {
     return Screen::Prompt;
   }
+  if (frontOpen_) {
+    return Screen::Front;
+  }
+  if (guideOpen_) {
+    return Screen::Guide;
+  }
   return paused_ || autoPaused_ ? Screen::Menu : Screen::Play;
 }
 
@@ -47,8 +53,11 @@ void App::syncScreen() {
   // does not press a button of the next.
   touch_.cancelAll();
   overlayTaps_.cancel();
+  frontFinger_.reset();
+  frontOnTarget_ = false;
   if (now != Screen::Menu) {
     confirmNewGame_ = false;
+    confirmMainMenu_ = false;
   }
   redrawsDue_ = kRedrawsAfterEvent;
 }
@@ -62,6 +71,7 @@ void App::resumePlay() {
   paused_ = false;
   interrupted_ = false;
   confirmNewGame_ = false;
+  confirmMainMenu_ = false;
   // Nothing pressed during a pause carries into play.
   latched_ = InputState{};
 }
@@ -104,6 +114,16 @@ void App::handleTouch(const SDL_Event& event) {
   }
 
   switch (screen()) {
+    case Screen::Front:
+      touchFront(phase, id, at.x, at.y);
+      break;
+    case Screen::Guide:
+      // A tap anywhere goes on: when it lifts, so that it is not also
+      // taken as the first press of a flipper.
+      if (phase == TouchPhase::Up) {
+        dismissGuide();
+      }
+      break;
     case Screen::Play:
       touch_.handle({.id = id, .phase = phase, .x = at.x, .y = at.y}, layout_, touchContext());
       if (touch_.takePauseRequest()) {
@@ -144,7 +164,17 @@ void App::touchMenu(OverlayTarget acted) {
     case Kind::Outside:
       resumePlay();
       break;
+    case Kind::MenuMainMenu:
+      // A game in progress is not left by one stray tap.
+      confirmNewGame_ = false;
+      if (!confirmMainMenu_ && !game_.gameOver()) {
+        confirmMainMenu_ = true;
+        break;
+      }
+      goToMainMenu();
+      break;
     case Kind::MenuNewGame:
+      confirmMainMenu_ = false;
       // A game in progress is not thrown away by one stray tap.
       if (!confirmNewGame_ && !game_.gameOver()) {
         confirmNewGame_ = true;
@@ -155,14 +185,17 @@ void App::touchMenu(OverlayTarget acted) {
       break;
     case Kind::MenuSound:
       confirmNewGame_ = false;
-      mixer_.setMuted(!mixer_.muted());
+      confirmMainMenu_ = false;
+      setSound(mixer_.muted());
       break;
     case Kind::MenuMusic:
       confirmNewGame_ = false;
-      musicOn_ = !musicOn_;
+      confirmMainMenu_ = false;
+      setMusic(!musicOn_);
       break;
     case Kind::MenuAbout:
       confirmNewGame_ = false;
+      confirmMainMenu_ = false;
       aboutOpen_ = true;
       aboutPage_ = AboutState{};
       break;

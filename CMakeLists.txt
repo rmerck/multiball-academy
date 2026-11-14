@@ -244,6 +244,7 @@ if(PINBALL_FUZZ)
     src/core/OverlayLayout.cpp
     src/core/PngHeader.cpp
     src/core/ScreenLayout.cpp
+    src/core/Settings.cpp
     src/core/TouchControls.cpp)
   target_include_directories(pinball_fuzz_core PUBLIC src)
   pinball_apply_hardening(pinball_fuzz_core PUBLIC)
@@ -268,7 +269,11 @@ add_library(pinball_core STATIC
   src/core/Args.cpp
   src/core/AssetManifest.cpp
   src/core/AssetName.cpp
+  src/core/Attract.cpp
+  src/core/Feedback.cpp
   src/core/Format.cpp
+  src/core/FrontLayout.cpp
+  src/core/FrontMenu.cpp
   src/core/Game.cpp
   src/core/HighScores.cpp
   src/core/Courses.cpp
@@ -278,6 +283,7 @@ add_library(pinball_core STATIC
   src/core/Rules.cpp
   src/core/Scenes.cpp
   src/core/ScreenLayout.cpp
+  src/core/Settings.cpp
   src/core/Sha256.cpp
   src/core/Music.cpp
   src/core/Sound.cpp
@@ -304,17 +310,20 @@ endif()
 add_library(pinball_platform STATIC
   src/platform/About.cpp
   src/platform/App.cpp
+  src/platform/AppFront.cpp
   src/platform/AppKeyboard.cpp
   src/platform/AppLifecycle.cpp
   src/platform/AppTouch.cpp
   src/platform/Assets.cpp
   src/platform/AudioOutput.cpp
   src/platform/EmbeddedManifest.cpp
+  src/platform/FrontScreens.cpp
   src/platform/Hud.cpp
   src/platform/InitialsScreen.cpp
   src/platform/PauseMenu.cpp
   src/platform/SafeFile.cpp
   src/platform/ScoreStore.cpp
+  src/platform/SettingsStore.cpp
   src/platform/TableRenderer.cpp
   src/platform/Text.cpp
   src/platform/TouchOverlay.cpp
@@ -330,9 +339,19 @@ elseif(PINBALL_IOS)
   target_sources(pinball_platform PRIVATE src/platform/ios/IosSystem.mm)
   set_source_files_properties(src/platform/ios/IosSystem.mm PROPERTIES
     COMPILE_OPTIONS "-fobjc-arc")
+  # The store review request: its API (StoreKit's AppStore) is Swift only.
+  # A library of its own, so that none of the C++ flags (warnings,
+  # hardening, sanitizers) reach the Swift compiler.
+  enable_language(Swift)
+  add_library(pinball_review STATIC src/platform/ios/Review.swift)
+  set_target_properties(pinball_review PROPERTIES
+    XCODE_ATTRIBUTE_SWIFT_VERSION 5.0
+    XCODE_ATTRIBUTE_SKIP_INSTALL YES)
+  target_link_libraries(pinball_platform PRIVATE pinball_review)
   # Named here, not left to SDL's own list, which follows SDL's options.
   target_link_libraries(pinball_platform PRIVATE
-    "-framework Foundation" "-framework UIKit" "-framework AVFoundation")
+    "-framework Foundation" "-framework UIKit" "-framework AVFoundation"
+    "-framework StoreKit")
 endif()
 
 if(PINBALL_MACOS)
@@ -573,6 +592,7 @@ if(BUILD_TESTING)
     tests/FixedTimestepTest.cpp
     tests/FlipperTest.cpp
     tests/FormatTest.cpp
+    tests/FrontTest.cpp
     tests/GameTest.cpp
     tests/HighScoreTest.cpp
     tests/HoleTest.cpp

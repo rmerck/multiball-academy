@@ -42,12 +42,15 @@ endforeach()
 foreach(preset IN ITEMS phone-pro pad-landscape)
   string(REPLACE "-" "_" name "${preset}")
   foreach(state IN ITEMS launch pause interrupted confirm about about-info licences initials
-                         gameover longest table course multiball hangar graduation)
+                         gameover longest table course multiball hangar graduation
+                         title title-intro title-still scores howto settings settings-confirm
+                         guide mainmenu-confirm)
     string(REPLACE "-" "_" state_name "${state}")
     pinball_layout_render(${name}_${state_name} 60 ${state} --layout ${preset})
   endforeach()
 endforeach()
-foreach(state IN ITEMS pause about-info licences gameover longest multiball graduation)
+foreach(state IN ITEMS pause about-info licences gameover longest multiball graduation
+                       title title-still scores howto settings settings-confirm mainmenu-confirm)
   string(REPLACE "-" "_" state_name "${state}")
   pinball_layout_render(desktop_${state_name} 60 ${state})
 endforeach()

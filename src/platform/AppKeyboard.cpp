@@ -49,6 +49,17 @@ void App::handleKeyDown(const SDL_KeyboardEvent& key) {
     handleEntryKey(key.key, key.mod);
     return;
   }
+  if (frontOpen_ && !aboutOpen_) {
+    handleFrontKey(key);
+    return;
+  }
+  if (guideOpen_) {
+    // Any key goes on from the touch guide, except a shortcut.
+    if ((key.mod & (SDL_KMOD_GUI | SDL_KMOD_CTRL | SDL_KMOD_ALT)) == 0) {
+      dismissGuide();
+    }
+    return;
+  }
   latchKey(key.scancode);
   if (key.key == SDLK_F1) {
     aboutOpen_ = !aboutOpen_;
@@ -60,6 +71,15 @@ void App::handleKeyDown(const SDL_KeyboardEvent& key) {
   } else if (key.key == SDLK_ESCAPE && aboutOpen_) {
     aboutOpen_ = false;
     latched_ = InputState{};
+  } else if (key.key == SDLK_ESCAPE && paused_) {
+    // The main menu, from the pause. A game in progress is only left on a
+    // second press.
+    if (!confirmMainMenu_ && !game_.gameOver()) {
+      confirmMainMenu_ = true;
+      confirmNewGame_ = false;
+    } else {
+      goToMainMenu();
+    }
   } else if (key.key == SDLK_F3 && !aboutOpen_) {
     // Not behind the About screen, where the change could not be seen.
     paused_ = !paused_;
@@ -70,12 +90,13 @@ void App::handleKeyDown(const SDL_KeyboardEvent& key) {
       interrupted_ = false;
       confirmNewGame_ = false;
     }
+    confirmMainMenu_ = false;
   } else if (key.key == SDLK_F4) {
     toggleFullscreen();
   } else if (key.scancode == SDL_SCANCODE_M) {
-    mixer_.setMuted(!mixer_.muted());
+    setSound(mixer_.muted());
   } else if (key.scancode == SDL_SCANCODE_N) {
-    musicOn_ = !musicOn_;
+    setMusic(!musicOn_);
   }
 }
 
