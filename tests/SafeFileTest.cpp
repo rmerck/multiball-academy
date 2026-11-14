@@ -126,7 +126,17 @@ int main(int argc, char* argv[]) {
   CHECK(pinball::replaceFile(target.string(), "two\n"));
   CHECK(slurp(target) == "two\n");
   CHECK(pinball::replaceFile(target.string(), ""));
+  // The quicker flush for a write made as the application is suspended
+  // (the saved game) replaces the file the same way.
+  CHECK(pinball::replaceFile(target.string(), "quick\n", pinball::FileAccess::OwnerOnly,
+                             pinball::Durability::System));
+  CHECK(slurp(target) == "quick\n");
+  CHECK(pinball::replaceFile(target.string(), ""));
   CHECK(slurp(target).empty());
+  // A directory given for the game's files gets its separator.
+  CHECK(pinball::withTrailingSeparator("").empty());
+  CHECK(pinball::withTrailingSeparator("/tmp/x") == "/tmp/x/");
+  CHECK(pinball::withTrailingSeparator("/tmp/x/") == "/tmp/x/");
   // A missing directory fails and leaves nothing behind.
   CHECK(!pinball::replaceFile((dir / "absent" / "x.txt").string(), "x"));
 

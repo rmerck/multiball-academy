@@ -5,12 +5,18 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "core/TableLayout.hpp"
 #include "core/Vec2.hpp"
 
 namespace pinball {
+
+namespace save {
+struct BallRecord;
+struct TableRecord;
+}  // namespace save
 
 // Something that happened to a ball during a step.
 struct PhysicsEvent {
@@ -212,6 +218,21 @@ class PhysicsWorld {
   void pushBall(std::size_t ball, Vec2 velocityChange);
   void pushBall(Vec2 velocityChange) { pushBall(0, velocityChange); }
 
+  // --- A game saved and resumed (core/GameSave.cpp) ---------------------------
+  // The body, hold and latches of a slot, and the flippers, plunger, bay
+  // doors and kickback; the Game fields of the records are left alone.
+  void saveBall(std::size_t ball, save::BallRecord& record) const;
+  void saveTable(save::TableRecord& record) const;
+  // Puts them back exactly: place, velocity, angle and spin, hold and
+  // latches. Every slot is first taken off the table. Box2D keeps contacts
+  // of its own that cannot be put back, so the touches already under way
+  // are reported again by the first slice after a restore; that slice's
+  // touches are therefore not reported (nor do they kick).
+  void restoreBalls(std::span<const save::BallRecord> records);
+  void restoreTable(const save::TableRecord& record);
+  // A restore is waiting for its first slice.
+  [[nodiscard]] bool restorePending() const noexcept { return skipTouches_; }
+
   // False if the ball has left the table shell or its state is not finite.
   // The caller should reset the ball when this happens. An inactive slot has
   // nothing wrong with it.
@@ -291,6 +312,9 @@ class PhysicsWorld {
   b2BodyId doorBank_{};
   bool doorBankUp_ = true;
   bool kickbackArmed_ = false;
+  // The next slice's touches are the restored world finding contacts that
+  // were already there (restoreBalls).
+  bool skipTouches_ = false;
 };
 
 }  // namespace pinball

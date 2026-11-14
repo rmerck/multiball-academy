@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <utility>
 
 #include "core/Rules.hpp"
 #include "core/TableLayout.hpp"
@@ -23,9 +24,14 @@
 // part of the table (the general illumination, a wash over the whole table,
 // a flasher of a large radius) is a "large flash", and no two of those start
 // within kMinLargeFlashSteps of each other: never more than three in any one
-// second. With reduce motion on, there is no strobe or flicker at all: lamps
-// that blink breathe instead, bursts rise and fall slowly, sweeps and chases
-// are steady glows, and large flashes come at most once a second.
+// second. Whether a flash is large is judged by what is drawn (a dome's
+// reach, and the area of the small ones started together), and the jackpot
+// ring and every show's start go through the same limiter. Hit flashes
+// share gates by the part of the table they light (kMinHitSteps). With
+// reduce motion on there is no strobe or flicker at all: lamps that blink
+// breathe instead, hit flashes and bursts rise and fall softly, the dips of
+// the lights are slow, sweeps, chases and rings are steady glows or none,
+// and every flash, small or large, waits kMinLargeFadeSteps for the last.
 namespace pinball {
 
 class Game;
@@ -37,7 +43,7 @@ inline constexpr std::uint64_t kBlinkSteps = 60;      // Twice a second.
 inline constexpr std::uint64_t kFastBlinkSteps = 24;  // Five times a second: hurry up.
 // The shortest gap between the starts of two large flashes: 42 steps is
 // 2.86 a second, under the three of WCAG 2.3.1.
-inline constexpr std::uint64_t kMinLargeFlashSteps = 42;
+inline constexpr std::uint64_t kMinLargeFlashSteps = 90;
 // With reduce motion: well under once a second.
 inline constexpr std::uint64_t kMinLargeFadeSteps = 150;
 // Steps a ball's trail remembers.
@@ -47,9 +53,20 @@ inline constexpr std::size_t kTrailLength = 8;
 // smaller halo, its tail from kChaseTail down to the floor. A lamp the
 // rules light blinks or holds, and has a star the chases never get.
 inline constexpr float kUnlitFloor = 0.34F;
-inline constexpr float kChaseTail = 0.74F;
-// A struck element's flash: about 220 ms.
+inline constexpr float kChaseHead = 0.80F;
+inline constexpr float kChaseTail = 0.60F;
+// A struck element's flash: about 220 ms. Elements that light the same
+// part of the table share a gate: a new flash starts there at most once in
+// kMinHitSteps (with reduce motion, kMinLargeFadeSteps); a hit sooner lets
+// the flash already lit run on.
 inline constexpr std::uint32_t kHitFlashSteps = 26;
+inline constexpr std::uint64_t kMinHitSteps = 80;
+// A flasher dome draws glow.png out to this many times its radius: what
+// decides whether it is large.
+inline constexpr float kDomeReach = 1.6F;
+// Small bursts started within kMinLargeFlashSteps may cover this share of
+// the table between them; one more and it is treated as large.
+inline constexpr float kSmallAreaShare = 0.12F;
 // Bursts in flight at once (pending or lit).
 inline constexpr std::size_t kMaxBursts = 24;
 
@@ -218,6 +235,7 @@ class LightShow {
   // Starts a burst (Table and Lights are always large; a dome is large if
   // its radius is kLargeRadius or more). delay: steps from now. Public so
   // that the tests can drive the limiter directly.
+  // Drawn reach (radius x kDomeReach) at or past which a dome is large.
   static constexpr float kLargeRadius = 120.0F;
   void burst(Flasher where, Colour colour, float peak, float radius, std::uint32_t length,
              std::uint32_t delay = 0) noexcept;
@@ -248,6 +266,26 @@ class LightShow {
   void readEvents(const Game& game) noexcept;
   void readSounds(const Game& game) noexcept;
   void updateBursts() noexcept;
+  // The 3 Hz limiter for a large flash starting now: true if it may (and
+  // it is counted); false if too soon after the last.
+  bool largeOnset() noexcept;
+  [[nodiscard]] std::uint32_t effectiveLength(const Burst& b) const noexcept;
+  // The hit gates.
+  enum : std::uint8_t {
+    kGateNest,
+    kGateSlingLeft,
+    kGateSlingRight,
+    kGateDoors,
+    kGateTopLanes,
+    kGateLanesLeft,
+    kGateLanesRight,
+    kGateHole,  // Four, one a hole.
+    kGateBays = kGateHole + 4,
+    kGateKickback,
+    kGateCount
+  };
+  [[nodiscard]] bool gateOpen(std::uint8_t gate) const noexcept;
+  void strike(std::uint8_t gate, std::uint64_t& hit) noexcept;
   void updateShow(const Game& game) noexcept;
   void updateLamps(const Game& game) noexcept;
   void updateTrails(const Game& game) noexcept;
@@ -281,6 +319,11 @@ class LightShow {
   float spinEnergy_ = 0.0F;
 
   std::array<Burst, kMaxBursts> bursts_{};
+  // One more than the step of each gate's latest flash; 0 for never.
+  std::array<std::uint64_t, kGateCount> gates_{};
+  // The small bursts started lately: one more than the step, and the area.
+  std::array<std::pair<std::uint64_t, float>, 16> smallAreas_{};
+  std::size_t smallNext_ = 0;
   std::array<Sweep, kMaxSweeps> sweeps_{};
   std::uint64_t lastLarge_ = 0;  // One more than the step of the latest large flash.
   std::uint32_t largeFlashes_ = 0;

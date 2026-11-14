@@ -89,7 +89,7 @@ class TableEffects {
                 const LightShow& show);
   // Just under the balls: a soft dark pool round each, so that the ball
   // keeps its contrast over any light.
-  void drawBallPools(SDL_Renderer* r, std::span<const BallView> balls);
+  void drawBallPools(SDL_Renderer* r, std::span<const BallView> balls, const LightShow& show);
   // Over the balls: a moving specular glint and the colour of the nearest
   // light on the chrome.
   void drawBallGlints(SDL_Renderer* r, const Game& game, std::span<const BallView> balls,

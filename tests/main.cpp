@@ -29,6 +29,7 @@ void runSuites() {
   testPngHeader();
   testRuleFuzz();
   testRules();
+  testSaveGame();
   testScreenLayout();
   testSha256();
   testMusic();

@@ -10,6 +10,7 @@
 #include "Suites.hpp"
 #include "core/Game.hpp"
 #include "core/Input.hpp"
+#include "core/Physics.hpp"
 #include "core/LightShow.hpp"
 #include "core/Rules.hpp"
 #include "core/Scenes.hpp"
@@ -157,7 +158,11 @@ void testAmbientIsFarBelowLit() {
     }
   }
   CHECK(least >= fx::kUnlitFloor - 1e-6F);
-  CHECK(most > 0.99F);  // A chase's head reaches full.
+  // A chase's head is plain to see, but never as bright as a lamp the rules
+  // light (1, with its core and star).
+  CHECK(most > fx::kChaseHead - 0.01F);
+  CHECK(most <= fx::kChaseHead + 1e-6F);
+  CHECK(fx::kChaseHead + 0.15F <= 1.0F);
   CHECK(quietWindows == 0);  // Six or more lamps change in every quarter second.
   // Lit by a chase is not lit by the rules: no star.
   bool chaseNotLit = true;
@@ -214,18 +219,22 @@ void testHitFlashes() {
   inPlay(game, show);
   // Into the left turbo target.
   const std::size_t slot = game.ball().id;
-  Seam::placeBall(game, slot, {235.0F, 226.0F}, {-800.0F, 0.0F});
+  // (Sent again until the nest's gate is open: a hit there shortly before
+  // lets the flash already lit run on instead.)
   bool target = false;
-  for (int i = 0; i < 60 && !target; ++i) {
+  for (int i = 0; i < 1200 && !target; ++i) {
+    if (i % 120 == 0) {
+      Seam::placeBall(game, slot, {235.0F, 226.0F}, {-800.0F, 0.0F});
+    }
     step(game, show);
     target = show.targetFlash(0) == 1.0F;
   }
   CHECK(target);
-  // It fades, and is gone in a quarter of a second.
-  for (int i = 0; i < 30; ++i) {
+  // It fades.
+  for (int i = 0; i < 10; ++i) {
     step(game, show);
   }
-  CHECK(show.targetFlash(0) == 0.0F);
+  CHECK(show.targetFlash(0) < 1.0F);
   // Down a lane: the rollover and its lamp flash.
   Seam::placeBall(game, slot, {table::kRollovers[1].zone.center.x, 120.0F}, {0.0F, 300.0F});
   bool lane = false;
@@ -290,16 +299,26 @@ void testJackpotShow() {
   step(game, show);
   CHECK(show.show() == fx::Show::Jackpot || show.show() == fx::Show::SuperJackpot);
   step(game, show);
-  CHECK(show.ringRadius() >= 0.0F);
-  bool washed = false;
-  for (int i = 0; i < 40; ++i) {
-    step(game, show);
-    const fx::BurstViews bursts = show.bursts();
-    for (const fx::BurstView& b : bursts.span()) {
-      washed = washed || (b.where == fx::Flasher::Table && b.level > 0.0F);
+  // A jackpot is its ring alone, growing out from the ball (one flash for
+  // each part of the table); a super jackpot is a wash and the domes.
+  if (show.show() == fx::Show::Jackpot) {
+    const float first = show.ringRadius();
+    CHECK(first >= 0.0F);
+    for (int i = 0; i < 20; ++i) {
+      step(game, show);
     }
+    CHECK(show.ringRadius() > first + 100.0F);
+  } else {
+    bool washed = false;
+    for (int i = 0; i < 40; ++i) {
+      step(game, show);
+      const fx::BurstViews bursts = show.bursts();
+      for (const fx::BurstView& b : bursts.span()) {
+        washed = washed || (b.where == fx::Flasher::Table && b.level > 0.0F);
+      }
+    }
+    CHECK(washed);
   }
-  CHECK(washed);
 }
 
 void testDrainShow() {
@@ -523,6 +542,214 @@ void testTrails() {
   CHECK(show.trail(slot).count == 1);
 }
 
+void testHitGates() {
+  // A ball rattling in the bumper nest: a new flash starts there at most
+  // once in kMinHitSteps, however often it is struck; a hit sooner lets the
+  // lit flash run on.
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  const std::size_t slot = game.ball().id;
+  std::vector<std::uint64_t> onsets;
+  std::array<float, 3> was{};
+  int hits = 0;
+  for (std::uint32_t i = 0; i < 1200; ++i) {
+    if (i % 15 == 0) {
+      Seam::placeBall(game, slot, {262.0F, 165.0F}, {20.0F, 700.0F});
+    }
+    step(game, show);
+    for (const pinball::PhysicsEvent& e : game.events()) {
+      hits += e.type == pinball::PhysicsEvent::Type::Hit &&
+                      e.element.kind == table::ElementKind::Bumper
+                  ? 1
+                  : 0;
+    }
+    for (std::size_t b = 0; b < 3; ++b) {
+      const float f = show.bumperFlash(b);
+      if (f > was[b] + 0.05F) {
+        onsets.push_back(show.step());
+      }
+      was[b] = f;
+    }
+  }
+  CHECK(hits > static_cast<int>(onsets.size()));  // Some hits started nothing.
+  CHECK(onsets.size() >= 5);
+  bool spaced = true;
+  for (std::size_t k = 1; k < onsets.size(); ++k) {
+    spaced = spaced && onsets[k] - onsets[k - 1] >= fx::kMinHitSteps;
+  }
+  CHECK(spaced);
+}
+
+void testReduceMotionHits() {
+  // With reduce motion a hit is a soft glow: it rises over several steps,
+  // never jumps, never reaches full, and the nest's gate is a second and a
+  // quarter.
+  Game game;
+  LightShow show;
+  show.setReduceMotion(true);
+  inPlay(game, show);
+  const std::size_t slot = game.ball().id;
+  float previous = 0.0F;
+  float worstJump = 0.0F;
+  float peak = 0.0F;
+  bool rose = false;
+  for (int i = 0; i < 1500; ++i) {
+    if (i % 200 == 0) {
+      Seam::placeBall(game, slot, {235.0F, 226.0F}, {-800.0F, 0.0F});
+    }
+    step(game, show);
+    const float f = show.targetFlash(0);
+    worstJump = std::max(worstJump, std::fabs(f - previous));
+    peak = std::max(peak, f);
+    rose = rose || f > 0.0F;
+    previous = f;
+  }
+  CHECK(rose);
+  CHECK(worstJump < 0.1F);
+  CHECK(peak <= 0.6F + 1e-6F);
+  // No running lights: on a quiet table the unlit lamps hold still.
+  Game quiet;
+  LightShow still;
+  still.setReduceMotion(true);
+  step(quiet, still);
+  const std::array<float, LightShow::kLampCount> before = still.lampLevels();
+  int moved = 0;
+  for (int i = 0; i < 300; ++i) {
+    step(quiet, still);
+  }
+  for (std::size_t k = 0; k < before.size(); ++k) {
+    moved += still.lampState(table::kLamps[k].id) == LampState::Off &&
+                     std::fabs(still.lampLevels()[k] - before[k]) > 0.01F
+                 ? 1
+                 : 0;
+  }
+  CHECK(moved == 0);
+}
+
+void testReduceMotionReshapes() {
+  // A burst already queued takes the reduce motion shape as soon as the
+  // setting changes, and the setting can be given before the first look.
+  Game game;
+  LightShow show;
+  show.setReduceMotion(true);
+  CHECK(show.reduceMotion());
+  show.observe(game);
+  show.setReduceMotion(false);
+  show.burst(fx::Flasher::Nest, fx::Colour::Cyan, 1.0F, 50.0F, 40, 1);
+  show.setReduceMotion(true);
+  step(game, show);
+  step(game, show);
+  const fx::BurstViews soft = show.bursts();
+  CHECK(soft.count == 1 && soft.items[0].level < 0.1F);  // A slow rise, not a flash.
+  show.setReduceMotion(false);
+  const fx::BurstViews sharp = show.bursts();
+  CHECK(sharp.count == 1 && sharp.items[0].level > 0.5F);
+}
+
+void testShowStartsLimited() {
+  // Jackpots asked for every ten steps: the ring and wash start again at
+  // most once in kMinLargeFlashSteps; a multiball show told twice starts once.
+  Game game;
+  LightShow show;
+  step(game, show);
+  std::vector<std::uint64_t> starts;
+  for (std::uint32_t i = 0; i < 600; ++i) {
+    if (i % 10 == 0) {
+      show.startShow(fx::Show::Jackpot, {380.0F, 600.0F});
+    }
+    step(game, show);
+    const std::uint64_t began = show.step() - show.showSteps();
+    if (show.show() == fx::Show::Jackpot && (starts.empty() || starts.back() != began)) {
+      starts.push_back(began);
+    }
+  }
+  CHECK(starts.size() >= 5);
+  bool spaced = true;
+  for (std::size_t k = 1; k < starts.size(); ++k) {
+    spaced = spaced && starts[k] - starts[k - 1] >= fx::kMinLargeFlashSteps;
+  }
+  CHECK(spaced);
+  Game g2;
+  LightShow s2;
+  step(g2, s2);
+  s2.startShow(fx::Show::Graduation);
+  for (int i = 0; i < 20; ++i) {
+    step(g2, s2);
+  }
+  s2.startShow(fx::Show::Graduation);
+  step(g2, s2);
+  CHECK(s2.show() == fx::Show::Graduation && s2.showSteps() > 15);
+}
+
+void testSmallDomesAddUp() {
+  // Small domes lit together count as large once they cover enough of the
+  // table between them: the limiter then holds the rest.
+  Game game;
+  LightShow show;
+  step(game, show);
+  for (int k = 0; k < 8; ++k) {
+    show.burst(static_cast<fx::Flasher>(k % 8), fx::Colour::Lime, 0.8F, 70.0F, 30);
+  }
+  step(game, show);
+  CHECK(show.largeFlashes() >= 1);
+  CHECK(show.burstsStarted() < 8 || show.largeFlashes() >= 1);
+}
+
+void testDrainKeepsLitLamps() {
+  // During the bonus count a lamp the rules light keeps its full level, so
+  // it is never dimmer than a chase.
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  Seam::rules(game).setBallSaveEnabled(false);
+  const int ball = game.rules().ball();
+  Seam::placeBall(game, game.ball().id, {table::kWidth * 0.5F - 8.0F, 860.0F}, {0.0F, 600.0F});
+  for (int i = 0; i < 400 && game.rules().ball() == ball; ++i) {
+    step(game, show);
+  }
+  bool kept = true;
+  for (int i = 0; i < 120; ++i) {
+    step(game, show);
+    for (const table::Lamp& lamp : table::kLamps) {
+      if (show.lampState(lamp.id) == LampState::On) {
+        kept = kept && show.lampLevel(lamp.id) == 1.0F;
+      }
+    }
+  }
+  CHECK(show.show() == fx::Show::Drain);
+  CHECK(kept);
+}
+
+void testTrailsFollowTheDrawnBall() {
+  // A ball drawn into the Hangar: no trail while it sinks, and otherwise
+  // the trail starts where the ball is drawn.
+  Game game;
+  LightShow show;
+  CHECK(pinball::stageScene(game, pinball::Scene::Hangar));
+  show.observe(game);
+  const std::size_t slot = game.ball().id;
+  Seam::placeBall(game, slot, {279.0F, 440.0F}, {0.0F, -900.0F});
+  Seam::putInPlay(game, slot);
+  bool sank = false;
+  bool follows = true;
+  for (int i = 0; i < 300; ++i) {
+    step(game, show);
+    for (const pinball::BallView& b : game.balls(1.0F)) {
+      const fx::TrailView& t = show.trail(b.id);
+      if (b.sink > 0.0F) {
+        sank = true;
+        follows = follows && t.count == 0;
+      } else if (b.visible && !b.locked && t.count > 0) {
+        const Vec2 at = b.drawnAt();
+        follows = follows && t.points[0].x == at.x && t.points[0].y == at.y;
+      }
+    }
+  }
+  CHECK(sank);
+  CHECK(follows);
+}
+
 }  // namespace
 
 void testLightShow() {
@@ -541,4 +768,11 @@ void testLightShow() {
   testReduceMotionShows();
   testAttract();
   testTrails();
+  testHitGates();
+  testReduceMotionHits();
+  testReduceMotionReshapes();
+  testShowStartsLimited();
+  testSmallDomesAddUp();
+  testDrainKeepsLitLamps();
+  testTrailsFollowTheDrawnBall();
 }

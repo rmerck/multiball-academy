@@ -11,6 +11,8 @@
 //          drain      a ball let go down the middle between still flippers
 //          attract    the attract sequence over the scripted game
 //          tilt       the table shoved until it tilts
+//          storm      the worst case for photosensitivity: multiball, a jackpot
+//                     every 30 steps, a ball sent into the bumper nest every 20
 // options  --plain           draw without the light show (the look before it)
 //          --reduce-motion   the light show with reduce motion on
 //          --every N         a frame every N steps (default 4: 30 a second)
@@ -23,7 +25,13 @@
 //                            frame is timed to a one-pixel read back, so the
 //                            time includes the GPU's work
 //
-// Writes <out_prefix>_000.png and on. Each frame is the playfield alone at
+//          --wcag LIMIT      measure the run with the general flash test of
+//                            WCAG 2.3.1 (FlashMeter.hpp) at 60 frames a second
+//                            (--every 2), print the worst share of the
+//                            playfield flashing more than three times a
+//                            second, and fail if it is over LIMIT (0: report)
+//
+// Writes <out_prefix>_000.png and on; a prefix of - writes nothing. Each frame is the playfield alone at
 // one pixel to the unit (768 x 960).
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -38,7 +46,9 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include "FlashMeter.hpp"
 #include "GameTestAccess.hpp"
 #include "core/Game.hpp"
 #include "core/LightShow.hpp"
@@ -80,6 +90,8 @@ struct Options {
   bool reduceMotion = false;
   bool time = false;
   bool gpu = false;
+  float wcag = -1.0F;  // Negative: not measured.
+  std::string mapPath;  // --wcag-map: where to write the worst frame's failing pixels.
   std::uint32_t every = 4;
   std::uint32_t frames = 90;
   std::uint32_t skip = 0;
@@ -96,7 +108,7 @@ class Script {
     if (s == "multiball") {
       return pinball::stageScene(game, pinball::Scene::Hangar);
     }
-    if (s == "jackpot") {
+    if (s == "jackpot" || s == "storm") {
       return pinball::stageScene(game, pinball::Scene::Multiball);
     }
     if (s == "drain") {
@@ -112,6 +124,38 @@ class Script {
     }
     return s == "play" || s == "attract";
   }
+
+  // A shot the rules have lit for a jackpot, made through their own events
+  // as Scenes does. False if none is lit.
+  static bool jackpot(Game& game, std::size_t slot) {
+    pinball::Rules& rules = Seam::rules(game);
+    for (const pinball::Shot shot : {pinball::Shot::Runway, pinball::Shot::Skyway,
+                                     pinball::Shot::Briefing, pinball::Shot::Hangar}) {
+      if (!rules.jackpotLit(shot) && !(shot == pinball::Shot::Hangar && rules.superJackpotLit())) {
+        continue;
+      }
+      switch (shot) {
+        case pinball::Shot::Runway:
+          rules.onHole(table::kRunwayHole, slot);
+          break;
+        case pinball::Shot::Skyway:
+          rules.onHole(table::kSkywayHole, slot);
+          break;
+        case pinball::Shot::Briefing:
+          rules.onHole(table::kScoopHole, slot);
+          rules.onEject(table::kScoopHole);
+          break;
+        default:
+          rules.onHole(table::kHangarHole, slot);
+          rules.onEject(table::kHangarHole);
+          break;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  bool jackpotWanted = false;
 
   InputState before(Game& game, std::uint32_t t) {
     const std::string& s = options_.scene;
@@ -139,33 +183,18 @@ class Script {
       Seam::placeBall(game, slot, {279.0F, 440.0F}, {0.0F, -900.0F});
       Seam::putInPlay(game, slot);
     }
-    if (s == "jackpot" && (t == 20 || t == 200)) {
-      // The shots the rules light for the jackpot, made through their own
-      // events, as Scenes does.
-      pinball::Rules& rules = Seam::rules(game);
-      for (const pinball::Shot shot : {pinball::Shot::Runway, pinball::Shot::Skyway,
-                                       pinball::Shot::Briefing, pinball::Shot::Hangar}) {
-        if (!rules.jackpotLit(shot) && !(shot == pinball::Shot::Hangar && rules.superJackpotLit())) {
-          continue;
-        }
-        switch (shot) {
-          case pinball::Shot::Runway:
-            rules.onHole(table::kRunwayHole, slot);
-            break;
-          case pinball::Shot::Skyway:
-            rules.onHole(table::kSkywayHole, slot);
-            break;
-          case pinball::Shot::Briefing:
-            rules.onHole(table::kScoopHole, slot);
-            rules.onEject(table::kScoopHole);
-            break;
-          default:
-            rules.onHole(table::kHangarHole, slot);
-            rules.onEject(table::kHangarHole);
-            break;
-        }
-        break;
+    if (s == "storm") {
+      if (t % 20 == 0) {
+        // Down onto the first bumper, into the nest.
+        Seam::placeBall(game, slot, {262.0F, 165.0F}, {20.0F, 700.0F});
       }
+      if (t % 30 == 0 && !jackpot(game, slot)) {
+        jackpotWanted = true;  // None lit: the caller starts the show itself.
+      }
+      return InputState{};
+    }
+    if (s == "jackpot" && (t == 20 || t == 200)) {
+      jackpot(game, slot);
     }
     if (s == "drain" && t == 10) {
       Seam::placeBall(game, slot, {table::kWidth * 0.5F - 8.0F, 780.0F}, {0.0F, 400.0F});
@@ -204,6 +233,13 @@ bool parse(int argc, char* argv[], Options& o) {
     } else if (a == "--gpu") {
       o.gpu = true;
       o.time = true;
+    } else if (a == "--wcag") {
+      if (i + 1 >= argc) return false;
+      o.wcag = std::strtof(argv[++i], nullptr);
+      o.every = 2;
+    } else if (a == "--wcag-map") {
+      if (i + 1 >= argc) return false;
+      o.mapPath = argv[++i];
     } else if (a == "--time") {
       o.time = true;
     } else if (a == "--every") {
@@ -287,8 +323,44 @@ int run(const Options& o) {
     double cpu = 0.0;  // Processor time: steadier than the clock on a busy machine.
     std::uint32_t t = 0;
     const std::uint32_t steps = o.skip + o.frames * o.every;
+    // The flash meter: the playfield at half a pixel to the unit, the pixels
+    // inside the shell watched.
+    constexpr int kMeterScale = 2;
+    const int meterW = static_cast<int>(table::kWidth) / kMeterScale;
+    const int meterH = static_cast<int>(table::kHeight) / kMeterScale;
+    std::unique_ptr<fxreel::FlashMeter> meter;
+    const std::unique_ptr<SDL_Surface, SurfaceDeleter> small(
+        SDL_CreateSurface(meterW, meterH, SDL_PIXELFORMAT_RGBA32));
+    if (o.wcag >= 0.0F) {
+      if (fxreel::FlashMeter::synthetic(10.0F, 60) < 0.99F ||
+          fxreel::FlashMeter::synthetic(2.0F, 60) > 0.0F) {
+        std::fputs("the flash meter fails its own check\n", stderr);
+        return EXIT_FAILURE;
+      }
+      std::vector<std::uint8_t> mask(static_cast<std::size_t>(meterW * meterH));
+      for (int y = 0; y < meterH; ++y) {
+        for (int x = 0; x < meterW; ++x) {
+          const float px = (static_cast<float>(x) + 0.5F) * kMeterScale;
+          const float py = (static_cast<float>(y) + 0.5F) * kMeterScale;
+          bool in = false;
+          for (std::size_t a = 0, b = table::kShell.size() - 1; a < table::kShell.size(); b = a++) {
+            const Vec2 p = table::kShell[a];
+            const Vec2 q = table::kShell[b];
+            if ((p.y > py) != (q.y > py) && px < (q.x - p.x) * (py - p.y) / (q.y - p.y) + p.x) {
+              in = !in;
+            }
+          }
+          mask[static_cast<std::size_t>(y * meterW + x)] = in ? 1 : 0;
+        }
+      }
+      meter = std::make_unique<fxreel::FlashMeter>(meterW, meterH, std::move(mask), 60);
+    }
     for (std::uint32_t frameIndex = 0; t < steps; ++t) {
       game.step(script.before(game, t));
+      if (script.jackpotWanted) {
+        script.jackpotWanted = false;
+        show.startShow(pinball::fx::Show::Jackpot, game.ball().position);
+      }
       show.observe(game);
       if (t < o.skip || (t - o.skip) % o.every != 0) {
         continue;
@@ -320,6 +392,14 @@ int run(const Options& o) {
                            static_cast<int>(std::lround(layout.playfield.y)),
                            static_cast<int>(table::kWidth), static_cast<int>(table::kHeight)};
       SDL_BlitSurface(canvas.get(), &field, frame.get(), nullptr);
+      if (meter) {
+        SDL_BlitSurfaceScaled(frame.get(), nullptr, small.get(), nullptr, SDL_SCALEMODE_LINEAR);
+        meter->add(static_cast<const std::uint8_t*>(small->pixels), small->pitch);
+      }
+      if (o.prefix == "-") {
+        ++frameIndex;
+        continue;
+      }
       char name[32];
       std::snprintf(name, sizeof name, "_%03u.png", frameIndex++);
       if (!SDL_SavePNG(frame.get(), (o.prefix + name).c_str())) {
@@ -334,6 +414,32 @@ int run(const Options& o) {
                   total / std::max<double>(o.frames, 1.0), worst,
                   cpu / std::max<double>(o.frames, 1.0), SDL_GetRendererName(r));
     }
+    if (meter) {
+      std::printf("%s%s%s: WCAG 2.3.1 general flash, worst share of the playfield over 3 flashes a "
+                  "second: %.2f%% (%d frames at 60 a second)\n",
+                  o.scene.c_str(), o.plain ? " (plain)" : "", o.reduceMotion ? " (reduce motion)" : "",
+                  static_cast<double>(meter->worst()) * 100.0, meter->frames());
+      if (!o.mapPath.empty() && !meter->worstMap().empty()) {
+        // The worst frame's failing pixels, white on black, at the meter's size.
+        const std::unique_ptr<SDL_Surface, SurfaceDeleter> map(
+            SDL_CreateSurface(meterW, meterH, SDL_PIXELFORMAT_RGBA32));
+        auto* px = static_cast<std::uint8_t*>(map->pixels);
+        for (int y = 0; y < meterH; ++y) {
+          for (int x = 0; x < meterW; ++x) {
+            const std::uint8_t v = meter->worstMap()[static_cast<std::size_t>(y * meterW + x)] ? 255 : 0;
+            std::uint8_t* q = px + y * map->pitch + x * 4;
+            q[0] = q[1] = q[2] = v;
+            q[3] = 255;
+          }
+        }
+        SDL_SavePNG(map.get(), o.mapPath.c_str());
+        std::printf("worst frame %d\n", meter->worstFrame());
+      }
+      if (o.wcag > 0.0F && meter->worst() > o.wcag) {
+        std::fprintf(stderr, "over the limit of %.2f%%\n", static_cast<double>(o.wcag) * 100.0);
+        status = EXIT_FAILURE;
+      }
+    }
     std::printf("%s: score %llu, balls %zu, show bursts %u, large flashes %u (held %u)\n",
                 o.scene.c_str(), static_cast<unsigned long long>(game.rules().score()),
                 game.ballCount(), show.burstsStarted(), show.largeFlashes(),
@@ -347,7 +453,7 @@ int run(const Options& o) {
 int main(int argc, char* argv[]) {
   Options options;
   if (!parse(argc, argv, options)) {
-    std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt> <out_prefix>"
+    std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt|storm> <out_prefix>"
                " [--plain] [--reduce-motion] [--every N] [--frames N] [--skip N] [--time] [--gpu]\n",
                stderr);
     return EXIT_FAILURE;

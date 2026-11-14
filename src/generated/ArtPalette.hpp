@@ -140,7 +140,7 @@ inline constexpr std::array<Rgb, 29> kLampNeon{{
     {30, 235, 255},  // WingG
 }};
 inline constexpr std::array<float, 29> kLampNeonLevels{{
-    0.95F, 1.00F, 1.00F, 0.88F, 0.88F, 1.00F, 0.95F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.88F, 0.95F, 1.00F, 0.88F, 0.88F, 0.88F, 0.84F, 0.84F, 0.84F, 0.84F, 0.95F, 0.95F, 0.95F, 0.95F
+    0.83F, 1.00F, 1.00F, 0.77F, 0.78F, 1.00F, 0.83F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.77F, 0.83F, 1.00F, 0.77F, 0.78F, 0.77F, 0.74F, 0.74F, 0.74F, 0.74F, 0.83F, 0.83F, 0.83F, 0.83F
 }};
 
 inline constexpr Rgb kFxCyan{30, 235, 255};
@@ -156,8 +156,8 @@ inline constexpr Rgb kFxTrail{159, 244, 255};
 inline constexpr float kNeonGlowStrength = 0.95F;
 inline constexpr float kFlasherStrengthMax = 0.95F;
 inline constexpr float kGiStrength = 0.75F;
-inline constexpr float kBallPoolAlpha = 0.80F;  // the dark pool round each ball
-inline constexpr float kBallPoolRadii = 3.0F;  // its radius in ball radii
+inline constexpr float kBallPoolAlpha = 0.60F;  // the dark pool round each ball
+inline constexpr float kBallPoolRadii = 2.2F;  // its radius in ball radii
 inline constexpr float kFlareUnits = 64.0F;    // flare.png and ring.png at scale 1
 
 }  // namespace pinball::art

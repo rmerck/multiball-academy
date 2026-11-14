@@ -395,47 +395,47 @@ TexturePtr makePlayfieldTexture(SDL_Renderer* r) {
   return texture;
 }
 
-// The background with everything inside the shell made clear: drawn over
-// the light show's glows, it trims them at the cabinet's edge. The lane
-// island, inside the shell, is put back. Made once, as the layout drawing is.
-TexturePtr makeOutsideTexture(SDL_Renderer* r, SDL_Texture* background) {
-  if (background == nullptr) {
-    return nullptr;
+// What lies outside the playfield's shell, as triangles textured with the
+// background: drawn over the light show, it trims every glow at the
+// cabinet's edge. The shell runs below the playfield's bottom edge, so the
+// outside is one simple polygon: the playfield's frame down to that edge,
+// and the shell back the other way. Made once; drawing it allocates
+// nothing and needs no texture of its own.
+std::vector<SDL_Vertex> makeOutsideMesh() {
+  std::vector<Vec2> outline{{0.0F, table::kHeight}, {0.0F, 0.0F}, {table::kWidth, 0.0F},
+                            {table::kWidth, table::kHeight}};
+  // The shell, from where it rises through the bottom edge on the right,
+  // over the arch, to where it goes back down through it on the left.
+  const auto& shell = table::kShell;
+  const std::size_t n = shell.size();
+  std::vector<Vec2> inside;
+  for (std::size_t k = 0; k < n; ++k) {
+    const Vec2 a = shell[k];
+    const Vec2 b = shell[(k + 1) % n];
+    if (a.y <= table::kHeight) {
+      inside.push_back(a);
+    }
+    if ((a.y > table::kHeight) != (b.y > table::kHeight)) {
+      const float t = (table::kHeight - a.y) / (b.y - a.y);
+      inside.push_back({a.x + (b.x - a.x) * t, table::kHeight});
+    }
   }
-  constexpr int kScale = 2;
-  TexturePtr texture(SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET,
-                                       static_cast<int>(table::kWidth) * kScale,
-                                       static_cast<int>(table::kHeight) * kScale));
-  SDL_Texture* const before = SDL_GetRenderTarget(r);
-  if (!texture || !SDL_SetRenderTarget(r, texture.get())) {
-    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not make the outside texture: %s",
-                 SDL_GetError());
-    return nullptr;
+  // inside now runs round the shell from the right crossing; it must end
+  // at the left one, nearest the frame's bottom-left corner.
+  std::size_t start = 0;
+  for (std::size_t k = 0; k < inside.size(); ++k) {
+    if (inside[k].y == table::kHeight && inside[k].x > table::kWidth * 0.5F) {
+      start = k;
+    }
   }
-  std::vector<SDL_Vertex> shell;
-  Mesh(shell).polygon(table::kShell, SDL_FColor{0.0F, 0.0F, 0.0F, 0.0F});
-  std::vector<SDL_Vertex> island;
-  Mesh(island).polygon(table::kLaneIsland, SDL_FColor{1.0F, 1.0F, 1.0F, 1.0F});
-  for (SDL_Vertex& v : island) {
+  std::rotate(inside.begin(), inside.begin() + static_cast<std::ptrdiff_t>(start), inside.end());
+  outline.insert(outline.end(), inside.begin(), inside.end());
+  std::vector<SDL_Vertex> mesh;
+  Mesh(mesh).polygon(outline, SDL_FColor{1.0F, 1.0F, 1.0F, 1.0F});
+  for (SDL_Vertex& v : mesh) {
     v.tex_coord = {v.position.x / table::kWidth, v.position.y / table::kHeight};
   }
-  const SDL_FRect whole{0.0F, 0.0F, table::kWidth, table::kHeight};
-  bool drawn = SDL_SetRenderScale(r, static_cast<float>(kScale), static_cast<float>(kScale));
-  drawn = SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE) && drawn;
-  drawn = SDL_RenderTexture(r, background, nullptr, &whole) && drawn;
-  drawn = SDL_RenderGeometry(r, nullptr, shell.data(), static_cast<int>(shell.size()), nullptr, 0) &&
-          drawn;
-  drawn = SDL_RenderGeometry(r, background, island.data(), static_cast<int>(island.size()), nullptr,
-                             0) &&
-          drawn;
-  drawn = SDL_SetRenderTarget(r, before) && drawn;
-  if (!drawn) {
-    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not draw the outside texture: %s",
-                 SDL_GetError());
-    return nullptr;
-  }
-  SDL_SetTextureBlendMode(texture.get(), SDL_BLENDMODE_BLEND);
-  return texture;
+  return mesh;
 }
 
 // A copy of a texture at one pixel to the playfield unit, straight alpha,
@@ -481,29 +481,38 @@ void drawLitLamps(SDL_Renderer* r, SDL_Texture* arrow, SDL_Texture* round, Table
   SDL_SetTextureAlphaMod(round, SDL_ALPHA_OPAQUE);
   for (std::size_t i = 0; i < sprites.size(); ++i) {
     const float level = show.lampLevel(table::kLamps[i].id);
-    if (level <= fx::kUnlitFloor + 0.02F) {
+    if (level <= fx::kUnlitFloor + 0.02F && !show.lampLit(table::kLamps[i].id)) {
       continue;  // Dim plastic: the lens alone.
     }
     const Vec2 at = table::kLamps[i].position;
     const art::Rgb neon = art::kLampNeon[i];
     // The halo grows with the lens. A lamp the rules light has the big
     // one, a hot core and a star; a chase's head a smaller halo alone.
-    const float above = (level - fx::kUnlitFloor) / (1.0F - fx::kUnlitFloor);
-    const float halo = above * std::sqrt(above);
     const bool lit = show.lampLit(table::kLamps[i].id);
+    // A blinking lamp's lens blinks; its halo, core and star only breathe
+    // between 0.65 and full, so the blink is a small flash, not a large one
+    // (WCAG 2.3.1: a lit shot blinks at two to five a second).
+    const float glowLevel = lit ? std::max(level, 0.65F) : level;
+    const float above = (glowLevel - fx::kUnlitFloor) / (1.0F - fx::kUnlitFloor);
+    const float halo = above * std::sqrt(above);
     const float wide = lit ? 3.4F : 2.2F;
     const float near = lit ? 1.7F : 1.2F;
     const float strength = art::kNeonGlowStrength * (lit ? 1.0F : 0.8F);
     effects.addGlow(r, at, sprites[i].glowRadius * wide, neon, 0.55F * strength * halo);
     effects.addGlow(r, at, sprites[i].glowRadius * near, neon, strength * halo);
-    if (lit && level > 0.8F) {
-      const float hot = (level - 0.8F) / 0.2F;
+    if (lit) {
+      const float hot = 0.6F + 0.4F * (glowLevel - 0.65F) / 0.35F;
       effects.addGlow(r, at, sprites[i].glowRadius * 0.6F, mixRgb(neon, art::kFxWhite, 0.55F),
                       0.6F * hot);
       effects.addFlare(r, at, sprites[i].glowRadius * 1.5F, neon, 0.45F * hot);
     }
   }
   effects.endLayer(r);
+}
+
+// The size a ball is drawn at: smaller the further down into a hole it is.
+float drawnScale(const BallView& ball) noexcept {
+  return ball.scale * (1.0F - table::kHoleSinkShrink * std::clamp(ball.sink, 0.0F, 1.0F));
 }
 
 }  // namespace
@@ -592,21 +601,14 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   SDL_SetTextureBlendMode(t.gi.get(), SDL_BLENDMODE_ADD);
   SDL_SetTextureBlendMode(t.pool.get(), SDL_BLENDMODE_BLEND);
   SDL_SetTextureScaleMode(t.gi.get(), SDL_SCALEMODE_LINEAR);
-  // What lies outside the playfield's shell, to be drawn back over the
-  // light show's glows where they would spill past the cabinet.
-  t.outside = makeOutsideTexture(renderer, t.background.get());
-  if (!t.outside) {
-    return nullptr;
-  }
   if (const char* name = SDL_GetRendererName(renderer);
       name != nullptr && std::string_view(name) == SDL_SOFTWARE_RENDERER) {
     // The software renderer blends a texture drawn at its own size far
-    // faster than one it must scale: the two that cover the whole
-    // playfield every frame are made again at one pixel to the unit, the
-    // size its pictures are drawn at.
-    t.outside = resampled(renderer, t.outside.get(), SDL_BLENDMODE_BLEND);
+    // faster than one it must scale: the light map, which covers the
+    // whole playfield, is made again at one pixel to the unit, the size
+    // its pictures are drawn at.
     t.gi = resampled(renderer, t.gi.get(), SDL_BLENDMODE_ADD);
-    if (!t.outside || !t.gi) {
+    if (!t.gi) {
       return nullptr;
     }
   }
@@ -781,13 +783,13 @@ void TableRenderer::drawSlingshotFlashes(SDL_Renderer* r, const Game& game,
 
 namespace {
 
-// A struck bumper or slingshot: the game's own flash or the light show's
-// longer one, whichever is brighter.
-float bumperStrike(const Game& game, const LightShow& show, std::size_t i) noexcept {
-  return std::clamp(std::max(game.bumperFlash(i), show.bumperFlash(i)), 0.0F, 1.0F);
+// A struck bumper or slingshot: the light show's flash, which its gates
+// keep under three a second (the game's own retriggers on every hit).
+float bumperStrike(const Game& /*game*/, const LightShow& show, std::size_t i) noexcept {
+  return std::clamp(show.bumperFlash(i), 0.0F, 1.0F);
 }
-float slingStrike(const Game& game, const LightShow& show, std::size_t i) noexcept {
-  return std::clamp(std::max(game.slingshotFlash(i), show.slingFlash(i)), 0.0F, 1.0F);
+float slingStrike(const Game& /*game*/, const LightShow& show, std::size_t i) noexcept {
+  return std::clamp(show.slingFlash(i), 0.0F, 1.0F);
 }
 // The bumper lamps' idle pulse, 0 to 1, each a third of a turn after the
 // one before; slow with reduce motion.
@@ -922,32 +924,40 @@ void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls) 
     // them, and back.
     SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_BLEND);
     SDL_SetTextureColorMod(glow, art::kInk.r, art::kInk.g, art::kInk.b);
-    SDL_SetTextureAlphaMod(glow, toByte(art::kBallShadowAlpha));
     for (const BallView& ball : balls) {
       if (!inRound(ball)) {
         continue;
       }
-      const float radius = table::kBallRadius * ball.scale;
+      // A ball going down into a hole leaves its shadow behind on the table.
+      const float sink = std::clamp(ball.sink, 0.0F, 1.0F);
+      const float radius = table::kBallRadius * drawnScale(ball);
       const float lift = (ball.scale - 1.0F) * 40.0F;
       const float shadowRadius = radius * 1.55F;
-      const SDL_FRect shadow = centred(
-          {ball.position.x + art::kBallShadowOffsetX + lift,
-           ball.position.y + art::kBallShadowOffsetY + lift},
-          shadowRadius * 2.0F, shadowRadius * 2.0F);
+      const Vec2 at = ball.drawnAt();
+      const SDL_FRect shadow =
+          centred({at.x + art::kBallShadowOffsetX + lift, at.y + art::kBallShadowOffsetY + lift},
+                  shadowRadius * 2.0F, shadowRadius * 2.0F);
+      SDL_SetTextureAlphaMod(glow, toByte(art::kBallShadowAlpha * (1.0F - sink)));
       SDL_RenderTexture(r, glow, nullptr, &shadow);
     }
     SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_ADD);
 
+    SDL_Texture* const sprite = textures_.ball.get();
     for (const BallView& ball : balls) {
       if (!inRound(ball)) {
         continue;
       }
       // The sprite is larger than the ball: its disc is two radii of the
-      // art::kBallSpriteUnits it covers.
-      const float size = art::kBallSpriteUnits * ball.scale;
-      const SDL_FRect dst = centred(ball.position, size, size);
-      SDL_RenderTexture(r, textures_.ball.get(), nullptr, &dst);
+      // art::kBallSpriteUnits it covers. Going down into a hole it is drawn
+      // smaller and darker.
+      const float size = art::kBallSpriteUnits * drawnScale(ball);
+      const SDL_FRect dst = centred(ball.drawnAt(), size, size);
+      const auto shade = static_cast<Uint8>(std::lround(
+          255.0F * (1.0F - table::kHoleSinkDarken * std::clamp(ball.sink, 0.0F, 1.0F))));
+      SDL_SetTextureColorMod(sprite, shade, shade, shade);
+      SDL_RenderTexture(r, sprite, nullptr, &dst);
     }
+    SDL_SetTextureColorMod(sprite, 255, 255, 255);
   }
 }
 
@@ -1091,12 +1101,11 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
     if (show != nullptr) {
       effects_.drawShow(r, game, balls.span(), alpha, *show);
       // Every glow stops at the cabinet: what lies outside the shell is
-      // drawn back over them.
-      if (!economy_ || show->bursts().count > 0 || show->sweepY() >= 0.0F ||
-          show->ringRadius() >= 0.0F) {
-        SDL_RenderTexture(r, textures_.outside.get(), nullptr, &playfield);
-      }
-      effects_.drawBallPools(r, balls.span());
+      // drawn back over them, from the background itself.
+      static const std::vector<SDL_Vertex> kOutside = makeOutsideMesh();
+      SDL_RenderGeometry(r, textures_.background.get(), kOutside.data(),
+                         static_cast<int>(kOutside.size()), nullptr, 0);
+      effects_.drawBallPools(r, balls.span(), *show);
     }
     drawBalls(r, balls.span());
     if (show != nullptr) {

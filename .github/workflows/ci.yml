@@ -366,7 +366,8 @@ jobs:
       - name: Fuzz the parsers
         run: |
           mkdir found
-          ./build/pinball_fuzz -max_total_time=120 -max_len=1024 -print_final_stats=1 \
+          # 2048: a saved game's file (tests/fuzz/corpus/save_file) is about 1.2 kB.
+          ./build/pinball_fuzz -max_total_time=120 -max_len=2048 -print_final_stats=1 \
             -dict=tests/fuzz/parsers.dict found tests/fuzz/corpus
       - name: Keep what the fuzzer found
         if: failure()

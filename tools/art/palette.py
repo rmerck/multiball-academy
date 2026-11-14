@@ -76,7 +76,7 @@ LUM_LIT_LENS = 0.42   # a lit lens is tinted no lighter than this, whatever its 
 # the ball's LUM_BALL_MIN.
 NEON = {AQUA: "#1EEBFF", ORCHID: "#C45CFF", ORANGE: "#FF8A00", YELLOW: "#FFEA28", GREEN: "#9DFF1E", PINK: "#FF2EC8",
         CREAM: "#FFF2B0"}
-LUM_NEON_LENS = 0.60
+LUM_NEON_LENS = 0.45
 # The effect colours the renderer uses for bursts, sweeps and the general illumination.
 FX = {"cyan": "#1EEBFF", "magenta": "#FF2EC8", "lime": "#9DFF1E", "orange": "#FF8A00", "yellow": "#FFEA28",
       "violet": "#C45CFF", "white": "#FFF8EC", "gi": "#FFB45C", "gi_bulb": "#FFD9A0", "trail": "#9FF4FF"}
@@ -85,8 +85,8 @@ FLASHER_STRENGTH_MAX = 0.95    # strongest flasher burst (flare.png / glow.png);
 # The general illumination's colours (gi.png): amber walls, orange slingshots, the bumpers in turn.
 GI_COLOURS = {"walls": "#FF9A3C", "slings": "#FF7A1E", "bumpers": ["#FF3CC8", "#3CE6FF", "#FF3CC8"]}
 GI_STRENGTH = 0.75             # gi.png, drawn additively in its own colours, at full illumination
-BALL_POOL_ALPHA = 0.80        # the dark pool (pool.png) drawn round each ball under the light show
-BALL_POOL_RADII = 3.0         # its radius, in ball radii
+BALL_POOL_ALPHA = 0.60        # the dark pool (pool.png) drawn round each ball under the light show
+BALL_POOL_RADII = 2.2         # its radius, in ball radii
 FLARE_UNITS = 64.0             # flare.png and ring.png cover this many units at scale 1
 
 

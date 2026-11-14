@@ -77,7 +77,7 @@ constexpr std::uint64_t kMultiballShowSteps = 270;
 constexpr std::uint64_t kJackpotShowSteps = 90;
 constexpr std::uint64_t kSuperShowSteps = 150;
 constexpr std::uint64_t kDrainShowSteps = 300;
-constexpr std::uint64_t kPulseSpacing = 45;  // Over kMinLargeFlashSteps: never refused.
+constexpr std::uint64_t kPulseSpacing = kMinLargeFlashSteps;  // Never refused.
 
 int priority(Show show) noexcept {
   switch (show) {
@@ -247,6 +247,21 @@ void LightShow::observe(const Game& game) noexcept {
 
 // --- Hits -------------------------------------------------------------------
 
+bool LightShow::gateOpen(std::uint8_t gate) const noexcept {
+  const std::uint64_t gap = reduceMotion_ ? kMinLargeFadeSteps : kMinHitSteps;
+  // Struck in the same step as the flash that closed it: the same flash.
+  return gates_[gate] == 0 || gates_[gate] == now_ + 1 || now_ + 1 - gates_[gate] >= gap;
+}
+
+void LightShow::strike(std::uint8_t gate, std::uint64_t& hit) noexcept {
+  // Struck again too soon after the last flash of its group: the flash
+  // already lit runs on, and no new one starts (WCAG 2.3.1).
+  if (gateOpen(gate)) {
+    hit = now_ + 1;
+    gates_[gate] = now_ + 1;
+  }
+}
+
 void LightShow::readEvents(const Game& game) noexcept {
   const std::uint64_t mark = now_ + 1;
   for (const PhysicsEvent& event : game.events()) {
@@ -254,25 +269,26 @@ void LightShow::readEvents(const Game& game) noexcept {
     switch (event.type) {
       case PhysicsEvent::Type::Hit:
         if (event.element.kind == table::ElementKind::Bumper && i < bumperHit_.size()) {
-          bumperHit_[i] = mark;
+          strike(kGateNest, bumperHit_[i]);
         } else if (event.element.kind == table::ElementKind::Slingshot && i < slingHit_.size()) {
-          slingHit_[i] = mark;
+          strike(static_cast<std::uint8_t>(kGateSlingLeft + i), slingHit_[i]);
         } else if (event.element.kind == table::ElementKind::Target && i < targetHit_.size()) {
-          targetHit_[i] = mark;
+          strike(kGateNest, targetHit_[i]);
         } else if (event.element.kind == table::ElementKind::DropTarget && i < doorHit_.size()) {
-          doorHit_[i] = mark;
+          strike(kGateDoors, doorHit_[i]);
         }
         break;
       case PhysicsEvent::Type::Enter:
         if (event.element.kind == table::ElementKind::Rollover && i < rolloverHit_.size()) {
-          rolloverHit_[i] = mark;
+          strike(i < 3 ? kGateTopLanes : (i < 5 ? kGateLanesLeft : kGateLanesRight),
+                 rolloverHit_[i]);
         }
         break;
       case PhysicsEvent::Type::Capture:
         if (event.element.kind == table::ElementKind::Hole && i < holeHit_.size()) {
-          holeHit_[i] = mark;
+          strike(static_cast<std::uint8_t>(kGateHole + i), holeHit_[i]);
         } else if (event.element.kind == table::ElementKind::Kickback) {
-          kickbackHit_ = mark;
+          strike(kGateKickback, kickbackHit_);
         }
         break;
       case PhysicsEvent::Type::BallHit:
@@ -285,18 +301,18 @@ void LightShow::readEvents(const Game& game) noexcept {
     switch (event.type) {
       case GameEvent::Type::HoleEject:
         if (i < holeHit_.size()) {
-          holeHit_[i] = mark;
+          strike(static_cast<std::uint8_t>(kGateHole + i), holeHit_[i]);
         }
         break;
       case GameEvent::Type::BallLocked:
       case GameEvent::Type::LockReleased:
         if (i < bayHit_.size()) {
-          bayHit_[i] = mark;
+          strike(kGateBays, bayHit_[i]);
         }
         break;
       case GameEvent::Type::KickbackFired:
       case GameEvent::Type::KickbackReturned:
-        kickbackHit_ = mark;
+        strike(kGateKickback, kickbackHit_);
         break;
       case GameEvent::Type::Spin:
         spinHit_ = mark;
@@ -304,7 +320,10 @@ void LightShow::readEvents(const Game& game) noexcept {
         break;
       case GameEvent::Type::DoorBankDropped:
       case GameEvent::Type::DoorBankRaised:
-        doorHit_.fill(mark);
+        if (gateOpen(kGateDoors)) {
+          doorHit_.fill(mark);
+          gates_[kGateDoors] = mark;
+        }
         break;
       case GameEvent::Type::EjectSave:
         break;
@@ -405,6 +424,18 @@ float LightShow::flash(std::uint64_t hitStep, std::uint32_t length) const noexce
     return 0.0F;
   }
   const std::uint64_t age = now_ + 1 - hitStep;
+  if (reduceMotion_) {
+    // A soft glow up and down, twice as long, never full.
+    const std::uint64_t soft = 2 * static_cast<std::uint64_t>(length);
+    if (age >= soft) {
+      return 0.0F;
+    }
+    constexpr std::uint64_t kRise = 12;
+    const float level = age < kRise ? static_cast<float>(age + 1) / static_cast<float>(kRise)
+                                    : 1.0F - static_cast<float>(age - kRise) /
+                                                 static_cast<float>(soft - kRise);
+    return 0.6F * level;
+  }
   if (age >= length) {
     return 0.0F;
   }
@@ -443,10 +474,9 @@ float LightShow::spinnerLevel() const noexcept {
   if (reduceMotion_) {
     return spinEnergy_;
   }
-  // Each turn strikes the lamps full; between turns they hold at a third of
-  // the spin's energy, so a fast spin is a bright flicker and a slow one
-  // single blinks.
-  return std::max(spinEnergy_ * 0.35F, flash(spinHit_, 4) * std::max(spinEnergy_, 0.4F));
+  // Brighter the faster it spins, with a ripple at each turn too small to be
+  // a flash (WCAG 2.3.1: the turns come up to twenty a second).
+  return spinEnergy_ * (0.85F + 0.15F * flash(spinHit_, 4));
 }
 
 // --- Sweeps -----------------------------------------------------------------
@@ -523,17 +553,11 @@ void LightShow::burst(Flasher where, Colour colour, float peak, float radius,
       return;
     }
   }
-  const bool large = where == Flasher::Table || where == Flasher::Lights || radius >= kLargeRadius;
-  if (reduceMotion_) {
-    // A slow rise and fall, and softer.
-    length = std::max<std::uint32_t>(length * 2, 90);
-    peak *= 0.6F;
-  }
   *slot = Burst{.where = where,
                 .colour = colour,
                 .used = true,
                 .started = false,
-                .large = large,
+                .large = false,
                 .peak = clamp01(peak),
                 .radius = radius,
                 .start = now_ + delay,
@@ -555,6 +579,19 @@ void LightShow::updateBursts() noexcept {
       break;
     }
     Burst& b = *next;
+    // Large by what is drawn: a dome lights glow.png out to kDomeReach of
+    // its radius. A small one is large too when the small ones started in
+    // the last kMinLargeFlashSteps would cover more than kSmallAreaShare of
+    // the table between them. With reduce motion every burst is large.
+    const float reach = b.radius * kDomeReach;
+    const float area = table::kPi * reach * reach;
+    float recent = 0.0F;
+    for (const auto& [at, a] : smallAreas_) {
+      recent += at != 0 && now_ + 1 - at < kMinLargeFlashSteps ? a : 0.0F;
+    }
+    b.large = reduceMotion_ || b.where == Flasher::Table || b.where == Flasher::Lights ||
+              reach >= kLargeRadius ||
+              recent + area > kSmallAreaShare * table::kWidth * table::kHeight;
     if (b.large) {
       const bool sameFlash = lastLarge_ == now_ + 1;  // Lit together: one flash.
       if (!sameFlash && lastLarge_ != 0 && now_ + 1 - lastLarge_ < gap) {
@@ -576,12 +613,16 @@ void LightShow::updateBursts() noexcept {
         lastLarge_ = now_ + 1;
       }
     }
+    if (!b.large) {
+      smallAreas_[smallNext_] = {now_ + 1, area};
+      smallNext_ = (smallNext_ + 1) % smallAreas_.size();
+    }
     b.started = true;
     b.start = now_;
     ++burstsStarted_;
   }
   for (Burst& b : bursts_) {
-    if (b.used && b.started && now_ >= b.start + b.length) {
+    if (b.used && b.started && now_ >= b.start + effectiveLength(b)) {
       b.used = false;
     }
   }
@@ -591,17 +632,43 @@ float LightShow::burstLevel(const Burst& b) const noexcept {
   if (!b.used || !b.started || now_ < b.start) {
     return 0.0F;
   }
+  // Shaped at the time it is drawn, so a change of reduce motion reshapes
+  // what is already queued or lit.
   const auto age = static_cast<float>(now_ - b.start);
   const float attack = reduceMotion_ ? 24.0F : 3.0F;
-  const auto length = static_cast<float>(b.length);
+  const auto length = static_cast<float>(effectiveLength(b));
+  const float peak = reduceMotion_ ? b.peak * 0.6F : b.peak;
   if (age >= length) {
     return 0.0F;
   }
   if (age < attack) {
-    return b.peak * (age + 1.0F) / attack;
+    return peak * (age + 1.0F) / attack;
   }
   const float fall = 1.0F - (age - attack) / std::max(length - attack, 1.0F);
-  return b.peak * fall * std::sqrt(fall);
+  return peak * fall * std::sqrt(fall);
+}
+
+std::uint32_t LightShow::effectiveLength(const Burst& b) const noexcept {
+  if (!reduceMotion_) {
+    return b.length;
+  }
+  // Slow: the dips of the lights slowest of all.
+  return b.where == Flasher::Lights ? std::max<std::uint32_t>(b.length * 3, 180)
+                                    : std::max<std::uint32_t>(b.length * 2, 90);
+}
+
+bool LightShow::largeOnset() noexcept {
+  const std::uint64_t gap = reduceMotion_ ? kMinLargeFadeSteps : kMinLargeFlashSteps;
+  if (lastLarge_ == now_ + 1) {
+    return true;  // The same flash.
+  }
+  if (lastLarge_ != 0 && now_ + 1 - lastLarge_ < gap) {
+    ++largeHeld_;
+    return false;
+  }
+  ++largeFlashes_;
+  lastLarge_ = now_ + 1;
+  return true;
 }
 
 BurstViews LightShow::bursts() const noexcept {
@@ -634,6 +701,17 @@ void LightShow::startShow(Show show, Vec2 at) noexcept {
   if (running && priority(show) < priority(show_)) {
     return;
   }
+  if (running && show == show_ && (show == Show::MultiballStart || show == Show::Graduation)) {
+    return;  // Told twice (the cue and the rules' own edge): once is enough.
+  }
+  if (show == Show::Jackpot || show == Show::SuperJackpot) {
+    // The ring and the wash are a large flash: through the limiter. Too
+    // soon after the last, the jackpot is not shown again (the one running
+    // runs on).
+    if (!largeOnset()) {
+      return;
+    }
+  }
   show_ = show;
   showStart_ = now_;
   showAt_ = at;
@@ -661,22 +739,20 @@ void LightShow::startShow(Show show, Vec2 at) noexcept {
     }
     case Show::Jackpot:
       ringColour_ = Colour::Yellow;
-      burst(Flasher::Table, Colour::Yellow, 0.35F, 0.0F, 36);
-      for (std::uint32_t k = 0; k < (rm ? 1U : 3U); ++k) {
-        burst(k % 2 == 0 ? Flasher::RampLeft : Flasher::RampRight, Colour::Yellow, 0.8F, 90.0F,
-              24, k * 18);
-      }
+      // The ring alone: each part of the table lights once as it passes,
+      // one flash (a wash or domes as well would make it two).
       break;
     case Show::SuperJackpot:
-      ringColour_ = Colour::Magenta;
+      // No ring: a wash and every dome at once, one flash; a white wash
+      // the limiter's gap later, the second.
       burst(Flasher::Table, Colour::Magenta, 0.45F, 0.0F, 40);
-      if (!rm) {
-        burst(Flasher::Table, Colour::White, 0.40F, 0.0F, 40, static_cast<std::uint32_t>(kPulseSpacing));
-      }
       for (const Flasher dome :
            {Flasher::Hangar, Flasher::Briefing, Flasher::RampLeft, Flasher::RampRight}) {
-        burst(dome, Colour::Magenta, 0.9F, 140.0F, 40,
-              static_cast<std::uint32_t>(2 * kPulseSpacing));
+        burst(dome, Colour::Magenta, 0.9F, 140.0F, 40);
+      }
+      if (!rm) {
+        burst(Flasher::Table, Colour::White, 0.40F, 0.0F, 40,
+              static_cast<std::uint32_t>(kPulseSpacing));
       }
       break;
     case Show::Drain:
@@ -734,8 +810,9 @@ void LightShow::updateShow(const Game& game) noexcept {
         sweepY_ = table::kHeight - u * (table::kHeight - 80.0F);
       }
       break;
-    case Show::Jackpot:
     case Show::SuperJackpot:
+      break;
+    case Show::Jackpot:
       if (!rm && t < 70) {
         ringCentre_ = showAt_;
         ringRadius_ = static_cast<float>(t) * 11.0F;
@@ -873,7 +950,11 @@ float LightShow::ambientLevel(std::size_t lamp) const noexcept {
   // rules light is told apart by its blink and its star (lampLit). With
   // reduce motion the chases run four times slower, as soft waves.
   const auto id = static_cast<LampId>(lamp);
-  const float slow = reduceMotion_ ? 4.0F : 1.0F;
+  if (reduceMotion_) {
+    // No running lights at all: a steady gentle glow.
+    return kUnlitFloor + 0.08F;
+  }
+  const float slow = 1.0F;
   const auto at = [this, slow](float period) {
     const auto steps = static_cast<std::uint64_t>(period * slow);
     return static_cast<float>(now_ % steps) / static_cast<float>(steps);
@@ -885,10 +966,10 @@ float LightShow::ambientLevel(std::size_t lamp) const noexcept {
     if (ring) {
       d = std::min(d, count - d);
     }
-    // The head at full, as a lamp lit; the tail from kChaseTail down to the
-    // floor over the next two places.
+    // The head at kChaseHead (never as bright as a lamp the rules light),
+    // the tail from kChaseTail down to the floor over the next two places.
     if (d < 0.5F) {
-      return 1.0F - (1.0F - kChaseTail) * d * 2.0F;
+      return kChaseHead - (kChaseHead - kChaseTail) * d * 2.0F;
     }
     const float k = std::max(0.0F, 1.0F - (d - 0.5F) / 2.0F);
     return kUnlitFloor + (kChaseTail - kUnlitFloor) * k;
@@ -956,10 +1037,11 @@ void LightShow::updateLamps(const Game& game) noexcept {
     factor = 0.0F;
   } else if ((show_ == Show::MultiballStart || show_ == Show::Graduation) && t < kBlackoutSteps) {
     factor = rm ? 0.35F : 0.0F;
-  } else if (show_ == Show::Drain && t < kBonusStart + kBonusHold +
-                                             kBonusLamps.size() * kBonusStride) {
-    factor = 0.4F;
   }
+  // The bonus counting down: the chases rest, so the count reads; a lamp
+  // the rules light stays as bright as ever.
+  const bool counting = show_ == Show::Drain &&
+                        t < kBonusStart + kBonusHold + kBonusLamps.size() * kBonusStride;
 
   // In a blackout only the show itself lights a lamp.
   const bool blackout = factor < 0.5F && !rules.tilted() && show_ != Show::Drain;
@@ -985,7 +1067,7 @@ void LightShow::updateLamps(const Game& game) noexcept {
   for (std::size_t i = 0; i < kLampCount; ++i) {
     if (!blackout && !rules.tilted() && states_[i] != LampState::On) {
       // Unlit, or a blink's dark half: never darker than coloured plastic.
-      const float ambient = ambientLevel(i) * std::max(factor, 0.6F);
+      const float ambient = counting ? kUnlitFloor : ambientLevel(i);
       hits[i] = std::max(hits[i], states_[i] == LampState::Off ? ambient : kUnlitFloor);
     }
     const float base = fx::lampLevel(states_[i], now_, rm) * factor;
@@ -1039,12 +1121,13 @@ void LightShow::updateTrails(const Game& game) noexcept {
     }
     seen[ball.id] = true;
     TrailView& trail = trails_[ball.id];
-    if (!ball.visible || ball.locked) {
-      trail.count = 0;
+    if (!ball.visible || ball.locked || ball.sink > 0.0F) {
+      trail.count = 0;  // None while a hole draws it in or out.
       continue;
     }
+    const Vec2 at = ball.drawnAt();
     if (trail.count > 0) {
-      const Vec2 d = ball.position - trail.points[0];
+      const Vec2 d = at - trail.points[0];
       if (d.x * d.x + d.y * d.y > 80.0F * 80.0F) {
         trail.count = 0;  // Moved by hand: no streak across the table.
       }
@@ -1052,7 +1135,7 @@ void LightShow::updateTrails(const Game& game) noexcept {
     for (std::size_t k = std::min(trail.count, kTrailLength - 1); k > 0; --k) {
       trail.points[k] = trail.points[k - 1];
     }
-    trail.points[0] = ball.position;
+    trail.points[0] = at;
     trail.count = std::min(trail.count + 1, kTrailLength);
     if (trail.count > 1) {
       const Vec2 d = trail.points[0] - trail.points[trail.count - 1];

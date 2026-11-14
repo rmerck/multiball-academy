@@ -87,11 +87,10 @@ class TableRenderer {
   void drawTouchOverlay(SDL_Renderer* renderer, const screen::Layout& layout,
                         const TouchControls::View& view) const;
 
-  // Economy: the light show without its two whole-playfield layers (the
-  // general illumination's light map, and the trim at the cabinet unless
-  // a flasher, sweep or ring is lit). On by default for the software
-  // renderer, which blends every pixel of those on the processor; the
-  // review tools turn it off to see everything.
+  // Economy: the light show without the general illumination's light map,
+  // its one whole-playfield layer. On by default for the software renderer,
+  // which blends every pixel of it on the processor; the review tools turn
+  // it off to see everything.
   void setEffectsEconomy(bool on) noexcept { economy_ = on; }
   [[nodiscard]] bool effectsEconomy() const noexcept { return economy_; }
 
@@ -114,9 +113,6 @@ class TableRenderer {
     TexturePtr ring;   // And its shock rings.
     TexturePtr gi;     // And the general illumination's light map.
     TexturePtr pool;   // And the dark pool round each ball.
-    // The background outside the playfield's shell (made at load): trims
-    // the light show at the cabinet.
-    TexturePtr outside;
     TexturePtr bar;
     TexturePtr door;
     TexturePtr plunger;

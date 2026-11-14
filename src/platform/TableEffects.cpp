@@ -15,6 +15,14 @@ using table::LampId;
 
 float length(Vec2 v) noexcept { return std::sqrt(v.x * v.x + v.y * v.y); }
 
+// Where and how large a ball is drawn: a hole drawing it in or out moves
+// it off its place and shrinks it (Game.hpp, BallView::drawnAt).
+float drawnRadius(const BallView& ball) noexcept {
+  return table::kBallRadius * ball.scale *
+         (1.0F - table::kHoleSinkShrink * std::clamp(ball.sink, 0.0F, 1.0F));
+}
+float shown(const BallView& ball) noexcept { return 1.0F - std::clamp(ball.sink, 0.0F, 1.0F); }
+
 Vec2 unit(Vec2 v) noexcept {
   const float l = length(v);
   return l > 0.0F ? v * (1.0F / l) : Vec2{0.0F, -1.0F};
@@ -295,7 +303,7 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
     const art::Rgb c = fxColour(b.colour);
     const float s = b.level * art::kFlasherStrengthMax;
     // flare.png carries its own bloom: a hot core over it is all it needs.
-    glow_.add(r, glow, at, b.radius * 1.6F, c, s * 0.55F);  // The pool of colour it throws.
+    glow_.add(r, glow, at, b.radius * fx::kDomeReach, c, s * 0.55F);  // The pool of colour it throws.
     glow_.add(r, glow, at, b.radius * 0.35F, mixRgb(c, art::kFxWhite, 0.6F), s);
     flare_.add(r, textures_.flare, at, b.radius * 1.2F, c, s);
   }
@@ -329,7 +337,7 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
   // Each ball's trail at speed: the motion reads as a streak.
   const float trailStrength = show.reduceMotion() ? 0.15F : 0.30F;
   for (const BallView& ball : balls) {
-    if (!ball.visible || ball.locked) {
+    if (!ball.visible || ball.locked || ball.sink > 0.0F) {
       continue;
     }
     const fx::TrailView& trail = show.trail(ball.id);
@@ -337,7 +345,7 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
     if (trail.count < 3 || fast <= 0.0F) {
       continue;
     }
-    const float radius = table::kBallRadius * ball.scale;
+    const float radius = drawnRadius(ball);
     for (std::size_t k = 1; k < trail.count; ++k) {
       const float age = static_cast<float>(k) / static_cast<float>(trail.count);
       glow_.add(r, glow, trail.points[k], radius * (1.25F - 0.6F * age), art::kFxTrail,
@@ -347,24 +355,53 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
   flushAll(r);
 }
 
-void TableEffects::drawBallPools(SDL_Renderer* r, std::span<const BallView> balls) {
+void TableEffects::drawBallPools(SDL_Renderer* r, std::span<const BallView> balls,
+                                 const LightShow& show) {
   SDL_Texture* const pool = textures_.pool;
   if (pool == nullptr) {
     return;
   }
-  SDL_SetTextureAlphaModFloat(pool, art::kBallPoolAlpha);
   for (const BallView& ball : balls) {
     if (!ball.visible) {
       continue;
     }
-    const float radius = table::kBallRadius * ball.scale * art::kBallPoolRadii;
-    const SDL_FRect dst{ball.position.x - radius, ball.position.y - radius, radius * 2.0F,
-                        radius * 2.0F};
+    // Only as dark as the light round the ball calls for: none over the
+    // plain table, deepest beside a lit lamp or a flash.
+    const Vec2 at = ball.drawnAt();
+    float light = 0.0F;
+    for (std::size_t i = 0; i < table::kLamps.size(); ++i) {
+      const float d = length(table::kLamps[i].position - at);
+      if (d < 60.0F) {
+        light = std::max(light, show.lampLevels()[i] * (1.0F - d / 60.0F) * 1.6F);
+      }
+    }
+    const fx::BurstViews bursts = show.bursts();
+    for (const fx::BurstView& b : bursts.span()) {
+      const float reach = b.where == fx::Flasher::Table ? 1e6F : b.radius * fx::kDomeReach;
+      const float d = b.where == fx::Flasher::Table ? 0.0F : length(fx::flasherPosition(b.where) - at);
+      if (d < reach) {
+        light = std::max(light, b.level * (1.0F - d / reach) * 1.5F);
+      }
+    }
+    for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
+      const float d = length(table::kBumpers[i].shape.center - at);
+      if (d < 110.0F) {
+        light = std::max(light, show.bumperFlash(i) * (1.0F - d / 110.0F) * 1.5F);
+      }
+    }
+    const float alpha = art::kBallPoolAlpha * std::min(light, 1.0F) * shown(ball);
+    if (alpha < 0.02F) {
+      continue;
+    }
+    SDL_SetTextureAlphaModFloat(pool, alpha);
+    const float radius = drawnRadius(ball) * art::kBallPoolRadii;
+    const SDL_FRect dst{at.x - radius, at.y - radius, radius * 2.0F, radius * 2.0F};
     SDL_RenderTexture(r, pool, nullptr, &dst);
   }
+  SDL_SetTextureAlphaMod(pool, 255);
 }
 
-void TableEffects::drawBallGlints(SDL_Renderer* r, const Game& game,
+void TableEffects::drawBallGlints(SDL_Renderer* r, const Game& /*game*/,
                                   std::span<const BallView> balls, const LightShow& show) {
   SDL_Texture* const glow = textures_.glow;
   // A light hanging over the bumper nest, as the backbox's would: the
@@ -375,9 +412,11 @@ void TableEffects::drawBallGlints(SDL_Renderer* r, const Game& game,
     if (!ball.visible) {
       continue;
     }
-    const float radius = table::kBallRadius * ball.scale;
-    const Vec2 toLamp = unit(lamp - ball.position);
-    glow_.add(r, glow, ball.position + toLamp * (radius * 0.45F), radius * 0.42F, art::kFxWhite, 0.5F);
+    const float radius = drawnRadius(ball);
+    const float seen = shown(ball);
+    const Vec2 here = ball.drawnAt();
+    const Vec2 toLamp = unit(lamp - here);
+    glow_.add(r, glow, here + toLamp * (radius * 0.45F), radius * 0.42F, art::kFxWhite, 0.5F * seen);
     // The nearest flasher or struck bumper shows on the chrome in its colour.
     float best = 0.0F;
     Vec2 from{};
@@ -388,7 +427,7 @@ void TableEffects::drawBallGlints(SDL_Renderer* r, const Game& game,
       }
       const Vec2 at = fx::flasherPosition(b.where);
       const float reach = std::max(b.radius * 2.0F, 160.0F);
-      const float strength = b.level * std::max(0.0F, 1.0F - length(at - ball.position) / reach);
+      const float strength = b.level * std::max(0.0F, 1.0F - length(at - here) / reach);
       if (strength > best) {
         best = strength;
         from = at;
@@ -398,7 +437,7 @@ void TableEffects::drawBallGlints(SDL_Renderer* r, const Game& game,
     for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
       const Vec2 at = table::kBumpers[i].shape.center;
       const float strength =
-          game.bumperFlash(i) * std::max(0.0F, 1.0F - length(at - ball.position) / 110.0F);
+          show.bumperFlash(i) * std::max(0.0F, 1.0F - length(at - here) / 110.0F);
       if (strength > best) {
         best = strength;
         from = at;
@@ -406,8 +445,8 @@ void TableEffects::drawBallGlints(SDL_Renderer* r, const Game& game,
       }
     }
     if (best > 0.02F) {
-      glow_.add(r, glow, ball.position + unit(from - ball.position) * (radius * 0.55F), radius * 0.55F,
-                colour, 0.8F * best);
+      glow_.add(r, glow, here + unit(from - here) * (radius * 0.55F), radius * 0.55F, colour,
+                0.8F * best * seen);
     }
   }
   flushAll(r);

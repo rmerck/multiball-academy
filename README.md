@@ -115,9 +115,12 @@ Report security issues through "Report a vulnerability" on the repository's Secu
 - [docs/RULES.md](docs/RULES.md): the rules of the game, scoring, nudge and tilt
 - [docs/DESIGN.md](docs/DESIGN.md): design priorities, score file handling, audio, physics and source layout
 - [docs/ASSETS.md](docs/ASSETS.md): art generation and asset integrity
+- [docs/RESUME.md](docs/RESUME.md): saving a game in progress and resuming it
 
 ## License
 
-MIT. See `LICENSE`.
+Copyright (c) 2026 Ryan Merck. The source may be used, modified and distributed for noncommercial purposes under the [PolyForm Noncommercial License 1.0.0](LICENSE) (SPDX: `PolyForm-Noncommercial-1.0.0`); the App Store version is sold by the author. Earlier releases, including v1.0.0 for macOS, were published under the MIT licence and remain under those terms.
 
-All code, art and audio in this repository are original. The project is not affiliated with Microsoft, Maxis or Cinematronics.
+The game's code, art and audio are original. Box2D (MIT) and SDL (zlib, with its yuv2rgb code under BSD-3-Clause), which are built into the game, keep their own licences. The four fonts in `tools/art/sources/fonts` (Audiowide, Russo One, Saira Stencil One, Silkscreen) remain under the SIL Open Font License 1.1; they are used only to draw the art, and no font file ships in the game. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+The project is not affiliated with Microsoft, Maxis or Cinematronics.

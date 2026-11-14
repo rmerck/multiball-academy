@@ -90,8 +90,44 @@ set(PINBALL_SUPPORT_EMAIL "dev@mrck.app")
 if(NOT PINBALL_SUPPORT_EMAIL MATCHES "^[a-z0-9]+(\\.[a-z0-9]+)*@[a-z0-9]+(\\.[a-z0-9]+)+$")
   message(FATAL_ERROR "PINBALL_SUPPORT_EMAIL must be a plain address: '${PINBALL_SUPPORT_EMAIL}'")
 endif()
-# The copyright line of the application bundles.
-set(PINBALL_COPYRIGHT "Copyright 2026 rmerck. MIT licence.")
+# The copyright line of the application bundles (NSHumanReadableCopyright),
+# taken from LICENSE so that a change of licence is a change to that file:
+# each "Required Notice:" copyright above the licence's title, less its
+# address, then the title (the first "# " heading). tools/check_notices.py
+# builds the About screen's line the same way. The SPDX id of the game's own
+# licence is PolyForm-Noncommercial-1.0.0; Box2D and SDL keep theirs
+# (THIRD_PARTY_NOTICES.md).
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" pinball_license_lines
+     REGEX "^(Required Notice:|# )")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(PINBALL_COPYRIGHT "")
+set(pinball_license_title "")
+foreach(line IN LISTS pinball_license_lines)
+  if(line MATCHES "^# ")
+    if(NOT line MATCHES "^# ([^\"<>&;]+)$")
+      message(FATAL_ERROR "LICENSE: the licence's title must be plain text: '${line}'")
+    endif()
+    set(pinball_license_title "${CMAKE_MATCH_1}")
+    break()
+  endif()
+  # The whole line or nothing: a name with a mark the bundle cannot carry
+  # stops the configuration rather than being cut short.
+  if(NOT line MATCHES "^Required Notice: (Copyright \\(c\\) [0-9][0-9][0-9][0-9](-[0-9][0-9][0-9][0-9])? [^\"<>&;()]*[^\"<>&;() ])( \\(https?://[^ ()\"<>&;]+\\))?$")
+    message(FATAL_ERROR "LICENSE: a Required Notice must read 'Required Notice: Copyright (c) "
+                        "<year or years> <name>', optionally followed by ' (<address>)', with no "
+                        "quotes, brackets, &, < or > in the name: '${line}'")
+  endif()
+  set(pinball_notice "${CMAKE_MATCH_1}")
+  if(NOT pinball_notice MATCHES "\\.$")
+    string(APPEND pinball_notice ".")
+  endif()
+  string(APPEND PINBALL_COPYRIGHT "${pinball_notice} ")
+endforeach()
+if(PINBALL_COPYRIGHT STREQUAL "" OR pinball_license_title STREQUAL "")
+  message(FATAL_ERROR "LICENSE must begin with its 'Required Notice: Copyright (c) ...' line(s), "
+                      "then the licence's '# <title>' heading")
+endif()
+string(APPEND PINBALL_COPYRIGHT "Licensed under the ${pinball_license_title}.")
 project(MultiballAcademy VERSION 2.0.0 LANGUAGES CXX)
 # The bundle version (CFBundleVersion) on iOS and macOS, also shown beside
 # the version. A whole number with no leading zero.
@@ -244,8 +280,10 @@ if(PINBALL_FUZZ)
     src/core/OverlayLayout.cpp
     src/core/PngHeader.cpp
     src/core/ScreenLayout.cpp
+    src/core/Sha256.cpp
+    src/core/Snapshot.cpp
     src/core/TouchControls.cpp)
-  target_include_directories(pinball_fuzz_core PUBLIC src)
+  target_include_directories(pinball_fuzz_core PUBLIC src ${PINBALL_VERSION_DIR})
   pinball_apply_hardening(pinball_fuzz_core PUBLIC)
   target_compile_options(pinball_fuzz_core PUBLIC -fsanitize=fuzzer-no-link)
   add_executable(pinball_fuzz tests/fuzz/FuzzParsers.cpp)
@@ -270,6 +308,7 @@ add_library(pinball_core STATIC
   src/core/AssetName.cpp
   src/core/Format.cpp
   src/core/Game.cpp
+  src/core/GameSave.cpp
   src/core/HighScores.cpp
   src/core/Courses.cpp
   src/core/LightShow.cpp
@@ -280,6 +319,7 @@ add_library(pinball_core STATIC
   src/core/Scenes.cpp
   src/core/ScreenLayout.cpp
   src/core/Sha256.cpp
+  src/core/Snapshot.cpp
   src/core/Music.cpp
   src/core/Sound.cpp
   src/core/TouchControls.cpp
@@ -315,6 +355,7 @@ add_library(pinball_platform STATIC
   src/platform/InitialsScreen.cpp
   src/platform/PauseMenu.cpp
   src/platform/SafeFile.cpp
+  src/platform/SaveStore.cpp
   src/platform/ScoreStore.cpp
   src/platform/TableEffects.cpp
   src/platform/TableRenderer.cpp
@@ -600,6 +641,7 @@ if(BUILD_TESTING)
     tests/PngHeaderTest.cpp
     tests/RuleFuzzTest.cpp
     tests/RulesTest.cpp
+    tests/SaveGameTest.cpp
     tests/ScreenLayoutTest.cpp
     tests/Sha256Test.cpp
     tests/MusicTest.cpp
@@ -694,6 +736,12 @@ if(BUILD_TESTING)
     add_test(NAME app_events COMMAND app_tests)
     set_tests_properties(app_events PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 300 LABELS slow)
+    # The saved game (docs/RESUME.md): written on the way out, offered,
+    # resumed once, deleted by a new game or the end of one. Uses a scratch
+    # preferences directory of its own.
+    add_test(NAME app_saved_game COMMAND app_tests saved-game)
+    set_tests_properties(app_saved_game PROPERTIES
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 300 LABELS slow)
   endif()
 
   # Python runs isolated (-I): no user site directory, no PYTHON* variables
@@ -747,6 +795,18 @@ if(BUILD_TESTING)
   # Rendering smoke test: play ten seconds headless and draw a frame. The
   # tool fails if the frame is blank.
   if(PINBALL_BUILD_TOOLS)
+    # WCAG 2.3.1: the light show's worst case, multiball with a jackpot every
+    # 30 steps and the bumper nest struck every 20, rendered at 60 frames a
+    # second and measured per pixel (tools/fxreel/FlashMeter.hpp). No more
+    # than 6 percent of the playfield may flash over three times a second
+    # (the general flash threshold at phone scale is about 12); with reduce
+    # motion, 2 percent.
+    add_test(NAME fx_wcag_storm
+      COMMAND pinball_fxreel storm - --wcag 0.06 --frames 360)
+    add_test(NAME fx_wcag_storm_reduce_motion
+      COMMAND pinball_fxreel storm - --wcag 0.02 --frames 360 --reduce-motion)
+    set_tests_properties(fx_wcag_storm fx_wcag_storm_reduce_motion PROPERTIES
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 600 LABELS slow)
     add_test(NAME render_snapshot
       COMMAND pinball_snapshot 1200 render_snapshot.png
       WORKING_DIRECTORY ${PINBALL_TEST_DIR})
@@ -773,7 +833,16 @@ if(BUILD_TESTING)
     add_test(NAME render_spinning
       COMMAND pinball_snapshot 60 render_spinning.png spinning
       WORKING_DIRECTORY ${PINBALL_TEST_DIR})
-    set_tests_properties(render_locked render_bank_down render_spinning PROPERTIES
+    # Balls on their way into a hole and out of a lock bay, drawn between
+    # where the game has them and the hole (table::kHoleSinkSeconds).
+    add_test(NAME render_scoop_in
+      COMMAND pinball_snapshot 7 render_scoop_in.png scoop-in
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
+    add_test(NAME render_lock_out
+      COMMAND pinball_snapshot 4 render_lock_out.png lock-out
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
+    set_tests_properties(render_locked render_bank_down render_spinning render_scoop_in
+                         render_lock_out PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
     # The tool must replace a link at its output name, never write through
     # it, even one that points nowhere. (Not on Windows, where making a link
