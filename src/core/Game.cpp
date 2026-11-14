@@ -1022,7 +1022,8 @@ BallView Game::ballView(std::size_t slot) const {
         state.holder.index < table::kHoles.size()) {
       const Vec2 exit = table::kHoles[state.holder.index].exitPosition;
       view.drawOffset = (state.ejectFrom - exit) * (1.0F - easeOut(t));
-      view.sink = state.ejectFromBay ? 0.0F : 1.0F - t;
+      // Coming up, and brightening, on the same curve as it moves.
+      view.sink = state.ejectFromBay ? 0.0F : 1.0F - easeOut(t);
     }
     return view;
   }
