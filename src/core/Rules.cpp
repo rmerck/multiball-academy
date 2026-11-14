@@ -878,9 +878,20 @@ void Rules::collectExtraBall() noexcept {
 
 void Rules::collectExtraCredit() noexcept {
   extraCreditLit_ = false;
-  auto roll = static_cast<unsigned>(nextRandom() % 100U);
-  Credit credit = kCredits.back().credit;
+  // Overdrive lit while it runs, or lit already, would give nothing: then
+  // it is not among the awards, and one roll picks from the rest by their
+  // weights.
+  const bool overdriveOffered = overdrive_ == 1 && !overdriveLit_;
+  unsigned total = 0;
   for (const CreditWeight& entry : kCredits) {
+    total += entry.credit != Credit::Overdrive || overdriveOffered ? entry.weight : 0U;
+  }
+  auto roll = static_cast<unsigned>(nextRandom() % total);
+  Credit credit = kCredits.front().credit;
+  for (const CreditWeight& entry : kCredits) {
+    if (entry.credit == Credit::Overdrive && !overdriveOffered) {
+      continue;
+    }
     if (roll < entry.weight) {
       credit = entry.credit;
       break;
@@ -916,9 +927,7 @@ void Rules::collectExtraCredit() noexcept {
       break;
     case Credit::Overdrive:
       sayThen(display::Message("EXTRA CREDIT  OVERDRIVE LIT"));
-      if (overdrive_ == 1) {
-        overdriveLit_ = true;
-      }
+      overdriveLit_ = true;
       break;
   }
 }

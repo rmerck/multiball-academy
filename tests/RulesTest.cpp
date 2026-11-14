@@ -383,6 +383,39 @@ void testRules() {
     CHECK(seen[0] > seen[1] && seen[1] > seen[6] && seen[0] > 80 && seen[6] < 50);
   }
 
+  {  // Extra credit while overdrive runs: "overdrive lit" would give
+     // nothing, so it is never the award; another one is given instead.
+    RulesBench bench = started();
+    bench.rules.setMultiballEnabled(false);
+    int given = 0;
+    for (int n = 0; n < 300; ++n) {
+      if (bench.rules.overdrive() == 1) {
+        for (std::size_t lane = 0; lane < 3; ++lane) {
+          bench.rollCall(lane);
+        }
+        bench.step();
+        bench.turbine();
+        bench.step();
+      }
+      CHECK(bench.rules.overdrive() > 1);
+      bench.rules.onTarget(0);
+      bench.rules.onTarget(1);
+      bench.scoop();
+      CHECK(bench.rules.overdrive() > 1 && !bench.rules.overdriveLit());
+      for (int i = 0; i < 6; ++i) {
+        const std::string_view said = bench.message();
+        if (said.starts_with("EXTRA CREDIT")) {
+          CHECK(said != std::string_view("EXTRA CREDIT  OVERDRIVE LIT"));
+          ++given;
+          break;
+        }
+        bench.wait(Rules::kQueuedMessageSeconds);
+      }
+      bench.wait(0.2);
+    }
+    CHECK(given >= 290);
+  }
+
   {  // 4.3 Briefing room: 5,000 the first time on a ball and when something
      // is collected, 1,000 for a repeat with nothing lit.
     RulesBench bench = started();
