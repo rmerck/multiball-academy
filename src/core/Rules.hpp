@@ -313,6 +313,10 @@ class Rules {
   // BONUS.
   int takeBallRequests() noexcept;
   void onBallRefused() noexcept;
+  // Of the balls taken and not yet answered, the ones a full turbo meter
+  // asked for: the only requests the table may refuse. (Any other is made
+  // only when there is room.)
+  int turboBallsAsked() const noexcept { return turboRequestsInFlight_; }
   // What to do with the locked balls. The command is given once: asking
   // clears it.
   LockCommand takeLockCommand() noexcept;
