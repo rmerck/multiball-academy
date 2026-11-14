@@ -213,7 +213,13 @@ fi
 # code (cmake/PinnedDeps.cmake), so the frameworks behind them, and the
 # classes that would make the App Store ask for a camera, motion or Bluetooth
 # purpose string, are not referred to at all.
-if grep -E 'CoreBluetooth|CoreMotion|CoreHaptics|OpenGLES|CoreLocation|Vulkan' <<<"$libraries"; then
+# The Swift runtime's overlays (/usr/lib/swift/libswift*.dylib) are not
+# frameworks: the review request's Swift (src/platform/ios/Review.swift)
+# auto-links, weakly, the overlay of every module UIKit and StoreKit bring
+# in, CoreLocation's among them. They hold no use of the framework; the
+# class checks below look at what the executable itself refers to.
+frameworks=$(grep -v -E '^[[:space:]]+/usr/lib/swift/' <<<"$libraries" || true)
+if grep -E 'CoreBluetooth|CoreMotion|CoreHaptics|OpenGLES|CoreLocation|Vulkan' <<<"$frameworks"; then
   fail "a framework the game has no use for is linked"
 fi
 undefined=$(nm -u "$exe")

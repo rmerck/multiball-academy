@@ -94,12 +94,6 @@ set_target_properties(pinball PROPERTIES
   # CMake would also give the Swift driver are not Swift's.
   XCODE_ATTRIBUTE_OTHER_SWIFT_FLAGS "")
 
-# The Swift of the review request auto-links the Swift overlays of every
-# module UIKit and StoreKit bring in, CoreLocation's among them, weakly and
-# unused. Only libraries the executable uses are kept, so none of those is
-# linked (tools/ios/check_bundle.sh refuses a location library).
-target_link_options(pinball PRIVATE "-Wl,-dead_strip_dylibs")
-
 # A Release application: the debug information goes to a .dSYM beside the
 # bundle, for reading crash reports, and the executable is stripped, so it
 # carries no symbol names and no path of the machine that built it.
