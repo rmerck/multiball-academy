@@ -4,7 +4,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/AboutPages.hpp"
 #include "core/HighScores.hpp"
@@ -48,5 +50,28 @@ void drawAbout(SDL_Renderer* renderer, const HighScores& scores, const screen::L
 // greyed.
 [[nodiscard]] bool pageButtonsShown(const screen::Layout& layout,
                                     const AboutState& state) noexcept;
+
+// A part of the touch screen's About dialog as VoiceOver reads it, other
+// than the tabs and CLOSE: what it says and where it is drawn, in canvas
+// units. Kind says what it is: a title, a block of text, or one of the
+// buttons of the page (the privacy policy, and the licence pages' arrows).
+struct AboutReadout {
+  enum class Kind : std::uint8_t { Title, Text, PrivacyButton, PreviousPage, NextPage };
+  Kind kind = Kind::Text;
+  std::string label;
+  screen::Rect frame{};
+  // False for a page arrow drawn greyed, which leads nowhere.
+  bool enabled = true;
+};
+
+// What the page of state shows, in reading order: on SCORES the title and
+// version, the high score table and the credit; on ABOUT the title and
+// version, the build and support address, the privacy statement and the
+// PRIVACY POLICY button where it is drawn; on LICENCES the page's number,
+// its text, and the two arrows where they are drawn. Empty off a touch
+// screen, which has no VoiceOver elements.
+[[nodiscard]] std::vector<AboutReadout> aboutReadout(const HighScores& scores,
+                                                     const screen::Layout& layout,
+                                                     const AboutState& state);
 
 }  // namespace pinball

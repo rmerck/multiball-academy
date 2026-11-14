@@ -592,6 +592,9 @@ void drawTouchGuide(SDL_Renderer* r, const screen::Layout& layout, bool firstGam
   guideLabel(r, g.centreLabel, howto::kGuideCentre, size, kYellow);
   guideLabel(r, g.nudgeLeftLabel, howto::kGuideNudge, size, kYellow);
   guideLabel(r, g.nudgeRightLabel, howto::kGuideNudge, size, kYellow);
+  if (g.pauseLead.w > 0.0F && g.pauseLead.h > 0.0F) {
+    fillRect(r, g.pauseLead, kYellow);
+  }
   guideLabel(r, g.pauseLabel, howto::kGuidePause, size, kYellow);
   drawDialogCard(r, art, frect(g.card));
   const float middle = g.card.x + g.card.w * 0.5F;

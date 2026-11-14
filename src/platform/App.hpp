@@ -32,6 +32,7 @@
 #include "core/LightShow.hpp"
 #include "platform/SettingsStore.hpp"
 #include "platform/TableRenderer.hpp"
+#include "platform/ios/IosSystem.hpp"
 
 namespace pinball {
 
@@ -133,6 +134,21 @@ class App {
   // starts nothing yet.
   void discardSavedGame();
 
+  // A game's table as render() drew it: whose game, its score and steps,
+  // and what the centre button showed over it.
+  enum class TableSource : std::uint8_t { None, Guide, Attract, Player };
+  struct DrawnTable {
+    TableSource source = TableSource::None;
+    std::uint64_t score = 0;
+    std::uint64_t steps = 0;
+    TouchControls::View::Centre centre = TouchControls::View::Centre::Launch;
+  };
+  struct AccessibilityMove {
+    ios::AccessibilityFocus::Kind kind = ios::AccessibilityFocus::Kind::Stay;
+    std::string label;
+    unsigned count = 0;
+  };
+
   // What the application is showing and doing, for tests and diagnostics.
   struct Status {
     bool paused;
@@ -185,6 +201,12 @@ class App {
     unsigned hapticsPlayed;
     // The high score table, as shown.
     HighScores scores;
+    // What the last frame drew behind HOW TO PLAY's touch guide; source
+    // None if that frame did not show it.
+    DrawnTable guideTable;
+    // The last move of VoiceOver's focus asked of the system, and the label
+    // of the element it went to; how many such moves there have been.
+    AccessibilityMove accessibilityMove;
   };
   [[nodiscard]] Status status() const;
   // How many frames a standing picture is drawn for after each event.
@@ -195,6 +217,20 @@ class App {
   static constexpr double kGameOverIdleSeconds = 8.0;
   static constexpr double kGameOverGuardSeconds = 0.8;
   static constexpr int kMaxAttractStepsPerFrame = 2000;
+
+  // What VoiceOver finds on the screen now: one element for each control,
+  // title and block of text, in reading order. Frames are in canvas units.
+  // Empty on a desktop and while the game is played. The same list is
+  // handed to the system (ios::setAccessibilityElements); for tests too.
+  struct AccessItem {
+    std::string label;
+    screen::Rect frame;
+    std::int32_t code = 0;
+    ios::AccessRole role = ios::AccessRole::Button;
+    bool enabled = true;
+    bool selected = false;
+  };
+  [[nodiscard]] std::vector<AccessItem> accessibilityItems() const;
 
   // The system's Reduce Motion setting as the game last read it (at start
   // and on every return to the foreground): the one place everything that
@@ -265,6 +301,8 @@ class App {
   void touchFront(TouchPhase phase, std::uint64_t id, float x, float y);
   // The touch guide before the first game is dismissed.
   void dismissGuide();
+  // HOW TO PLAY's touch guide: a new game for it to show the controls over.
+  void prepareGuideGame();
   // Steps attract mode's game for the time given.
   void stepAttract(double seconds);
   // Settings: applies them to the sound, and saves them if this run keeps
@@ -479,6 +517,13 @@ class App {
   bool frontOnTarget_ = false;
   // Attract mode: a game of its own, never the player's, and its hands.
   std::optional<Game> attract_;
+  // HOW TO PLAY's touch guide shows the controls over a new game of its
+  // own, never attract mode's or a game left by MAIN MENU, with its lights.
+  std::optional<Game> guideGame_;
+  LightShow guideShow_;
+  // What render() last drew behind that guide.
+  DrawnTable guideDrawn_;
+  AccessibilityMove accessibilityMove_;
   AttractPilot pilot_;
   FixedTimestep attractTimestep_{Game::kStepSeconds, 8};
   std::uint64_t attractSteps_ = 0;
@@ -507,6 +552,7 @@ class App {
   Uint32 accessibilityEvent_ = 0;
   std::uint64_t accessibilityKey_ = ~std::uint64_t{0};
   std::uint64_t accessibilityPage_ = ~std::uint64_t{0};
+  std::uint64_t accessibilitySubpage_ = ~std::uint64_t{0};
 };
 
 }  // namespace pinball

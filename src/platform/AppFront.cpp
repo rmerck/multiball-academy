@@ -3,7 +3,6 @@
 // the review prompt; and what VoiceOver finds on the menus.
 #include <algorithm>
 #include <array>
-#include <deque>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -31,6 +30,9 @@ constexpr SoundSet kPlaySound = soundBit(Sound::Launch);
 constexpr SoundSet kAskSound = soundBit(Sound::TiltWarning);
 constexpr SoundSet kResetSound = soundBit(Sound::Drain);
 constexpr SoundSet kIntroSound = soundBit(Sound::SetComplete);
+
+// The About dialog's tabs, which come first among its elements.
+constexpr std::size_t kAboutTabCount = 3;
 
 // The touch guide as VoiceOver reads it: every control it marks.
 constexpr std::string_view kGuideSpoken =
@@ -69,6 +71,7 @@ void App::openFront() {
   // A fresh attract game each time: it never carries anything of the
   // player's, and the player's game is never stepped behind it.
   attract_.emplace();
+  guideGame_.reset();
   attractShow_.reset();
   attractShow_.setReduceMotion(reduceMotion());
   attractShow_.setAttract(true);
@@ -88,6 +91,7 @@ void App::openFront() {
 void App::startGame() {
   frontOpen_ = false;
   attract_.reset();
+  guideGame_.reset();
   frontFinger_.reset();
   aboutOpen_ = false;
   paused_ = false;
@@ -120,6 +124,7 @@ void App::continueSavedGame() {
   // The saved game is on the table, paused as it was left.
   frontOpen_ = false;
   attract_.reset();
+  guideGame_.reset();
   frontFinger_.reset();
   guideOpen_ = false;
   confirmMainMenu_ = false;
@@ -135,6 +140,16 @@ void App::goToMainMenu() {
   confirmMainMenu_ = false;
   aboutOpen_ = false;
   openFront();
+}
+
+void App::prepareGuideGame() {
+  // The controls over a new game's table: ball 1 on the plunger, no score,
+  // its lights as a game's that has just begun.
+  guideGame_.emplace();
+  guideShow_.reset();
+  guideShow_.setReduceMotion(reduceMotion());
+  guideShow_.setAttract(false);
+  guideShow_.observe(*guideGame_);
 }
 
 void App::dismissGuide() {
@@ -197,7 +212,10 @@ void App::frontAct(FrontAction action) {
       mixer_.trigger(kMoveSound);
       break;
     case FrontAction::Opened:
+      mixer_.trigger(kOpenSound);
+      break;
     case FrontAction::ShowGuide:
+      prepareGuideGame();
       mixer_.trigger(kOpenSound);
       break;
     case FrontAction::Closed:
@@ -250,6 +268,10 @@ void App::frontAct(FrontAction action) {
       }
       mixer_.trigger(kResetSound);
       break;
+  }
+  // The guide's game lives while HOW TO PLAY's guide is up.
+  if (front_.state().page != FrontPage::Guide) {
+    guideGame_.reset();
   }
 }
 
@@ -419,6 +441,16 @@ void App::refreshAccessibility() {
   fold(confirmMainMenu_ ? 1U : 0U);
   fold(interrupted_ ? 1U : 0U);
   fold(static_cast<std::uint64_t>(aboutPage_.page));
+  fold(aboutPage_.licencePage);
+  for (std::size_t i = 0; i < highScores_.size(); ++i) {
+    const HighScore entry = highScores_.at(i);
+    fold(entry.score);
+    fold(entry.rank);
+    for (const char c : entry.initials) {
+      fold(static_cast<std::uint8_t>(c));
+    }
+  }
+  fold(highScores_.size());
   fold(mixer_.muted() ? 1U : 0U);
   fold(musicOn_ ? 1U : 0U);
   fold(settings_.volume);
@@ -429,25 +461,65 @@ void App::refreshAccessibility() {
     return;
   }
   // A new screen or page, not a setting changed on the same one: VoiceOver
-  // moves to its first element.
+  // moves to its first element. Another tab of About, or another page of
+  // its licences, is the same screen with a new page: VoiceOver moves to
+  // the page's first element after the tabs, not back to the first tab.
   const std::uint64_t pageKey = (static_cast<std::uint64_t>(now) << 32) |
-                             (static_cast<std::uint64_t>(state.page) << 16) | state.howToPage;
-  const bool screenChanged = pageKey != accessibilityPage_;
-  accessibilityPage_ = pageKey;
-  accessibilityKey_ = key;
+                                (static_cast<std::uint64_t>(state.page) << 16) | state.howToPage;
+  const std::uint64_t subpageKey =
+      now == Screen::About ? (static_cast<std::uint64_t>(aboutPage_.page) << 32 |
+                              static_cast<std::uint64_t>(aboutPage_.licencePage))
+                           : 0U;
 
-  // The labels live here for the call. A deque: adding one never moves the
-  // others, which the elements point into.
-  std::deque<std::string> labels;
+  // The labels live in items for the call; the elements point into them.
+  const std::vector<AccessItem> items = accessibilityItems();
+  ios::AccessibilityFocus focus;
+  if (pageKey != accessibilityPage_) {
+    focus.kind = ios::AccessibilityFocus::Kind::Screen;
+  } else if (subpageKey != accessibilitySubpage_) {
+    focus.kind = ios::AccessibilityFocus::Kind::Page;
+    focus.element = kAboutTabCount < items.size() ? kAboutTabCount : 0;
+  }
   std::vector<ios::AccessibleElement> elements;
+  elements.reserve(items.size());
   const float ppu = layout_.pointsPerUnit;
-  const auto add = [&](std::string label, const screen::Rect& r, std::int32_t code,
-                       bool header) {
+  for (const AccessItem& item : items) {
+    const screen::Rect& r = item.frame;
+    elements.push_back({item.label,
+                        {r.x * ppu, r.y * ppu, r.w * ppu, r.h * ppu},
+                        item.code,
+                        item.role,
+                        item.enabled,
+                        item.selected});
+  }
+  if (!ios::setAccessibilityElements(elements, accessibilityEvent_, focus)) {
+    // Not replaced: the old key stays, and the next frame tries again.
+    return;
+  }
+  accessibilityPage_ = pageKey;
+  accessibilitySubpage_ = subpageKey;
+  accessibilityKey_ = key;
+  if (focus.kind != ios::AccessibilityFocus::Kind::Stay) {
+    accessibilityMove_.kind = focus.kind;
+    accessibilityMove_.label = focus.element < items.size() ? items[focus.element].label : "";
+    ++accessibilityMove_.count;
+  }
+}
+
+std::vector<App::AccessItem> App::accessibilityItems() const {
+  std::vector<AccessItem> items;
+  if (layout_.idiom != screen::Idiom::Touch) {
+    return items;
+  }
+  const Screen now = screen();
+  const FrontState& state = front_.state();
+  using Role = ios::AccessRole;
+  const auto add = [&items](std::string label, const screen::Rect& r, std::int32_t code,
+                            Role role, bool enabled = true) {
     if (r.w <= 0.0F || r.h <= 0.0F) {
       return;
     }
-    labels.push_back(std::move(label));
-    elements.push_back({labels.back(), {r.x * ppu, r.y * ppu, r.w * ppu, r.h * ppu}, code, header});
+    items.push_back({std::move(label), r, code, role, enabled});
   };
   const auto front = [](FrontTarget::Kind kind, std::uint8_t index = 0) {
     return accessCode(AccessGroup::Front, static_cast<std::uint8_t>(kind), index);
@@ -461,25 +533,25 @@ void App::refreshAccessibility() {
     case Screen::Front:
       if (!introDone()) {
         add("MULTIBALL ACADEMY. TAP TO SKIP.", screen::compositionArea(layout_),
-            front(Kind::Anywhere), false);
+            front(Kind::Anywhere), Role::Button);
         break;
       }
       switch (state.page) {
         case FrontPage::Title: {
           const screen::TitleLayout title = screen::titleLayout(layout_, config);
-          add(kGameTitle, title.logo, 0, true);
+          add(std::string(kGameTitle), title.logo, 0, Role::Header);
           for (std::size_t i = 0; i < kTitleItemCount; ++i) {
             const auto item = static_cast<TitleItem>(i);
             if (front_.shown(item)) {
               add(std::string(titleItemLabel(item)), title.items[i],
-                  front(Kind::Item, static_cast<std::uint8_t>(i)), false);
+                  front(Kind::Item, static_cast<std::uint8_t>(i)), Role::Button);
             }
           }
           break;
         }
         case FrontPage::Scores: {
           const screen::PageLayout page = screen::pageLayout(layout_, FrontPage::Scores);
-          add("HIGH SCORES", page.heading, 0, true);
+          add("HIGH SCORES", page.heading, 0, Role::Header);
           std::string list;
           for (std::size_t i = 0; i < highScores_.size(); ++i) {
             const HighScore entry = highScores_.at(i);
@@ -487,59 +559,59 @@ void App::refreshAccessibility() {
                     std::string(entry.initials.data(), entry.initials.size()) + ", " +
                     std::to_string(entry.score) + ". ";
           }
-          add(list.empty() ? "NO GAMES FINISHED YET" : list, page.body, 0, true);
-          add("BACK", page.back, front(Kind::Back), false);
+          add(list.empty() ? "NO GAMES FINISHED YET" : list, page.body, 0, Role::Text);
+          add("BACK", page.back, front(Kind::Back), Role::Button);
           break;
         }
         case FrontPage::HowTo: {
           const bool guide = config.guideShown && state.howToPage == 0;
           const screen::PageLayout page = screen::pageLayout(layout_, FrontPage::HowTo, guide);
           const howto::Page& text = howto::kPages[std::min(state.howToPage, kHowToPageCount - 1)];
-          add("HOW TO PLAY. " + std::string(text.title), page.heading, 0, true);
-          add(std::string(howto::text(text, true)), page.body, 0, true);
-          add("PREVIOUS PAGE", page.previous, front(Kind::Previous), false);
-          add("NEXT PAGE", page.next, front(Kind::Next), false);
+          add("HOW TO PLAY. " + std::string(text.title), page.heading, 0, Role::Header);
+          add(std::string(howto::text(text, true)), page.body, 0, Role::Text);
+          add("PREVIOUS PAGE", page.previous, front(Kind::Previous), Role::Button);
+          add("NEXT PAGE", page.next, front(Kind::Next), Role::Button);
           if (guide) {
-            add("SHOW TOUCH GUIDE", page.guide, front(Kind::GuideButton), false);
+            add("SHOW TOUCH GUIDE", page.guide, front(Kind::GuideButton), Role::Button);
           }
-          add("BACK", page.back, front(Kind::Back), false);
+          add("BACK", page.back, front(Kind::Back), Role::Button);
           break;
         }
         case FrontPage::Settings: {
           const screen::SettingsLayout s = screen::settingsLayout(layout_, config);
-          add("SETTINGS", s.page.heading, 0, true);
+          add("SETTINGS", s.page.heading, 0, Role::Header);
           const auto row = [&](SettingsRow r) { return s.rows[static_cast<std::size_t>(r)]; };
           const auto rowCode = [&](SettingsRow r) {
             return front(Kind::Row, static_cast<std::uint8_t>(r));
           };
           add(onOff("SOUND", settings_.sound), row(SettingsRow::Sound), rowCode(SettingsRow::Sound),
-              false);
+              Role::Button);
           add("VOLUME DOWN. VOLUME " + std::to_string(settings_.volume), s.volumeDown,
-              front(Kind::VolumeDown), false);
+              front(Kind::VolumeDown), Role::Button);
           add("VOLUME UP. VOLUME " + std::to_string(settings_.volume), s.volumeUp,
-              front(Kind::VolumeUp), false);
+              front(Kind::VolumeUp), Role::Button);
           add(onOff("MUSIC", settings_.music), row(SettingsRow::Music), rowCode(SettingsRow::Music),
-              false);
+              Role::Button);
           if (config.hapticsShown) {
             add(onOff("HAPTICS", settings_.haptics), row(SettingsRow::Haptics),
-                rowCode(SettingsRow::Haptics), false);
+                rowCode(SettingsRow::Haptics), Role::Button);
           }
           add(state.confirmReset ? "TAP AGAIN TO RESET HIGH SCORES" : "RESET HIGH SCORES",
-              row(SettingsRow::Reset), rowCode(SettingsRow::Reset), false);
-          add("BACK", s.page.back, front(Kind::Back), false);
+              row(SettingsRow::Reset), rowCode(SettingsRow::Reset), Role::Button);
+          add("BACK", s.page.back, front(Kind::Back), Role::Button);
           break;
         }
         case FrontPage::Guide:
           add(std::string(kGuideSpoken) + "TAP TO GO BACK.",
               {0.0F, 0.0F, layout_.canvasWidth, layout_.canvasHeight}, front(Kind::Anywhere),
-              false);
+              Role::Button);
           break;
       }
       break;
     case Screen::Guide:
       add(std::string(kGuideSpoken) + "TAP TO PLAY.",
           {0.0F, 0.0F, layout_.canvasWidth, layout_.canvasHeight},
-          accessCode(AccessGroup::Dismiss, 0, 0), false);
+          accessCode(AccessGroup::Dismiss, 0, 0), Role::Button);
       break;
     case Screen::Menu: {
       const auto menuCode = [](OverlayTarget::Kind kind) {
@@ -547,35 +619,64 @@ void App::refreshAccessibility() {
       };
       if (interrupted_) {
         add("PAUSED. TAP TO RESUME", {0.0F, 0.0F, layout_.canvasWidth, layout_.canvasHeight},
-            menuCode(OverlayTarget::Kind::Outside), false);
+            menuCode(OverlayTarget::Kind::Outside), Role::Button);
         break;
       }
       const screen::MenuLayout menu = screen::menuLayout(layout_);
-      add("PAUSED", {menu.box.x, menu.box.y, menu.box.w, menu.resume.y - menu.box.y}, 0, true);
-      add("RESUME", menu.resume, menuCode(OverlayTarget::Kind::MenuResume), false);
+      add("PAUSED", {menu.box.x, menu.box.y, menu.box.w, menu.resume.y - menu.box.y}, 0,
+          Role::Header);
+      add("RESUME", menu.resume, menuCode(OverlayTarget::Kind::MenuResume), Role::Button);
       add(confirmNewGame_ ? "TAP AGAIN TO CONFIRM NEW GAME" : "NEW GAME", menu.newGame,
-          menuCode(OverlayTarget::Kind::MenuNewGame), false);
+          menuCode(OverlayTarget::Kind::MenuNewGame), Role::Button);
       add(onOff("SOUND", !mixer_.muted()), menu.sound, menuCode(OverlayTarget::Kind::MenuSound),
-          false);
-      add(onOff("MUSIC", musicOn_), menu.music, menuCode(OverlayTarget::Kind::MenuMusic), false);
-      add("SCORES AND ABOUT", menu.about, menuCode(OverlayTarget::Kind::MenuAbout), false);
+          Role::Button);
+      add(onOff("MUSIC", musicOn_), menu.music, menuCode(OverlayTarget::Kind::MenuMusic),
+          Role::Button);
+      add("SCORES AND ABOUT", menu.about, menuCode(OverlayTarget::Kind::MenuAbout), Role::Button);
       add(confirmMainMenu_ ? "TAP AGAIN TO LEAVE THE GAME" : "MAIN MENU", menu.mainMenu,
-          menuCode(OverlayTarget::Kind::MenuMainMenu), false);
+          menuCode(OverlayTarget::Kind::MenuMainMenu), Role::Button);
       break;
     }
     case Screen::About: {
       const screen::AboutLayout about = screen::aboutLayout(layout_);
-      constexpr std::array<std::string_view, 3> kTabs{"SCORES", "ABOUT", "LICENCES"};
+      const auto aboutCode = [](OverlayTarget::Kind kind, std::uint8_t index = 0) {
+        return accessCode(AccessGroup::About, static_cast<std::uint8_t>(kind), index);
+      };
+      // The tabs, the one that is up selected; then what its page shows;
+      // then CLOSE.
+      constexpr std::array<std::string_view, kAboutTabCount> kTabs{"SCORES", "ABOUT",
+                                                                   "LICENCES"};
       for (std::size_t i = 0; i < kTabs.size(); ++i) {
         add(std::string(kTabs[i]), about.tabs[i],
-            accessCode(AccessGroup::About, static_cast<std::uint8_t>(OverlayTarget::Kind::AboutTab),
-                       static_cast<std::uint8_t>(i)),
-            false);
+            aboutCode(OverlayTarget::Kind::AboutTab, static_cast<std::uint8_t>(i)), Role::Button);
+        if (!items.empty() && items.back().label == kTabs[i]) {
+          items.back().selected = static_cast<std::size_t>(aboutPage_.page) == i;
+        }
       }
-      add("CLOSE", about.close,
-          accessCode(AccessGroup::About, static_cast<std::uint8_t>(OverlayTarget::Kind::AboutClose),
-                     0),
-          false);
+      for (AboutReadout& part : aboutReadout(highScores_, layout_, aboutPage_)) {
+        using Part = AboutReadout::Kind;
+        switch (part.kind) {
+          case Part::Title:
+            add(std::move(part.label), part.frame, 0, Role::Header);
+            break;
+          case Part::Text:
+            add(std::move(part.label), part.frame, 0, Role::Text);
+            break;
+          case Part::PrivacyButton:
+            add(std::move(part.label), part.frame, aboutCode(OverlayTarget::Kind::AboutPrivacy),
+                Role::Button);
+            break;
+          case Part::PreviousPage:
+            add(std::move(part.label), part.frame, aboutCode(OverlayTarget::Kind::AboutPrevious),
+                Role::Button, part.enabled);
+            break;
+          case Part::NextPage:
+            add(std::move(part.label), part.frame, aboutCode(OverlayTarget::Kind::AboutNext),
+                Role::Button, part.enabled);
+            break;
+        }
+      }
+      add("CLOSE", about.close, aboutCode(OverlayTarget::Kind::AboutClose), Role::Button);
       break;
     }
     case Screen::Play:
@@ -583,7 +684,7 @@ void App::refreshAccessibility() {
       // The game itself is played by touch, not read.
       break;
   }
-  ios::setAccessibilityElements(elements, accessibilityEvent_, screenChanged);
+  return items;
 }
 
 void App::handleAccessibilityAction(std::int32_t code) {
