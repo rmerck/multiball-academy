@@ -691,24 +691,58 @@ void TableRenderer::drawBackdrop(SDL_Renderer* r, const screen::Layout& layout) 
   if (r == nullptr || layout.idiom == screen::Idiom::Desktop) {
     return;
   }
-  const SDL_FRect whole{0.0F, 0.0F, layout.canvasWidth, layout.canvasHeight};
-  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-  SDL_SetRenderDrawColor(r, screen::kBackdropRgb[0], screen::kBackdropRgb[1],
-                         screen::kBackdropRgb[2], SDL_ALPHA_OPAQUE);
-  SDL_RenderFillRect(r, &whole);
-  if (SDL_Texture* const tile = textures_.backdrop.get()) {
-    // 512 pixels to 256 units, from the canvas origin.
-    SDL_RenderTextureTiled(r, tile, nullptr, 0.5F, &whole);
-    return;
-  }
-  // No art yet: a lattice of dim dots, left out where the composition will
-  // cover it anyway.
+  // What the composition covers: everything outside it is drawn here.
   const screen::Rect& field = layout.playfield;
   const bool stacked = layout.composition == screen::Composition::Stack;
   const float coveredLeft = field.x;
   const float coveredRight = stacked ? field.x + field.w : layout.hud.x + layout.hud.w;
   const float coveredTop = stacked ? layout.hud.y : field.y;
   const float coveredBottom = stacked ? layout.deck.y + layout.deck.h : field.y + field.h;
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+  SDL_SetRenderDrawColor(r, screen::kBackdropRgb[0], screen::kBackdropRgb[1],
+                         screen::kBackdropRgb[2], SDL_ALPHA_OPAQUE);
+  if (SDL_Texture* const tile = textures_.backdrop.get()) {
+    // The tile, 512 pixels to 256 units, laid from the canvas origin, in
+    // the bands round the composition only: under it the art would be drawn
+    // over at once. Each copy is cut to its band by hand, so a software
+    // renderer touches no pixel twice.
+    constexpr float kTile = 256.0F;
+    constexpr float kPixelsPerUnit = 2.0F;
+    const std::array<SDL_FRect, 4> bands{{
+        {0.0F, 0.0F, layout.canvasWidth, coveredTop},
+        {0.0F, coveredBottom, layout.canvasWidth, layout.canvasHeight - coveredBottom},
+        {0.0F, coveredTop, coveredLeft, coveredBottom - coveredTop},
+        {coveredRight, coveredTop, layout.canvasWidth - coveredRight, coveredBottom - coveredTop},
+    }};
+    for (const SDL_FRect& band : bands) {
+      if (!(band.w > 0.0F) || !(band.h > 0.0F)) {
+        continue;
+      }
+      SDL_RenderFillRect(r, &band);
+      const float bandRight = band.x + band.w;
+      const float bandBottom = band.y + band.h;
+      for (float y = std::floor(band.y / kTile) * kTile; y < bandBottom; y += kTile) {
+        for (float x = std::floor(band.x / kTile) * kTile; x < bandRight; x += kTile) {
+          const float left = std::max(x, band.x);
+          const float top = std::max(y, band.y);
+          const float right = std::min(x + kTile, bandRight);
+          const float bottom = std::min(y + kTile, bandBottom);
+          if (right <= left || bottom <= top) {
+            continue;
+          }
+          const SDL_FRect src{(left - x) * kPixelsPerUnit, (top - y) * kPixelsPerUnit,
+                              (right - left) * kPixelsPerUnit, (bottom - top) * kPixelsPerUnit};
+          const SDL_FRect dst{left, top, right - left, bottom - top};
+          SDL_RenderTexture(r, tile, &src, &dst);
+        }
+      }
+    }
+    return;
+  }
+  // No art: the flat colour under a lattice of dim dots, left out where the
+  // composition will cover it anyway.
+  const SDL_FRect whole{0.0F, 0.0F, layout.canvasWidth, layout.canvasHeight};
+  SDL_RenderFillRect(r, &whole);
   constexpr float kPitch = 32.0F;
   constexpr float kDot = 4.0F;
   SDL_SetRenderDrawColor(r, 38, 16, 78, SDL_ALPHA_OPAQUE);
