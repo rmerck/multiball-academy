@@ -1320,6 +1320,90 @@ double GamesResult::share(Feature feature) const {
                                static_cast<double>(totalScore);
 }
 
+double EarlyDrainResult::percent() const {
+  return inPlay == 0 ? 0.0 : 100.0 * lost / static_cast<double>(inPlay);
+}
+
+double EarlyDrainResult::standardError() const {
+  if (inPlay == 0) {
+    return 0.0;
+  }
+  const double p = static_cast<double>(lost) / static_cast<double>(inPlay);
+  return 100.0 * std::sqrt(p * (1.0 - p) / static_cast<double>(inPlay));
+}
+
+EarlyDrainResult earlyDrains(const EarlyDrainOptions& options) {
+  EarlyDrainResult result;
+  const auto limit = static_cast<std::uint64_t>(options.limitSeconds * kStepsPerSecond + 0.5);
+  for (int n = 0; n < options.games; ++n) {
+    std::uint64_t seed = options.seed;
+    mix(seed, static_cast<std::uint64_t>(n));
+    TableHarness harness;
+    Game& game = harness.game();
+    const Rules& rules = game.rules();
+    const std::unique_ptr<Bot> bot = makeBot(BotKind::Reflex, seed, options.reflexError);
+    Rng rng(seed ^ 0x5EEDULL);
+    constexpr std::uint64_t kNever = ~std::uint64_t{0};
+    std::uint64_t start = kNever;
+    int pull = 0;
+    int waited = 0;
+    Touch way = Touch::None;
+    bool lost = false;
+    const std::uint64_t kickbacksBefore = harness.kickbacks;
+    // At most a minute to get the ball into play, then the limit.
+    for (int i = 0; i < kStepsPerSecond * 60; ++i) {
+      // A ball waiting on the plunger (the first, or one the eject save gave
+      // back with no other ball live) is plunged after a moment; a weak
+      // plunge that comes back is plunged again.
+      waited = game.ballAwaitingLaunch() ? waited + 1 : 0;
+      if (pull == 0 && waited > 20) {
+        pull = rng.range(60, 125);
+      }
+      harness.plunger = pull > 1;
+      pull = pull > 0 ? pull - 1 : 0;
+      if (start != kNever) {
+        harness.act(*bot);
+      } else {
+        harness.left = false;
+        harness.right = false;
+      }
+      const Touch drain = harness.advance();
+      ++result.steps;
+      if (drain != Touch::None) {
+        way = drain;
+      }
+      if (start == kNever && game.ballInPlay(0)) {
+        start = harness.step();
+      }
+      if (start == kNever) {
+        continue;
+      }
+      if (rules.ball() != 1 || rules.gameOver()) {
+        lost = harness.step() - start <= limit;
+        break;
+      }
+      if (harness.step() - start > limit) {
+        break;
+      }
+    }
+    if (start == kNever) {
+      continue;
+    }
+    ++result.inPlay;
+    result.kickbacks += static_cast<int>(harness.kickbacks - kickbacksBefore);
+    result.ejectSaves += static_cast<int>(harness.ejectSaves);
+    if (lost) {
+      ++result.lost;
+      const int index = way == Touch::OutlaneLeft ? 1 : (way == Touch::OutlaneRight ? 2 : 0);
+      ++result.way[static_cast<std::size_t>(index)];
+    }
+    mix(result.fingerprint, lost ? harness.step() - start : 0U);
+    mix(result.fingerprint, static_cast<std::uint64_t>(way));
+  }
+  result.games = options.games;
+  return result;
+}
+
 GamesResult playGames(const GamesOptions& options) {
   GamesResult result;
   TableHarness harness;

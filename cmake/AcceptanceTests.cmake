@@ -2,8 +2,8 @@
 # section of CMakeLists.txt.
 #
 # The quick part runs inside core_tests with every build. The statistical
-# part is its own program, pinball_acceptance: it plays about half a billion
-# simulation steps (about three quarters of an hour on two cores), so it is
+# part is its own program, pinball_acceptance: it plays about 0.65 billion
+# simulation steps (about an hour on two cores), so it is
 # built with everything else, to keep it compiling, but its tests are
 # registered only when asked for:
 #
@@ -48,7 +48,8 @@ if(PINBALL_ACCEPTANCE_TESTS)
   # with a colon runs one part of it: one timing error, one bot.
   foreach(section IN ITEMS launch shots lanes exits rest wedge p1
                            p2:3 p2:4 p2:5 p2:6 p2:8 p2saver:3 p2saver:5 p2saver:8
-                           kickback stress:p1 stress:p2 rules:3 rules:5 rules:8)
+                           kickback stress:p1 stress:p2 early:3 early:4 early:5 early:6
+                           early:8 rules:3 rules:5 rules:8)
     string(REPLACE ":" "_" section_id "${section}")
     add_test(NAME acceptance_${section_id} COMMAND pinball_acceptance ${section})
     set_tests_properties(acceptance_${section_id} PROPERTIES LABELS acceptance TIMEOUT 14400)

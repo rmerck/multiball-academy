@@ -106,6 +106,16 @@ constexpr double kRecordedRuleBallMedian = 122.0;
 constexpr double kRecordedRuleBallNinetieth = 380.8;
 constexpr double kPinRulesFactor = 1.10;
 
+// B2r: B2a under the table's own rules (the kickback lit, the short save
+// after an eject; no saver), the first ball of 30,000 fresh games at each
+// timing error (E = 3, 4, 5, 6, 8). Wanted: the upper end of the 95 percent
+// interval at most 2 percent. Recorded 2.01, 2.01, 1.96, 2.01 and 1.68
+// (standard error 0.08): met at E = 8 only. About two thirds of the lost
+// balls leave through the middle; the rest by the right outlane, none by
+// the left, which the kickback guards. The pin is two standard errors over.
+constexpr std::array<double, 5> kRecordedEarly{2.01, 2.01, 1.96, 2.01, 1.68};
+constexpr double kPinEarlyMargin = 0.16;
+
 enum class Kind { Hard, KnownMiss, Info, Deferred };
 
 PINBALL_PRINTF_LIKE(1, 2)
@@ -819,6 +829,39 @@ void sectionStress(bool quick, std::string_view which) {
   }
 }
 
+// B2a with the table's own rules (owner update 14): the share of balls
+// that end within 5 s, on the first ball of 30,000 fresh games at each
+// timing error. Met when the upper end of its 95 percent interval is at
+// most 2 percent.
+void sectionEarly(bool quick, int onlyError) {
+  for (const int error : kErrors) {
+    if (onlyError != 0 && onlyError != error) {
+      continue;
+    }
+    EarlyDrainOptions options;
+    options.reflexError = error;
+    options.games = quick ? 300 : 30000;
+    options.seed = 900U + static_cast<std::uint64_t>(error);
+    const EarlyDrainResult result = earlyDrains(options);
+    const double share = result.percent();
+    const double upper = share + 1.96 * result.standardError();
+    std::printf("# early E=%d: %d games, %d in play, lost within 5 s %d (centre %d, left %d, "
+                "right %d); kickbacks %d, eject saves %d; %llu steps, fingerprint %016llx\n",
+                error, result.games, result.inPlay, result.lost, result.way[0], result.way[1],
+                result.way[2], result.kickbacks, result.ejectSaves,
+                static_cast<unsigned long long>(result.steps),
+                static_cast<unsigned long long>(result.fingerprint));
+    const std::size_t level =
+        static_cast<std::size_t>(std::ranges::find(kErrors, error) - kErrors.begin());
+    const double pin = kRecordedEarly[std::min(level, kRecordedEarly.size() - 1)] + kPinEarlyMargin;
+    pinnedRow(upper <= 2.0, share <= pin, "B2r",
+              text("P2 E=%d, rules: first balls ending within 5 s", error),
+              text("upper 95%% at most 2.00; pinned %.2f", pin),
+              text("%.2f%% (s.e. %.2f, upper %.2f) of %d", share, result.standardError(), upper,
+                   result.inPlay));
+  }
+}
+
 // C2 to C6 and the length of a game: whole games under the table's own
 // rules. E = 5 is the level the criteria are judged at; the others are for
 // the record.
@@ -988,7 +1031,7 @@ int main(int argc, char** argv) {
   }
   if (sections.empty()) {
     sections = {"launch", "shots", "lanes",   "exits",    "rest",   "wedge",
-                "p1",     "p2",    "p2saver", "kickback", "stress", "rules:3",
+                "p1",     "p2",    "p2saver", "kickback", "stress", "early", "rules:3",
                 "rules:5", "rules:8"};
   }
   std::printf("# Acceptance suite, TABLE.md section 5%s\n",
@@ -1024,6 +1067,8 @@ int main(int argc, char** argv) {
       sectionKickback(quick);
     } else if (name == "stress") {
       sectionStress(quick, option);
+    } else if (name == "early") {
+      sectionEarly(quick, number);
     } else if (name == "rules") {
       sectionRules(quick, number);
     } else {

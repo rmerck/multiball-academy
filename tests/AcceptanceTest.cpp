@@ -208,6 +208,18 @@ void testAcceptance() {
     CHECK(!harness.game().doorBankUp());
   }
 
+  {  // B2a under the rules: every fresh game's first ball is played into
+     // play and judged, and the same seed gives the same games.
+    EarlyDrainOptions options;
+    options.games = 12;
+    const EarlyDrainResult first = earlyDrains(options);
+    const EarlyDrainResult again = earlyDrains(options);
+    CHECK(first.games == 12 && first.inPlay == 12);
+    CHECK(first.lost == first.way[0] + first.way[1] + first.way[2]);
+    CHECK(first.fingerprint == again.fingerprint && first.lost == again.lost);
+    CHECK(first.percent() >= 0.0 && first.percent() <= 100.0);
+  }
+
   {  // B5, eject safety: a ball let go at each exit (the Briefing room, the
      // Hangar, both rails), a little off the exact release each time, meets
      // a flipper or an inlane first. Never a slingshot, an outlane or the
