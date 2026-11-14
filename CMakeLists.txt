@@ -556,6 +556,7 @@ if(BUILD_TESTING)
     tests/PhysicsTest.cpp
     tests/PlungerTest.cpp
     tests/PngHeaderTest.cpp
+    tests/RuleFuzzTest.cpp
     tests/RulesTest.cpp
     tests/ScreenLayoutTest.cpp
     tests/Sha256Test.cpp

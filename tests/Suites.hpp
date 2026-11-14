@@ -21,6 +21,7 @@ void testNudge();
 void testPhysics();
 void testPlunger();
 void testPngHeader();
+void testRuleFuzz();
 void testRules();
 void testScreenLayout();
 void testSha256();

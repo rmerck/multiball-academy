@@ -145,7 +145,12 @@ Touch TableHarness::advance() {
   input.rightFlipper = right;
   input.plunger = plunger;
   // A finished game is started again at once: the bench never idles.
-  input.newGame = game_.gameOver();
+  input.newGame = game_.gameOver() || restart;
+  input.nudgeLeft = nudge == 1;
+  input.nudgeRight = nudge == 2;
+  input.nudgeUp = nudge == 3;
+  nudge = 0;
+  restart = false;
   game_.step(input);
   ++step_;
 

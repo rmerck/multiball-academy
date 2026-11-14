@@ -63,6 +63,11 @@ class TableHarness {
   bool left = false;
   bool right = false;
   bool plunger = false;
+  // A shove of the table on the next advance(): 0 none, 1 from the left,
+  // 2 from the right, 3 from below. Cleared when used.
+  int nudge = 0;
+  // Starts a new game on the next advance(), whatever state this one is in.
+  bool restart = false;
   // Lets a bot set the flippers for the next step.
   void act(Bot& bot) {
     const Flippers flippers = bot.act(sense());

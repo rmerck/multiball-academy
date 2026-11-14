@@ -26,6 +26,7 @@ void runSuites() {
   testPhysics();
   testPlunger();
   testPngHeader();
+  testRuleFuzz();
   testRules();
   testScreenLayout();
   testSha256();
