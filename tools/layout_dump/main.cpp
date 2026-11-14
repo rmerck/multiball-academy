@@ -1,5 +1,5 @@
 // Development tool: prints the table geometry as JSON on standard output.
-// The GIMP art scripts read this, so the art is drawn from exactly the same
+// The art scripts (tools/art) read this, so the art is drawn from exactly the same
 // geometry the physics uses. Under "screen" it also prints where everything
 // goes on the screen: the game's name for the title art, the windows of the
 // strip and the rectangles of the deck, the panel's title and control

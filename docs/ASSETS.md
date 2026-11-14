@@ -1,60 +1,52 @@
 # Art and assets
 
-The table's layout is new and its art is still to be drawn. Until it is, the game draws the playfield itself from `src/core/TableLayout.hpp`, in plain colours: the field inside the shell, every wall and guide as the physics has it (teal), the dead posts and slingshot vanes (grey), the slingshots (pink), the lane switches, the boxes of the Briefing room, the Hangar and the two ramp mouths with their rails and exits, the spinner line, the kickback zone, the lock bays, and every lamp at its place, unlit. Bumpers, targets, bay doors, flippers, plunger and balls are the sprites, as before. That drawing is used whenever the asset manifest has no `table/background.png`, so the picture always matches the table being played; putting a `table/background.png` into `assets` switches to the art (`TableRenderer`).
+All art is original and drawn by Python scripts in `tools/art` (skia-python, numpy, Pillow) from the same geometry the physics uses. No image editor, no generated painting and no pixels from outside the scripts are involved. The look is "rendered 3D" in the manner of early-1990s pre-rendered graphics: spot-lit deck plates, chrome, glossy plastic, cast shadows, an ordered dither, with pixel lettering in the display windows.
 
-The panel and the sprites still wear the old 1980s neon look and are to be redrawn with the table. The art pipeline is being replaced with them: the script that drew the old table's playfield is gone (it could not run against the new layout), no script draws the new one yet, and the scripts below, which still make the ball, the sprites, the panel and the icon, stay only until the new art replaces what they make.
+## What draws what
 
-All art is original. It is generated in GIMP 3 by the scripts in `tools/gimp`, with one exception described below. The art is drawn from the same geometry the physics uses: `pinball_layout` prints `src/core/TableLayout.hpp` and `src/core/PanelLayout.hpp` as JSON and the scripts read it.
+`pinball_layout` prints `src/core/TableLayout.hpp`, `src/core/PanelLayout.hpp` and `src/core/ScreenLayout.hpp` as JSON; every script reads that file (`build/layout.json`, or the path in `PINBALL_LAYOUT`), so a wall, lamp, window or button in the art is where the code has it.
 
-What `pinball_layout` prints for the table: `width`, `height`, `ballRadius`, `fieldCenterX`, `lane`, `plunger`, `flipper`, `arch` (centre and radii of the ellipse the arch follows), `ramp` (least speed, ride time), `spinner`, `kickback`, `lampSizes`; the chains `shell` and `laneIsland` (closed loops of points) and `innerArch`, `slingVaneLeft`, `slingVaneRight` (open and one-sided: the first and last point of each are ghosts, not wall); `walls` and `deadPosts` (capsules `a`, `b`, `r`), `slingshots`, `flippers`, `bumpers`, `targets` (with `id`), `bayDoors`, `lockBays`, `rollovers` (centre, radius, the half size of the switch strip, group `rollCall`, `inlane` or `outlane`), `holes` (centre, half size of the box, type `scoop`, `hangar`, `rampLeft` or `rampRight`, exit and exit velocity), `sensors` (the lines `a` to `b` of the two circuit mouths, the top of the arch and the spinner), `kickbackPath` (the way a ball taken by the kickback is carried), `runwayRail` and `skywayRail`, and `lamps` (id in `LampId` order, kind `arrow`, `course` or `status`, centre). The old keys `fuelLights`, `hole.radius`, `rampExit`, `rampMouth`, `laneGate`, `medalIsland` and the `group` of a bumper and `bank` of a target are gone. `tools/gimp/make_table.py` still draws the old table from the old keys and does not run against this output; it is to be rewritten with the new art. The other scripts read only the panel and sprite parts, which are unchanged. To regenerate those, build the project, then in GIMP's Python console run:
-
-```python
-REPO = "/path/to/multiball-academy"
-LAYOUT = REPO + "/build/layout.json"   # from: build/pinball_layout > build/layout.json
-for script in ("make_ball", "make_sprites", "make_panel"):
-    exec(open(REPO + "/tools/gimp/" + script + ".py").read())
-```
-
-`tools/gimp/common.py` holds the shared helpers. Each script refuses to run without the layout file, sets every GIMP context setting it depends on, and puts your context back and deletes its working image when it ends, whether or not it succeeded. The export fails loudly if GIMP lacks any of the options that switch metadata off.
-
-| Asset | Script | Notes |
+| Files | Script | Notes |
 |---|---|---|
-| `table/background.png` | (to be drawn) | 1536x1920 (2x). Not in the tree: the game draws the table from its layout until the art for the new table exists |
-| `ui/panel.png` | `make_panel.py` | 1024x1920 (2x). Information panel beside the playfield: backglass illustration behind the title, neon-framed display windows from `src/core/PanelLayout.hpp`, grid and accents |
-| `sprites/ball.png` | `make_ball.py` | 4x. Chrome ball with a bright rim so it stays visible on any part of the art |
-| `sprites/flipper.png` | `make_sprites.py` | Rotated about its pivot; mirrored for the right flipper. A dark halo under a cyan glow lifts it off the grid |
-| `sprites/bumper.png` | `make_sprites.py` | White starburst on a dark skirt, tinted |
-| `sprites/glow.png` | `make_sprites.py` | Drawn additively and tinted for every light; also the ball's shadow and halo |
-| `sprites/bar.png` | `make_sprites.py` | Stand-up target and bay door face, tinted; its bright outline keeps an unlit one visible |
-| `sprites/plunger.png` | `make_sprites.py` | |
-| `packaging/macos/icon_1024.png` | `make_icon.py` | 1024x1024. The application icon, not a game asset: it is outside `assets` and the manifest. Needs no layout file |
+| `table/background.png` | `make_table.py` | 1536 x 1920, 2 pixels per unit, opaque. Every wall, post, guide and chain of the layout; the unlit lamp inserts baked in at the positions and sizes the renderer uses. Lit lamps are drawn over it by the game |
+| `sprites/*.png` | `make_sprites.py` | 4 pixels per unit, straight alpha, light from the upper left. `ball.png` is 32 units for a 24-unit ball (drawn at radius x 4/3, last, with its own rim and no halo); `bumper.png` is tinted under the untinted `bumper_cap.png`; `insert_arrow.png` and `insert_round.png` are tinted for lit lamps; `door.png`, `spinner_0.png` (edge-on) and `spinner_1.png` (flat), `kickback.png`, `bar.png` (turbo targets), `flipper.png`, `plunger.png`, `glow.png` (additive light, also the balls' shadow); `button.png` (tinted) and `button_gloss.png` (its lights, untinted), both nine-part with 32-unit corners |
+| `ui/title.png`, `panel.png`, `strip.png`, `deck.png`, `backdrop.png`, `dialog.png` | `make_ui.py` | 2 pixels per unit. The title is the only art that holds the game's name (from `layout.json`). The panel's and the strip's display windows are drawn where `strip::` and `panel::` have them; `tools/art/hud_layout.py` holds the windows proposed for the HUD rework. The backdrop is a seamless 256-unit tile; the dialog card is nine-part with 48-unit corners |
+| `packaging/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png`, `packaging/macos/icon_1024.png` | `make_icons.py` | The application icons, outside `assets` and the manifest. iOS: opaque RGB, full bleed. macOS: an 824-pixel rounded square on transparency; `tools/make_icns.sh` (macOS only) makes `packaging/macos/AppIcon.icns` from it |
+| `src/generated/ArtPalette.hpp` | `gen_header.py` | The colours and constants the renderer shares with the art: lamp colours and lit levels, arrow aims, insert sizes, tints, glow ceiling, ball sprite size and shadow, the backdrop colour (`screen::kBackdropRgb`, and the iOS launch colour) |
 
-## The application icon
+`tools/art/palette.py` is the one source of colours. The renderer asserts at compile time that `ArtPalette.hpp` describes this table (one colour per lamp, seven arrow aims) and that its backdrop equals `screen::kBackdropRgb`.
 
-The macOS icon is a chrome pinball over the slatted sunset and the neon grid floor, framed by a neon tube that runs from pink to cyan, on the standard macOS rounded square (824 pixels centred in 1024, transparent outside, with a soft drop shadow). It has no text. `make_icon.py` draws it with the same helpers and export settings as the assets; it reads no layout file, so it can be run on its own. `tools/make_icns.sh` then scales the PNG with `sips` to every standard size (16 to 512 points, at 1x and 2x) and packs them with `iconutil` into `packaging/macos/AppIcon.icns`. Both files are committed, so a build needs neither GIMP nor the script:
+The renderer (`src/platform/TableRenderer.cpp`) draws over the background, in order: the lit lamps and their glows, the spinner (sprite by phase) and the kickback, the turbo targets and the standing bay doors, the bumpers, slingshot flashes, the plunger, the flippers, and last the balls with their shadows. Which lamps are lit and which doors are marked comes from one adapter, `src/platform/TableLights.hpp`. Every glow is held to `art::kMaxGlowStrength` so that nothing outshines the ball.
 
-```python
-REPO = "/path/to/space-cadet-pinball"
-exec(open(REPO + "/tools/gimp/make_icon.py").read())
-```
+When the build has no `table/background.png` the game draws the table from its layout in plain colours instead (walls, guides, lamps, switches, holes, rails), into a texture made once, with the lit lamps, dropped doors and the spinner's blade drawn over it; the sprites are the same. Pause, About and the initials prompt use the dialog card, the title and the button art where the build has them, and plain frames, lettering and buttons where it has not.
+
+## How to regenerate
 
 ```sh
-tools/make_icns.sh
+python3 -m venv build/art-venv
+build/art-venv/bin/python -m pip install --require-hashes -r tools/art/requirements.txt
+cmake --build build --target pinball_layout && build/pinball_layout > build/layout.json
+build/art-venv/bin/python tools/art/make_all.py      # into the tree; or make_all.py <scratch_root>
+python3 tools/check_assets.py assets
+python3 tools/art/check_sums.py                      # or check_sums.py <scratch_root>
 ```
 
-The playfield (for now), bumper and slingshot flashes, all text and the About and initials dialogs, with their frames, zigzags and the small sunset, are drawn by the game (`src/platform/TableRenderer.cpp`, `Hud.cpp`, `Text.cpp`). Their colours match the rims and inserts in the art; if you change a palette in one place, change it in the other.
+`make_all.py` writes every asset, both icons and `ArtPalette.hpp`. Each generator can be run alone with an output path; `make_table.py` bakes the inserts from `assets/sprites`, so `make_sprites.py` runs first. A lamp that moves in `TableLayout.hpp` needs the table drawn again; so does any change to a window of the strip or the panel.
 
-## The Canva source
-
-The sunset illustration behind the title on the panel was generated with Canva's AI design tools and exported as a PNG. It is kept at `tools/gimp/sources/backglass.png` (1920x900: the export with the bottom rows cropped away, re-exported from GIMP with all metadata removed). `make_panel.py` scales it to the panel width, raises its chroma, fades it into the panel below the title and draws everything else over it. That file cannot be regenerated by a script, so `ui/panel.png` is reproducible only given that source. No other asset contains pixels from outside the scripts. The source must stay free of metadata too: `python3 tools/check_assets.py tools/gimp/sources`.
+Ball visibility is checked by `tools/art/visibility_full.py` (it writes `build/art-review/visibility_full.md` and `.png`): every lamp lit, every bumper flashing, the doors up and marked, the ball at every reachable place on a 9-unit grid, in both lock bays, at both rail landings and along the rails, at five device scales from a small iPhone to a 13-inch iPad. Rule: the ball's weakest edge at least 3:1 against what is round it everywhere.
 
 ## Reproducibility
 
-Regeneration is reproducible: two-colour gradients are drawn without dithering (GIMP's dither is randomly seeded), noise, stars and skyline use fixed seeds, and exports carry no timestamps. Running the scripts twice gives byte-identical files, so the hashes in the asset manifest only change when the art does.
+The scripts use fixed seeds and write PNGs with IHDR, IDAT and IEND chunks only (no timestamps, text or profiles). `tools/art/requirements.txt` pins skia-python, pybind11, numpy and Pillow by version and by the SHA-256 of each wheel (Linux x86_64 and macOS arm64, CPython 3.13 and 3.14); `--require-hashes` makes pip refuse anything else.
 
-Two GIMP behaviours the helpers in `tools/gimp/common.py` work around: a selection fill ignores the alpha of the foreground colour (`fill_selection` applies it as the fill opacity), and a two-colour gradient ignores alpha altogether (`alpha_gradient` fades to transparent instead).
+The committed files are the single source of the art; regenerating is a check, not a build step, and nothing in a build runs Python to draw. `tools/art/SHA256SUMS` records their hashes, and ctest `art_sums` holds the committed files to it.
 
-To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png` (the tool is at the top of the build directory on every system) plays 1200 steps (ten seconds) and writes the frame to the current directory, as a new file with ordinary permissions (0644 less the umask, unlike the owner-only score file); a link with that name is replaced, not followed. A third argument, `about` or `initials`, draws that screen instead.
+- Linux x86_64: regeneration is byte-identical to the committed files, with CPython 3.13 and 3.14, from fresh virtual environments installed with `--require-hashes`.
+- macOS arm64 (macOS 27.2, CPython 3.14, same pinned wheels): regeneration is deterministic (two runs give the same bytes) but not byte-identical to Linux. Every file skia rasterises differs in anti-aliased edges and dither thresholds (in the table background at most 14 levels in 7.6 percent of pixels; in sprites mostly in the colour of nearly transparent edge pixels); `glow.png` (numpy only) and `ArtPalette.hpp` are identical. So the Linux x86_64 output is the reference: on a Mac, check a regeneration for stability and by eye, not against `SHA256SUMS`.
+
+ctest `art_palette` checks `src/generated/ArtPalette.hpp` and the iOS launch colour against `palette.py`; it needs only Python.
+
+To look at the result without opening a window: `cd build && ./pinball_snapshot 1200 frame.png [state] [--layout preset]` plays 1200 steps and writes the frame to the current directory. States include `pause`, `about`, `initials`, `locked` and `bankdown`; presets include `phone`, `phone-pro`, `pad-portrait` and `pad-landscape`. `pinball_snapshot 1200 x.png check --layout <preset>` (ctest `layout_check_*`) fails unless every control, window and dialog is really drawn: lettering in the display windows and the initials is looked for in the colours it is drawn in, captions in either caption colour (`kCaptionPlain`, `kCaptionOnArt`).
 
 ## Integrity
 

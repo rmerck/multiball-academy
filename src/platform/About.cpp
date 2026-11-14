@@ -9,6 +9,7 @@
 #include "core/Courses.hpp"
 #include "core/OverlayLayout.hpp"
 #include "core/Version.hpp"
+#include "generated/ArtPalette.hpp"
 #include "platform/Notices.hpp"
 #include "platform/Text.hpp"
 #include "platform/TouchOverlay.hpp"
@@ -17,13 +18,17 @@ namespace pinball {
 
 namespace {
 
-// Neon palette shared with the panel: laser yellow, cyan, hot pink.
-constexpr SDL_Color kAmber{255, 225, 70, 255};
-constexpr SDL_Color kCyan{70, 235, 255, 255};
-constexpr SDL_Color kWhite{248, 240, 255, 255};
-constexpr SDL_Color kDim{176, 150, 226, 255};
-constexpr SDL_Color kPink{255, 60, 170, 255};
-constexpr SDL_Color kViolet{150, 90, 255, 255};
+// The art's palette (tools/art/palette.py). Body text stays the light
+// kCaptionPlain, which the layout check looks for.
+constexpr SDL_Color sdl(art::Rgb c) noexcept { return {c.r, c.g, c.b, 255}; }
+constexpr SDL_Color kAmber = sdl(art::kYellow);
+constexpr SDL_Color kCyan = sdl(art::kAqua);
+constexpr SDL_Color kWhite = kCaptionPlain;
+constexpr SDL_Color kDim = sdl(art::kOrchid);
+constexpr SDL_Color kPink = sdl(art::kPink);
+constexpr SDL_Color kViolet = sdl(art::kViolet);
+constexpr SDL_Color kTeal = sdl(art::kTeal);
+constexpr SDL_Color kGreyed{70, 56, 104, 255};
 
 constexpr std::string_view kCredit =
     "AN ORIGINAL GAME BY RMERCK. ALL ART AND SOUND ARE ORIGINAL.";
@@ -140,24 +145,26 @@ Paging licencePaging(const screen::Layout& layout) noexcept {
 
 // The title, the version, and a rule under them. Returns the y below the
 // rule.
-float drawHeading(SDL_Renderer* r, const Body& body, float middle, float y, float width,
-                  float largest) {
-  const float size = fittedSize(kGameTitle, width, largest);
-  drawNeonText(r, kGameTitle, middle, y, size, kAmber, kPink, {120, 30, 200, 255},
-               TextAlign::Center);
+float drawHeading(SDL_Renderer* r, const OverlayArt& art, const Body& body, float middle,
+                  float y, float width, float largest) {
+  // The title lockup in the heading's 64 units, or the name in lettering.
+  if (!drawTitleArt(r, art.title, {middle - width * 0.5F, y - 10.0F, width, 60.0F})) {
+    const float size = fittedSize(kGameTitle, width, largest);
+    drawNeonText(r, kGameTitle, middle, y, size, kAmber, kPink, kViolet, TextAlign::Center);
+  }
   y += 64.0F;
   std::array<char, 48> version{};
   drawText(r, formatText(version.data(), version.size(), "VERSION %s", kGameVersion), middle, y,
            body.size, kDim, TextAlign::Center);
   y += 7.0F * body.size + 10.0F;
-  drawNeonRule(r, middle, y, 300.0F);
+  drawDialogRule(r, art, middle, y, 300.0F);
   return y + 30.0F;
 }
 
 // The high score table from y down, centred on middle.
 void drawScoreTable(SDL_Renderer* r, const Body& body, const HighScores& scores, float middle,
                     float y, bool narrow) {
-  drawNeonText(r, "HIGH SCORES", middle, y, 3.0F, kWhite, kCyan, {200, 40, 150, 255},
+  drawNeonText(r, "HIGH SCORES", middle, y, 3.0F, kWhite, kCyan, kViolet,
                TextAlign::Center);
   y += 38.0F;
   if (scores.size() == 0) {
@@ -191,7 +198,7 @@ void drawFacts(SDL_Renderer* r, const Body& body, float middle, float y, float w
   drawText(r, formatText(build.data(), build.size(), "BUILD %s", kBuildNumber), middle, y,
            body.size, kDim, TextAlign::Center);
   y += 7.0F * body.size + 20.0F;
-  drawNeonText(r, "YOUR PRIVACY", middle, y, 3.0F, kWhite, kCyan, {200, 40, 150, 255},
+  drawNeonText(r, "YOUR PRIVACY", middle, y, 3.0F, kWhite, kCyan, kViolet,
                TextAlign::Center);
   y += 38.0F;
   y = drawParagraph(r, body, kPrivacy, middle, y, width, kWhite) + 14.0F;
@@ -226,21 +233,23 @@ void drawLicences(SDL_Renderer* r, const screen::Layout& layout, std::size_t pag
 // The dialog as the desktop has always had it: ornaments, the heading, the
 // page, and along the foot the credit and the keys.
 void drawDesktop(SDL_Renderer* r, const HighScores& scores, const screen::Layout& layout,
-                 const AboutState& state) {
+                 const AboutState& state, const OverlayArt& art) {
   const Body body(layout);
   const screen::Rect dialog = screen::aboutLayout(layout).box;
   const SDL_FRect box{dialog.x, dialog.y, dialog.w, dialog.h};
-  drawNeonFrame(r, box);
+  drawDialogCard(r, art, box);
 
   const float middle = box.x + box.w * 0.5F;
-  // Ornaments in the table's style: zigzags down the margins and, on the
-  // first page, a small sunset over a grid between the scores and the foot.
-  drawNeonZigzag(r, box.x + 46.0F, box.y + 120.0F, box.y + box.h - 120.0F, kPink);
-  drawNeonZigzag(r, box.x + box.w - 46.0F, box.y + 120.0F, box.y + box.h - 120.0F, kCyan);
-  if (state.page == AboutPage::Scores) {
-    drawNeonSunset(r, {middle - 300.0F, box.y + box.h - 258.0F, 600.0F, 118.0F});
+  if (art.dialog == nullptr) {
+    // Without the card of art, ornaments drawn in code: zigzags down the
+    // margins and, on the first page, a small sunset over a grid.
+    drawNeonZigzag(r, box.x + 46.0F, box.y + 120.0F, box.y + box.h - 120.0F, kPink);
+    drawNeonZigzag(r, box.x + box.w - 46.0F, box.y + 120.0F, box.y + box.h - 120.0F, kCyan);
+    if (state.page == AboutPage::Scores) {
+      drawNeonSunset(r, {middle - 300.0F, box.y + box.h - 258.0F, 600.0F, 118.0F});
+    }
   }
-  const float y = drawHeading(r, body, middle, box.y + 36.0F, box.w - 120.0F, 6.0F);
+  const float y = drawHeading(r, art, body, middle, box.y + 36.0F, box.w - 120.0F, 6.0F);
 
   const std::size_t licencePages = licencePageCount(layout);
   switch (state.page) {
@@ -255,7 +264,7 @@ void drawDesktop(SDL_Renderer* r, const HighScores& scores, const screen::Layout
       break;
   }
 
-  drawNeonRule(r, middle, box.y + box.h - 124.0F, 300.0F);
+  drawDialogRule(r, art, middle, box.y + box.h - 124.0F, 300.0F);
   drawText(r, kCredit, middle, box.y + box.h - 100.0F, 2.0F, kDim, TextAlign::Center);
   std::array<char, 64> pages{};
   drawText(r,
@@ -268,45 +277,49 @@ void drawDesktop(SDL_Renderer* r, const HighScores& scores, const screen::Layout
 
 // A page-turning button; greyed, and without its shadow, when it leads
 // nowhere.
-void drawTurnButton(SDL_Renderer* r, const screen::Rect& face, std::string_view arrow,
-                    bool enabled) {
+void drawTurnButton(SDL_Renderer* r, const ButtonArt& art, const screen::Rect& face,
+                    std::string_view arrow, bool enabled) {
   if (enabled) {
-    drawCaptionButton(r, face, arrow, kViolet, false, 5.0F);
+    drawCaptionButton(r, face, arrow, kButtonOrchid, false, 5.0F, 3.0F, art);
+  } else if (art.face != nullptr) {
+    drawCaptionButton(r, face, arrow, kButtonOff, false, 5.0F, 3.0F, art);
   } else {
-    drawCaptionButton(r, face, arrow, SDL_Color{70, 56, 104, 255}, true, 5.0F);
+    drawCaptionButton(r, face, arrow, kGreyed, true, 5.0F, 3.0F, art);
   }
 }
 
 // The dialog with the controls a touch screen needs.
 void drawTouch(SDL_Renderer* r, const HighScores& scores, const screen::Layout& layout,
-               const AboutState& state) {
+               const AboutState& state, const OverlayArt& art) {
   const Body text(layout);
   const screen::AboutLayout about = screen::aboutLayout(layout);
-  drawNeonFrame(r, {about.box.x, about.box.y, about.box.w, about.box.h});
+  drawDialogCard(r, art, {about.box.x, about.box.y, about.box.w, about.box.h});
 
   // The tabs: the page that is up looks held down.
   constexpr std::array<std::string_view, 3> kTabs{"SCORES", "ABOUT", "LICENCES"};
   for (std::size_t i = 0; i < kTabs.size(); ++i) {
     const bool current = static_cast<std::size_t>(state.page) == i;
-    drawCaptionButton(r, about.tabs[i], kTabs[i], current ? kAmber : kViolet, current, 3.0F);
+    drawCaptionButton(r, about.tabs[i], kTabs[i], current ? kAmber : kButtonOrchid, current, 3.0F,
+                      3.0F, art.button);
   }
 
   const screen::Rect& body = about.body;
   const float middle = body.x + body.w * 0.5F;
   switch (state.page) {
     case AboutPage::Scores: {
-      const float y = drawHeading(r, text, middle, body.y + 8.0F, body.w, 6.0F);
+      const float y = drawHeading(r, art, text, middle, body.y + 8.0F, body.w, 6.0F);
       drawScoreTable(r, text, scores, middle, y, body.w < 700.0F);
       drawParagraph(r, text, textWidth(kCredit, text.size) <= body.w ? kCredit : kCreditLines,
                     middle, about.privacyLink.y + 24.0F, body.w, kDim);
       break;
     }
     case AboutPage::About: {
-      const float y = drawHeading(r, text, middle, body.y + 8.0F, body.w, 6.0F);
+      const float y = drawHeading(r, art, text, middle, body.y + 8.0F, body.w, 6.0F);
       // The button is the address here; the text of it is for a desktop.
       drawFacts(r, text, middle, y, body.w, false);
       if (privacyButtonShown(layout, state)) {
-        drawCaptionButton(r, about.privacyLink, "PRIVACY POLICY", kCyan, false, 3.0F);
+        drawCaptionButton(r, about.privacyLink, "PRIVACY POLICY", kTeal, false, 3.0F, 3.0F,
+                          art.button);
       }
       break;
     }
@@ -318,10 +331,10 @@ void drawTouch(SDL_Renderer* r, const HighScores& scores, const screen::Layout& 
   if (pageButtonsShown(layout, state)) {
     const std::size_t pages = licencePageCount(layout);
     const std::size_t page = std::min(state.licencePage, pages - 1);
-    drawTurnButton(r, about.previous, "<", page > 0);
-    drawTurnButton(r, about.next, ">", page + 1 < pages);
+    drawTurnButton(r, art.button, about.previous, "<", page > 0);
+    drawTurnButton(r, art.button, about.next, ">", page + 1 < pages);
   }
-  drawCaptionButton(r, about.close, "CLOSE", kPink, false, 4.0F);
+  drawCaptionButton(r, about.close, "CLOSE", kPink, false, 4.0F, 3.0F, art.button);
 }
 
 }  // namespace
@@ -341,22 +354,23 @@ bool pageButtonsShown(const screen::Layout& layout, const AboutState& state) noe
 }
 
 void drawAbout(SDL_Renderer* r, const HighScores& scores, const screen::Layout& layout,
-               const AboutState& state) {
+               const AboutState& state, const OverlayArt& art) {
   if (r == nullptr) {
     return;
   }
   // Dim everything behind.
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  SDL_SetRenderDrawColor(r, 10, 0, 26, 205);
+  SDL_SetRenderDrawColor(r, screen::kBackdropRgb[0], screen::kBackdropRgb[1],
+                         screen::kBackdropRgb[2], 205);
   const SDL_FRect whole{0.0F, 0.0F, layout.canvasWidth, layout.canvasHeight};
   SDL_RenderFillRect(r, &whole);
   // Only the dimming needs blending; the dialog's own fills are opaque.
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
   if (isTouch(layout)) {
-    drawTouch(r, scores, layout, state);
+    drawTouch(r, scores, layout, state, art);
   } else {
-    drawDesktop(r, scores, layout, state);
+    drawDesktop(r, scores, layout, state, art);
   }
 }
 

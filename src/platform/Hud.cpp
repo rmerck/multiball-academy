@@ -11,25 +11,28 @@
 #include "core/Courses.hpp"
 #include "core/PanelLayout.hpp"
 #include "core/Version.hpp"
+#include "generated/ArtPalette.hpp"
 #include "platform/Text.hpp"
 
 namespace pinball {
 
 namespace {
 
-// Neon palette: laser yellow, cyan, mint and hot pink on dark glass.
-constexpr SDL_Color kAmber{255, 225, 70, 255};
-constexpr SDL_Color kCyan{70, 235, 255, 255};
-constexpr SDL_Color kWhite{248, 240, 255, 255};
-constexpr SDL_Color kDim{170, 142, 224, 255};
-constexpr SDL_Color kGreen{90, 255, 180, 255};
-constexpr SDL_Color kRed{255, 70, 150, 255};
-constexpr SDL_Color kPink{255, 60, 170, 255};
-constexpr SDL_Color kViolet{120, 30, 200, 255};
+// The art's palette (tools/art/palette.py) on the dark glass of the
+// windows: yellow digits, cream text, orchid labels (kHudLettering).
+constexpr SDL_Color sdl(art::Rgb c) noexcept { return {c.r, c.g, c.b, 255}; }
+constexpr SDL_Color kAmber = kHudLettering[0];
+constexpr SDL_Color kCyan = kHudLettering[1];
+constexpr SDL_Color kWhite = kHudLettering[2];
+constexpr SDL_Color kDim = kHudLettering[3];
+constexpr SDL_Color kGreen = kHudLettering[4];
+constexpr SDL_Color kRed = kHudLettering[5];
+constexpr SDL_Color kPink = kHudLettering[5];
+constexpr SDL_Color kViolet = sdl(art::kViolet);
 // An unlit segment of a gauge.
-constexpr SDL_Color kUnlit{58, 30, 92, 255};
+constexpr SDL_Color kUnlit = sdl(art::kWellHi);
 // The word on an unlit lamp: still readable.
-constexpr SDL_Color kLampOff{96, 66, 150, 255};
+constexpr SDL_Color kLampOff = kHudLettering[6];
 
 // The margin and the text sizes the display limits are worked out from
 // (core/DisplayText.hpp), so what the rules may say and what is drawn here
@@ -300,6 +303,23 @@ void drawPanel(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
 
   // Controls. A touch screen has its buttons here instead.
   if (desktop) {
+    if (art.panel != nullptr) {
+      // The art has the touch buttons' sockets here. The keys are listed on
+      // a window like the others instead: one of the art's windows, with
+      // its chrome lip, stretched over the area and a little wider than
+      // the windows above, so the longest line clears the lip. The status
+      // window is the source: nothing of the art's ornament lies by it.
+      // Two pixels to the unit.
+      constexpr float kLip = 6.0F;
+      constexpr float kCorner = 28.0F;  // Pixels: the lip and the glass's round corner.
+      constexpr float kMargin = 10.0F;  // From the panel's sides to the lip.
+      const panel::Rect& source = panel::kStatusWell;
+      const SDL_FRect src{(source.x - kLip - panel::kLeft) * 2.0F, (source.y - kLip) * 2.0F,
+                          (source.w + 2.0F * kLip) * 2.0F, (source.h + 2.0F * kLip) * 2.0F};
+      const SDL_FRect dst{layout.hud.x + kMargin, dy + 874.0F, panel::kWidth - 2.0F * kMargin,
+                          panel::kHeight - 876.0F};
+      SDL_RenderTexture9Grid(r, art.panel, &src, kCorner, kCorner, kCorner, kCorner, 0.5F, &dst);
+    }
     drawText(r, "Z / FLIP   SPACE LAUNCH   X . UP NUDGE", middle, dy + 882.0F, kLabelSize, kDim,
              TextAlign::Center);
     drawText(r, "F1 ABOUT  F2 NEW  F3 PAUSE  F4 FULL", middle, dy + 904.0F, kLabelSize, kDim,
@@ -325,10 +345,10 @@ float drawLamp(SDL_Renderer* r, std::string_view code, float right, float y, boo
   setColor(r, lit ? litColor : kUnlit);
   fill(r, right - width, y - 1.0F, width, height);
   if (!lit) {
-    SDL_SetRenderDrawColor(r, 12, 4, 34, SDL_ALPHA_OPAQUE);
+    SDL_SetRenderDrawColor(r, art::kWell.r, art::kWell.g, art::kWell.b, SDL_ALPHA_OPAQUE);
     fill(r, right - width + 2.0F, y + 1.0F, width - 4.0F, height - 4.0F);
   }
-  drawText(r, code, right - 4.0F, y, kStripSize, lit ? SDL_Color{12, 4, 34, 255} : kLampOff,
+  drawText(r, code, right - 4.0F, y, kStripSize, lit ? sdl(art::kWell) : kLampOff,
            TextAlign::Right);
   return right - width - 6.0F;
 }

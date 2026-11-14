@@ -682,6 +682,17 @@ if(BUILD_TESTING)
       COMMAND Python3::Interpreter -I ${CMAKE_SOURCE_DIR}/tools/check_assets.py
               ${CMAKE_SOURCE_DIR}/assets)
 
+    # The renderer's copy of the art's palette (src/generated/ArtPalette.hpp)
+    # and the iOS launch colour are what tools/art/palette.py says.
+    add_test(NAME art_palette
+      COMMAND Python3::Interpreter -I ${CMAKE_SOURCE_DIR}/tools/art/gen_header.py --check
+              ${CMAKE_SOURCE_DIR}/src/generated/ArtPalette.hpp
+              ${CMAKE_SOURCE_DIR}/packaging/ios/Assets.xcassets/LaunchBackground.colorset/Contents.json)
+
+    # The committed art is what tools/art/SHA256SUMS records, file for file.
+    add_test(NAME art_sums
+      COMMAND Python3::Interpreter -I ${CMAKE_SOURCE_DIR}/tools/art/check_sums.py ${CMAKE_SOURCE_DIR})
+
     # The built game must refuse to start if any asset is altered.
     add_test(NAME asset_integrity
       COMMAND Python3::Interpreter -I ${CMAKE_SOURCE_DIR}/tools/test_asset_integrity.py
@@ -758,6 +769,13 @@ if(BUILD_TESTING)
   include(cmake/LayoutTests.cmake)
   # The table's acceptance tests: the statistical suite and its CTest label.
   include(cmake/AcceptanceTests.cmake)
+
+  # A placeholder iOS icon cannot reach a shippable build, and the one
+  # committed is not one.
+  add_test(NAME ios_icon_guard
+    COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -DSCRATCH=${PINBALL_TEST_DIR}/ios_icon_guard_scratch
+            -P ${CMAKE_SOURCE_DIR}/tests/CheckIosIconGuard.cmake)
 
   # The recorded SDL configure results an iOS build may start from hold
   # nothing but yes-or-no probe results (cmake/IosPreseed.cmake).

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds packaging/macos/AppIcon.icns from packaging/macos/icon_1024.png
-# (drawn by tools/gimp/make_icon.py) with the system's sips and iconutil:
+# (drawn by tools/art/make_icons.py) with the system's sips and iconutil:
 # every standard size from 16 to 512 points, each at 1x and 2x.
 #
 # Usage: tools/make_icns.sh [source.png [output.icns]]
