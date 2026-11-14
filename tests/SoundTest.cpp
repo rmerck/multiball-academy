@@ -7,6 +7,8 @@
 #include "Suites.hpp"
 #include "core/Game.hpp"
 #include "core/Sound.hpp"
+#include "core/TableLayout.hpp"
+#include "GameTestAccess.hpp"
 
 namespace {
 
@@ -73,6 +75,21 @@ void testSound() {
     render(mixer, static_cast<std::size_t>(SoundMixer::kSampleRate) * 3);
     CHECK(mixer.activeVoices() == 0);
     CHECK(render(mixer, 480).peak == 0.0F);
+  }
+
+  // Each sound alone fits the voice pool with room to spare, so starting one
+  // never has to cut its own parts, and every one is over well inside the
+  // two seconds the loop above gives it.
+  for (std::size_t i = 0; i < pinball::kSoundCount; ++i) {
+    SoundMixer mixer;
+    mixer.trigger(SoundSet{1} << i);
+    CHECK(mixer.activeVoices() <= SoundMixer::kVoices / 2);
+    std::size_t samples = 0;
+    while (mixer.activeVoices() > 0 && samples < static_cast<std::size_t>(SoundMixer::kSampleRate) * 2) {
+      render(mixer, 480);
+      samples += 480;
+    }
+    CHECK(mixer.activeVoices() == 0);
   }
 
   {  // Unknown bits are ignored.
@@ -164,13 +181,13 @@ void testSound() {
 
   {  // A sound that starts with every voice busy keeps all of its own parts.
     SoundMixer mixer;
-    const SoundSet longOnes = soundBit(Sound::Promotion) | soundBit(Sound::GameOver) |
+    const SoundSet longOnes = soundBit(Sound::RankUp) | soundBit(Sound::GameOver) |
                               soundBit(Sound::Tilt) | soundBit(Sound::HoleIn);
     mixer.trigger(longOnes);  // 9 voices.
     render(mixer, SoundMixer::kRetriggerSamples);
     mixer.trigger(longOnes);  // 18.
     render(mixer, SoundMixer::kRetriggerSamples);
-    mixer.trigger(soundBit(Sound::Promotion) | soundBit(Sound::Tilt) | soundBit(Sound::HoleIn));
+    mixer.trigger(soundBit(Sound::RankUp) | soundBit(Sound::Tilt) | soundBit(Sound::HoleIn));
     render(mixer, SoundMixer::kRetriggerSamples);
     mixer.trigger(soundBit(Sound::Tilt));
     CHECK(mixer.activeVoices() == SoundMixer::kVoices);
@@ -191,7 +208,9 @@ void testSound() {
      // sample by itself.
     const SoundSet tonal =
         ~(soundBit(Sound::Flipper) | soundBit(Sound::Launch) | soundBit(Sound::Bumper) |
-          soundBit(Sound::Slingshot) | soundBit(Sound::HoleOut));
+          soundBit(Sound::Slingshot) | soundBit(Sound::HoleOut) | soundBit(Sound::Spinner) |
+          soundBit(Sound::Kickback) | soundBit(Sound::DoorsDrop) | soundBit(Sound::BallLocked) |
+          soundBit(Sound::Overdrive));
     SoundMixer crowded;
     float largestCut = 0.0F;
     float largestStep = 0.0F;
@@ -218,8 +237,8 @@ void testSound() {
   {  // The same triggers give the same samples.
     SoundMixer a;
     SoundMixer b;
-    a.trigger(soundBit(Sound::MissionComplete) | soundBit(Sound::Slingshot));
-    b.trigger(soundBit(Sound::MissionComplete) | soundBit(Sound::Slingshot));
+    a.trigger(soundBit(Sound::CoursePassed) | soundBit(Sound::Slingshot));
+    b.trigger(soundBit(Sound::CoursePassed) | soundBit(Sound::Slingshot));
     std::vector<float> x(9600);
     std::vector<float> y(9600);
     a.render(x.data(), x.size());
@@ -250,5 +269,42 @@ void testSound() {
     idle.step(pinball::InputState{});
     idle.step(pinball::InputState{});
     CHECK(idle.sounds() == 0U);
+  }
+
+  {  // The table's own new cues: the spinner, the bay doors and the kickback.
+    using Seam = pinball::GameTestAccess;
+    const auto heardWithin = [](pinball::Game& game, Sound sound, int steps) {
+      for (int i = 0; i < steps; ++i) {
+        game.step(pinball::InputState{});
+        if ((game.sounds() & soundBit(sound)) != 0U) {
+          return true;
+        }
+      }
+      return false;
+    };
+    {
+      pinball::Game game;
+      const std::size_t slot = game.ball().id;
+      const pinball::Vec2 lane =
+          (pinball::table::kSpinner.a + pinball::table::kSpinner.b) * 0.5F;
+      Seam::placeBall(game, slot, {lane.x, lane.y + 30.0F}, {0.0F, -1500.0F});
+      Seam::putInPlay(game, slot);
+      CHECK(heardWithin(game, Sound::Spinner, 240));
+    }
+    {
+      pinball::Game game;
+      for (std::size_t door = 0; door < pinball::table::kDropTargets.size(); ++door) {
+        Seam::rules(game).onDropTarget(door);
+      }
+      CHECK(heardWithin(game, Sound::DoorsDrop, 4));
+    }
+    {
+      pinball::Game game;
+      const std::size_t slot = game.ball().id;
+      const pinball::Vec2 zone = pinball::table::kKickbackZone.center;
+      Seam::placeBall(game, slot, {zone.x, zone.y - 20.0F}, {0.0F, 300.0F});
+      Seam::putInPlay(game, slot);
+      CHECK(heardWithin(game, Sound::Kickback, 240));
+    }
   }
 }

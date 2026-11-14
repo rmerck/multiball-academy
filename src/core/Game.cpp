@@ -712,7 +712,7 @@ void Game::tellRulesOfCapture(std::size_t slot) {
   if (by.kind == table::ElementKind::Kickback) {
     ++kickbackCount_;
     if (live) {
-      sounds_ |= soundBit(Sound::Launch);
+      sounds_ |= soundBit(Sound::Kickback);
     }
     note(GameEvent::Type::KickbackFired, slot);
     rules_.onKickback();
@@ -837,6 +837,7 @@ void Game::applyRules() {
       doorRaisePending_ = false;
       if (physics_.doorBankUp()) {
         physics_.setDoorBank(false);
+        sounds_ |= soundBit(Sound::DoorsDrop);
         note(GameEvent::Type::DoorBankDropped, 0);
         rules_.onDoorBank(false);
       }
@@ -929,6 +930,9 @@ void Game::updateSpinner() {
     --spinsOwed_;
     spinCooldown_ = table::kSpinPayoutSteps;
     ++spinCount_;
+    if (!rules_.gameOver() && !rules_.tilted()) {
+      sounds_ |= soundBit(Sound::Spinner);
+    }
     note(GameEvent::Type::Spin, 0);
     rules_.onSpin();
   }

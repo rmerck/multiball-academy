@@ -10,15 +10,11 @@
 
 namespace pinball {
 
-// Every sound the game can make. The table's rules use the whole set, and
-// several of them for more than one thing until the table has cues of its
-// own (core/Rules.cpp says which): BankComplete for any set completed (bay
-// doors, roll call, W-I-N-G, turbo targets), MissionSelect for something
-// lit or a lesser award (skill shot, combo, extra credit), MissionAccept
-// for something started (course, overdrive, a lock, an exam shot),
-// MissionComplete for a course passed and a jackpot, Promotion for a rank
-// and the start of a multiball.
+// Every sound the game can make: the table's own (the first block, cued by
+// Game as the balls move) and the rules' (cued by core/Rules.cpp for what a
+// shot did). Each is synthesised in core/Sound.cpp.
 enum class Sound : std::uint8_t {
+  // The table.
   Flipper,
   Launch,
   Bumper,
@@ -27,26 +23,46 @@ enum class Sound : std::uint8_t {
   Rollover,
   HoleIn,
   HoleOut,
+  Spinner,    // One turn of the Turbine's blade.
+  Kickback,   // The left outlane's kickback takes a ball.
+  DoorsDrop,  // The bay doors go down.
   Drain,
-  BallSaved,
-  ExtraBall,
-  BankComplete,
-  MissionSelect,
-  MissionAccept,
-  MissionComplete,
-  Promotion,
+  Nudge,
   TiltWarning,
   Tilt,
+  // The rules.
+  SkillShot,       // Skill shot and super skill shot.
+  SetComplete,     // Roll call, W-I-N-G, both turbo targets, the third bay door.
+  Lit,             // Something waits to be collected: Briefing room, lock, extra ball.
+  Combo,           // Each link of a combo chain.
+  CourseStart,     // Class in session.
+  CoursePassed,
+  CourseFailed,
+  RankUp,          // Follows CoursePassed by a beat when both are cued.
+  BallLocked,
+  MultiballStart,  // Academy, Turbo and Graduation Day.
+  Jackpot,         // Jackpots, exam shots.
+  SuperJackpot,    // The super jackpot, commencement.
+  ExtraBall,       // Extra ball and shoot again.
+  ExtraCredit,     // The mystery award.
+  Overdrive,       // The playfield multiplier starts.
+  BallSaved,
   GameOver,
-  Nudge,
+  // Names core/Rules.cpp used before the rules had cues of their own. They
+  // are the nearest of the cues above, and go once it names those (notes).
+  BankComplete = SetComplete,
+  MissionSelect = Lit,
+  MissionAccept = CourseStart,
+  MissionComplete = Jackpot,
+  Promotion = MultiballStart,
 };
-inline constexpr std::size_t kSoundCount = 20;
-static_assert(std::to_underlying(Sound::Nudge) + 1 == kSoundCount,
+inline constexpr std::size_t kSoundCount = 32;
+static_assert(std::to_underlying(Sound::GameOver) + 1 == kSoundCount,
               "kSoundCount must follow the last Sound enumerator");
-static_assert(kSoundCount <= 32, "SoundSet holds one bit per sound");
+static_assert(kSoundCount <= 64, "SoundSet holds one bit per sound");
 
 // A set of sounds, one bit each. A sound plays at most once per step.
-using SoundSet = std::uint32_t;
+using SoundSet = std::uint64_t;
 constexpr SoundSet soundBit(Sound sound) noexcept {
   return SoundSet{1} << std::to_underlying(sound);
 }
