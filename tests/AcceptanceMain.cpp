@@ -13,8 +13,11 @@
 //   FAIL        a fairness or structural criterion is not met. The program
 //               then ends with status 1.
 //   KNOWN-MISS  a pacing criterion that the design is known to miss
-//               (TABLE.md 6.8). Reported with its value, never passed over,
-//               and not a failure of the build.
+//               (TABLE.md 6.8), no worse than its pin: the value recorded
+//               for it below plus a margin for the size of the sample. Not
+//               a failure of the build. Beyond the pin it is a FAIL: the
+//               miss is known, a regression from it is not. (With --quick
+//               the samples are others and the pins are not applied.)
 //   INFO        measured for the record; by the owner's decision not a test.
 //   DEFERRED    needs an element type that the game does not have yet.
 #include <algorithm>
@@ -37,6 +40,50 @@ using namespace pinball::bots::acceptance;
 namespace table = pinball::table;
 
 int failures = 0;
+bool quickRun = false;
+
+// --- The pins ---------------------------------------------------------------------
+// What each known miss measured when it was recorded (2026-11-13, x86-64, g++ 13 -O2), and
+// how far a run may be from that before it fails. The suite is seeded, so
+// an unchanged game repeats these numbers exactly; the margins are there
+// so that a change which only reshuffles the chances (two standard errors
+// of the statistic at its sample size) is told from one that makes the
+// table worse.
+//
+// B1s: skill shots out through the gap untouched. Recorded 12 of 382: a
+// binomial count with a standard deviation of 3.4.
+constexpr int kPinSkillShotDrains = 19;
+// A1e: the third easiest shot's window. Recorded 5 steps (wanted: 6). A
+// sweep of the geometry, not a sample: no margin.
+constexpr int kPinThirdShotWindow = 5;
+// B2a at timing errors 5, 6 and 8: percent of 5,000 balls ending within
+// 5 s (wanted: under 2). Recorded 2.3, 3.5 and 3.2; a share near 3 percent of
+// 5,000 has a standard error of 0.25 points, and the pin is 0.6 over.
+constexpr double kPinUnder5Margin = 0.6;
+constexpr std::array<double, 3> kRecordedUnder5{2.3, 3.5, 3.2};  // E = 5, 6, 8.
+// B3b at E = 6: outlanes apart, in points of 5,000 drains (wanted: within
+// 10). Recorded 8.9, a pass, where an earlier sample missed; the difference of two shares near 25
+// percent has a standard error of 1.0 point.
+constexpr double kPinOutlanesApart = 10.9;
+// C2a and C2c, 400 balls with the 15 s saver at E = 3, 5, 8: the median
+// (wanted: 45 to 90 s) and the 90th percentile (wanted: at most 300 s).
+// Ball times are close to exponential, for which the standard error of the
+// median of 400 is 7 percent and of the 90th percentile 6.5 percent: the
+// pins are 15 and 13 percent over what was recorded.
+constexpr std::array<double, 3> kRecordedMedian{131.4, 100.5, 97.2};
+constexpr std::array<double, 3> kRecordedNinetieth{381.4, 282.8, 288.3};
+constexpr double kPinMedianFactor = 1.15;
+constexpr double kPinNinetiethFactor = 1.13;
+// D3 at E = 3, 5,000 balls: balls that reach the 20 minute cap, recorded 4:
+// a Poisson count, pinned two standard deviations over. And the longest a
+// ball in play went without touching a flipper, recorded 1101.1 s: there is
+// a cycle on this table that needs no player, and a ball in it runs to the
+// cap. (Where it runs was not traced here. The Briefing room kicks every
+// ball out the same way, and the element that varies its kick is to come.) The pin is therefore the
+// cap itself, and says only that this row is measured; bring it down to the 20 s wanted when the
+// cycle is broken.
+constexpr int kPinTimeCapBalls = 8;
+constexpr double kPinNoFlipperSeconds = 1200.0;
 
 enum class Kind { Hard, KnownMiss, Info, Deferred };
 
@@ -71,6 +118,14 @@ void row(Kind kind, bool met, std::string_view id, std::string_view what,
   std::fflush(stdout);
 }
 
+// A known miss: PASS if the criterion is met after all, KNOWN-MISS while it
+// is no worse than its pin, FAIL beyond.
+void pinnedRow(bool met, bool withinPin, std::string_view id, std::string_view what,
+               const std::string& threshold, const std::string& measured) {
+  const bool regressed = !met && !withinPin && !quickRun;
+  row(regressed ? Kind::Hard : Kind::KnownMiss, met, id, what, threshold, measured);
+}
+
 std::string firsts(const TouchCounts& counts) {
   std::string out;
   for (std::size_t i = 0; i < counts.size(); ++i) {
@@ -98,9 +153,10 @@ void sectionLaunch(bool quick) {
       "slow descents down a circuit lane out through the gap untouched", "0",
       text("%d of %d", descents.throughGapUntouched, descents.descents));
   const SkillShotResult skill = skillShotDrains(quick ? 6 : 1, quick ? 2 : 8);
-  row(Kind::KnownMiss, skill.throughGapUntouched == 0, "B1s",
-      "skill-shot launches, idle flippers, out through the gap untouched", "0",
-      text("%d of %d", skill.throughGapUntouched, skill.reachedRollCall));
+  pinnedRow(skill.throughGapUntouched == 0, skill.throughGapUntouched <= kPinSkillShotDrains, "B1s",
+            "skill-shot launches, idle flippers, out through the gap untouched",
+            text("0; pinned at most %d", kPinSkillShotDrains),
+            text("%d of %d", skill.throughGapUntouched, skill.reachedRollCall));
   for (int speed = 1200; speed <= 1900; speed += 100) {
     const AutoLaunchRow sweep = autoLaunchAt(speed, quick ? 8 : 40);
     std::printf(
@@ -165,8 +221,9 @@ void sectionShots(bool quick) {
   row(Kind::Hard, narrowest >= 3, "A1", "widest timing window of each major shot, steps",
       "each at least 3",
       windows + " (circuit, Runway, Hangar, Briefing, Turbine, Skyway, circuit)");
-  row(Kind::KnownMiss, best[2] >= 6, "A1e", "easiest three shots, steps", "each at least 6",
-      text("%d/%d/%d", best[0], best[1], best[2]));
+  pinnedRow(best[2] >= 6, best[2] >= kPinThirdShotWindow, "A1e", "easiest three shots, steps",
+            text("each at least 6; pinned %d", kPinThirdShotWindow),
+            text("%d/%d/%d", best[0], best[1], best[2]));
   row(Kind::Hard, fromCradle >= 5, "A2", "major shots with a window of 3 or more from a cradle",
       "at least 5", text("%d (%s)", fromCradle, cradles.c_str()));
   // B4: per first-hit feature, the share that then left through the gap
@@ -436,8 +493,14 @@ void sectionReflex(bool quick, int onlyError) {
     reportSoak(text("P2 E=%d, saver off", error).c_str(), result);
     const double under5 = percentOf(result.under5, result.ballSeconds.size());
     const double under10 = percentOf(result.under10, result.ballSeconds.size());
-    row(Kind::KnownMiss, under5 < 2.0, "B2a", text("P2 E=%d: balls ending within 5 s", error),
-        "under 2 percent", text("%.1f%%", under5));
+    if (error <= 4) {
+      row(Kind::Hard, under5 < 2.0, "B2a", text("P2 E=%d: balls ending within 5 s", error),
+          "under 2 percent", text("%.2f%%", under5));
+    } else {
+      const double pin = kRecordedUnder5[error == 5 ? 0 : (error == 6 ? 1 : 2)] + kPinUnder5Margin;
+      pinnedRow(under5 < 2.0, under5 <= pin, "B2a", text("P2 E=%d: balls ending within 5 s", error),
+                text("under 2 percent; pinned %.2f", pin), text("%.2f%%", under5));
+    }
     row(Kind::Hard, under10 < 10.0, "B2b", text("P2 E=%d: balls ending within 10 s", error),
         "under 10 percent", text("%.1f%%", under10));
     const double centre = result.drainShare(0);
@@ -450,9 +513,15 @@ void sectionReflex(bool quick, int onlyError) {
         "centre 35-60, outlanes 15-35 percent",
         text("%.1f / %.1f / %.1f", centre, leftOut, rightOut));
     const double apart = leftOut > rightOut ? leftOut - rightOut : rightOut - leftOut;
-    // Known to be missed at E = 6 only.
-    row(error == 6 ? Kind::KnownMiss : Kind::Hard, apart <= 10.0, "B3b",
-        text("P2 E=%d: outlanes apart", error), "within 10 points", text("%.1f points", apart));
+    // Known to be missed at E = 6 only (and there only in some samples).
+    if (error == 6) {
+      pinnedRow(
+          apart <= 10.0, apart <= kPinOutlanesApart, "B3b", text("P2 E=%d: outlanes apart", error),
+          text("within 10 points; pinned %.1f", kPinOutlanesApart), text("%.1f points", apart));
+    } else {
+      row(Kind::Hard, apart <= 10.0, "B3b", text("P2 E=%d: outlanes apart", error),
+          "within 10 points", text("%.1f points", apart));
+    }
     const double median = result.percentile(0.5);
     row(Kind::Info, true, "C2n", text("P2 E=%d: median ball, saver off (not a criterion)", error),
         "45 to 90 s",
@@ -460,6 +529,17 @@ void sectionReflex(bool quick, int onlyError) {
              result.percentile(0.9)));
     rowsForSoundness("D1", text("P2 E=%d, one ball", error).c_str(), result.steps, result.stuck,
                      result.searches, result.laneIntrusions, result.lostBalls, result.overSpeed);
+    if (error == 3) {
+      // D3, the loop or safe cycle, where the bot is at its most exact.
+      const double noFlipper = static_cast<double>(result.longestNoFlipper) / 120.0;
+      pinnedRow(result.timeouts == 0, result.timeouts <= kPinTimeCapBalls, "D3a",
+                "P2 E=3: balls kept in play to the 20 minute cap",
+                text("0; pinned at most %d", kPinTimeCapBalls),
+                text("%d of %zu", result.timeouts, result.ballSeconds.size()));
+      pinnedRow(noFlipper <= 20.0, noFlipper <= kPinNoFlipperSeconds, "D3b",
+                "P2 E=3: longest a ball in play went without touching a flipper",
+                text("at most 20 s; pinned %.1f", kPinNoFlipperSeconds), text("%.1f s", noFlipper));
+    }
   }
 }
 
@@ -477,15 +557,19 @@ void sectionReflexSaver(bool quick, int onlyError) {
     const SoakResult result = soak(options);
     reportSoak(text("P2 E=%d, saver 15 s", error).c_str(), result);
     const double median = result.percentile(0.5);
-    row(Kind::KnownMiss, median >= 45.0 && median <= 90.0, "C2a",
-        text("P2 E=%d: median ball, 15 s saver (no kickback yet)", error), "45 to 90 s",
-        text("%.1f s", median));
+    const std::size_t which = error == 3 ? 0 : (error == 5 ? 1 : 2);
+    const double medianPin = kRecordedMedian[which] * kPinMedianFactor;
+    pinnedRow(median >= 45.0 && median <= 90.0, median >= 45.0 && median <= medianPin, "C2a",
+              text("P2 E=%d: median ball, 15 s saver (no kickback yet)", error),
+              text("45 to 90 s; pinned 45 to %.1f", medianPin), text("%.1f s", median));
     row(Kind::Hard, result.percentile(0.1) >= 12.0, "C2b",
         text("P2 E=%d: 10th percentile ball, 15 s saver", error), "at least 12 s",
         text("%.1f s", result.percentile(0.1)));
-    row(Kind::KnownMiss, result.percentile(0.9) <= 300.0, "C2c",
-        text("P2 E=%d: 90th percentile ball, 15 s saver", error), "at most 300 s",
-        text("%.1f s", result.percentile(0.9)));
+    const double ninetiethPin = kRecordedNinetieth[which] * kPinNinetiethFactor;
+    pinnedRow(result.percentile(0.9) <= 300.0, result.percentile(0.9) <= ninetiethPin, "C2c",
+              text("P2 E=%d: 90th percentile ball, 15 s saver", error),
+              text("at most 300 s; pinned %.1f", ninetiethPin),
+              text("%.1f s", result.percentile(0.9)));
     rowsForSoundness("D1", text("P2 E=%d with saver, one ball", error).c_str(), result.steps,
                      result.stuck, result.searches, result.laneIntrusions, result.lostBalls,
                      result.overSpeed);
@@ -553,6 +637,7 @@ int main(int argc, char** argv) {
     const std::string_view arg = argv[i];
     if (arg == "--quick") {
       quick = true;
+      quickRun = true;
     } else {
       sections.push_back(arg);
     }
