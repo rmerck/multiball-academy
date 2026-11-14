@@ -37,6 +37,8 @@ TableHarness::TableHarness() {
   balls_[0].tracked = true;
   balls_[0].previous = table::kBallStart;
   balls_[0].anchor = table::kBallStart;
+  // The bench counts every ball that leaves the table: see setSaver().
+  setSaver(false);
 }
 
 Vec2 TableHarness::position(std::size_t slot) const { return Seam::position(game_, slot); }
@@ -97,7 +99,15 @@ bool TableHarness::nearFlipper(Vec2 p, std::size_t i, float slack) const {
 }
 
 void TableHarness::lightKickback() { Seam::rules(game_).setKickbackLit(true); }
-void TableHarness::setLocks(bool enabled) { Seam::rules(game_).setLocksEnabled(enabled); }
+void TableHarness::setLocks(bool enabled) { Seam::rules(game_).setMultiballEnabled(enabled); }
+void TableHarness::openHangar() {
+  setLocks(false);
+  for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
+    Seam::rules(game_).onDropTarget(door);
+  }
+  game_.step(InputState{});
+}
+void TableHarness::setSaver(bool enabled) { Seam::rules(game_).setBallSaveEnabled(enabled); }
 
 void TableHarness::settleKick(std::size_t slot, bool safe) {
   if (slot < balls_.size() && balls_[slot].kickTouchPending) {
@@ -142,7 +152,12 @@ Touch TableHarness::advance() {
   input.rightFlipper = right;
   input.plunger = plunger;
   // A finished game is started again at once: the bench never idles.
-  input.newGame = game_.gameOver();
+  input.newGame = game_.gameOver() || restart;
+  input.nudgeLeft = nudge == 1;
+  input.nudgeRight = nudge == 2;
+  input.nudgeUp = nudge == 3;
+  nudge = 0;
+  restart = false;
   game_.step(input);
   ++step_;
 

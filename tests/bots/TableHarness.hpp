@@ -63,6 +63,11 @@ class TableHarness {
   bool left = false;
   bool right = false;
   bool plunger = false;
+  // A shove of the table on the next advance(): 0 none, 1 from the left,
+  // 2 from the right, 3 from below. Cleared when used.
+  int nudge = 0;
+  // Starts a new game on the next advance(), whatever state this one is in.
+  bool restart = false;
   // Lets a bot set the flippers for the next step.
   void act(Bot& bot) {
     const Flippers flippers = bot.act(sense());
@@ -127,8 +132,19 @@ class TableHarness {
   bool kickbackOff = false;
   // Lights the kickback now.
   void lightKickback();
-  // Whether the Hangar may lock balls (the provisional rules' switch).
+  // Whether the rules may put more than one ball in play: lock balls in
+  // the Hangar, launch a second from a full turbo meter, start Graduation
+  // Day. Off for the measurements made with one ball at a time.
   void setLocks(bool enabled);
+  // Opens the Hangar for a shot at it: locks off and the three doors marked,
+  // as the rules open it, so it stays open until a ball has been in. (A
+  // bank dropped behind the rules' back is raised again by the raise they
+  // ask for at a new game.)
+  void openHangar();
+  // Whether the rules give drained balls back (ball saver and multiball
+  // grace). Off on the bench unless asked for: the measurements of the table
+  // itself count every ball that leaves it. On for whole games.
+  void setSaver(bool enabled);
   // Steps on which a ball was against a flipper.
   std::uint64_t flipperTouches = 0;
   // The longest any free ball in play went without being against a flipper,

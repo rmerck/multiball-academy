@@ -164,6 +164,10 @@ class Game {
   [[nodiscard]] bool ballLocked(std::size_t slot) const noexcept {
     return slot < kMaxBalls && physics_.ballActive(slot) && balls_[slot].lockBay != 0;
   }
+  // Whether a ball is in this bay (0 or 1). The bays empty in order but
+  // need not be taken in order once balls have left, so a lamp for a bay
+  // asks this, not how many are locked.
+  [[nodiscard]] bool bayTaken(std::size_t bay) const noexcept;
   [[nodiscard]] std::uint32_t lockCount() const noexcept { return lockCount_; }
   [[nodiscard]] std::uint32_t lockReleaseCount() const noexcept { return lockReleaseCount_; }
 
@@ -230,6 +234,10 @@ class Game {
   [[nodiscard]] bool ballInPlay(std::size_t slot) const noexcept {
     return slot < kMaxBalls && physics_.ballActive(slot) && balls_[slot].inPlay;
   }
+
+  // Whether a ball is in the launch lane waiting for the player's plunge
+  // (not one the table launches by itself).
+  [[nodiscard]] bool ballAwaitingLaunch() const noexcept;
 
   // Asks for another ball. It is served to the plunger when the lane is
   // empty, kAutoServeSpacingSeconds after the last ball served this way, and
@@ -310,6 +318,13 @@ class Game {
   // Does what the rules ask of the doors and the kickback.
   void applyRules();
   [[nodiscard]] bool doorMouthClear() const;
+  // The balls, as the rules count them.
+  [[nodiscard]] TableStatus tableStatus() const noexcept;
+  // Every ball in play is in a timed hold: none free, none on the plunger.
+  [[nodiscard]] bool allBallsHeld() const noexcept;
+  // A ball has just been taken by a hole or the kickback: the rules hear of
+  // it and the Hangar's answer is carried out.
+  void tellRulesOfCapture(std::size_t slot);
   void updateSpinner();
   void addSpins(float speedAcross, int direction) noexcept;
   // How the ball in a slot is leaving.
@@ -347,8 +362,6 @@ class Game {
     bool wasHeld = false;
     // The order in which held balls were taken: lower came first.
     std::uint64_t arrival = 0;
-    // The rules' answer for a ball the Hangar took this step.
-    bool lockAsked = false;
     // One more than the bay it is locked in; 0 if it is not locked.
     std::uint8_t lockBay = 0;
     // Locked, and told to leave.

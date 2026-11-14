@@ -2,7 +2,7 @@
 //
 //   pinball_acceptance [--quick] [section ...]
 //
-// Sections: launch shots lanes exits rest wedge p1 p2 p2saver kickback stress. With none
+// Sections: launch shots lanes exits rest wedge p1 p2 p2saver kickback stress rules. With none
 // named, all run (well over an hour in one process; name sections to split
 // the work between processes, as the CTest label `acceptance` does). --quick cuts every sample to a
 // fraction, to try the program out; its numbers are not the suite's.
@@ -30,13 +30,16 @@
 #include <vector>
 
 #include "bots/Acceptance.hpp"
+#include "core/Courses.hpp"
 #include "core/Format.hpp"
+#include "core/Rules.hpp"
 #include "core/TableLayout.hpp"
 
 namespace {
 
 using namespace pinball::bots;
 using namespace pinball::bots::acceptance;
+using pinball::Feature;
 namespace table = pinball::table;
 
 int failures = 0;
@@ -88,6 +91,30 @@ constexpr double kPinNinetiethFactor = 1.13;
 // the longest ball: 1,101 s. No ball was ever that long without a flipper.)
 constexpr int kPinTimeCapBalls = 2;
 constexpr double kPinNoFlipperSeconds = 60.0;
+
+// G1 and C2r, whole games under the table's own rules at E = 5, 600 games:
+// the median game (wanted: 3 to 6 minutes) and the median and 90th
+// percentile of a ball of those games (wanted: 45 to 90 s, at most 300 s).
+// A known miss that follows from C2's: the table's ball is long before any
+// rule adds to it (C2a above), three of them are over six minutes already,
+// and a multiball or an extra ball can only add. The rules' own levers
+// (TABLE.md 4.15) move the game by tens of seconds, not minutes. The pins
+// are 10 percent over what was recorded (the standard error of these
+// medians is about 4 percent).
+constexpr double kRecordedGameMedian = 641.0;
+constexpr double kRecordedRuleBallMedian = 122.0;
+constexpr double kRecordedRuleBallNinetieth = 380.8;
+constexpr double kPinRulesFactor = 1.10;
+
+// B2r: B2a under the table's own rules (the kickback lit, the short save
+// after an eject; no saver), the first ball of 30,000 fresh games at each
+// timing error (E = 3, 4, 5, 6, 8). Wanted: the upper end of the 95 percent
+// interval at most 2 percent. Recorded 2.01, 2.01, 1.96, 2.01 and 1.68
+// (standard error 0.08): met at E = 8 only. About two thirds of the lost
+// balls leave through the middle; the rest by the right outlane, none by
+// the left, which the kickback guards. The pin is two standard errors over.
+constexpr std::array<double, 5> kRecordedEarly{2.01, 2.01, 1.96, 2.01, 1.68};
+constexpr double kPinEarlyMargin = 0.16;
 
 enum class Kind { Hard, KnownMiss, Info, Deferred };
 
@@ -802,6 +829,192 @@ void sectionStress(bool quick, std::string_view which) {
   }
 }
 
+// B2a with the table's own rules (owner update 14): the share of balls
+// that end within 5 s, on the first ball of 30,000 fresh games at each
+// timing error. Met when the upper end of its 95 percent interval is at
+// most 2 percent.
+void sectionEarly(bool quick, int onlyError) {
+  for (const int error : kErrors) {
+    if (onlyError != 0 && onlyError != error) {
+      continue;
+    }
+    EarlyDrainOptions options;
+    options.reflexError = error;
+    options.games = quick ? 300 : 30000;
+    options.seed = 900U + static_cast<std::uint64_t>(error);
+    const EarlyDrainResult result = earlyDrains(options);
+    const double share = result.percent();
+    const double upper = share + 1.96 * result.standardError();
+    std::printf("# early E=%d: %d games, %d in play, lost within 5 s %d (centre %d, left %d, "
+                "right %d); kickbacks %d, eject saves %d; %llu steps, fingerprint %016llx\n",
+                error, result.games, result.inPlay, result.lost, result.way[0], result.way[1],
+                result.way[2], result.kickbacks, result.ejectSaves,
+                static_cast<unsigned long long>(result.steps),
+                static_cast<unsigned long long>(result.fingerprint));
+    const std::size_t level =
+        static_cast<std::size_t>(std::ranges::find(kErrors, error) - kErrors.begin());
+    const double pin = kRecordedEarly[std::min(level, kRecordedEarly.size() - 1)] + kPinEarlyMargin;
+    pinnedRow(upper <= 2.0, share <= pin, "B2r",
+              text("P2 E=%d, rules: first balls ending within 5 s", error),
+              text("upper 95%% at most 2.00; pinned %.2f", pin),
+              text("%.2f%% (s.e. %.2f, upper %.2f) of %d", share, result.standardError(), upper,
+                   result.inPlay));
+  }
+}
+
+// C2 to C6 and the length of a game: whole games under the table's own
+// rules. E = 5 is the level the criteria are judged at; the others are for
+// the record.
+void sectionRules(bool quick, int error) {
+  const int e = error == 0 ? 5 : error;
+  const bool headline = e == 5;
+  GamesOptions options;
+  options.reflexError = e;
+  options.games = quick ? 12 : (headline ? 600 : 200);
+  options.seed = 700U + static_cast<std::uint64_t>(e);
+  const GamesResult games = playGames(options);
+  const std::string who = text("P2 E=%d, %d games", e, games.games);
+  const Kind judged = headline ? Kind::Hard : Kind::Info;
+  const auto pct = [&games](int count) { return percentOf(count, static_cast<std::size_t>(games.games)); };
+  const auto at = [](const std::vector<double>& values, double q) {
+    return GamesResult::percentile(values, q);
+  };
+  std::printf("# %s: %llu steps, %zu balls (%.2f extra a game), %d multiballs (turbo %d, "
+              "academy %d, graduation %d), courses started %.2f and passed %.2f a game, "
+              "fingerprint %016llx\n",
+              who.c_str(), static_cast<unsigned long long>(games.steps), games.ballSeconds.size(),
+              static_cast<double>(games.extraBallsPlayed) / std::max(games.games, 1),
+              games.multiballs, games.multiballsOfKind[1], games.multiballsOfKind[2],
+              games.multiballsOfKind[3],
+              static_cast<double>(games.coursesStarted) / std::max(games.games, 1),
+              static_cast<double>(games.coursesPassed) / std::max(games.games, 1),
+              static_cast<unsigned long long>(games.fingerprint));
+  std::printf("#   final rank:");
+  for (std::size_t rank = 0; rank < pinball::kRankCount; ++rank) {
+    const std::string_view name = pinball::rankName(rank);
+    std::printf(" %.*s %d", static_cast<int>(name.size()), name.data(), games.finalRank[rank]);
+  }
+  std::vector<double> scores(games.scores.begin(), games.scores.end());
+  std::printf("\n#   score: 10th percentile %.0f, median %.0f, 90th %.0f\n", at(scores, 0.1),
+              at(scores, 0.5), at(scores, 0.9));
+
+  // The rules never break their own invariants, in any game.
+  row(Kind::Hard, games.brokenSteps == 0, "R1",
+      text("%s: ball count, game over, score and display invariants", who.c_str()), "0 steps",
+      text("%llu%s%s", static_cast<unsigned long long>(games.brokenSteps),
+           games.broken != nullptr ? ": " : "", games.broken != nullptr ? games.broken : ""));
+  row(Kind::Hard, games.hangarEntriesDoorsUp == 0 && games.lockedAstray == 0 && games.timeouts == 0,
+      "R2", text("%s: Hangar entered past a door; locked ball astray; game over an hour", who.c_str()),
+      "0, 0, 0",
+      text("%llu, %llu, %d (stuck %llu, ball searches %llu)",
+           static_cast<unsigned long long>(games.hangarEntriesDoorsUp),
+           static_cast<unsigned long long>(games.lockedAstray), games.timeouts,
+           static_cast<unsigned long long>(games.stuck),
+           static_cast<unsigned long long>(games.searches)));
+
+  // The research's C3 to C6 (TABLE_RESEARCH.md section 9), each judged at
+  // E = 5.
+  const double turbo = pct(games.gamesWithTurbo);
+  const double firstTurbo = at(games.firstTurboSeconds, 0.5);
+  row(judged, turbo >= 60.0 && firstTurbo < 120.0, "C3a",
+      text("%s: Turbo multiball starts; median first start", who.c_str()),
+      "at least 60% of games; under 120 s",
+      text("%.1f%%; %.0f s", turbo, firstTurbo));
+  const double academy = pct(games.gamesWithAcademy);
+  row(judged, academy >= 15.0 && academy <= 40.0, "C3b",
+      text("%s: Academy multiball starts", who.c_str()), "15 to 40% of games",
+      text("%.1f%%", academy));
+  const double qualified = pct(games.gamesQualified);
+  const double started = pct(games.gamesWithCourse);
+  row(judged, started >= 90.0 && qualified < 2.0, "C4",
+      text("%s: a course started; all six courses passed", who.c_str()),
+      "at least 90% of games; under 2%",
+      text("%.1f%%; %.2f%% (Graduation Day completed %.2f%%)", started, qualified,
+           pct(games.gamesGraduated)));
+  const double multiballMedian = at(games.multiballSeconds, 0.5);
+  const double withJackpot =
+      games.multiballs == 0 ? 0.0 : 100.0 * games.multiballsWithJackpot / games.multiballs;
+  row(judged, multiballMedian >= 15.0 && multiballMedian <= 45.0 && withJackpot >= 50.0, "C5",
+      text("%s: multiball length, median; multiballs with a jackpot", who.c_str()),
+      "15 to 45 s; at least 50%",
+      text("%.1f s (90th %.1f s); %.0f%% of %d", multiballMedian, at(games.multiballSeconds, 0.9),
+           withJackpot, games.multiballs));
+  Feature largest = Feature::Slingshots;
+  for (std::size_t f = 0; f < pinball::kFeatureCount; ++f) {
+    if (games.share(static_cast<Feature>(f)) > games.share(largest)) {
+      largest = static_cast<Feature>(f);
+    }
+  }
+  const std::string_view largestName = pinball::featureName(largest);
+  const double spread = at(scores, 0.1) > 0.0 ? at(scores, 0.9) / at(scores, 0.1) : 0.0;
+  row(judged, games.share(largest) <= 35.0 && spread >= 8.0, "C6",
+      text("%s: largest share of all points from one feature; score, 90th percentile "
+           "over 10th",
+           who.c_str()),
+      "at most 35%; at least 8",
+      text("%.1f%% (%.*s); %.1f", games.share(largest), static_cast<int>(largestName.size()),
+           largestName.data(), spread));
+  std::printf("#   share of score:");
+  for (std::size_t f = 0; f < pinball::kFeatureCount; ++f) {
+    const std::string_view name = pinball::featureName(static_cast<Feature>(f));
+    std::printf("%s %.*s %.1f", f == 0 ? "" : ",", static_cast<int>(name.size()), name.data(),
+                games.share(static_cast<Feature>(f)));
+  }
+  std::printf("\n");
+
+  // The length of a game and of its balls, with everything the rules add.
+  const double gameMedian = at(games.gameSeconds, 0.5);
+  const double ballMedian = at(games.ballSeconds, 0.5);
+  const double ballTenth = at(games.ballSeconds, 0.1);
+  const double ballNinetieth = at(games.ballSeconds, 0.9);
+  const std::string gameMeasured =
+      text("%.0f s (10th %.0f s, 90th %.0f s)", gameMedian, at(games.gameSeconds, 0.1),
+           at(games.gameSeconds, 0.9));
+  const std::string ballMeasured =
+      text("%.1f s; %.1f s; %.1f s", ballMedian, ballTenth, ballNinetieth);
+  const bool gameMet = gameMedian >= 180.0 && gameMedian <= 360.0;
+  const bool ballMet = ballMedian >= 45.0 && ballMedian <= 90.0 && ballNinetieth <= 300.0;
+  if (headline) {
+    pinnedRow(gameMet, gameMedian >= 180.0 && gameMedian <= kRecordedGameMedian * kPinRulesFactor,
+              "G1", text("%s: median game, first plunge to game over", who.c_str()),
+              text("180 to 360 s (pin %.0f s)", kRecordedGameMedian * kPinRulesFactor),
+              gameMeasured);
+    pinnedRow(ballMet,
+              ballMedian >= 45.0 && ballMedian <= kRecordedRuleBallMedian * kPinRulesFactor &&
+                  ballNinetieth <= kRecordedRuleBallNinetieth * kPinRulesFactor,
+              "C2r", text("%s: ball time under the rules, median; 10th; 90th", who.c_str()),
+              text("45 to 90 s; 12 s; 300 s (pins %.0f, %.0f s)",
+                   kRecordedRuleBallMedian * kPinRulesFactor,
+                   kRecordedRuleBallNinetieth * kPinRulesFactor),
+              ballMeasured);
+    // The 10th percentile is fairness: a tenth of balls must not be short.
+    row(Kind::Hard, ballTenth >= 12.0, "C2t",
+        text("%s: ball time under the rules, 10th percentile", who.c_str()), "at least 12 s",
+        text("%.1f s", ballTenth));
+  } else {
+    row(Kind::Info, gameMet, "G1", text("%s: median game, first plunge to game over", who.c_str()),
+        "180 to 360 s", gameMeasured);
+    row(Kind::Info, ballMet, "C2r",
+        text("%s: ball time under the rules, median; 10th; 90th", who.c_str()),
+        "45 to 90 s; 12 s; 300 s", ballMeasured);
+  }
+  if (headline) {
+    // Where a game's length comes from: the same games with no ball ever
+    // added, and with no ball given back either.
+    GamesOptions plain = options;
+    plain.games = quick ? 8 : 200;
+    plain.multiball = false;
+    const GamesResult single = playGames(plain);
+    plain.saver = false;
+    const GamesResult bare = playGames(plain);
+    row(Kind::Info, true, "G1n",
+        text("P2 E=5, %d games: median game with no ball added; and no saver", plain.games),
+        "for the record",
+        text("%.0f s (ball %.1f s); %.0f s (ball %.1f s)", at(single.gameSeconds, 0.5),
+             at(single.ballSeconds, 0.5), at(bare.gameSeconds, 0.5), at(bare.ballSeconds, 0.5)));
+  }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -817,8 +1030,9 @@ int main(int argc, char** argv) {
     }
   }
   if (sections.empty()) {
-    sections = {"launch", "shots", "lanes",   "exits",    "rest",  "wedge",
-                "p1",     "p2",    "p2saver", "kickback", "stress"};
+    sections = {"launch", "shots", "lanes",   "exits",    "rest",   "wedge",
+                "p1",     "p2",    "p2saver", "kickback", "stress", "early", "rules:3",
+                "rules:5", "rules:8"};
   }
   std::printf("# Acceptance suite, TABLE.md section 5%s\n",
               quick ? " (QUICK: reduced samples)" : "");
@@ -853,6 +1067,10 @@ int main(int argc, char** argv) {
       sectionKickback(quick);
     } else if (name == "stress") {
       sectionStress(quick, option);
+    } else if (name == "early") {
+      sectionEarly(quick, number);
+    } else if (name == "rules") {
+      sectionRules(quick, number);
     } else {
       std::fprintf(stderr, "pinball_acceptance: unknown section '%.*s'\n",
                    static_cast<int>(section.size()), section.data());

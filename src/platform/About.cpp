@@ -6,7 +6,7 @@
 #include <string_view>
 
 #include "core/Format.hpp"
-#include "core/Missions.hpp"
+#include "core/Courses.hpp"
 #include "core/OverlayLayout.hpp"
 #include "core/Version.hpp"
 #include "generated/ArtPalette.hpp"

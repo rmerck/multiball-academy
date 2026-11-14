@@ -201,7 +201,7 @@ A ninth, `ios (simulator)`, also not required yet, builds the iOS application on
 
 ### The table's acceptance suite
 
-The table is judged by bots: an idle one, a random one, a reflex player with a timing error of 3 to 8 simulation steps, and a scripted one that sweeps every flipper timing (`tests/bots`). The quick checks run inside `core_tests` with every build: no launch drains, every exit feeds a flipper or an inlane, the table's own elements (door bank, lock, scoop, spinner, kickback, sensor lines: `tests/ElementTest.cpp`), no ball sticks with one, two or three balls in play, and the same seed plays the same game. The statistical criteria (ball times, drain split, shot windows, ten million steps with three balls) are a program of their own, `pinball_acceptance`, which plays about half a billion steps: about three quarters of an hour on two cores. It is built with everything else but its tests are registered only when asked for:
+The table is judged by bots: an idle one, a random one, a reflex player with a timing error of 3 to 8 simulation steps, and a scripted one that sweeps every flipper timing (`tests/bots`). The quick checks run inside `core_tests` with every build: no launch drains, every exit feeds a flipper or an inlane, the table's own elements (door bank, lock, scoop, spinner, kickback, sensor lines: `tests/ElementTest.cpp`), no ball sticks with one, two or three balls in play, and the same seed plays the same game. The statistical criteria (ball times, drain split, shot windows, ten million steps with three balls, and whole games under the rules: multiball and course starts, multiball length, score shares, the length of a game) are a program of their own, `pinball_acceptance`, which plays about half a billion steps: about three quarters of an hour on two cores. It is built with everything else but its tests are registered only when asked for:
 
 ```sh
 cmake -B build-acceptance -DCMAKE_BUILD_TYPE=Release -DPINBALL_ACCEPTANCE_TESTS=ON
@@ -209,7 +209,7 @@ cmake --build build-acceptance --target pinball_acceptance
 ctest --test-dir build-acceptance -L acceptance -j 2 --output-on-failure
 ```
 
-Or run it directly for the report as one table, all of it or the sections named (`launch shots lanes exits rest wedge p1 p2 p2saver kickback stress`; `p2:5` is one timing error, `stress:p1` one bot; `--quick` cuts the samples to try it out):
+Or run it directly for the report as one table, all of it or the sections named (`launch shots lanes exits rest wedge p1 p2 p2saver kickback stress rules`; `p2:5` and `rules:5` are one timing error, `stress:p1` one bot; `--quick` cuts the samples to try it out):
 
 ```sh
 build-acceptance/pinball_acceptance | grep '^ROW'

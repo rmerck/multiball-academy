@@ -62,9 +62,9 @@ template <typename GameType>
   }
 }
 
-// PLACEHOLDER until the rules say how many locks start a multiball
-// (Rules::locksNeeded, if they come to have it): the number the multiball
-// design gives. Used for nothing but the "LOCKS n/m" line.
+// For a game whose rules do not say how many locks start a multiball
+// (Rules::locksNeeded): the number the design gives. Used for nothing but
+// the "LOCKS n/m" line.
 inline constexpr int kPlaceholderLocksNeeded = 2;
 
 // The multiball part of the status display.
@@ -72,7 +72,9 @@ struct MultiballView {
   // The rules have locks. When false the display leaves out its lock lamp
   // and lock count altogether.
   bool locksKnown = false;
-  // Balls on the table, from the game: more than one is a multiball.
+  // Balls in play: more than one is a multiball. From the rules when they
+  // count them (a ball locked in the Hangar is on the table and not in
+  // play), otherwise the balls on the table.
   int ballsLive = 1;
   int locksHeld = 0;
   int locksNeeded = kPlaceholderLocksNeeded;
@@ -88,6 +90,9 @@ template <typename GameType>
   MultiballView view;
   view.ballsLive = static_cast<int>(game.ballCount());
   const auto& rules = game.rules();
+  if constexpr (requires { rules.ballsLive(); }) {
+    view.ballsLive = static_cast<int>(rules.ballsLive());
+  }
   if constexpr (requires {
                   rules.locksHeld();
                   rules.lockLit();

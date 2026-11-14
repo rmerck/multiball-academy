@@ -5,7 +5,7 @@
 #include <concepts>
 #include <system_error>
 
-#include "core/Missions.hpp"
+#include "core/Courses.hpp"
 #include "core/Rules.hpp"
 
 namespace pinball {

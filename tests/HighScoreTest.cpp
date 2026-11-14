@@ -5,7 +5,7 @@
 #include "Check.hpp"
 #include "Suites.hpp"
 #include "core/HighScores.hpp"
-#include "core/Missions.hpp"
+#include "core/Courses.hpp"
 #include "core/InitialsEntry.hpp"
 #include "core/Rules.hpp"
 
@@ -144,8 +144,10 @@ void testHighScores() {
     HighScores scores;
     CHECK(scores.parse(header));
     CHECK(scores.size() == 0);
-    CHECK(scores.parse(header + "1000 3 ABC\n1000 0 ---\n5 8 A-Z\n"));
-    CHECK(scores.size() == 3 && scores.best() == 1000 && scores.at(2).rank == 8);
+    CHECK(scores.parse(header + "1000 3 ABC\n1000 0 ---\n5 6 A-Z\n"));
+    CHECK(scores.size() == 3 && scores.best() == 1000 && scores.at(2).rank == 6);
+    // A rank the ladder does not have is not a valid file.
+    CHECK(!scores.parse(header + "5 7 A-Z\n"));
   }
 
   {  // Anything malformed is rejected whole and leaves the table empty.

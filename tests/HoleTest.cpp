@@ -48,7 +48,7 @@ float distance(Vec2 a, Vec2 b) {
 // (-ffp-contract=off, as Box2D is), the physics uses only exactly rounded
 // arithmetic, and the table's curves are point tables written out in
 // TableLayout.hpp, not computed with the C library.
-constexpr std::uint64_t kSoakTrajectory = 0x7def69fed4c78cb6ULL;
+constexpr std::uint64_t kSoakTrajectory = 0x9dfaf92d8104927dULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {
@@ -342,7 +342,7 @@ void testHoles() {
      // game must keep serving balls.
     Game game;
     // One ball throughout: the Hangar returns the ball and does not lock it.
-    pinball::GameTestAccess::rules(game).setLocksEnabled(false);
+    pinball::GameTestAccess::rules(game).setMultiballEnabled(false);
     int stillSteps = 0;
     int worstStill = 0;
     Vec2 previous{};

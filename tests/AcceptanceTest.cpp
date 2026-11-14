@@ -198,6 +198,28 @@ void testAcceptance() {
     CHECK(way == Touch::OutlaneRight && harness.drains[2] == 1);
   }
 
+  {  // The bench opens the Hangar for the shot sweep, and it stays open:
+     // the rules' raise at a new game must not shut it again.
+    TableHarness harness;
+    harness.openHangar();
+    for (int i = 0; i < 120 * 3; ++i) {
+      harness.game().step(pinball::InputState{});
+    }
+    CHECK(!harness.game().doorBankUp());
+  }
+
+  {  // B2a under the rules: every fresh game's first ball is played into
+     // play and judged, and the same seed gives the same games.
+    EarlyDrainOptions options;
+    options.games = 12;
+    const EarlyDrainResult first = earlyDrains(options);
+    const EarlyDrainResult again = earlyDrains(options);
+    CHECK(first.games == 12 && first.inPlay == 12);
+    CHECK(first.lost == first.way[0] + first.way[1] + first.way[2]);
+    CHECK(first.fingerprint == again.fingerprint && first.lost == again.lost);
+    CHECK(first.percent() >= 0.0 && first.percent() <= 100.0);
+  }
+
   {  // B5, eject safety: a ball let go at each exit (the Briefing room, the
      // Hangar, both rails), a little off the exact release each time, meets
      // a flipper or an inlane first. Never a slingshot, an outlane or the
@@ -295,9 +317,27 @@ void testAcceptance() {
     CHECK(a.fingerprint == b.fingerprint && a.drains == b.drains && a.drains > 0);
     CHECK(a.stepsWithAllFree == b.stepsWithAllFree && a.autoLaunches == b.autoLaunches);
     CHECK(a.locks == b.locks && a.lockReleases == b.lockReleases && a.spins == b.spins);
-    CHECK(a.locks > 0 && a.spins > 0);
+    CHECK(a.bankDrops == b.bankDrops && a.hangarEntries == b.hangarEntries && a.spins > 0);
     options.seed = 10;
     CHECK(stress(options).fingerprint != a.fingerprint);
+
+    // A whole game under the table's own rules, played twice: the same
+    // game, sound from the first plunge to game over.
+    GamesOptions whole;
+    whole.games = 1;
+    whole.seed = 3;
+    const GamesResult one = playGames(whole);
+    const GamesResult again = playGames(whole);
+    CHECK(one.games == 1 && one.broken == nullptr && one.brokenSteps == 0 && one.timeouts == 0);
+    CHECK(one.fingerprint == again.fingerprint && one.steps == again.steps);
+    CHECK(one.scores == again.scores && one.scores.at(0) > 0);
+    CHECK(one.ballSeconds.size() >= 3 && one.gameSeconds.size() == 1);
+    CHECK(one.hangarEntriesDoorsUp == 0 && one.lockedAstray == 0);
+    std::uint64_t parts = 0;
+    for (const std::uint64_t part : one.featureScore) {
+      parts += part;
+    }
+    CHECK(parts == one.totalScore && one.totalScore == one.scores.at(0));
 
     SoakOptions soakOptions;
     soakOptions.bot = BotKind::Random;

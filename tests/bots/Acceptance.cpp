@@ -1,4 +1,5 @@
 #include "bots/Acceptance.hpp"
+#include "bots/RuleWatch.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -434,8 +435,7 @@ Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bo
   const bool dry = pressStep < 0;
   TableHarness harness;
   if (bankDown) {
-    harness.setLocks(false);
-    GameTestAccess::dropDoorBank(harness.game());
+    harness.openHangar();
   }
   setUpFeed(harness, feed, rightSide, variant);
   const std::size_t flipper = rightSide ? table::kRightFlipperIndex : table::kLeftFlipperIndex;
@@ -713,6 +713,13 @@ LockBurstResult lockBursts(int bursts) {
       ready = slot < table::kMaxBalls;
       if (!ready) {
         break;
+      }
+      if (game.doorBankUp()) {
+        // The rules shut the Hangar after some locks: open it again.
+        for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
+          GameTestAccess::rules(game).onDropTarget(door);
+        }
+        harness.advance();
       }
       shootHangar(harness, slot, dx, speed);
       for (int i = 0; i < kStepsPerSecond && !harness.held(slot); ++i) {
@@ -1208,14 +1215,19 @@ StressResult stress(const StressOptions& options) {
   Game& game = harness.game();
   const std::unique_ptr<Bot> bot = makeBot(options.bot, options.seed, options.reflexError);
   const std::size_t wanted = std::clamp<std::size_t>(options.balls, 1, table::kMaxBalls);
+  // With fewer than three the rules must not add balls of their own.
+  harness.setLocks(wanted == table::kMaxBalls);
   int inLane = 0;
   int pullLeft = 0;
   std::uint64_t overlapRun = 0;
   std::array<std::uint64_t, table::kMaxBalls> laneSteps{};
   for (std::uint64_t n = 0; n < options.steps; ++n) {
     // Keep the table full: every ball that leaves is asked for again and
-    // the game serves and launches it by itself.
-    while (game.ballCount() + game.queuedBalls() < wanted && game.requestBall()) {
+    // the game serves and launches it by itself. Not during a multiball of
+    // the rules' own: that ends when one ball is left of it, and only then
+    // can the Hangar lock balls again, so its balls are let drain.
+    while (game.rules().multiball() == Multiball::None &&
+           game.ballCount() + game.queuedBalls() < wanted && game.requestBall()) {
     }
     // A ball served for the player to launch (the first of a game) is
     // plunged at full power once it has waited a moment.
@@ -1291,6 +1303,257 @@ StressResult stress(const StressOptions& options) {
   result.kickbackReturns = harness.kickbackReturns;
   result.kickbackSafe = harness.kickbackSafe;
   result.kickbackLostAgain = harness.kickbackLostAgain;
+  return result;
+}
+
+double GamesResult::percentile(std::vector<double> values, double q) {
+  if (values.empty()) {
+    return 0.0;
+  }
+  std::ranges::sort(values);
+  return values[static_cast<std::size_t>(q * static_cast<double>(values.size() - 1))];
+}
+
+double GamesResult::share(Feature feature) const {
+  return totalScore == 0 ? 0.0
+                         : 100.0 * static_cast<double>(featureScore[std::to_underlying(feature)]) /
+                               static_cast<double>(totalScore);
+}
+
+double EarlyDrainResult::percent() const {
+  return inPlay == 0 ? 0.0 : 100.0 * lost / static_cast<double>(inPlay);
+}
+
+double EarlyDrainResult::standardError() const {
+  if (inPlay == 0) {
+    return 0.0;
+  }
+  const double p = static_cast<double>(lost) / static_cast<double>(inPlay);
+  return 100.0 * std::sqrt(p * (1.0 - p) / static_cast<double>(inPlay));
+}
+
+EarlyDrainResult earlyDrains(const EarlyDrainOptions& options) {
+  EarlyDrainResult result;
+  const auto limit = static_cast<std::uint64_t>(options.limitSeconds * kStepsPerSecond + 0.5);
+  for (int n = 0; n < options.games; ++n) {
+    std::uint64_t seed = options.seed;
+    mix(seed, static_cast<std::uint64_t>(n));
+    TableHarness harness;
+    Game& game = harness.game();
+    const Rules& rules = game.rules();
+    const std::unique_ptr<Bot> bot = makeBot(BotKind::Reflex, seed, options.reflexError);
+    Rng rng(seed ^ 0x5EEDULL);
+    constexpr std::uint64_t kNever = ~std::uint64_t{0};
+    std::uint64_t start = kNever;
+    int pull = 0;
+    int waited = 0;
+    Touch way = Touch::None;
+    bool lost = false;
+    const std::uint64_t kickbacksBefore = harness.kickbacks;
+    // At most a minute to get the ball into play, then the limit.
+    for (int i = 0; i < kStepsPerSecond * 60; ++i) {
+      // A ball waiting on the plunger (the first, or one the eject save gave
+      // back with no other ball live) is plunged after a moment; a weak
+      // plunge that comes back is plunged again.
+      waited = game.ballAwaitingLaunch() ? waited + 1 : 0;
+      if (pull == 0 && waited > 20) {
+        pull = rng.range(60, 125);
+      }
+      harness.plunger = pull > 1;
+      pull = pull > 0 ? pull - 1 : 0;
+      if (start != kNever) {
+        harness.act(*bot);
+      } else {
+        harness.left = false;
+        harness.right = false;
+      }
+      const Touch drain = harness.advance();
+      ++result.steps;
+      if (drain != Touch::None) {
+        way = drain;
+      }
+      if (start == kNever && game.ballInPlay(0)) {
+        start = harness.step();
+      }
+      if (start == kNever) {
+        continue;
+      }
+      if (rules.ball() != 1 || rules.gameOver()) {
+        lost = harness.step() - start <= limit;
+        break;
+      }
+      if (harness.step() - start > limit) {
+        break;
+      }
+    }
+    if (start == kNever) {
+      continue;
+    }
+    ++result.inPlay;
+    result.kickbacks += static_cast<int>(harness.kickbacks - kickbacksBefore);
+    result.ejectSaves += static_cast<int>(harness.ejectSaves);
+    if (lost) {
+      ++result.lost;
+      const int index = way == Touch::OutlaneLeft ? 1 : (way == Touch::OutlaneRight ? 2 : 0);
+      ++result.way[static_cast<std::size_t>(index)];
+    }
+    mix(result.fingerprint, lost ? harness.step() - start : 0U);
+    mix(result.fingerprint, static_cast<std::uint64_t>(way));
+  }
+  result.games = options.games;
+  return result;
+}
+
+GamesResult playGames(const GamesOptions& options) {
+  GamesResult result;
+  TableHarness harness;
+  // The whole game: every ball the rules give back or add.
+  harness.setSaver(options.saver);
+  harness.setLocks(options.multiball);
+  Game& game = harness.game();
+  const Rules& rules = game.rules();
+  const std::unique_ptr<Bot> bot = makeBot(options.bot, options.seed, options.reflexError);
+  Rng rng(options.seed ^ 0x6A3E5ULL);
+  RuleWatch watch;
+  constexpr std::uint64_t kNever = ~std::uint64_t{0};
+  constexpr std::uint64_t kGameCap = static_cast<std::uint64_t>(kStepsPerSecond) * 3600U;
+
+  while (result.games < options.games) {
+    // One game. The harness starts the next when this one is over.
+    std::uint64_t gameStart = kNever;  // The first plunge.
+    std::uint64_t ballStart = kNever;
+    int ballNumber = rules.ball();
+    int extraBalls = rules.extraBalls();
+    Multiball running = Multiball::None;
+    std::uint64_t multiballStart = 0;
+    int jackpotsBefore = 0;
+    bool turboSeen = false;
+    int pull = 0;
+    int waited = 0;
+    bool timedOut = false;
+    const auto endMultiball = [&] {
+      if (running == Multiball::None) {
+        return;
+      }
+      ++result.multiballs;
+      ++result.multiballsOfKind[std::to_underlying(running)];
+      result.multiballsWithJackpot += rules.jackpotsCollected() > jackpotsBefore ? 1 : 0;
+      result.multiballSeconds.push_back(static_cast<double>(harness.step() - multiballStart) /
+                                        kStepsPerSecond);
+      running = Multiball::None;
+    };
+    while (true) {
+      // The plunger: a ball that waits is plunged after a moment, with a
+      // hold drawn each time; one that comes back is plunged again.
+      waited = game.ballAwaitingLaunch() ? waited + 1 : 0;
+      if (pull == 0 && waited > 20) {
+        pull = rng.range(60, 125);
+        if (gameStart == kNever) {
+          gameStart = harness.step();
+        }
+      }
+      harness.plunger = pull > 1;
+      pull = pull > 0 ? pull - 1 : 0;
+      if (rules.ballInPlay()) {
+        harness.act(*bot);
+      } else {
+        harness.left = false;
+        harness.right = false;
+      }
+      harness.advance();
+      ++result.steps;
+      if (const char* broken = brokenRule(game, watch); broken != nullptr) {
+        ++result.brokenSteps;
+        if (result.broken == nullptr) {
+          result.broken = broken;
+        }
+      }
+      if (ballStart == kNever && rules.ballInPlay()) {
+        ballStart = harness.step();
+      }
+      // Multiballs as they come and go.
+      const Multiball now = rules.multiball();
+      if (now != running) {
+        if (running != Multiball::None && now == Multiball::None) {
+          endMultiball();
+        } else if (running == Multiball::None) {
+          running = now;
+          multiballStart = harness.step();
+          jackpotsBefore = rules.jackpotsCollected();
+          if (now == Multiball::Turbo && !turboSeen && gameStart != kNever) {
+            turboSeen = true;
+            result.firstTurboSeconds.push_back(
+                static_cast<double>(harness.step() - gameStart) / kStepsPerSecond);
+          }
+        } else {
+          running = now;  // One took over from another: the same multiball goes on.
+        }
+      }
+      // The end of a ball: the next one, the extra one, or the game.
+      const bool over = rules.gameOver();
+      const bool ended = over || rules.ball() != ballNumber ||
+                         (rules.extraBalls() < extraBalls && !rules.ballInPlay());
+      if (ended) {
+        if (ballStart != kNever) {
+          result.ballSeconds.push_back(static_cast<double>(harness.step() - ballStart) /
+                                       kStepsPerSecond);
+        }
+        result.extraBallsPlayed += !over && rules.ball() == ballNumber ? 1U : 0U;
+        mix(result.fingerprint, harness.step());
+        ballStart = kNever;
+        ballNumber = rules.ball();
+      }
+      extraBalls = rules.extraBalls();
+      if (over) {
+        break;
+      }
+      if (gameStart != kNever && harness.step() - gameStart > kGameCap) {
+        timedOut = true;
+        break;
+      }
+      if (harness.events.size() > 4096) {
+        harness.events.clear();
+      }
+    }
+    endMultiball();
+    ++result.games;
+    result.timeouts += timedOut ? 1 : 0;
+    if (gameStart != kNever) {
+      result.gameSeconds.push_back(static_cast<double>(harness.step() - gameStart) /
+                                   kStepsPerSecond);
+    }
+    result.scores.push_back(rules.score());
+    result.totalScore += rules.score();
+    for (std::size_t f = 0; f < kFeatureCount; ++f) {
+      result.featureScore[f] += rules.scoreFrom(static_cast<Feature>(f));
+    }
+    result.gamesWithTurbo += rules.turboMultiballs() > 0 ? 1 : 0;
+    result.gamesWithAcademy += rules.academyMultiballs() > 0 ? 1 : 0;
+    result.gamesWithCourse += rules.coursesStarted() > 0 ? 1 : 0;
+    const int passed = rules.coursesPassed() + 6 * rules.graduations();
+    result.gamesWithCoursePass += passed > 0 ? 1 : 0;
+    result.gamesQualified += rules.coursesPassed() == 6 || rules.graduations() > 0 ? 1 : 0;
+    result.gamesGraduated += rules.graduations() > 0 ? 1 : 0;
+    result.coursesStarted += static_cast<std::uint64_t>(rules.coursesStarted());
+    result.coursesPassed += static_cast<std::uint64_t>(passed);
+    ++result.finalRank[std::min(rules.rank(), kRankCount - 1)];
+    mix(result.fingerprint, rules.score());
+    harness.events.clear();
+    if (timedOut) {
+      harness.restart = true;
+    }
+    watch.newGame();
+    // The step that starts the next game.
+    harness.left = false;
+    harness.right = false;
+    harness.plunger = false;
+    harness.advance();
+    ++result.steps;
+  }
+  result.stuck = harness.stuck;
+  result.searches = game.ballSearchCount();
+  result.hangarEntriesDoorsUp = harness.hangarEntriesDoorsUp;
+  result.lockedAstray = harness.lockedAstray;
   return result;
 }
 

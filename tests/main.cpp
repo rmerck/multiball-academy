@@ -20,11 +20,13 @@ void runSuites() {
   testHighScores();
   testHoles();
   testLaunch();
-  testMissions();
+  testCourses();
+  testMultiball();
   testNudge();
   testPhysics();
   testPlunger();
   testPngHeader();
+  testRuleFuzz();
   testRules();
   testScreenLayout();
   testSha256();

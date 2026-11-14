@@ -3,383 +3,822 @@
 #include <string_view>
 
 #include "Check.hpp"
+#include "RulesBench.hpp"
 #include "Suites.hpp"
-#include "core/Game.hpp"
+#include "core/Courses.hpp"
 #include "core/Rules.hpp"
 #include "core/TableLayout.hpp"
 
-// The provisional rule set of the new table: a flat value for everything the
-// ball can do, three balls, the ball save and the tilt. The table's own
-// rules (courses, multiball, combos, bonus) replace it and these tests.
+// The table's rules, an event at a time: one group for each rule of the
+// scoring table, the skill shot, combos, overdrive, extra credit, the ball
+// saver, the kickback, extra balls, the bonus and the tilt. Courses and
+// Graduation Day are in CourseTest.cpp, the multiballs in MultiballTest.cpp.
 namespace {
 
+using pinball::DrainInfo;
+using pinball::Feature;
+using pinball::LampState;
 using pinball::Rules;
+using pinball::Shot;
+using pinball_test::RulesBench;
 namespace points = pinball::points;
 namespace table = pinball::table;
+namespace tuning = pinball::tuning;
+using LampId = pinball::table::LampId;
 
-constexpr double kStep = 1.0 / 120.0;
-
-std::size_t firstRollover(table::RolloverGroup group) {
-  for (std::size_t i = 0; i < table::kRollovers.size(); ++i) {
-    if (table::kRollovers[i].group == group) {
-      return i;
-    }
-  }
-  return 0;
+// A bench whose ball has closed a switch already: no skill shot is on
+// offer and the saver's clock is running.
+RulesBench started() {
+  RulesBench bench;
+  bench.rules.onSlingshot(0);
+  return bench;
 }
 
-void wait(Rules& rules, double seconds) {
-  for (int i = 0; i < static_cast<int>(seconds / kStep) + 2; ++i) {
-    rules.tick();
-  }
-}
-
-// Drains with no ball save in the way.
-Rules::DrainResult drain(Rules& rules) {
-  wait(rules, Rules::kBallSaveSeconds);
-  return rules.onDrain();
+// The same with the saver run out.
+RulesBench unsaved() {
+  RulesBench bench = started();
+  bench.wait(Rules::kBallSaveSeconds);
+  return bench;
 }
 
 }  // namespace
 
 void testRules() {
   {  // A new game.
-    Rules rules(kStep);
-    CHECK(rules.score() == 0);
-    CHECK(rules.ball() == 1);
-    CHECK(!rules.gameOver());
-    CHECK(rules.rank() == 0);
-    CHECK(!rules.ballInPlay() && !rules.ballSaveActive() && !rules.tilted());
+    RulesBench bench;
+    const Rules& rules = bench.rules;
+    CHECK(rules.score() == 0 && rules.ball() == 1 && !rules.gameOver() && rules.rank() == 0);
+    CHECK(!rules.tilted() && rules.ballInPlay());
     CHECK(rules.message() == std::string_view("LAUNCH THE BALL"));
+    CHECK(rules.kickbackLit() && rules.kickbackLamp());
+    CHECK(rules.briefingLit() && rules.rampsForBriefing() == 0);
+    CHECK(rules.goalText() == pinball::kGoalBriefingLit && rules.courseName().empty());
+    CHECK(rules.turboMeter() == 0 && rules.turboGoal() == tuning::kTurboMeterFirst);
+    CHECK(rules.locksHeld() == 0 && !rules.lockLit() && rules.multiball() == pinball::Multiball::None);
+    CHECK(rules.overdrive() == 1 && !rules.overdriveLit() && rules.comboLevel() == 0);
+    CHECK(rules.extraBalls() == 0 && !rules.extraBallLit() && !rules.extraCreditLit());
+    CHECK(rules.bonusMultiplier() == 1 && rules.skillShotOffered());
+    CHECK(bench.doorsUp);
   }
 
-  {  // Every element pays its value, each time, and nothing else.
-    Rules rules(kStep);
-    std::uint64_t expected = 0;
-    for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
-      rules.onBumper(i);
-      expected += points::kBumper;
-      CHECK(rules.score() == expected);
-    }
-    for (std::size_t i = 0; i < table::kSlingshots.size(); ++i) {
-      rules.onSlingshot(i);
-      expected += points::kSlingshot;
-    }
-    for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
-      rules.onTarget(i);
-      expected += points::kTarget;
-    }
-    // A bay door pays once and is marked; hit again it pays less. The third
-    // door opens the bank, which pays too and (provisionally) lights the lock.
-    for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
-      CHECK(!rules.doorMarked(i));
-      CHECK(rules.takeDoorCommand() == Rules::DoorCommand::None ||
-            i == 0);  // A new game asks for the bank to stand.
-      rules.onDropTarget(i);
-      expected += points::kBayDoor;
-      CHECK(rules.doorMarked(i));
-      if (i == 0) {
-        rules.onDropTarget(i);
-        expected += points::kBayDoorAgain;
-      }
-    }
-    expected += points::kBayDoorsOpen;
-    CHECK(rules.score() == expected);
-    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::Drop);
-    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::None);
-    CHECK(rules.lockLit());
-    CHECK(rules.message() == std::string_view("LOCK IS LIT"));
-    // For the rest of this test the Hangar only returns the ball.
-    rules.setLocksEnabled(false);
-    rules.onRollover(firstRollover(table::RolloverGroup::TopLane));
+  {  // 4.13, the plain values: each element pays its own, every time.
+    RulesBench bench = started();
+    const Rules& rules = bench.rules;
+    std::uint64_t expected = points::kSlingshot;
+    bench.rules.onSlingshot(1);
+    expected += points::kSlingshot;
+    bench.bumper();
+    expected += points::kBumper;
+    bench.spin();
+    expected += points::kSpin;
+    bench.rules.onTarget(0);
+    expected += points::kTarget;
+    bench.door(0);
+    expected += points::kBayDoor;
+    bench.door(0);
+    expected += points::kBayDoorAgain;
+    bench.rollCall(0);
     expected += points::kRollCallLane;
-    rules.onRollover(firstRollover(table::RolloverGroup::Inlane));
-    rules.onRollover(firstRollover(table::RolloverGroup::Outlane));
-    expected += 2 * points::kReturnLane;
+    bench.wing(1);
+    expected += points::kReturnLane;
+    bench.wing(3);  // The right outlane: its lane and its own award.
+    expected += points::kReturnLane + points::kRightOutlane;
+    bench.rules.onKickback();
+    expected += points::kKickback;
+    bench.wait(tuning::kComboSeconds);
+    bench.runway();
+    expected += points::kRamp;
+    bench.wait(tuning::kComboSeconds);
+    bench.circuit(false);
+    expected += points::kCircuit;
     CHECK(rules.score() == expected);
-    rules.onHole(table::kScoopHole);
-    CHECK(rules.message() == std::string_view("BRIEFING"));
-    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::Eject);
-    CHECK(rules.message() == std::string_view("HANGAR"));
-    rules.onHole(table::kRunwayHole);
-    CHECK(rules.message() == std::string_view("RUNWAY"));
-    rules.onHole(table::kSkywayHole);
-    CHECK(rules.message() == std::string_view("SKYWAY"));
-    expected += points::kBriefingRoom + points::kHangar + 2 * points::kRamp;
+    CHECK(rules.scoreFrom(Feature::Slingshots) == 2 * points::kSlingshot);
+    CHECK(rules.scoreFrom(Feature::Ramps) == points::kRamp);
+    CHECK(rules.scoreFrom(Feature::ReturnLanes) ==
+          2 * points::kReturnLane + points::kRightOutlane + points::kKickback);
+    // Indices outside the layout are ignored.
+    bench.rules.onBumper(99);
+    bench.rules.onSlingshot(99);
+    bench.rules.onTarget(99);
+    bench.rules.onDropTarget(99);
+    bench.rules.onRollover(99);
+    bench.rules.onSensor(99, 1, 2000.0F, 0);
+    CHECK(bench.rules.onHole(99) == Rules::HoleResult::Eject);
+    bench.rules.onEject(99);
     CHECK(rules.score() == expected);
-    // A second time pays the same again.
-    rules.onBumper(0);
-    rules.onHole(table::kRunwayHole);
-    CHECK(rules.score() == expected + points::kBumper + points::kRamp);
+    // The shares add up to the score.
+    std::uint64_t sum = 0;
+    for (std::size_t f = 0; f < pinball::kFeatureCount; ++f) {
+      sum += rules.scoreFrom(static_cast<Feature>(f));
+      CHECK(!pinball::featureName(static_cast<Feature>(f)).empty());
+    }
+    CHECK(sum == rules.score());
   }
 
-  {  // Provisional: the lock. Two balls are locked, the third lets them go
-     // and asks for the doors back up; with the locks off the Hangar
-     // returns the ball and the doors follow half a second after it is out.
-    Rules rules(kStep);
-    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::Raise);
-    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::Eject);  // Not lit.
-    for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
-      rules.onDropTarget(i);
+  {  // 4.2 Skill shot: the blinking lane pays 25,000 times the ball number,
+     // another lane 5,000; the flipper buttons move the blinking lane.
+    RulesBench bench;
+    CHECK(bench.rules.skillShotLane() == 1);
+    CHECK(bench.rules.lampState(LampId::RollCall2) == LampState::Blink);
+    bench.rules.onFlipper(true);
+    CHECK(bench.rules.skillShotLane() == 2);
+    bench.rules.onFlipper(true);
+    CHECK(bench.rules.skillShotLane() == 0);
+    bench.rules.onFlipper(false);
+    CHECK(bench.rules.skillShotLane() == 2);
+    bench.rollCall(2);
+    CHECK(bench.score() == points::kSkillShot + points::kRollCallLane);
+    CHECK(bench.message() == std::string_view("SKILL SHOT"));
+    CHECK(bench.rules.rollCallLit(2) && !bench.rules.skillShotOffered());
+    // Only once: the next lane is a lane.
+    bench.rollCall(0);
+    CHECK(bench.score() == points::kSkillShot + 2 * points::kRollCallLane);
+
+    RulesBench other;
+    other.rollCall(0);
+    CHECK(other.score() == points::kSkillShotOtherLane + points::kRollCallLane);
+
+    // Any other switch first: no skill shot.
+    RulesBench missed;
+    missed.bumper();
+    missed.rollCall(1);
+    CHECK(missed.score() == points::kBumper + points::kRollCallLane);
+
+    // Ball two: twice the award. It is offered again at the new ball.
+    RulesBench second = unsaved();
+    CHECK(second.drain() == Rules::DrainResult::NextBall);
+    CHECK(second.rules.ball() == 2 && second.rules.skillShotOffered());
+    const std::uint64_t before = second.score();
+    second.rollCall(second.rules.skillShotLane());
+    CHECK(second.score() - before == 2 * points::kSkillShot + points::kRollCallLane);
+  }
+
+  {  // 4.2 Super skill shot: a full plunge reaches the left inlane first,
+     // then the Skyway within five seconds.
+    RulesBench bench;
+    bench.wing(1);  // I: the left inlane.
+    CHECK(bench.rules.superSkillShotLit());
+    CHECK(bench.rules.lampState(LampId::ArrowSkyway) == LampState::FastBlink);
+    bench.wait(2.0);
+    const std::uint64_t before = bench.score();
+    bench.skyway();
+    CHECK(bench.score() - before == points::kSuperSkillShot + points::kRamp);
+    CHECK(!bench.rules.superSkillShotLit());
+    // It was the first shot of a combo.
+    CHECK(bench.rules.comboLevel() == 1);
+    bench.runway();
+    CHECK(bench.rules.comboLevel() == 2);
+
+    // Too late.
+    RulesBench late;
+    late.wing(1);
+    late.wait(tuning::kSuperSkillSeconds);
+    const std::uint64_t lateBefore = late.score();
+    late.skyway();
+    CHECK(late.score() - lateBefore == points::kRamp);
+    // The Runway is not the shot; and the inlane after another switch does
+    // not light it.
+    RulesBench wrong;
+    wrong.bumper();
+    wrong.wing(1);
+    CHECK(!wrong.rules.superSkillShotLit());
+  }
+
+  {  // 4.3 Roll call lanes: three light overdrive; the buttons rotate them.
+    RulesBench bench = started();
+    bench.rollCall(0);
+    CHECK(bench.rules.rollCallLit(0) && !bench.rules.rollCallLit(1));
+    bench.rules.onFlipper(true);
+    CHECK(bench.rules.rollCallLit(1) && !bench.rules.rollCallLit(0));
+    bench.rules.onFlipper(false);
+    bench.rules.onFlipper(false);
+    CHECK(bench.rules.rollCallLit(2));
+    const std::uint64_t before = bench.score();
+    bench.rollCall(2);  // Lit already: its value, nothing more.
+    CHECK(bench.score() - before == points::kRollCallLane);
+    bench.rollCall(0);
+    bench.rollCall(1);
+    CHECK(bench.score() - before == 3 * points::kRollCallLane + points::kRollCallComplete);
+    CHECK(!bench.rules.rollCallLit(0) && !bench.rules.rollCallLit(1) && !bench.rules.rollCallLit(2));
+    CHECK(bench.rules.overdriveLit() && bench.rules.overdrive() == 1);
+    CHECK(bench.message() == std::string_view("ROLL CALL COMPLETE"));
+    bench.wait(1.0);
+    CHECK(bench.message() == std::string_view("OVERDRIVE IS LIT"));
+    CHECK(bench.rules.lampState(LampId::ArrowTurbine) == LampState::Blink);
+  }
+
+  {  // 4.9 Overdrive: started at the Turbine, doubles the playfield for 20 s;
+     // roll call again makes it 3X and starts the time over; it stops only
+     // while every ball is held.
+    RulesBench bench = started();
+    for (std::size_t lane = 0; lane < 3; ++lane) {
+      bench.rollCall(lane);
     }
-    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::Drop);
-    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::Lock);
-    CHECK(rules.locksHeld() == 1);
-    CHECK(rules.message() == std::string_view("BALL 1 LOCKED"));
-    rules.onBallInPlay();
-    rules.onBallLocked(0, true);
-    CHECK(!rules.ballInPlay());
-    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::Lock);
-    CHECK(rules.locksHeld() == 2);
-    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::None);
-    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::StartMultiball);
-    CHECK(rules.locksHeld() == 0 && !rules.lockLit());
-    CHECK(rules.takeDoorCommand() == Rules::DoorCommand::Raise);
-    CHECK(!rules.doorMarked(0));
-    // A tilted table locks nothing.
-    for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
-      rules.onDropTarget(i);
+    bench.wait(tuning::kComboSeconds);
+    bench.turbine();
+    CHECK(bench.rules.overdrive() == 2 && !bench.rules.overdriveLit());
+    CHECK(bench.message() == std::string_view("OVERDRIVE 2X"));
+    std::uint64_t before = bench.score();
+    bench.bumper();
+    CHECK(bench.score() - before == 2 * points::kBumper);
+    bench.wait(10.0);
+    CHECK(bench.rules.overdrive() == 2);
+    // Every ball held: the clock stands.
+    bench.balls.free = 0;
+    bench.allHeld = true;
+    bench.wait(30.0);
+    CHECK(bench.rules.overdrive() == 2);
+    bench.allHeld = false;
+    // A ball waiting on the plunger (not free, not held): it runs.
+    const double running = bench.rules.overdriveSecondsLeft();
+    bench.wait(1.0);
+    CHECK(bench.rules.overdriveSecondsLeft() < running - 0.9);
+    bench.balls.free = 1;
+    for (std::size_t lane = 0; lane < 3; ++lane) {
+      bench.rollCall(lane);
     }
-    rules.onBallInPlay();
+    CHECK(bench.rules.overdrive() == 3 && !bench.rules.overdriveLit());
+    CHECK(bench.message() == std::string_view("OVERDRIVE 3X"));
+    CHECK(bench.rules.overdriveSecondsLeft() > tuning::kOverdriveSeconds - 0.1);
+    before = bench.score();
+    bench.bumper();
+    CHECK(bench.score() - before == 3 * points::kBumper);
+    // Three is the most.
+    for (std::size_t lane = 0; lane < 3; ++lane) {
+      bench.rollCall(lane);
+    }
+    CHECK(bench.rules.overdrive() == 3);
+    bench.wait(tuning::kOverdriveSeconds);
+    CHECK(bench.rules.overdrive() == 1);
+    CHECK(bench.message() == std::string_view("OVERDRIVE OVER"));
+    before = bench.score();
+    bench.bumper();
+    CHECK(bench.score() - before == points::kBumper);
+    // The Turbine with nothing lit starts nothing.
+    bench.turbine();
+    CHECK(bench.rules.overdrive() == 1);
+
+    // It ends with the ball; awards "as stated" are never multiplied.
+    RulesBench ending = unsaved();
+    for (std::size_t lane = 0; lane < 3; ++lane) {
+      ending.rollCall(lane);
+    }
+    ending.turbine();
+    CHECK(ending.rules.overdrive() == 2);
+    const std::uint64_t beforeDrain = ending.score();
+    CHECK(ending.drain() == Rules::DrainResult::NextBall);
+    CHECK(ending.rules.overdrive() == 1);
+    CHECK(ending.score() - beforeDrain == ending.rules.bonusTally().total);
+  }
+
+  {  // 4.3 W-I-N-G: four letters relight the kickback; with it lit already
+     // they raise the bonus multiplier, to 5X.
+    RulesBench bench = started();
+    bench.rules.onKickback();
+    CHECK(!bench.rules.kickbackLit());
+    bench.wing(1);
+    bench.wing(2);
+    bench.wing(3);
+    CHECK(bench.rules.wingLit(1) && bench.rules.wingLit(2) && bench.rules.wingLit(3));
+    bench.rules.onFlipper(true);  // G wraps round to W.
+    CHECK(bench.rules.wingLit(0) && bench.rules.wingLit(2) && bench.rules.wingLit(3) &&
+          !bench.rules.wingLit(1));
+    const std::uint64_t before = bench.score();
+    bench.wing(1);
+    CHECK(bench.score() - before == points::kReturnLane + points::kWingComplete);
+    CHECK(bench.rules.kickbackLit() && bench.message() == std::string_view("WINGS EARNED  KICKBACK LIT"));
+    CHECK(!bench.rules.wingLit(0) && !bench.rules.wingLit(1));
+    CHECK(bench.rules.bonusMultiplier() == 1);
+    for (int set = 2; set <= 7; ++set) {
+      for (std::size_t letter = 0; letter < 4; ++letter) {
+        bench.wing(letter);
+      }
+      CHECK(bench.rules.bonusMultiplier() == (set < 5 ? set : 5));
+    }
+    CHECK(bench.message() == std::string_view("WINGS EARNED  BONUS X"));
+  }
+
+  {  // The kickback lit by the left outlane's own switch does not save the
+     // ball that lit it: it is armed a moment later.
+    RulesBench bench = started();
+    bench.rules.onKickback();
+    bench.wing(1);
+    bench.wing(2);
+    bench.wing(3);
+    bench.wing(0);  // W last: the ball is in the left outlane.
+    CHECK(bench.rules.kickbackLamp() && !bench.rules.kickbackLit());
+    bench.wait(Rules::kKickbackArmSeconds);
+    CHECK(bench.rules.kickbackLit());
+    // Lit from another lane it is armed at once.
+    bench.rules.onKickback();
+    bench.wing(0);
+    bench.wing(1);
+    bench.wing(2);
+    bench.wing(3);
+    CHECK(bench.rules.kickbackLit());
+    // It carries over between balls, lit or not.
+    bench.rules.onKickback();
+    bench.wait(Rules::kBallSaveSeconds);
+    bench.drain();
+    CHECK(!bench.rules.kickbackLit() && bench.rules.ball() == 2);
+    CHECK(bench.message() != std::string_view("KICKBACK"));
+  }
+
+  {  // 4.3 Turbo targets: both light extra credit; 4.10: one award, shown.
+    RulesBench bench = started();
+    std::uint64_t before = bench.score();
+    bench.rules.onTarget(0);
+    CHECK(bench.rules.turboTargetLit(0) && !bench.rules.turboTargetLit(1));
+    bench.rules.onTarget(0);
+    CHECK(bench.score() - before == 2 * points::kTarget && !bench.rules.extraCreditLit());
+    bench.rules.onTarget(1);
+    CHECK(bench.score() - before == 3 * points::kTarget + points::kBothTargets);
+    CHECK(bench.rules.extraCreditLit() && !bench.rules.turboTargetLit(0));
+    CHECK(bench.message() == std::string_view("EXTRA CREDIT IS LIT"));
+    CHECK(bench.rules.turboMeter() == 3 * tuning::kTurboPerTarget);
+    CHECK(bench.rules.lampState(LampId::ExtraCredit) == LampState::Blink);
+  }
+
+  {  // 4.10 Extra credit: every award of the table turns up, each says what
+     // it gave, none is an extra ball and none is over 50,000.
+    int seen[7] = {};
+    RulesBench bench = started();
+    bench.rules.setMultiballEnabled(false);  // A turbo boost must not add balls here.
+    for (int n = 0; n < 400; ++n) {
+      bench.rules.onTarget(0);
+      bench.rules.onTarget(1);
+      CHECK(bench.rules.extraCreditLit());
+      const std::uint64_t before = bench.score();
+      const int extraBefore = bench.rules.extraBalls();
+      bench.scoop();
+      CHECK(!bench.rules.extraCreditLit());
+      // The course it started, if it did, is not what is being looked at.
+      const std::uint64_t gained = bench.score() - before - points::kBriefingRoom;
+      CHECK(gained <= 50'000 || bench.rules.courseRunning());
+      CHECK(bench.rules.extraBalls() == extraBefore);
+      // Find what the display said about it, among what it says in turn.
+      for (int i = 0; i < 6; ++i) {
+        const std::string_view said = bench.message();
+        if (said.starts_with("EXTRA CREDIT")) {
+          const std::string_view what[] = {"EXTRA CREDIT 25,000",        "EXTRA CREDIT 50,000",
+                                           "EXTRA CREDIT  KICKBACK LIT", "EXTRA CREDIT  BONUS X",
+                                           "EXTRA CREDIT  BALL SAVER",   "EXTRA CREDIT  TURBO BOOST",
+                                           "EXTRA CREDIT  OVERDRIVE LIT"};
+          for (int k = 0; k < 7; ++k) {
+            seen[k] += said == what[k] ? 1 : 0;
+          }
+          break;
+        }
+        bench.wait(Rules::kQueuedMessageSeconds);
+      }
+      bench.wait(1.0);
+    }
+    int total = 0;
+    for (const int count : seen) {
+      CHECK(count > 0);
+      total += count;
+    }
+    CHECK(total >= 390);
+    // Weighted: 25,000 is the commonest, overdrive the rarest.
+    CHECK(seen[0] > seen[1] && seen[1] > seen[6] && seen[0] > 80 && seen[6] < 50);
+  }
+
+  {  // Extra credit while overdrive runs: "overdrive lit" would give
+     // nothing, so it is never the award; another one is given instead.
+    RulesBench bench = started();
+    bench.rules.setMultiballEnabled(false);
+    int given = 0;
+    for (int n = 0; n < 300; ++n) {
+      if (bench.rules.overdrive() == 1) {
+        for (std::size_t lane = 0; lane < 3; ++lane) {
+          bench.rollCall(lane);
+        }
+        bench.step();
+        bench.turbine();
+        bench.step();
+      }
+      CHECK(bench.rules.overdrive() > 1);
+      bench.rules.onTarget(0);
+      bench.rules.onTarget(1);
+      bench.scoop();
+      CHECK(bench.rules.overdrive() > 1 && !bench.rules.overdriveLit());
+      for (int i = 0; i < 6; ++i) {
+        const std::string_view said = bench.message();
+        if (said.starts_with("EXTRA CREDIT")) {
+          CHECK(said != std::string_view("EXTRA CREDIT  OVERDRIVE LIT"));
+          ++given;
+          break;
+        }
+        bench.wait(Rules::kQueuedMessageSeconds);
+      }
+      bench.wait(0.2);
+    }
+    CHECK(given >= 290);
+  }
+
+  {  // 4.3 Briefing room: 5,000 the first time on a ball and when something
+     // is collected, 1,000 for a repeat with nothing lit.
+    RulesBench bench = started();
+    std::uint64_t before = bench.score();
+    bench.scoop();  // Starts the first course.
+    CHECK(bench.score() - before == points::kBriefingRoom && bench.rules.courseRunning());
+    before = bench.score();
+    bench.scoop();
+    CHECK(bench.score() - before == points::kBriefingRepeat);
+    bench.rules.onTarget(0);
+    bench.rules.onTarget(1);
+    before = bench.score();
+    bench.scoop();
+    CHECK(bench.score() - before >= points::kBriefingRoom);
+    // A new ball: the first visit pays in full again.
+    bench.wait(Rules::kBallSaveSeconds);
+    bench.drain();
+    before = bench.score();
+    bench.rules.onSlingshot(0);
+    bench.scoop();
+    CHECK(bench.score() - before == points::kSlingshot + points::kBriefingRoom);
+  }
+
+  {  // 4.3 Circuits: the mouth going up at 900 or more, then the top of the
+     // arch the same way round or a roll call lane, by the same ball, in 2.5 s.
+    RulesBench bench = started();
+    const Rules& rules = bench.rules;
+    std::uint64_t before = bench.score();
+    const auto gained = [&bench, &before] {
+      const std::uint64_t now = bench.score() - before;
+      before = bench.score();
+      return now;
+    };
+    bench.rules.onSensor(0, 1, 1200.0F, 0);
+    CHECK(gained() == 0);
+    bench.rules.onSensor(2, 1, 800.0F, 0);
+    CHECK(gained() == points::kCircuit);
+    // Once: the top again pays nothing.
+    bench.rules.onSensor(2, 1, 800.0F, 0);
+    CHECK(gained() == 0);
+    // Too slow at the mouth.
+    bench.rules.onSensor(0, 1, 899.0F, 0);
+    bench.rules.onSensor(2, 1, 800.0F, 0);
+    CHECK(gained() == 0);
+    // Down through the mouth is not an entry.
+    bench.rules.onSensor(0, -1, 1500.0F, 0);
+    bench.rules.onSensor(2, 1, 800.0F, 0);
+    CHECK(gained() == 0);
+    // The wrong way over the top (a launch goes that way).
+    bench.rules.onSensor(0, 1, 1500.0F, 0);
+    bench.rules.onSensor(2, -1, 800.0F, 0);
+    CHECK(gained() == 0);
+    bench.wait(tuning::kCircuitSeconds);
+    bench.wait(tuning::kComboSeconds);
+    // Another ball's crossing.
+    bench.rules.onSensor(1, 1, 1500.0F, 1);
+    bench.rules.onSensor(2, -1, 800.0F, 2);
+    CHECK(gained() == 0);
+    bench.rules.onSensor(2, -1, 800.0F, 1);
+    CHECK(gained() == points::kCircuit);
+    // Too late.
+    bench.rules.onSensor(1, 1, 1500.0F, 0);
+    bench.wait(tuning::kCircuitSeconds);
+    bench.rules.onSensor(2, -1, 800.0F, 0);
+    CHECK(gained() == 0);
+    // Falling off the arch into a roll call lane is a made circuit.
+    bench.rules.onSensor(1, 1, 1500.0F, 0);
+    bench.rollCall(1, 0);
+    CHECK(gained() == points::kCircuit + points::kRollCallLane);
+    // A lane by another ball is not.
+    bench.rules.onSensor(1, 1, 1500.0F, 0);
+    bench.rollCall(1, 1);
+    CHECK(gained() == points::kRollCallLane);
+    CHECK(rules.scoreFrom(Feature::Circuits) == 3 * points::kCircuit);
+    // A ball taken by a hole is off the arch: its try is over. Another
+    // ball's capture leaves it alone.
+    bench.wait(tuning::kCircuitSeconds);
+    bench.wait(tuning::kComboSeconds);
+    bench.rules.onSensor(0, 1, 1500.0F, 2);
+    bench.rules.onHole(table::kRunwayHole, 1);
+    bench.rules.onSensor(2, 1, 800.0F, 2);
+    CHECK(rules.scoreFrom(Feature::Circuits) == 4 * points::kCircuit);
+    bench.wait(tuning::kComboSeconds);
+    bench.rules.onSensor(0, 1, 1500.0F, 2);
+    bench.rules.onHole(table::kScoopHole, 2);
+    bench.rules.onSensor(2, 1, 800.0F, 2);
+    CHECK(rules.scoreFrom(Feature::Circuits) == 4 * points::kCircuit);
+  }
+
+  {  // 4.4 Combos: a different flow shot within four seconds extends the
+     // chain; 20, 40, 80, 150 thousand; the chain ends at 5X.
+    RulesBench bench = started();
+    const Rules& rules = bench.rules;
+    std::uint64_t before = bench.score();
+    const auto gained = [&bench, &before] {
+      const std::uint64_t now = bench.score() - before;
+      before = bench.score();
+      return now;
+    };
+    bench.runway();
+    CHECK(gained() == points::kRamp && rules.comboLevel() == 1);
+    bench.wait(3.0);
+    bench.skyway();
+    CHECK(gained() == points::kRamp + points::kCombo[0] && rules.comboLevel() == 2);
+    CHECK(bench.message() == std::string_view("COMBO 2X"));
+    bench.circuit(false);
+    CHECK(gained() == points::kCircuit + points::kCombo[1] && rules.comboLevel() == 3);
+    bench.turbine();
+    CHECK(gained() == points::kCombo[2] && rules.comboLevel() == 4);
+    CHECK(!rules.extraBallLit());
+    bench.step();
+    bench.circuit(true);
+    CHECK(gained() == points::kCircuit + points::kCombo[3]);
+    CHECK(bench.message() == std::string_view("COMBO 5X"));
+    // The chain is over: the first 5X of a game lights the extra ball, and
+    // the next flow shot is the first of a new chain.
+    CHECK(rules.comboLevel() == 0 && rules.extraBallLit());
+    bench.runway();
+    CHECK(gained() == points::kRamp && rules.comboLevel() == 1);
+    CHECK(rules.scoreFrom(Feature::Combos) == 290'000);
+
+    // The same shot again neither extends nor breaks: it restarts the time.
+    bench.wait(tuning::kComboSeconds);
+    bench.runway();
+    bench.wait(3.0);
+    bench.runway();
+    CHECK(gained() == 2 * points::kRamp && rules.comboLevel() == 1);
+    bench.wait(3.0);  // Six seconds after the first, three after the second.
+    bench.skyway();
+    CHECK(gained() == points::kRamp + points::kCombo[0]);
+    // Too late: a new chain.
+    bench.wait(tuning::kComboSeconds);
+    CHECK(rules.comboLevel() == 0);
+    bench.runway();
+    CHECK(gained() == points::kRamp && rules.comboLevel() == 1);
+    // A second 5X chain lights no second extra ball.
+    bench.wait(tuning::kComboSeconds);
+    bench.scoop();  // Collect the first (and start a course).
+    CHECK(!rules.extraBallLit() && rules.extraBalls() == 1);
+    bench.wait(tuning::kComboSeconds);
+    bench.runway();
+    bench.skyway();
+    bench.runway();
+    bench.skyway();
+    bench.runway();
+    CHECK(rules.comboLevel() == 0 && !rules.extraBallLit());
+    // Down the Turbine lane is not the shot.
+    bench.wait(tuning::kComboSeconds);
+    bench.rules.onSensor(table::kSpinnerSensor, -1, 900.0F, 0);
+    CHECK(rules.comboLevel() == 0);
+  }
+
+  {  // 4.11 Ball saver: 15 s from the ball entering play; every drain
+     // inside it comes back, any number of times; its clock stands while no
+     // ball is free.
+    RulesBench bench;
+    const Rules& rules = bench.rules;
+    CHECK(rules.ballSaveActive());
+    CHECK(rules.ballSaveSecondsLeft() > Rules::kBallSaveSeconds - 0.1);
+    CHECK(rules.lampState(LampId::ShootAgain) == LampState::Blink);
+    // A ball that drains having touched nothing is returned too.
+    CHECK(bench.drain() == Rules::DrainResult::BallSaved);
+    CHECK(rules.ball() == 1 && bench.message() == std::string_view("BALL SAVED"));
+    CHECK(rules.skillShotOffered());
+    bench.wait(5.0);
+    CHECK(bench.drain() == Rules::DrainResult::BallSaved);
+    CHECK(bench.drain() == Rules::DrainResult::BallSaved);
+    // On the plunger, or in a hold, the clock stands.
+    bench.balls.free = 0;
+    bench.wait(60.0);
+    CHECK(rules.ballSaveActive());
+    bench.balls.free = 1;
+    bench.wait(7.5);
+    CHECK(rules.ballSaveActive());
+    CHECK(rules.lampState(LampId::ShootAgain) == LampState::FastBlink);
+    bench.wait(3.0);
+    CHECK(!rules.ballSaveActive());
+    CHECK(rules.lampState(LampId::ShootAgain) == LampState::Off);
+    CHECK(bench.drain() == Rules::DrainResult::NextBall);
+    CHECK(rules.ball() == 2 && rules.ballSaveActive());
+    // Not before the ball has entered play: nothing drains from the lane.
+    Rules fresh(pinball_test::kRuleStep);
+    CHECK(!fresh.ballSaveActive());
+    CHECK(fresh.onDrain() == Rules::DrainResult::NextBall);
+  }
+
+  {  // 4.7 The short save after an eject: any drain so marked comes back,
+     // saver or no saver, without limit, and not on a tilted table.
+    RulesBench bench = unsaved();
+    CHECK(!bench.rules.ballSaveActive());
     for (int i = 0; i < 4; ++i) {
-      rules.onNudge();
+      CHECK(bench.drain(DrainInfo{.afterEject = true}) == Rules::DrainResult::BallSaved);
+      CHECK(bench.rules.ball() == 1 && bench.message() == std::string_view("BALL SAVED"));
     }
-    CHECK(rules.tilted());
-    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::Eject);
-    CHECK(rules.locksHeld() == 0);
-
-    Rules plain(kStep);
-    plain.setLocksEnabled(false);
-    static_cast<void>(plain.takeDoorCommand());
-    for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
-      plain.onDropTarget(i);
+    for (int i = 0; i < 3; ++i) {
+      bench.rules.onNudge();
     }
-    CHECK(!plain.lockLit());
-    CHECK(plain.message() == std::string_view("BAY DOORS OPEN"));
-    CHECK(plain.takeDoorCommand() == Rules::DoorCommand::Drop);
-    CHECK(plain.onHole(table::kHangarHole) == Rules::HoleResult::Eject);
-    wait(plain, 2.0);
-    CHECK(plain.takeDoorCommand() == Rules::DoorCommand::None);  // Not before it is out.
-    plain.onEject(table::kHangarHole);
-    wait(plain, Rules::kDoorRaiseSeconds - 0.1);
-    CHECK(plain.takeDoorCommand() == Rules::DoorCommand::None);
-    wait(plain, 0.2);
-    CHECK(plain.takeDoorCommand() == Rules::DoorCommand::Raise);
-    plain.onDoorBank(true);
-    CHECK(!plain.doorMarked(0) && !plain.doorMarked(1) && !plain.doorMarked(2));
+    CHECK(bench.rules.tilted());
+    CHECK(bench.drain(DrainInfo{.afterEject = true}) == Rules::DrainResult::NextBall);
   }
 
-  {  // Provisional: a spin and the kickback pay; the short save after an
-     // eject returns the ball without using up the ball save.
-    Rules rules(kStep);
-    rules.onSpin();
-    rules.onKickback();
-    CHECK(rules.score() == points::kSpin + points::kKickback);
-    rules.onBallInPlay();
-    wait(rules, 1.0);
-    CHECK(rules.onDrain({.afterEject = true}) == Rules::DrainResult::BallSaved);
-    CHECK(rules.ball() == 1);
-    rules.onBallInPlay();
-    CHECK(rules.ballSaveActive());
-    CHECK(rules.onDrain() == Rules::DrainResult::BallSaved);  // The ball save itself.
-    rules.onBallInPlay();
-    CHECK(rules.onDrain() == Rules::DrainResult::NextBall);
-    // With other balls in play the ball is owed back; not otherwise.
-    rules.onBallInPlay();
-    CHECK(rules.onBallLost({.afterEject = true}));
-    CHECK(!rules.onBallLost({.afterEject = false}));
-  }
-
-  {  // Out-of-range indices are ignored everywhere.
-    Rules rules(kStep);
-    rules.onBumper(999);
-    rules.onSlingshot(999);
-    rules.onTarget(999);
-    rules.onDropTarget(999);
-    rules.onRollover(999);
-    rules.onHole(999);
-    CHECK(rules.score() == 0);
-    CHECK(rules.message() == std::string_view("LAUNCH THE BALL"));
-  }
-
-  {  // Ball save: a drain soon after entering play costs nothing.
-    Rules rules(kStep);
-    rules.onBallInPlay();
-    CHECK(rules.ballSaveActive() && rules.ballInPlay());
-    CHECK(rules.onDrain() == Rules::DrainResult::BallSaved);
-    CHECK(rules.message() == std::string_view("BALL SAVED"));
-    CHECK((rules.takeSounds() & pinball::soundBit(pinball::Sound::BallSaved)) != 0U);
-    CHECK(rules.ball() == 1 && !rules.ballInPlay());
-    // One save per ball: the returned ball is not saved a second time.
-    rules.onBallInPlay();
-    CHECK(!rules.ballSaveActive());
-    CHECK(rules.onDrain() == Rules::DrainResult::NextBall);
-    CHECK(rules.message() == std::string_view("NEXT BALL"));
-    // The next ball gets its own.
-    rules.onBallInPlay();
-    CHECK(rules.ballSaveActive());
-    wait(rules, Rules::kBallSaveSeconds);
-    CHECK(!rules.ballSaveActive());
-  }
-
-  {  // Three balls, then game over; nothing scores after that until a new
-     // game.
-    Rules rules(kStep);
-    rules.onBumper(0);
-    rules.onBumper(0);
-    const std::uint64_t before = rules.score();
-    CHECK(drain(rules) == Rules::DrainResult::NextBall);
-    CHECK(rules.score() == before);
+  {  // 4.10 Extra balls: lit by the first 5X chain, collected at the
+     // Briefing room, played after the ball ends. One held at most.
+    RulesBench bench = unsaved();
+    const Rules& rules = bench.rules;
+    bench.runway();
+    bench.skyway();
+    bench.runway();
+    bench.skyway();
+    bench.runway();
+    CHECK(rules.extraBallLit() && rules.lampState(LampId::ExtraBall) == LampState::Blink);
+    bench.scoop();
+    CHECK(rules.extraBalls() == 1 && !rules.extraBallLit());
+    CHECK(rules.lampState(LampId::ShootAgain) == LampState::On);
+    CHECK(bench.drain() == Rules::DrainResult::ShootAgain);
+    CHECK(rules.ball() == 1 && rules.extraBalls() == 0 && rules.skillShotOffered());
+    bench.wait(4.0);  // After the bonus lines.
+    CHECK(bench.message() == std::string_view("SHOOT AGAIN"));
+    CHECK(bench.drainForGood() == Rules::DrainResult::NextBall);
     CHECK(rules.ball() == 2);
-    CHECK(drain(rules) == Rules::DrainResult::NextBall);
-    CHECK(rules.ball() == 3);
-    rules.takeSounds();
-    CHECK(drain(rules) == Rules::DrainResult::GameOver);
-    CHECK(rules.gameOver());
-    CHECK(rules.ball() == 3);
-    CHECK(rules.message() == Rules::kGameOverMessage.text());
-    CHECK((rules.takeSounds() & pinball::soundBit(pinball::Sound::GameOver)) != 0U);
-
-    const std::uint64_t final = rules.score();
-    rules.onBumper(0);
-    rules.onTarget(0);
-    rules.onDropTarget(0);
-    rules.onRollover(0);
-    rules.onHole(0);
-    rules.onSlingshot(0);
-    rules.onBallInPlay();
-    CHECK(rules.score() == final);
-    CHECK(!rules.ballInPlay() && !rules.ballSaveActive());
-    CHECK(!rules.onNudge());
-    CHECK(rules.onDrain() == Rules::DrainResult::GameOver);
-    wait(rules, 10.0);
-    CHECK(rules.message() == Rules::kGameOverMessage.text());  // It stays up.
-
-    rules.startGame();
-    CHECK(!rules.gameOver() && rules.score() == 0 && rules.ball() == 1);
   }
 
-  {  // The score saturates; it never wraps.
-    // The largest award there is, as often as it takes to pass the limit.
-    Rules full(kStep);
-    const std::uint64_t needed = points::kMaxScore / points::kHangar + 10;
-    for (std::uint64_t i = 0; i < needed; ++i) {
-      full.onHole(table::kHangarHole);
+  {  // 4.11 End-of-ball bonus: every part, times the multiplier, tallied a
+     // line at a time; lost on tilt.
+    RulesBench bench = unsaved();  // One switch so far: the slingshot.
+    const Rules& rules = bench.rules;
+    bench.runway();
+    bench.skyway();  // One combo; two switches.
+    for (std::size_t lane = 0; lane < 3; ++lane) {
+      bench.rollCall(lane);  // One lane set; three switches.
     }
-    CHECK(needed * points::kHangar > points::kMaxScore);
-    CHECK(full.score() == points::kMaxScore);
-    full.onBumper(0);
-    CHECK(full.score() == points::kMaxScore);
+    for (std::size_t letter = 0; letter < 4; ++letter) {
+      bench.wing(letter);  // A second set, and (kickback lit) 2X; four switches.
+    }
+    CHECK(rules.bonusMultiplier() == 2);
+    const std::uint64_t base = points::kBonusCombo + 2 * points::kBonusLaneSet +
+                               10 * points::kBonusSwitch;
+    CHECK(rules.bonusSoFar() == base);
+    const std::uint64_t before = bench.score();
+    CHECK(bench.drain() == Rules::DrainResult::NextBall);
+    CHECK(bench.score() - before == 2 * base);
+    CHECK(rules.scoreFrom(Feature::Bonus) == 2 * base);
+    const pinball::BonusTally& tally = rules.bonusTally();
+    CHECK(tally.courses == 0 && tally.locks == 0 && tally.combos == points::kBonusCombo);
+    CHECK(tally.lanes == 2 * points::kBonusLaneSet && tally.switches == 10 * points::kBonusSwitch);
+    CHECK(tally.multiplier == 2 && tally.total == 2 * base);
+    // The display: one line after another, then the next ball.
+    CHECK(bench.message() == std::string_view("COMBOS 5,000"));
+    bench.wait(Rules::kQueuedMessageSeconds);
+    CHECK(bench.message() == std::string_view("LANES 10,000"));
+    bench.wait(Rules::kQueuedMessageSeconds);
+    CHECK(bench.message() == std::string_view("SWITCHES 2,500"));
+    bench.wait(Rules::kQueuedMessageSeconds);
+    CHECK(bench.message() == std::string_view("BONUS 2X  35,000"));
+    bench.wait(Rules::kQueuedMessageSeconds);
+    CHECK(bench.message() == std::string_view("NEXT BALL"));
+    bench.wait(Rules::kMessageSeconds);
+    CHECK(bench.message().empty());
+    // The counts and the multiplier start again with the ball.
+    CHECK(rules.bonusMultiplier() == 1 && rules.bonusSoFar() == 0);
+
+    // The switch count stops at 400.
+    RulesBench many = unsaved();
+    for (int i = 0; i < 500; ++i) {
+      many.rules.onSlingshot(0);
+    }
+    CHECK(many.rules.bonusSoFar() == 400 * points::kBonusSwitch);
   }
 
-  {  // Messages expire.
-    Rules rules(kStep);
-    rules.onHole(table::kScoopHole);
-    CHECK(rules.message() == std::string_view("BRIEFING"));
-    wait(rules, Rules::kMessageSeconds);
-    CHECK(rules.message().empty());
+  {  // 4.11 Tilt: three nudges in a second; nothing scores, nothing is
+     // saved, the bonus is lost, and it ends with the ball.
+    RulesBench bench = started();
+    const Rules& rules = bench.rules;
+    CHECK(bench.rules.onNudge());
+    CHECK(bench.rules.onNudge());
+    CHECK(bench.message() == std::string_view("DANGER  TILT WARNING"));
+    CHECK(!bench.rules.onNudge());
+    CHECK(rules.tilted() && bench.message() == std::string_view("TILT"));
+    CHECK(!rules.ballSaveActive() && !rules.kickbackLit());
+    const std::uint64_t before = bench.score();
+    bench.bumper(5);
+    bench.spin(5);
+    bench.runway();
+    bench.rollCall(0);
+    bench.door(0);
+    bench.rules.onTarget(0);
+    bench.circuit(false);
+    bench.scoop();
+    CHECK(bench.hangar() == Rules::HoleResult::Eject);
+    CHECK(bench.score() == before && rules.turboMeter() == 0 && !rules.courseRunning());
+    CHECK(!rules.rollCallLit(0) && !rules.doorMarked(0) && !rules.turboTargetLit(0));
+    CHECK(bench.message() == std::string_view("TILT"));
+    bench.rules.onFlipper(true);
+    CHECK(rules.skillShotLane() == 1);
+    CHECK(!bench.rules.onNudge());
+    CHECK(bench.drain() == Rules::DrainResult::NextBall);
+    CHECK(!rules.tilted() && rules.ball() == 2 && bench.score() == before);
+    CHECK(rules.bonusTally().total == 0);
+    CHECK(bench.message() == std::string_view("NEXT BALL"));
+    // Nudges do not count with the ball on the plunger.
+    RulesBench waiting;
+    waiting.rules.onBallReturned();
+    for (int i = 0; i < 5; ++i) {
+      CHECK(!waiting.rules.onNudge());
+    }
+    CHECK(!waiting.rules.tilted());
+    // Occasional nudges never tilt.
+    RulesBench calm = started();
+    for (int i = 0; i < 20; ++i) {
+      CHECK(calm.rules.onNudge());
+      calm.wait(Rules::kTiltCoolSeconds);
+    }
+    CHECK(!calm.rules.tilted());
   }
 
-  {  // A bad step length falls back to a usable one.
-    Rules rules(0.0);
-    rules.onBallInPlay();
-    CHECK(rules.ballSaveActive());
+  {  // Three balls, then the game is over and stays over.
+    RulesBench bench = unsaved();
+    const Rules& rules = bench.rules;
+    CHECK(bench.drain() == Rules::DrainResult::NextBall);
+    CHECK(bench.drainForGood() == Rules::DrainResult::NextBall);
+    CHECK(rules.ball() == 3);
+    bench.scoop();
+    CHECK(rules.courseRunning());
+    CHECK(bench.drainForGood() == Rules::DrainResult::GameOver);
+    CHECK(rules.gameOver() && rules.ball() == 3);
+    // Nothing is left running, lit or asked for.
+    CHECK(!rules.courseRunning() && rules.multiball() == pinball::Multiball::None);
+    CHECK(!rules.ballSaveActive() && !rules.kickbackLit() && !rules.lockLit());
+    CHECK(!rules.skillShotOffered() && !rules.briefingLit() && !rules.graduationLit());
+    CHECK(bench.rules.takeBallRequests() == 0 && bench.rules.takeLockCommand() == Rules::LockCommand::None);
+    for (std::size_t lamp = 0; lamp < std::to_underlying(LampId::Count); ++lamp) {
+      CHECK(rules.lampState(static_cast<LampId>(lamp)) == LampState::Off);
+    }
+    const std::uint64_t score = bench.score();
+    bench.bumper(3);
+    bench.runway();
+    bench.scoop();
+    CHECK(bench.hangar() == Rules::HoleResult::Eject);
+    CHECK(!bench.rules.onNudge());
+    CHECK(bench.rules.onDrain() == Rules::DrainResult::GameOver);
+    CHECK(!bench.rules.onBallLost({}));
+    CHECK(bench.score() == score);
+    // The tally runs out and the last line stays.
+    bench.wait(30.0);
+    CHECK(bench.message() == Rules::kGameOverMessage.text());
+    // A new game is a clean one.
+    bench.rules.startGame();
+    CHECK(!rules.gameOver() && rules.score() == 0 && rules.ball() == 1);
+    CHECK(rules.message() == std::string_view("LAUNCH THE BALL"));
+    CHECK(rules.briefingLit() && rules.kickbackLit());
   }
 
-  {  // Extreme step lengths still give every timer a sane, non-zero length:
-     // a message always expires and a ball save is always offered.
-    for (const double step : {1e-300, 1e-12, 100.0, 1e300}) {
-      Rules rules(step);
-      rules.onBallInPlay();
-      CHECK(rules.ballSaveActive());
-      rules.onHole(table::kScoopHole);
-      CHECK(rules.message() == std::string_view("BRIEFING"));
-      if (step >= 1.0) {
-        rules.tick();
-        CHECK(rules.message().empty());
-        CHECK(!rules.ballSaveActive());
+  {  // The score never wraps, and neither does a share of it.
+    RulesBench bench = started();
+    pinball::Rules& rules = bench.rules;
+    // Commencement is the largest single award; pile up far more than fits
+    // by looping the largest awards with overdrive running.
+    for (int round = 0; round < 400'000 && rules.score() < points::kMaxScore; ++round) {
+      for (std::size_t lane = 0; lane < 3; ++lane) {
+        bench.rollCall(lane);
+      }
+      bench.turbine();
+      for (int i = 0; i < 40; ++i) {
+        bench.runway();
+        bench.skyway();
+        bench.circuit(false);
+        bench.turbine();
+        bench.circuit(true);
       }
     }
+    CHECK(rules.score() == points::kMaxScore);
+    bench.runway();
+    CHECK(rules.score() == points::kMaxScore);
+    std::uint64_t sum = 0;
+    for (std::size_t f = 0; f < pinball::kFeatureCount; ++f) {
+      sum += rules.scoreFrom(static_cast<Feature>(f));
+    }
+    CHECK(sum == points::kMaxScore);
+    // The bonus on top of a full score changes nothing either.
+    bench.wait(Rules::kBallSaveSeconds);
+    bench.drain();
+    CHECK(rules.score() == points::kMaxScore);
   }
 
-  {  // A ball put back on the plunger without draining is out of play: a
-     // tilt is cleared so the plunger works, nudges no longer count, and
-     // nothing is scored, forfeited or used up.
-    Rules rules(kStep);
-    rules.onBallInPlay();
-    rules.onBumper(0);
-    rules.onNudge();
-    rules.onNudge();
-    rules.onNudge();
-    CHECK(rules.tilted());
-    wait(rules, Rules::kMessageSeconds);
-    CHECK(rules.message() == std::string_view("TILT"));
-    const std::uint64_t score = rules.score();
-    rules.takeSounds();
-    rules.onBallReturned();
-    CHECK(!rules.tilted());
-    CHECK(rules.tiltWarning() == 0.0);
-    CHECK(rules.message() == std::string_view("BALL SAVED"));
-    CHECK(rules.score() == score && score > 0);
-    CHECK(rules.ball() == 1 && !rules.gameOver());
-    CHECK(rules.takeSounds() == 0U);
-    // On the plunger: shoves do nothing and cannot tilt.
-    for (int i = 0; i < 5; ++i) {
-      CHECK(!rules.onNudge());
+  {  // A step length that makes no sense is replaced, not divided by.
+    for (const double step : {0.0, -1.0, 1e300, 1e-300}) {
+      Rules rules(step);
+      rules.onSlingshot(0);
+      for (int i = 0; i < 10; ++i) {
+        rules.tick();
+      }
+      CHECK(rules.score() == points::kSlingshot);
     }
-    CHECK(!rules.tilted());
-    wait(rules, Rules::kMessageSeconds);
-    CHECK(rules.message().empty());
-    // Launched again, play carries on as before.
-    rules.onBallInPlay();
-    CHECK(rules.onNudge());
-    rules.onBumper(0);
-    CHECK(rules.score() > score);
-    CHECK(drain(rules) == Rules::DrainResult::NextBall);
-
-    // After the game it does nothing.
-    Rules over(kStep);
-    for (int i = 0; i < Rules::kBallsPerGame; ++i) {
-      over.onDrain();
-    }
-    CHECK(over.gameOver());
-    over.onBallReturned();
-    CHECK(over.message() == std::string_view("GAME OVER"));
   }
 
-  {  // Through the game: a full game ends after three balls and F2 restarts.
-    pinball::Game game;
-    int steps = 0;
-    for (; steps < 120 * 3600 && !game.gameOver(); ++steps) {
-      pinball::InputState input;
-      input.plunger = (steps % 900) < 150;
-      input.leftFlipper = (steps / 29) % 2 == 0;
-      input.rightFlipper = (steps / 41) % 2 == 0;
-      game.step(input);
+  {  // The fail-safe return: back on the plunger, no tilt, nothing lost.
+    RulesBench bench = started();
+    for (int i = 0; i < 3; ++i) {
+      bench.rules.onNudge();
     }
-    CHECK(game.gameOver());
-    CHECK(game.rules().score() > 0);
-    CHECK(game.rules().ball() == Rules::kBallsPerGame);
-
-    // With the game over the controls are dead: the ball stays on the plunger.
-    const std::uint32_t drains = game.drainCount();
-    for (int i = 0; i < 120 * 5; ++i) {
-      pinball::InputState input;
-      input.plunger = (i % 300) < 150;
-      input.leftFlipper = true;
-      game.step(input);
-    }
-    CHECK(game.drainCount() == drains);
-    CHECK(game.ball().position.x > table::kLaneWallX);
-
-    pinball::InputState press;
-    press.newGame = true;
-    game.step(press);
-    CHECK(!game.gameOver());
-    CHECK(game.rules().score() == 0);
-    // Holding F2 does not restart again and again.
-    game.step(press);
-    game.step(pinball::InputState{});
-    CHECK(game.rules().ball() == 1);
+    CHECK(bench.rules.tilted());
+    bench.rules.onBallReturned();
+    CHECK(!bench.rules.tilted() && !bench.rules.ballInPlay() && bench.rules.ball() == 1);
+    CHECK(bench.message() == std::string_view("BALL SAVED"));
   }
 }

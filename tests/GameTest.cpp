@@ -271,13 +271,15 @@ void testSeveralBalls() {
      // down the drain ends the ball exactly as a single ball does.
     Game game;
     Game alone;  // The same game with one ball throughout.
+    Seam::rules(game).setBallSaveEnabled(false);  // Every drain is a drain here.
+    Seam::rules(alone).setBallSaveEnabled(false);
     const InputState input;
     for (Game* each : {&game, &alone}) {
       Seam::placeBall(*each, kOpenField + Vec2{-70.0F, 0.0F});
       Seam::putInPlay(*each);
     }
     CHECK(Seam::addBall(game, kOpenField + Vec2{70.0F, 0.0F}) == 1);
-    // Past the six seconds in which the rules would give the ball back.
+    // A while in play first.
     for (int i = 0; i < 120 * 7; ++i) {
       for (Game* each : {&game, &alone}) {
         Seam::placeBall(*each, 0, kOpenField + Vec2{-70.0F, 0.0F});
@@ -343,6 +345,7 @@ void testSeveralBalls() {
   {  // Fail safe with several balls: the one lost outside the table is taken
      // away and the others play on. Nothing is served and nothing counted.
     Game game;
+    Seam::rules(game).setBallSaveEnabled(false);  // Every drain is a drain here.
     const InputState input;
     Seam::placeBall(game, kOpenField + Vec2{-70.0F, 0.0F});
     Seam::putInPlay(game);
@@ -421,6 +424,7 @@ void testSeveralBalls() {
      // the plunger. That ball, now the only ball, is not in play until it
      // has been launched.
     Game game;
+    Seam::rules(game).setBallSaveEnabled(false);  // Every drain is a drain here.
     InputState input;
     Seam::placeBall(game, kOpenField);
     Seam::putInPlay(game);
@@ -448,6 +452,7 @@ void testSeveralBalls() {
   {  // A slot keeps nothing of the ball that left it. The next ball in it,
      // put in the lane, is not taken for one that was already in play.
     Game game;
+    Seam::rules(game).setBallSaveEnabled(false);  // Every drain is a drain here.
     const InputState input;
     Seam::placeBall(game, kOpenField);
     Seam::putInPlay(game);
@@ -538,6 +543,7 @@ void testSeveralBalls() {
      // be served: it is not the end of the ball. The waiting one takes its
      // place at once and is launched, so there is always a ball on the table.
     Game game;
+    Seam::rules(game).setBallSaveEnabled(false);  // Every drain is a drain here.
     InputState input;
     Seam::placeBall(game, kOpenField);
     Seam::putInPlay(game);
@@ -1008,8 +1014,11 @@ void testGame() {
       if (game.drainCount() != drains) {
         // Served this step: drawn on the plunger whatever the alpha.
         drains = game.drainCount();
-        CHECK(same(game.ball(0.0F), now));
-        CHECK(distance(now.position, table::kBallStart) < 2.0F);
+        // With other balls still in play nothing is served.
+        if (!game.rules().ballInPlay()) {
+          CHECK(same(game.ball(0.0F), now));
+          CHECK(distance(now.position, table::kBallStart) < 2.0F);
+        }
       }
       hiddenSteps += now.visible ? 0 : 1;
 

@@ -118,8 +118,14 @@ void markDoors(Game& game) {
 // Sends the ball in a slot up into the open Hangar and steps until it is
 // taken. Returns whether it was.
 bool shootHangar(Game& game, std::size_t slot) {
-  putBall(game, slot, kBelowDoors, {0.0F, -900.0F});
   const InputState idle;
+  if (game.doorBankUp()) {
+    // The rules shut the Hangar after some locks: open it again.
+    markDoors(game);
+    game.step(idle);
+    game.step(idle);
+  }
+  putBall(game, slot, kBelowDoors, {0.0F, -900.0F});
   for (int i = 0; i < kSecond; ++i) {
     game.step(idle);
     if (Seam::held(game, slot)) {
@@ -273,7 +279,7 @@ void testDoorBank() {
      // own ball, all three doors are marked and the bank drops once.
     Game game;
     run(game, 2);
-    Seam::rules(game).setLocksEnabled(false);
+    Seam::rules(game).setMultiballEnabled(false);
     putBall(game, 0, {254.0F, 430.0F}, {0.0F, -1100.0F});
     const std::size_t second = Seam::addBall(game, {279.0F, 430.0F}, {0.0F, -1100.0F});
     const std::size_t third = Seam::addBall(game, {304.0F, 430.0F}, {0.0F, -1100.0F});
@@ -334,7 +340,7 @@ void testDoorBank() {
         for (const float x : {250.0F, 268.0F, 279.0F, 301.0F}) {
           Game game;
           run(game, 2);
-          Seam::rules(game).setLocksEnabled(false);
+          Seam::rules(game).setMultiballEnabled(false);
           Seam::dropDoorBank(game);
           putBall(game, 0, {x, 520.0F}, {0.0F, -speed});
           const InputState idle;
@@ -378,11 +384,11 @@ void testDoorBank() {
           table::kDoorMouthHalfSize.y);
   }
 
-  {  // Provisional rules, locks off: the Hangar returns the ball and the
+  {  // With multiball off: the Hangar returns the ball and the
      // bank comes back up half a second later, with its marks cleared.
     Game game;
     run(game, 2);
-    Seam::rules(game).setLocksEnabled(false);
+    Seam::rules(game).setMultiballEnabled(false);
     markDoors(game);
     run(game, 1);
     CHECK(!game.doorBankUp());
@@ -521,6 +527,34 @@ void testLock() {
     CHECK(game.doorBankUp());
   }
 
+  {  // Both bays taken when a lock is asked for: the ball is not locked and
+     // is returned like any other, and the rules hear so (no lock, no lock
+     // message).
+    Game game;
+    run(game, 2);
+    markDoors(game);
+    run(game, 1);
+    CHECK(shootHangar(game, 0));
+    CHECK(shootHangar(game, 1));
+    CHECK(game.lockedBalls() == 2 && game.rules().locksHeld() == 2);
+    // The third is taken by a Hangar told to return it, then told to lock.
+    Seam::rules(game).setMultiballEnabled(false);
+    CHECK(shootHangar(game, 2));
+    const std::string_view before = game.rules().message();
+    Seam::lockBall(game, 2);
+    CHECK(game.lockedBalls() == 2 && !game.ballLocked(2) && game.lockCount() == 2);
+    CHECK(game.rules().locksHeld() == 2);
+    CHECK(game.rules().message() == before);
+    CHECK(findEvent(game, GameEvent::Type::BallLocked) == nullptr);
+    const InputState idle;
+    bool returned = false;
+    for (int i = 0; i < 2 * kSecond && !returned; ++i) {
+      game.step(idle);
+      returned = !Seam::held(game, 2);
+    }
+    CHECK(returned && game.lockedBalls() == 2);
+  }
+
   {  // Let go on command, with no ball arriving: the first leaves at once,
      // lobbed left, the second 0.4 s later, kicked right.
     Game game;
@@ -535,13 +569,19 @@ void testLock() {
     const InputState idle;
     std::vector<int> steps;
     std::vector<Vec2> velocities;
+    CHECK(game.bayTaken(0) && game.bayTaken(1));
     for (int i = 0; i < 2 * kSecond; ++i) {
       game.step(idle);
       if (const GameEvent* event = findEvent(game, GameEvent::Type::LockReleased)) {
         steps.push_back(i);
         velocities.push_back(Seam::velocity(game, event->ball));
+        // The first bay empties first; the second's lamp is still its own.
+        if (steps.size() == 1) {
+          CHECK(!game.bayTaken(0) && game.bayTaken(1));
+        }
       }
     }
+    CHECK(!game.bayTaken(0) && !game.bayTaken(1));
     CHECK(steps.size() == 2);
     if (steps.size() == 2) {
       CHECK(steps[0] == 0);
@@ -582,6 +622,37 @@ void testLock() {
     CHECK(shootHangar(game, 0));
     CHECK(game.requestBall());
     CHECK(!game.requestBall());
+  }
+
+  {  // A full turbo meter asks the table for a ball. With one locked and
+     // one in play it is served and Turbo multiball starts; with two locked
+     // the table refuses it and the rules pay the turbo bonus instead.
+    for (const int locks : {1, 2}) {
+      Game game;
+      run(game, 2);
+      markDoors(game);
+      run(game, 1);
+      for (int lock = 0; lock < locks; ++lock) {
+        CHECK(shootHangar(game, static_cast<std::size_t>(lock)));
+      }
+      Rules& rules = Seam::rules(game);
+      const std::uint64_t bonus = rules.scoreFrom(pinball::Feature::TurboBonus);
+      const int fill = rules.turboGoal() - rules.turboMeter();
+      for (int spin = 0; spin < fill; ++spin) {
+        rules.onSpin();
+      }
+      run(game, 2);
+      if (locks == 1) {
+        CHECK(game.queuedBalls() + game.ballCount() == 3);
+        CHECK(rules.multiball() == pinball::Multiball::Turbo);
+        CHECK(rules.scoreFrom(pinball::Feature::TurboBonus) == bonus);
+      } else {
+        CHECK(game.queuedBalls() == 0 && game.ballCount() == 3);
+        CHECK(rules.multiball() == pinball::Multiball::None);
+        CHECK(rules.scoreFrom(pinball::Feature::TurboBonus) - bonus == pinball::points::kTurboBonus);
+        CHECK(rules.message() == std::string_view("TURBO BONUS"));
+      }
+    }
   }
 
   {  // Tilt. The locked ball stays locked, and a ball waiting on the plunger
@@ -703,6 +774,8 @@ void testScoop() {
       // The step it is taken is the first of its hold.
       CHECK(returnedAt - takenAt == kScoopHoldSteps - 1);
       CHECK(game.holeCount(table::kScoopHole) == 1);
+      // The rules hear of it once, from the capture itself.
+      CHECK(game.rules().scoreFrom(pinball::Feature::Briefing) == pinball::points::kBriefingRoom);
     }
   }
 
@@ -1141,6 +1214,7 @@ void testKickback() {
   {  // It fires once. Two balls come down together: the first is taken, the
      // second, with the kickback already in use and out, is lost.
     Game game;
+    Seam::rules(game).setBallSaveEnabled(false);  // The second ball is to stay lost.
     run(game, 2);
     putBall(game, 0, {59.0F, kTopY}, {0.0F, 300.0F});
     const std::size_t second = Seam::addBall(game, {59.0F, kTopY - 30.0F}, {0.0F, 300.0F});
@@ -1223,7 +1297,49 @@ void testKickback() {
     CHECK(returnedAt >= kBlocked && returnedAt <= kBlocked + 2);
   }
 
-  {  // Provisional rules: lit at the start of a game, out when it has fired,
+  {  // Two balls in the pocket in the same step, the kickback armed: the
+     // table takes one and is spent at once; the other is not taken.
+    PhysicsWorld world;
+    world.deactivateBall(0);
+    CHECK(world.activateBall(0, {59.0F, 736.0F}, {0.0F, 0.0F}));
+    CHECK(world.activateBall(1, {59.0F, 744.0F}, {0.0F, 0.0F}));
+    world.setKickbackArmed(true);
+    world.step(1.0F / 120.0F);
+    int taken = 0;
+    for (std::size_t slot = 0; slot < 2; ++slot) {
+      if (world.ballHeld(slot) && world.heldBy(slot).kind == table::ElementKind::Kickback) {
+        ++taken;
+      }
+    }
+    CHECK(taken == 1);
+    CHECK(!world.kickbackArmed());
+    world.step(1.0F / 120.0F);
+    CHECK(!world.ballHeld(0) || !world.ballHeld(1));
+  }
+
+  {  // The rules hear of the kickback's ball when it is taken and again when
+     // it is set down; its lamp flashes in between.
+    Game game;
+    run(game, 2);
+    putBall(game, 0, {59.0F, kTopY}, {0.0F, 300.0F});
+    const InputState idle;
+    bool firing = false;
+    bool done = false;
+    for (int i = 0; i < 2 * kSecond && !done; ++i) {
+      game.step(idle);
+      if (Seam::held(game, 0)) {
+        firing = firing || (game.rules().kickbackFiring() &&
+                            game.rules().lampState(table::LampId::Kickback) ==
+                                pinball::LampState::FastBlink);
+      }
+      done = findEvent(game, GameEvent::Type::KickbackReturned) != nullptr;
+    }
+    CHECK(firing && done);
+    CHECK(!game.rules().kickbackFiring());
+    CHECK(game.rules().lampState(table::LampId::Kickback) == pinball::LampState::Off);
+  }
+
+  {  // The kickback: lit at the start of a game, out when it has fired,
      // lit again by all four return lanes; never lit on a tilted table.
     Rules rules(1.0 / 120.0);
     CHECK(rules.kickbackLit());
@@ -1328,7 +1444,7 @@ void testNothingTunnels() {
   for (int n = 0; n < 500; ++n) {
     Game game;
     run(game, 2);
-    Seam::rules(game).setLocksEnabled(false);
+    Seam::rules(game).setMultiballEnabled(false);
     Seam::rules(game).setKickbackLit(false);
     const std::size_t balls = 1U + static_cast<std::size_t>(n % 3);
     for (std::size_t slot = 0; slot < balls; ++slot) {
