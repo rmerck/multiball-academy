@@ -433,6 +433,14 @@ foreach(value IN ITEMS "${PINBALL_APP_NAME}" "${PINBALL_HOME_NAME}" "${PINBALL_B
                         "product.env. (Is there one in the build directory's path?)")
   endif()
 endforeach()
+# Whether this application ends itself after --frames (cmake/Ios.cmake), as
+# ON or OFF and nothing else, so that scripts compare one word. Off iOS the
+# option does not exist and the answer is OFF.
+if(PINBALL_IOS_TEST_EXIT)
+  set(pinball_test_exit_text ON)
+else()
+  set(pinball_test_exit_text OFF)
+endif()
 file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/product.env @ONLY CONTENT
 "# Written by CMake from the block at the top of CMakeLists.txt. Do not edit.
 PINBALL_APP_NAME='@PINBALL_APP_NAME@'
@@ -440,7 +448,7 @@ PINBALL_HOME_NAME='@PINBALL_HOME_NAME@'
 PINBALL_BUNDLE_ID='@PINBALL_BUNDLE_ID@'
 PINBALL_VERSION='@PROJECT_VERSION@'
 PINBALL_BUILD_NUMBER='@PINBALL_BUILD_NUMBER@'
-PINBALL_IOS_TEST_EXIT='@PINBALL_IOS_TEST_EXIT@'
+PINBALL_IOS_TEST_EXIT='@pinball_test_exit_text@'
 PINBALL_DEPLOYMENT_TARGET='@CMAKE_OSX_DEPLOYMENT_TARGET@'
 PINBALL_ASSET_MANIFEST='@PINBALL_MANIFEST@'
 ")
@@ -678,6 +686,15 @@ if(BUILD_TESTING)
               $<TARGET_FILE:pinball> ${PINBALL_TEST_DIR}/asset_integrity_scratch)
     set_tests_properties(asset_integrity PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 120)
+
+    # The check a signed iOS build gets before upload refuses every
+    # signature, entitlement and provisioning profile it should, tried
+    # against stand-ins for Apple's tools. (Needs bash, so not on Windows.)
+    if(UNIX)
+      add_test(NAME check_signed_stubs
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/CheckSignedStubs.sh ${CMAKE_SOURCE_DIR})
+      set_tests_properties(check_signed_stubs PROPERTIES TIMEOUT 120)
+    endif()
   elseif(PINBALL_REQUIRE_ALL_TESTS)
     message(FATAL_ERROR "Python 3 not found, and PINBALL_REQUIRE_ALL_TESTS is ON: the "
                         "assets_clean, asset_integrity and layout_json tests need it")

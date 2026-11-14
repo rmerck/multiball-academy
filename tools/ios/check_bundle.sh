@@ -104,6 +104,10 @@ PINBALL_BUILD_NUMBER=$(product_value PINBALL_BUILD_NUMBER)
 PINBALL_DEPLOYMENT_TARGET=$(product_value PINBALL_DEPLOYMENT_TARGET)
 PINBALL_ASSET_MANIFEST=$(product_value PINBALL_ASSET_MANIFEST)
 PINBALL_IOS_TEST_EXIT=$(product_value PINBALL_IOS_TEST_EXIT)
+case $PINBALL_IOS_TEST_EXIT in
+  ON | OFF) ;;
+  *) fail "PINBALL_IOS_TEST_EXIT in $product is '$PINBALL_IOS_TEST_EXIT', not ON or OFF: reconfigure" ;;
+esac
 for required in "$PINBALL_APP_NAME" "$PINBALL_HOME_NAME" "$PINBALL_BUNDLE_ID" "$PINBALL_VERSION" \
                 "$PINBALL_BUILD_NUMBER" "$PINBALL_DEPLOYMENT_TARGET" "$PINBALL_ASSET_MANIFEST"; do
   [ -n "$required" ] || fail "a value is empty in $product"
@@ -113,6 +117,7 @@ plist=$app/Info.plist
 [ -f "$plist" ] || fail "no Info.plist in $app"
 plutil -lint "$plist" >/dev/null || fail "Info.plist does not parse"
 plist_xml=$(plutil -convert xml1 -o - "$plist")
+[ -n "$plist_xml" ] || fail "Info.plist converts to nothing"
 
 # One value, by key path. Empty if the key is absent (plutil then fails,
 # which is the one failure that is expected here).
@@ -263,7 +268,7 @@ if [ "$release" = yes ]; then
   # A Release application ignores its launch arguments (src/main_ios.cpp):
   # the code that reads them is compiled out, and with it the option's
   # name. Only a build configured for tests (PINBALL_IOS_TEST_EXIT) keeps it.
-  if [ "$PINBALL_IOS_TEST_EXIT" != ON ] && grep -q -e '--frames' <<<"$all_strings"; then
+  if [ "$PINBALL_IOS_TEST_EXIT" = OFF ] && grep -q -e '--frames' <<<"$all_strings"; then
     fail "the executable reads launch arguments, but the build was not configured for tests"
   fi
   # The debug symbols are beside the bundle and are this executable's.
