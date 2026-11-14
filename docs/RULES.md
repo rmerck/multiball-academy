@@ -75,6 +75,8 @@ During it:
 
 Later multiballs in the same game need the doors opened for every Hangar shot. Locked balls stay locked when a ball drains and are worth a bonus; the bays are emptied when the game is over. Nothing locks while a multiball is running.
 
+Once all three doors have dropped, they stay down until the rules raise them: after a lock that does not keep them open, when an Academy multiball ends, when the super jackpot is collected, when HANGAR SAFETY starts or is passed, and when Graduation Day starts or ends. A Hangar shot that locks nothing (during a Turbo multiball, say) leaves them down, and so does the end of a Turbo multiball, so the lock is still lit for the next shot.
+
 A course can run during a multiball and a multiball can start during a course: shots count for both.
 
 ## Combos
@@ -89,7 +91,7 @@ Light all three roll call lanes, then shoot the Turbine lane: `OVERDRIVE 2X` dou
 
 ## Extra credit and extra balls
 
-- Extra credit: light both turbo targets, then shoot the Briefing room. One of: 25,000, 50,000, kickback relit, bonus multiplier +1, 10 seconds of ball saver, turbo meter +15, overdrive lit. The display says which.
+- Extra credit: light both turbo targets, then shoot the Briefing room. One of: 25,000, 50,000, kickback relit, bonus multiplier +1, 10 seconds of ball saver, turbo meter +15, overdrive lit (never while overdrive is lit or running: then it is one of the others). The display says which.
 - Extra ball: lit at the Briefing room by the third course passed, by the first five-shot combo chain, and by starting a second Academy multiball. At most two are given in a game and one can be held at a time; an extra ball that cannot be given pays 100,000 instead. `SHOOT AGAIN` after the ball ends.
 
 ## Saves
@@ -146,7 +148,7 @@ If it ends before commencement, the exam shots you made stay made and three ramp
 | Super jackpot | 500,000 |
 | Final exam shot, victory lap shot | 100,000, 50,000 |
 
-Overdrive multiplies everything in this table. It does not multiply the skill shots, extra credit, course pass awards, the extra ball award, commencement or the end-of-ball bonus.
+Overdrive multiplies everything in this table, and the awards for each step of a course (a bumper hit in BUMPER BASICS, a ramp in RUNWAY DRILLS, and so on). It does not multiply the skill shots, extra credit, course pass awards, the extra ball award, commencement or the end-of-ball bonus.
 
 The score stops at 999,999,999,999.
 

@@ -21,7 +21,8 @@
 //      balls into holes and lanes, closes switches, shoves the table and
 //      presses the start button at random.
 // After every step the invariants of bots/RuleWatch.hpp must hold, and with
-// them: the rules never ask for a ball past the three-ball limit.
+// them: the rules never ask for a ball past the three-ball limit (only a
+// full turbo meter asks without knowing, and it is answered with a bonus).
 namespace {
 
 using pinball::Game;
@@ -40,6 +41,9 @@ const char* brokenOnBench(const RulesBench& bench, std::uint64_t& lastScore) {
   const Rules& rules = bench.rules;
   if (bench.total() > 3) {
     return "more than three balls";
+  }
+  if (bench.refusedOther != 0) {
+    return "a ball asked for past the three-ball limit";
   }
   if (rules.score() < lastScore || rules.score() > points::kMaxScore) {
     return "the score went down or over its limit";

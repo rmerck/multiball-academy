@@ -24,6 +24,7 @@ struct RulesBench {
   bool doorsUp = true;
   int launched = 0;  // Balls asked for and put on the table.
   int refused = 0;   // Asked for with three already there.
+  int refusedOther = 0;  // Of those, the ones not asked for by the turbo meter.
   int locksRefused = 0;  // Told to lock with both bays taken.
   // Every ball is in a timed hold (Game's allBallsHeld).
   bool allHeld = false;
@@ -69,6 +70,11 @@ struct RulesBench {
         ++launched;
       } else {
         ++refused;
+        // Only a full meter's ball may find no room; any other request
+        // past the limit is the rules miscounting.
+        if (rules.turboBallsAsked() == 0) {
+          ++refusedOther;
+        }
         rules.onBallRefused();
       }
     }

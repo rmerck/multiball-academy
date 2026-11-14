@@ -374,6 +374,73 @@ void testCourses() {
     CHECK(!bench.rules.courseRunning() && bench.rules.coursePassed(5));
   }
 
+  {  // NAVIGATION counts the Hangar whatever the Hangar does with the
+     // ball: a lock, the start of Academy multiball, the super jackpot.
+    const auto hopToHangar = [](RulesBench& bench) {
+      for (int i = 0; i < 8 && bench.rules.navigationShot() != Shot::Hangar; ++i) {
+        bench.wait(pinball::kNavigationHopSeconds);
+      }
+      CHECK(bench.rules.navigationShot() == Shot::Hangar);
+    };
+    // A lock.
+    RulesBench locking;
+    locking.rules.onSlingshot(0);
+    locking.wait(Rules::kBallSaveSeconds);
+    locking.doors();
+    start(locking, CourseId::Navigation);
+    hopToHangar(locking);
+    CHECK(locking.rules.lockLit() && locking.rules.goalRemaining() == 3);
+    CHECK(locking.hangar() == Rules::HoleResult::Lock);
+    CHECK(locking.rules.goalRemaining() == 2 && locking.rules.locksHeld() == 1);
+    CHECK(locking.rules.scoreFrom(Feature::Course6) == 30'000);
+    CHECK(locking.message() == std::string_view("BALL 1 LOCKED"));
+
+    // The ball that starts Academy multiball.
+    RulesBench starting;
+    starting.rules.onSlingshot(0);
+    starting.wait(Rules::kBallSaveSeconds);
+    for (int lock = 0; lock < Rules::kLocksNeeded; ++lock) {
+      if (starting.doorsUp) {
+        starting.doors();
+      }
+      CHECK(starting.hangar() == Rules::HoleResult::Lock);
+      starting.step();
+    }
+    if (starting.doorsUp) {
+      starting.doors();
+    }
+    start(starting, CourseId::Navigation);
+    hopToHangar(starting);
+    CHECK(starting.hangar() == Rules::HoleResult::StartMultiball);
+    CHECK(starting.rules.multiball() == Multiball::Academy);
+    CHECK(starting.rules.goalRemaining() == 2);
+
+    // The super jackpot: lit first, then the course.
+    RulesBench super;
+    super.rules.onSlingshot(0);
+    super.wait(Rules::kBallSaveSeconds);
+    for (int lock = 0; lock <= Rules::kLocksNeeded; ++lock) {
+      if (super.doorsUp) {
+        super.doors();
+      }
+      super.hangar();
+      super.step();
+    }
+    CHECK(super.rules.multiball() == Multiball::Academy);
+    super.wait(Rules::kDoorRaiseSeconds);
+    for (int i = 0; i < 6 && !super.rules.superJackpotLit(); ++i) {
+      super.wait(tuning::kComboSeconds);
+      super.skyway();
+    }
+    CHECK(super.rules.superJackpotLit());
+    start(super, CourseId::Navigation);
+    hopToHangar(super);
+    CHECK(super.rules.goalRemaining() == 3);
+    CHECK(super.hangar() == Rules::HoleResult::Eject);
+    CHECK(!super.rules.superJackpotLit() && super.rules.scoreFrom(Feature::SuperJackpot) > 0);
+    CHECK(super.rules.goalRemaining() == 2);
+  }
+
   {  // 4.5 The clock: it runs out to COURSE FAILED with nothing lost; it
      // stands while no ball is free; locked balls do not stop it.
     RulesBench bench = single();

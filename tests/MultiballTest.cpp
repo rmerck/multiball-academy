@@ -219,6 +219,7 @@ void testMultiball() {
     bench.wait(tuning::kComboSeconds);
     bench.runway();
     CHECK(rules.scoreFrom(Feature::Jackpots) == 525'000 && rules.jackpotValue() == 150'000);
+    bench.step();  // Not in the step of the jackpot, whose word would come first.
     const std::uint64_t before = bench.score();
     CHECK(bench.hangar() == Rules::HoleResult::Eject);
     CHECK(bench.score() - before == points::kSuperJackpot);

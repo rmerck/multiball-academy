@@ -664,12 +664,16 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
         majorShot(Shot::Hangar);
         break;
       }
+      // A course hears of the shot whatever the Hangar does with the ball
+      // (NAVIGATION lights it while the doors are down, which is when it
+      // locks). What the Hangar does is said after anything the course says.
+      majorShot(Shot::Hangar);
       if (superLit_) {
         ++hangarHolding_;
         superLit_ = false;
         jackpotsTowardSuper_ = 0;
         award(points::kSuperJackpot, Feature::SuperJackpot);
-        say(display::Message("SUPER JACKPOT"));
+        sayAlso(display::Message("SUPER JACKPOT"));
         cue(Sound::Promotion);
         break;
       }
@@ -690,7 +694,7 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
         jackpotIndex_ = 0;
         jackpotsTowardSuper_ = 0;
         graceSteps_ = stepsFor(tuning::kAcademyGraceSeconds);
-        say(display::Message("ACADEMY MULTIBALL"));
+        sayAlso(display::Message("ACADEMY MULTIBALL"));
         cue(Sound::Promotion);
         if (academyMultiballs_ == 2) {
           lightExtraBall();
@@ -702,7 +706,6 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
         // One ball at a time: the Hangar is shut again behind every ball.
         doorsOpen_ = false;
       }
-      majorShot(Shot::Hangar);
       break;
     }
   }
@@ -728,7 +731,9 @@ void Rules::onBallLocked(std::size_t bay, bool served) noexcept {
   locksHeld_ = std::min(locksHeld_ + 1, kLocksNeeded);
   status_.locked = std::min(status_.locked + 1, kLocksNeeded);
   status_.live = std::max(status_.live - 1, 0);
-  say(locksHeld_ == 1 ? display::Message("BALL 1 LOCKED") : display::Message("BALL 2 LOCKED"));
+  // After what the shot that locked it said (a course step, say).
+  sayAlso(locksHeld_ == 1 ? display::Message("BALL 1 LOCKED")
+                          : display::Message("BALL 2 LOCKED"));
   cue(Sound::MissionAccept);
   if (academyMultiballs_ > 0 || locksHeld_ > tuning::kFirstMultiballOpenLocks) {
     // Only the first multiball of a game keeps the Hangar open between locks.
@@ -873,9 +878,20 @@ void Rules::collectExtraBall() noexcept {
 
 void Rules::collectExtraCredit() noexcept {
   extraCreditLit_ = false;
-  auto roll = static_cast<unsigned>(nextRandom() % 100U);
-  Credit credit = kCredits.back().credit;
+  // Overdrive lit while it runs, or lit already, would give nothing: then
+  // it is not among the awards, and one roll picks from the rest by their
+  // weights.
+  const bool overdriveOffered = overdrive_ == 1 && !overdriveLit_;
+  unsigned total = 0;
   for (const CreditWeight& entry : kCredits) {
+    total += entry.credit != Credit::Overdrive || overdriveOffered ? entry.weight : 0U;
+  }
+  auto roll = static_cast<unsigned>(nextRandom() % total);
+  Credit credit = kCredits.front().credit;
+  for (const CreditWeight& entry : kCredits) {
+    if (entry.credit == Credit::Overdrive && !overdriveOffered) {
+      continue;
+    }
     if (roll < entry.weight) {
       credit = entry.credit;
       break;
@@ -911,9 +927,7 @@ void Rules::collectExtraCredit() noexcept {
       break;
     case Credit::Overdrive:
       sayThen(display::Message("EXTRA CREDIT  OVERDRIVE LIT"));
-      if (overdrive_ == 1) {
-        overdriveLit_ = true;
-      }
+      overdriveLit_ = true;
       break;
   }
 }
