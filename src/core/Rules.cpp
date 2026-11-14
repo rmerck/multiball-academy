@@ -1603,6 +1603,17 @@ void Rules::tick(bool allBallsHeld) noexcept {
 
 // --- Lamps ---------------------------------------------------------------------
 
+LampState Rules::doorLampState(std::size_t door) const noexcept {
+  if (gameOver_ || door >= doorMarked_.size()) {
+    return LampState::Off;
+  }
+  if (doorMarked_[door]) {
+    return LampState::On;
+  }
+  const bool asked = course_ == std::to_underlying(CourseId::HangarSafety) && !courseSecondPart_;
+  return asked ? LampState::Blink : LampState::Off;
+}
+
 LampState Rules::lampState(table::LampId lamp) const noexcept {
   using enum table::LampId;
   if (gameOver_) {

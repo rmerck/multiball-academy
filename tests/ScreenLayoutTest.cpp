@@ -798,7 +798,8 @@ void testTableLights() {
              lights.lit(lamp.id) == lampLit(game.rules().lampState(lamp.id), game.stepCount());
     }
     for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
-      same = same && lights.doorsMarked[door] == game.rules().doorMarked(door);
+      same = same && lights.doorsMarked[door] ==
+                         lampLit(game.rules().doorLampState(door), game.stepCount());
     }
     return same && lights.lit(LampId::Lock1) == game.bayTaken(0) &&
            lights.lit(LampId::Lock2) == game.bayTaken(1);

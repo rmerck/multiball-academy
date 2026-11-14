@@ -291,7 +291,12 @@ void testCourses() {
     bench.step(2);
     CHECK(bench.doorsUp && !rules.doorMarked(0) && !rules.lockLit());
     CHECK(rules.goalText() == std::string_view("HIT THE BAY DOORS") && rules.goalRemaining() == 3);
+    // The doors still to hit blink on their faces; a marked one is lit.
+    CHECK(rules.doorLampState(0) == pinball::LampState::Blink);
     bench.door(0);
+    CHECK(rules.doorLampState(0) == pinball::LampState::On &&
+          rules.doorLampState(1) == pinball::LampState::Blink);
+    CHECK(rules.doorLampState(table::kDropTargets.size()) == pinball::LampState::Off);
     bench.door(0);  // Marked already: nothing for the course.
     CHECK(rules.scoreFrom(Feature::Course4) == 10'000 && rules.goalRemaining() == 2);
     bench.door(1);

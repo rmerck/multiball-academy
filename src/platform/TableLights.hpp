@@ -52,7 +52,7 @@ inline constexpr std::uint64_t kFastBlinkSteps = 24;  // Five times a second.
 
 // The rules say what every lamp does (Rules::lampState, one answer for each
 // LampId); the lock lamps follow the bays themselves, which empty one after
-// the other as a multiball starts; a door's lamp is its mark.
+// the other as a multiball starts; a door's lamp is Rules::doorLampState.
 [[nodiscard]] inline TableLights tableLights(const Game& game) noexcept {
   using table::LampId;
   TableLights lights;
@@ -64,7 +64,7 @@ inline constexpr std::uint64_t kFastBlinkSteps = 24;  // Five times a second.
   lights.light(LampId::Lock1, game.bayTaken(0));
   lights.light(LampId::Lock2, game.bayTaken(1));
   for (std::size_t i = 0; i < lights.doorsMarked.size(); ++i) {
-    lights.doorsMarked[i] = rules.doorMarked(i);
+    lights.doorsMarked[i] = lampLit(rules.doorLampState(i), step);
   }
   return lights;
 }

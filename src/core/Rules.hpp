@@ -449,6 +449,10 @@ class Rules {
 
   // What a lamp does (table::kLamps).
   LampState lampState(table::LampId lamp) const noexcept;
+  // The lamp on a bay door's face (table::kDropTargets order): lit once the
+  // door is marked; the doors still to hit blink while HANGAR SAFETY asks
+  // for them.
+  LampState doorLampState(std::size_t door) const noexcept;
 
   // Points earned from each feature this game.
   std::uint64_t scoreFrom(Feature feature) const noexcept {

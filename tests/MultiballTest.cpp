@@ -72,6 +72,9 @@ void testMultiball() {
     std::uint64_t before = bench.score();
     bench.door(1);
     CHECK(rules.doorMarked(1) && !rules.doorMarked(0) && !rules.doorMarked(2));
+    // A door's lamp is its mark; outside HANGAR SAFETY nothing blinks.
+    CHECK(rules.doorLampState(1) == pinball::LampState::On &&
+          rules.doorLampState(0) == pinball::LampState::Off);
     bench.door(1);
     CHECK(bench.score() - before == points::kBayDoor + points::kBayDoorAgain);
     bench.step(5);
