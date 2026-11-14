@@ -21,6 +21,7 @@ void runSuites() {
   testHoles();
   testLaunch();
   testCourses();
+  testMultiball();
   testNudge();
   testPhysics();
   testPlunger();

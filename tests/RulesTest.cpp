@@ -474,6 +474,7 @@ void testRules() {
     bench.turbine();
     CHECK(gained() == points::kCombo[2] && rules.comboLevel() == 4);
     CHECK(!rules.extraBallLit());
+    bench.step();
     bench.circuit(true);
     CHECK(gained() == points::kCircuit + points::kCombo[3]);
     CHECK(bench.message() == std::string_view("COMBO 5X"));
@@ -515,25 +516,22 @@ void testRules() {
     CHECK(rules.comboLevel() == 0);
   }
 
-  {  // 4.11 Ball saver: 15 s from the ball's first switch; every drain
+  {  // 4.11 Ball saver: 15 s from the ball entering play; every drain
      // inside it comes back, any number of times; its clock stands while no
      // ball is free.
     RulesBench bench;
     const Rules& rules = bench.rules;
-    CHECK(rules.ballSaveActive());  // Waiting for the first switch.
+    CHECK(rules.ballSaveActive());
+    CHECK(rules.ballSaveSecondsLeft() > Rules::kBallSaveSeconds - 0.1);
     CHECK(rules.lampState(LampId::ShootAgain) == LampState::Blink);
     // A ball that drains having touched nothing is returned too.
     CHECK(bench.drain() == Rules::DrainResult::BallSaved);
     CHECK(rules.ball() == 1 && bench.message() == std::string_view("BALL SAVED"));
     CHECK(rules.skillShotOffered());
-    bench.wait(60.0);
-    CHECK(rules.ballSaveActive());
-    bench.rules.onSlingshot(0);
-    CHECK(rules.ballSaveSecondsLeft() > Rules::kBallSaveSeconds - 0.1);
     bench.wait(5.0);
     CHECK(bench.drain() == Rules::DrainResult::BallSaved);
     CHECK(bench.drain() == Rules::DrainResult::BallSaved);
-    // On the plunger the clock stands.
+    // On the plunger, or in a hold, the clock stands.
     bench.balls.free = 0;
     bench.wait(60.0);
     CHECK(rules.ballSaveActive());
@@ -546,6 +544,10 @@ void testRules() {
     CHECK(rules.lampState(LampId::ShootAgain) == LampState::Off);
     CHECK(bench.drain() == Rules::DrainResult::NextBall);
     CHECK(rules.ball() == 2 && rules.ballSaveActive());
+    // Not before the ball has entered play: nothing drains from the lane.
+    Rules fresh(pinball_test::kRuleStep);
+    CHECK(!fresh.ballSaveActive());
+    CHECK(fresh.onDrain() == Rules::DrainResult::NextBall);
   }
 
   {  // 4.7 The short save after an eject: any drain so marked comes back,

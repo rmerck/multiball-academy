@@ -295,7 +295,7 @@ void testAcceptance() {
     CHECK(a.fingerprint == b.fingerprint && a.drains == b.drains && a.drains > 0);
     CHECK(a.stepsWithAllFree == b.stepsWithAllFree && a.autoLaunches == b.autoLaunches);
     CHECK(a.locks == b.locks && a.lockReleases == b.lockReleases && a.spins == b.spins);
-    CHECK(a.locks > 0 && a.spins > 0);
+    CHECK(a.bankDrops == b.bankDrops && a.hangarEntries == b.hangarEntries && a.spins > 0);
     options.seed = 10;
     CHECK(stress(options).fingerprint != a.fingerprint);
 

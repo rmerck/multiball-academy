@@ -551,6 +551,7 @@ if(BUILD_TESTING)
     tests/HoleTest.cpp
     tests/LaunchTest.cpp
     tests/CourseTest.cpp
+    tests/MultiballTest.cpp
     tests/NudgeTest.cpp
     tests/PhysicsTest.cpp
     tests/PlungerTest.cpp

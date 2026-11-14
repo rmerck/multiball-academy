@@ -113,7 +113,7 @@ void Rules::clearModes() noexcept {
   superSkillSteps_ = 0;
   skillOffered_ = false;
   circuits_ = {};
-  saverPending_ = false;
+  saverArmable_ = false;
   saverSteps_ = 0;
   graceSteps_ = 0;
   ballRequests_ = 0;
@@ -184,7 +184,7 @@ void Rules::offerSkillShot() noexcept {
 void Rules::beginBall() noexcept {
   tilted_ = false;
   tiltHeat_ = 0.0;
-  saverPending_ = true;
+  saverArmable_ = true;
   saverSteps_ = 0;
   graceSteps_ = 0;
   briefingVisited_ = false;
@@ -243,7 +243,16 @@ void Rules::say(const display::Text& text) noexcept {
   }
   message_ = text;
   messageSteps_ = stepsFor(kMessageSeconds);
+  messageFresh_ = true;
   waitingCount_ = 0;
+}
+
+void Rules::sayAlso(const display::Text& text) noexcept {
+  if (messageFresh_) {
+    sayThen(text);
+  } else {
+    say(text);
+  }
 }
 
 void Rules::sayThen(const display::Text& text) noexcept {
@@ -278,10 +287,6 @@ void Rules::award(std::uint64_t points, Feature feature, bool timesOverdrive) no
 
 void Rules::noteSwitch() noexcept {
   switchesThisBall_ = std::min(switchesThisBall_ + 1, points::kBonusSwitchCap);
-  if (saverPending_) {
-    saverPending_ = false;
-    saverSteps_ = std::max(saverSteps_, stepsFor(kBallSaveSeconds));
-  }
   skillOffered_ = false;
 }
 
@@ -702,7 +707,7 @@ void Rules::onBallLocked(std::size_t bay, bool served) noexcept {
   if (served) {
     // The player has a new ball to launch, with its own saver.
     ++status_.live;
-    saverPending_ = true;
+    saverArmable_ = true;
     saverSteps_ = 0;
     offerSkillShot();
   }
@@ -961,7 +966,7 @@ void Rules::flowShot(Shot shot) noexcept {
   const auto link = static_cast<std::size_t>(std::clamp(comboChain_, 2, kMaxCombo) - 2);
   award(points::kCombo[link], Feature::Combos);
   ++combosThisBall_;
-  say(kComboMessages[link]);
+  sayAlso(kComboMessages[link]);
   cue(Sound::MissionSelect);
   if (comboChain_ >= kMaxCombo) {
     // The chain is complete: the next flow shot starts a new one.
@@ -1277,7 +1282,7 @@ bool Rules::onBallLost(const DrainInfo& info) noexcept {
     return false;
   }
   const bool owed =
-      info.afterEject || saverPending_ || saverSteps_ > 0 || graceSteps_ > 0;
+      info.afterEject || ballSaveActive();
   if (owed) {
     ++status_.queued;
     say(display::Message("BALL SAVED"));
@@ -1291,6 +1296,12 @@ void Rules::onBallInPlay() noexcept {
     return;
   }
   ballInPlay_ = true;
+  if (saverArmable_) {
+    // Once for each ball the player is given: a ball the saver returns
+    // has what is left of its time.
+    saverArmable_ = false;
+    saverSteps_ = std::max(saverSteps_, stepsFor(kBallSaveSeconds));
+  }
 }
 
 void Rules::onBallReturned() noexcept {
@@ -1362,7 +1373,7 @@ Rules::DrainResult Rules::onDrain(const DrainInfo& info) noexcept {
   tilted_ = false;
   tiltHeat_ = 0.0;
   const bool saved =
-      !wasTilted && (info.afterEject || saverPending_ || saverSteps_ > 0 || graceSteps_ > 0);
+      !wasTilted && (info.afterEject || ballSaveActive());
   // With the last ball gone no multiball is left, saved or not.
   if (multiballRunning()) {
     endMultiball(false);
@@ -1438,7 +1449,7 @@ bool Rules::onNudge() noexcept {
     tiltHeat_ = kTiltLimit;
     // A tilted ball is not returned: saver, grace and the short save after
     // an eject are all off (the last by Game asking while tilted).
-    saverPending_ = false;
+    saverArmable_ = false;
     saverSteps_ = 0;
     graceSteps_ = 0;
     say(kTiltMessage);
@@ -1522,6 +1533,7 @@ void Rules::tick() noexcept {
     endMultiball(true);
   }
 
+  messageFresh_ = false;
   if (messageSteps_ > 0 && --messageSteps_ == 0) {
     if (waitingCount_ > 0) {
       message_ = waiting_[0];
@@ -1684,11 +1696,11 @@ LampState Rules::lampState(table::LampId lamp) const noexcept {
       if (tilted_) {
         return LampState::Off;
       }
-      if (saverPending_ || graceSteps_ > 0 ||
-          saverSteps_ > stepsFor(kBallSaveWarningSeconds)) {
+      if (ballSaveEnabled_ &&
+          (graceSteps_ > 0 || saverSteps_ > stepsFor(kBallSaveWarningSeconds))) {
         return LampState::Blink;
       }
-      if (saverSteps_ > 0) {
+      if (ballSaveEnabled_ && saverSteps_ > 0) {
         return LampState::FastBlink;
       }
       return lit(extraBallsHeld_ > 0);

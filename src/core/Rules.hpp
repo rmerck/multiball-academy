@@ -188,7 +188,7 @@ class Rules {
   static constexpr int kMaxBonusMultiplier = 5;
   static constexpr int kMaxOverdrive = 3;
   static constexpr int kMaxCombo = 5;
-  // A drain this soon after the ball's first switch is returned.
+  // A drain this soon after the ball entered play is returned.
   static constexpr double kBallSaveSeconds = tuning::kBallSaveSeconds;
   // The saver's lamp blinks fast for its last seconds.
   static constexpr double kBallSaveWarningSeconds = 3.0;
@@ -294,6 +294,10 @@ class Rules {
   // meter pays its bonus and Graduation Day cannot start. For measuring the
   // table itself with a single ball.
   void setMultiballEnabled(bool enabled) noexcept { multiballEnabled_ = enabled; }
+  // With this off no drained ball is given back by the ball saver or a
+  // multiball's grace (the short save after an eject stays). For measuring
+  // how balls leave the table.
+  void setBallSaveEnabled(bool enabled) noexcept { ballSaveEnabled_ = enabled; }
 
   // --- What to show ----------------------------------------------------------
   std::uint64_t score() const noexcept { return score_; }
@@ -305,7 +309,7 @@ class Rules {
   double tiltWarning() const noexcept { return tiltHeat_ / kTiltLimit; }
   // A drain now would be returned by the ball saver or a multiball's grace.
   bool ballSaveActive() const noexcept {
-    return !gameOver_ && !tilted_ && (saverPending_ || saverSteps_ > 0 || graceSteps_ > 0);
+    return !gameOver_ && !tilted_ && ballSaveEnabled_ && (saverSteps_ > 0 || graceSteps_ > 0);
   }
   double ballSaveSecondsLeft() const noexcept { return secondsOf(saverSteps_); }
   // Between entering play and draining (or being returned to the plunger).
@@ -448,6 +452,9 @@ class Rules {
   // after what is showing and waiting.
   void say(const display::Text& text) noexcept;
   void sayThen(const display::Text& text) noexcept;
+  // After a message said in this same step, otherwise now: for the lesser
+  // of two things one shot did.
+  void sayAlso(const display::Text& text) noexcept;
   void cue(Sound sound) noexcept { sounds_ |= soundBit(sound); }
   bool dead() const noexcept { return gameOver_ || tilted_; }
   std::uint32_t stepsFor(double seconds) const noexcept;
@@ -460,7 +467,7 @@ class Rules {
   void offerSkillShot() noexcept;
   // What every new ball starts with and without.
   void beginBall() noexcept;
-  // Any switch closed: the first of a ball starts the saver's clock.
+  // Any switch closed.
   void noteSwitch() noexcept;
   void rotateLanes(bool right) noexcept;
   void addTurbo(int amount) noexcept;
@@ -519,9 +526,12 @@ class Rules {
   int requestsInFlight_ = 0;
   bool lockRelease_ = false;
   bool multiballEnabled_ = true;
+  bool ballSaveEnabled_ = true;
 
   // Ball saver, grace, extra balls.
-  bool saverPending_ = false;  // Until the ball's first switch.
+  // The ball on the plunger has not had its saver yet: it starts when the
+  // ball enters play.
+  bool saverArmable_ = false;
   std::uint32_t saverSteps_ = 0;
   std::uint32_t graceSteps_ = 0;
   int extraBallsLit_ = 0;
@@ -627,6 +637,7 @@ class Rules {
   static constexpr std::size_t kMessageQueue = 8;
   display::Text message_{};
   std::uint32_t messageSteps_ = 0;
+  bool messageFresh_ = false;  // Said since the last step.
   std::array<display::Text, kMessageQueue> waiting_{};
   std::size_t waitingCount_ = 0;
 

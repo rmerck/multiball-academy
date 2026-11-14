@@ -127,8 +127,14 @@ class TableHarness {
   bool kickbackOff = false;
   // Lights the kickback now.
   void lightKickback();
-  // Whether the Hangar may lock balls (the provisional rules' switch).
+  // Whether the rules may put more than one ball in play: lock balls in
+  // the Hangar, launch a second from a full turbo meter, start Graduation
+  // Day. Off for the measurements made with one ball at a time.
   void setLocks(bool enabled);
+  // Whether the rules give drained balls back (ball saver and multiball
+  // grace). Off on the bench unless asked for: the measurements of the table
+  // itself count every ball that leaves it. On for whole games.
+  void setSaver(bool enabled);
   // Steps on which a ball was against a flipper.
   std::uint64_t flipperTouches = 0;
   // Drains of every ball, by way out: centre, left outlane, right outlane.

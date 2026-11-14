@@ -1141,6 +1141,7 @@ void testKickback() {
   {  // It fires once. Two balls come down together: the first is taken, the
      // second, with the kickback already in use and out, is lost.
     Game game;
+    Seam::rules(game).setBallSaveEnabled(false);  // The second ball is to stay lost.
     run(game, 2);
     putBall(game, 0, {59.0F, kTopY}, {0.0F, 300.0F});
     const std::size_t second = Seam::addBall(game, {59.0F, kTopY - 30.0F}, {0.0F, 300.0F});

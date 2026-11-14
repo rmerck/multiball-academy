@@ -1213,14 +1213,19 @@ StressResult stress(const StressOptions& options) {
   Game& game = harness.game();
   const std::unique_ptr<Bot> bot = makeBot(options.bot, options.seed, options.reflexError);
   const std::size_t wanted = std::clamp<std::size_t>(options.balls, 1, table::kMaxBalls);
+  // With fewer than three the rules must not add balls of their own.
+  harness.setLocks(wanted == table::kMaxBalls);
   int inLane = 0;
   int pullLeft = 0;
   std::uint64_t overlapRun = 0;
   std::array<std::uint64_t, table::kMaxBalls> laneSteps{};
   for (std::uint64_t n = 0; n < options.steps; ++n) {
     // Keep the table full: every ball that leaves is asked for again and
-    // the game serves and launches it by itself.
-    while (game.ballCount() + game.queuedBalls() < wanted && game.requestBall()) {
+    // the game serves and launches it by itself. Not during a multiball of
+    // the rules' own: that ends when one ball is left of it, and only then
+    // can the Hangar lock balls again, so its balls are let drain.
+    while (game.rules().multiball() == Multiball::None &&
+           game.ballCount() + game.queuedBalls() < wanted && game.requestBall()) {
     }
     // A ball served for the player to launch (the first of a game) is
     // plunged at full power once it has waited a moment.

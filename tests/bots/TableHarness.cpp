@@ -37,6 +37,8 @@ TableHarness::TableHarness() {
   balls_[0].tracked = true;
   balls_[0].previous = table::kBallStart;
   balls_[0].anchor = table::kBallStart;
+  // The bench counts every ball that leaves the table: see setSaver().
+  setSaver(false);
 }
 
 Vec2 TableHarness::position(std::size_t slot) const { return Seam::position(game_, slot); }
@@ -98,6 +100,7 @@ bool TableHarness::nearFlipper(Vec2 p, std::size_t i, float slack) const {
 
 void TableHarness::lightKickback() { Seam::rules(game_).setKickbackLit(true); }
 void TableHarness::setLocks(bool enabled) { Seam::rules(game_).setMultiballEnabled(enabled); }
+void TableHarness::setSaver(bool enabled) { Seam::rules(game_).setBallSaveEnabled(enabled); }
 
 void TableHarness::settleKick(std::size_t slot, bool safe) {
   if (slot < balls_.size() && balls_[slot].kickTouchPending) {

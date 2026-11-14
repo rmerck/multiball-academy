@@ -16,6 +16,7 @@ void testHighScores();
 void testHoles();
 void testLaunch();
 void testCourses();
+void testMultiball();
 void testNudge();
 void testPhysics();
 void testPlunger();
