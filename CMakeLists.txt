@@ -344,7 +344,10 @@ elseif(PINBALL_IOS)
   # hardening, sanitizers) reach the Swift compiler.
   enable_language(Swift)
   add_library(pinball_review STATIC src/platform/ios/Review.swift)
+  # The directory's own options (cmake/Hardening.cmake's add_compile_options)
+  # are C and C++ flags the Swift driver refuses: none here.
   set_target_properties(pinball_review PROPERTIES
+    COMPILE_OPTIONS ""
     XCODE_ATTRIBUTE_SWIFT_VERSION 5.0
     XCODE_ATTRIBUTE_SKIP_INSTALL YES)
   target_link_libraries(pinball_platform PRIVATE pinball_review)
