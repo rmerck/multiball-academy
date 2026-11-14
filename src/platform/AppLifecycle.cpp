@@ -212,6 +212,7 @@ bool App::resumeSavedGame() {
   // game over already running is taken as found, its start show not played
   // again (LightShow::observe's first look).
   lightShow_.reset();
+  ++lightShowResets_;
   gamesBegunSeen_ = game_.gamesBegun();
   // The table holds a game that is not over and has no score to enter.
   entry_.reset();

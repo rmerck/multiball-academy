@@ -159,6 +159,8 @@ class App {
     // Frames that were drawn and presented; the rest showed nothing new.
     std::uint32_t drawnFrames;
     std::uint64_t steps;
+    // Times the table's light show was started afresh for a restored game.
+    std::uint32_t lightShowResets;
     // What the latest simulation step was given.
     InputState input;
     screen::Layout layout;
@@ -426,6 +428,7 @@ class App {
   // played). Reduce motion reaches both from reduceMotion_.
   LightShow lightShow_;
   LightShow attractShow_;
+  std::uint32_t lightShowResets_ = 0;
   // Declared before the table it loads.
   ScoreStore scoreStore_;
   // The saved game: the one offered to resume, read at start; whether the

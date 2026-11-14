@@ -843,6 +843,52 @@ void testDrainDipThroughTheLimiter() {
   CHECK(worst < 0.01F);
 }
 
+void testRollCallSharesTheNestGate() {
+  // The roll call lanes light the same part of the table as the bumper
+  // nest: a lane rolled over soon after a nest flash starts no flash of its
+  // own, and one rolled over after the gap does.
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  const std::size_t slot = game.ball().id;
+  bool nest = false;
+  for (int i = 0; i < 1200 && !nest; ++i) {
+    if (i % 60 == 0) {
+      Seam::placeBall(game, slot, {262.0F, 165.0F}, {20.0F, 700.0F});
+    }
+    step(game, show);
+    for (std::size_t b = 0; b < 3; ++b) {
+      nest = nest || show.bumperFlash(b) == 1.0F;
+    }
+  }
+  CHECK(nest);
+  // At once into the middle roll call lane.
+  const std::uint32_t before = game.rolloverCount(1);
+  Seam::placeBall(game, slot, {table::kRollovers[1].zone.center.x, 120.0F}, {0.0F, 300.0F});
+  bool rolled = false;
+  bool flashed = false;
+  for (int i = 0; i < 40; ++i) {
+    step(game, show);
+    rolled = rolled || game.rolloverCount(1) > before;
+    flashed = flashed || show.rolloverFlash(1) > 0.0F;
+  }
+  CHECK(rolled);
+  CHECK(!flashed);
+  // A while later, nothing else struck in between: it flashes.
+  Seam::placeBall(game, slot, {380.0F, 700.0F}, {0.0F, 0.0F});
+  for (int i = 0; i < static_cast<int>(fx::kMinHitSteps); ++i) {
+    step(game, show);
+  }
+  const std::uint32_t again = game.rolloverCount(1);
+  Seam::placeBall(game, slot, {table::kRollovers[1].zone.center.x, 120.0F}, {0.0F, 300.0F});
+  bool later = false;
+  for (int i = 0; i < 40 && !later; ++i) {
+    step(game, show);
+    later = game.rolloverCount(1) > again && show.rolloverFlash(1) > 0.9F;
+  }
+  CHECK(later);
+}
+
 }  // namespace
 
 void testLightShow() {
@@ -871,4 +917,5 @@ void testLightShow() {
   testFirstLookTakesTheTableAsFound();
   testDomeGates();
   testDrainDipThroughTheLimiter();
+  testRollCallSharesTheNestGate();
 }
