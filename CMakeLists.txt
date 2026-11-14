@@ -83,6 +83,13 @@ if(NOT pinball_privacy_url_ok)
   message(FATAL_ERROR "PINBALL_PRIVACY_URL must be a page of https://github.com/rmerck/multiball-academy/ "
                       "with a plain path (no .., query or fragment). It is '${PINBALL_PRIVACY_URL}'")
 endif()
+# The public contact address for support, shown on the About page and in
+# docs/SUPPORT.md and docs/PRIVACY.md. The display has capitals, digits and
+# a few marks only, so it must be plain: lower case letters, digits, dots.
+set(PINBALL_SUPPORT_EMAIL "dev@mrck.app")
+if(NOT PINBALL_SUPPORT_EMAIL MATCHES "^[a-z0-9]+(\\.[a-z0-9]+)*@[a-z0-9]+(\\.[a-z0-9]+)+$")
+  message(FATAL_ERROR "PINBALL_SUPPORT_EMAIL must be a plain address: '${PINBALL_SUPPORT_EMAIL}'")
+endif()
 # The copyright line of the application bundles.
 set(PINBALL_COPYRIGHT "Copyright 2026 rmerck. MIT licence.")
 project(MultiballAcademy VERSION 2.0.0 LANGUAGES CXX)
