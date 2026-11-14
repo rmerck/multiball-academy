@@ -1,7 +1,9 @@
 # Writes src/generated/ArtPalette.hpp: the colours and constants the renderer's code-drawn elements share
 # with the art (lamp colours, tints, backdrop colour, glow limits, ball sprite size). One source: palette.py.
 #   python3 gen_header.py [out_file]          write the header (default: src/generated/ArtPalette.hpp)
-#   python3 gen_header.py --check <file>      exit 1 unless <file> is what palette.py gives (ctest art_palette)
+#   python3 gen_header.py --check <file> [<colorset>]   exit 1 unless <file> is what palette.py gives and
+#                                             the colour set (the iOS launch screen's) is the backdrop colour
+#                                             (ctest art_palette)
 # Needs nothing but Python itself, so the check runs wherever the tests do.
 import os
 import sys
@@ -63,15 +65,22 @@ def main(path):
         f.write(text())
 
 
-def check(path):
+def check(path, colorset=None):
     with open(path, newline="") as f:
         if f.read() != text():
             sys.exit("%s is not what tools/art/palette.py gives: run python3 tools/art/gen_header.py" % path)
+    if colorset is not None:
+        import json
+        with open(colorset) as f:
+            comp = json.load(f)["colors"][0]["color"]["components"]
+        got = tuple(int(comp[k], 16) for k in ("red", "green", "blue"))
+        if got != P.rgb(P.NIGHT) or float(comp["alpha"]) != 1.0:
+            sys.exit("%s is %s, not the backdrop colour %s" % (colorset, got, P.rgb(P.NIGHT)))
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3 and sys.argv[1] == "--check":
-        check(sys.argv[2])
+    if len(sys.argv) in (3, 4) and sys.argv[1] == "--check":
+        check(*sys.argv[2:])
     elif len(sys.argv) <= 2:
         main(sys.argv[1] if len(sys.argv) > 1 else DEFAULT)
     else:

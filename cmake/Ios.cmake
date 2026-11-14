@@ -5,7 +5,7 @@
 # below are copied, compiled and sealed by Xcode's own build phases.
 
 # A build with a team id is one that can be signed, archived and sent to the
-# App Store. What must never get there stops such a configuration: the
+# App Store. What must never get there stops such a configuration: a
 # placeholder icon and the test switch below. Without a team id they are
 # allowed, the icon with a warning.
 if(PINBALL_IOS_TEAM_ID)
@@ -28,20 +28,18 @@ if(PINBALL_IOS_TEST_EXIT)
   target_compile_definitions(pinball PRIVATE PINBALL_IOS_TEST_EXIT=1)
 endif()
 
-# The icon in the asset catalog is a placeholder until the art is drawn. It
-# is known two ways, so that neither a forgotten marker nor a regenerated
-# placeholder slips through: the marker file tools/ios/make_placeholder_icon.py
-# writes beside the catalog, which goes when the real icon is dropped in, and
-# the SHA-256 of the placeholder that is committed today.
-set(pinball_ios_icon
-  ${CMAKE_SOURCE_DIR}/packaging/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png)
-file(SHA256 ${pinball_ios_icon} pinball_ios_icon_hash)
-if(EXISTS ${CMAKE_SOURCE_DIR}/packaging/ios/ICON_IS_A_PLACEHOLDER
-   OR pinball_ios_icon_hash STREQUAL "62cae5f0b7bbcca630794c23a725009451cac0e2c6bee2b507655b3ff99709bb")
+# The icon in the asset catalog must be the real one. A placeholder (marked
+# by packaging/ios/ICON_IS_A_PLACEHOLDER, or one whose hash is known) stops
+# a build that could be shipped. tests/CheckIosIconGuard.cmake tests this.
+include(${CMAKE_SOURCE_DIR}/cmake/IosIconCheck.cmake)
+pinball_ios_icon_is_placeholder(pinball_ios_icon_placeholder
+  ICON ${CMAKE_SOURCE_DIR}/packaging/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png
+  MARKER ${CMAKE_SOURCE_DIR}/packaging/ios/ICON_IS_A_PLACEHOLDER)
+if(pinball_ios_icon_placeholder)
   message(${pinball_ios_standin}
-    "The iOS icon is still the placeholder (packaging/ios/Assets.xcassets). It must not be "
-    "shipped, so a build with PINBALL_IOS_TEAM_ID is refused. With the real icon in place, "
-    "delete packaging/ios/ICON_IS_A_PLACEHOLDER")
+    "The iOS icon is a placeholder (packaging/ios/Assets.xcassets). It must not be "
+    "shipped, so a build with PINBALL_IOS_TEAM_ID is refused. Put the real icon in place "
+    "and delete packaging/ios/ICON_IS_A_PLACEHOLDER")
 endif()
 
 # Resources. In an iOS bundle "Resources" is the bundle's top directory.
