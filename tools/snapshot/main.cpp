@@ -519,6 +519,20 @@ struct Checker {
   const pinball::screen::Layout& layout;
   int failures = 0;
 
+  // Relative luminance of a pixel, 0 to 1 (sRGB, as WCAG has it).
+  [[nodiscard]] double luminance(std::uint32_t pixel) const {
+    const SDL_PixelFormatDetails* const format = SDL_GetPixelFormatDetails(surface->format);
+    Uint8 r = 0;
+    Uint8 g = 0;
+    Uint8 b = 0;
+    SDL_GetRGB(pixel, format, nullptr, &r, &g, &b);
+    const auto linear = [](Uint8 c) {
+      const double v = static_cast<double>(c) / 255.0;
+      return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+  }
+
   [[nodiscard]] Pixels picture(const pinball::Game& game, const Scene& scene) const {
     drawScene(renderer, table, layout, game, scene);
     Pixels pixels(static_cast<std::size_t>(surface->w) * static_cast<std::size_t>(surface->h));
@@ -623,6 +637,72 @@ struct Checker {
   void captioned(const Pixels& a, const pinball::screen::Rect& rect, const char* what) {
     expect(captionInk(a, rect) >= kSome, what);
   }
+  // A button: its caption, and, on a key of art, the face under it. The ink
+  // caption must stand at least 3:1 against what is round it (the median of
+  // the pixels two away from each ink pixel that are not ink), which a
+  // caption over the card or the deck with no face drawn does not.
+  void buttonCaptioned(const Pixels& a, const pinball::screen::Rect& rect, const char* what) {
+    captioned(a, rect, what);
+    if (table.overlayArt().button.face == nullptr) {
+      return;
+    }
+    const SDL_PixelFormatDetails* const format = SDL_GetPixelFormatDetails(surface->format);
+    const SDL_Color c = pinball::kCaptionOnArt;
+    const std::uint32_t ink = SDL_MapRGBA(format, nullptr, c.r, c.g, c.b, c.a);
+    const auto [left, top, right, bottom] = bounds(rect);
+    const auto at = [&](int x, int y) {
+      return a[static_cast<std::size_t>(y) * static_cast<std::size_t>(surface->w) +
+               static_cast<std::size_t>(x)];
+    };
+    std::vector<double> around;
+    for (int y = top; y < bottom; ++y) {
+      for (int x = left; x < right; ++x) {
+        if (at(x, y) != ink) {
+          continue;
+        }
+        for (const auto& [dx, dy] : {std::pair{2, 0}, std::pair{-2, 0}, std::pair{0, 2},
+                                    std::pair{0, -2}}) {
+          const int nx = x + dx;
+          const int ny = y + dy;
+          if (nx >= left && nx < right && ny >= top && ny < bottom && at(nx, ny) != ink) {
+            around.push_back(luminance(at(nx, ny)));
+          }
+        }
+      }
+    }
+    if (around.empty()) {
+      expect(false, what);
+      return;
+    }
+    std::ranges::nth_element(around,
+                             around.begin() + static_cast<std::ptrdiff_t>(around.size() / 2));
+    const double face = around[around.size() / 2];
+    const double contrast = (face + 0.05) / (luminance(ink) + 0.05);
+    if (contrast < 3.0) {
+      std::fprintf(stderr, "  %s: caption contrast %.2f\n", what, contrast);
+    }
+    expect(contrast >= 3.0, what);
+  }
+  // A dialog on the card of art: its chrome lip along the top edge, which
+  // nothing else drawn there is as light as.
+  void carded(const Pixels& a, const pinball::screen::Rect& box, const char* what) {
+    if (table.overlayArt().dialog == nullptr) {
+      return;
+    }
+    const auto [left, top, right, bottom] =
+        bounds({box.x + 48.0F, box.y + 2.0F, box.w - 96.0F, 5.0F});
+    std::size_t light = 0;
+    for (int y = top; y < bottom; ++y) {
+      for (int x = left; x < right; ++x) {
+        light += luminance(a[static_cast<std::size_t>(y) * static_cast<std::size_t>(surface->w) +
+                             static_cast<std::size_t>(x)]) >= 0.25
+                     ? 1U
+                     : 0U;
+      }
+    }
+    const double area = static_cast<double>(right - left) * static_cast<double>(bottom - top);
+    expect(area > 0.0 && static_cast<double>(light) / area >= 0.5, what);
+  }
 };
 
 constexpr pinball::screen::Rect placed(const pinball::screen::Rect& r, float dx,
@@ -688,7 +768,7 @@ int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& 
       std::string what = std::string(name) + " is drawn";
       check.differs(bare, play, rect, what.c_str());
       what = std::string(name) + " has its caption or mark";
-      check.captioned(play, rect, what.c_str());
+      check.buttonCaptioned(play, rect, what.c_str());
       what = std::string(name) + " looks pressed when held";
       check.differs(play, held, rect, what.c_str());
     }
@@ -722,6 +802,7 @@ int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& 
   if (touch) {
     const screen::MenuLayout menu = screen::menuLayout(layout);
     check.differs(dimmed, paused, menu.box, "pause menu is drawn");
+    check.carded(paused, menu.box, "pause menu is on its card");
     const std::array<std::pair<screen::Rect, const char*>, 5> rows{{
         {menu.resume, "menu: resume"},
         {menu.newGame, "menu: new game"},
@@ -731,7 +812,7 @@ int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& 
     }};
     for (const auto& [rect, name] : rows) {
       check.differs(dimmed, paused, rect, name);
-      check.captioned(paused, rect, name);
+      check.buttonCaptioned(paused, rect, name);
     }
     check.differs(dimmed, paused, layout.hud, "pausing dims the status display too");
     const Pixels confirm = check.picture(game, {.state = State::Confirm});
@@ -751,6 +832,7 @@ int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& 
   const Pixels info = check.picture(game, {.state = State::AboutInfo});
   const Pixels licences = check.picture(game, {.state = State::Licences});
   check.differs(play, scores, about.box, "About is drawn");
+  check.carded(scores, about.box, "About is on its card");
   check.differs(scores, info, about.box, "About: scores and about pages differ");
   check.differs(info, licences, about.box, "About: about and licence pages differ");
   check.differs(scores, licences, about.box, "About: scores and licence pages differ");
@@ -765,12 +847,12 @@ int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& 
   check.same(last, beyond, about.box, "About: a page past the last is the last");
   if (touch) {
     for (const screen::Rect& tab : about.tabs) {
-      check.captioned(scores, tab, "About: tab has a caption");
+      check.buttonCaptioned(scores, tab, "About: tab has a caption");
     }
     check.differs(scores, info, about.tabs[0], "About: the tab of the page shown is marked");
-    check.captioned(scores, about.close, "About: close button");
-    check.captioned(licences, about.previous, "About: previous page button");
-    check.captioned(licences, about.next, "About: next page button");
+    check.buttonCaptioned(scores, about.close, "About: close button");
+    check.buttonCaptioned(licences, about.previous, "About: previous page button");
+    check.buttonCaptioned(licences, about.next, "About: next page button");
     check.differs(licences, last, about.next, "About: next is greyed on the last page");
     check.differs(licences, last, about.previous, "About: previous is greyed on the first page");
     check.same(scores, info, about.close, "About: close stays put");
@@ -780,15 +862,16 @@ int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& 
   const screen::InitialsLayout initials = screen::initialsLayout(layout);
   const Pixels entry = check.picture(game, {.state = State::Initials});
   check.differs(play, entry, initials.box, "initials prompt is drawn");
+  check.carded(entry, initials.box, "initials prompt is on its card");
   for (const screen::Rect& slot : initials.slot) {
     check.letteredIn(entry, slot, pinball::kInitialsLettering, "initials: a letter in each slot");
   }
   if (touch) {
     for (std::size_t i = 0; i < initials.up.size(); ++i) {
-      check.captioned(entry, initials.up[i], "initials: up arrow");
-      check.captioned(entry, initials.down[i], "initials: down arrow");
+      check.buttonCaptioned(entry, initials.up[i], "initials: up arrow");
+      check.buttonCaptioned(entry, initials.down[i], "initials: down arrow");
     }
-    check.captioned(entry, initials.ok, "initials: OK button");
+    check.buttonCaptioned(entry, initials.ok, "initials: OK button");
   }
 
   // Leave the play frame on the canvas: it is the picture written.
