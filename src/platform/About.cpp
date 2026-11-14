@@ -31,10 +31,10 @@ constexpr SDL_Color kTeal = sdl(art::kTeal);
 constexpr SDL_Color kGreyed{70, 56, 104, 255};
 
 constexpr std::string_view kCredit =
-    "AN ORIGINAL GAME BY RMERCK. ALL ART AND SOUND ARE ORIGINAL.";
+    "AN ORIGINAL GAME BY RYAN MERCK. ALL ART AND SOUND ARE ORIGINAL.";
 // The same in two lines, for the narrow dialog.
 constexpr std::string_view kCreditLines =
-    "AN ORIGINAL GAME BY RMERCK.\nALL ART AND SOUND ARE ORIGINAL.";
+    "AN ORIGINAL GAME BY RYAN MERCK.\nALL ART AND SOUND ARE ORIGINAL.";
 // What the game does with the player's data.
 constexpr std::string_view kPrivacy =
     "THIS GAME COLLECTS NOTHING AND SENDS NOTHING. IT HAS NO ACCOUNTS, NO ADS AND NO "
