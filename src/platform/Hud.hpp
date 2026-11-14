@@ -2,12 +2,14 @@
 
 #include <SDL3/SDL.h>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string_view>
 
 #include "core/Game.hpp"
 #include "core/ScreenLayout.hpp"
+#include "generated/ArtPalette.hpp"
 #include "platform/GameViews.hpp"
 
 namespace pinball {
@@ -31,6 +33,20 @@ struct HudExtras {
   bool newHighScore = false;
   const HudPreview* preview = nullptr;
 };
+
+// The colours the status display letters in, from the art's palette: the
+// first five for text, the last two for its lamp boxes. The display's art
+// has none of them exactly inside a window, so the layout check can tell
+// lettering from art by them.
+inline constexpr std::array<SDL_Color, 7> kHudLettering{{
+    {art::kYellow.r, art::kYellow.g, art::kYellow.b, 255},  // Digits, messages.
+    {art::kAqua.r, art::kAqua.g, art::kAqua.b, 255},        // Rank.
+    {art::kCream.r, art::kCream.g, art::kCream.b, 255},     // Text.
+    {art::kOrchid.r, art::kOrchid.g, art::kOrchid.b, 255},  // Labels.
+    {art::kGreen.r, art::kGreen.g, art::kGreen.b, 255},     // Ball save.
+    {art::kPink.r, art::kPink.g, art::kPink.b, 255},        // Game over, tilt.
+    {96, 88, 170, 255},                                     // An unlit lamp's word.
+}};
 
 // Art for the status display. Any of it may be null: the display then draws
 // plain windows and lettering of its own.
