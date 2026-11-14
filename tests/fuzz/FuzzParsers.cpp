@@ -9,7 +9,8 @@
 // the score, PNG, asset name and argument parsers in that order, with '4'
 // for the review tools' window description, or with '5' for what the system
 // and the player's fingers give the touch screen: a window size and safe
-// area, then a run of touches (see fuzzTouchScreen).
+// area, then a run of touches (see fuzzTouchScreen), or with '6' for the
+// score writer (games entered, then written and read back).
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -21,6 +22,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/Args.hpp"
 #include "core/AssetName.hpp"
@@ -185,6 +187,12 @@ void fuzzTouchScreen(std::string_view bytes) {
   pinball::OverlayTaps taps;
   pinball::InitialsEntry entry;
   std::uint64_t now = 0;
+  // Ids that went down and have not lifted, been cancelled or been forgotten.
+  std::vector<std::uint64_t> live;
+  const auto anyHeld = [](const pinball::InputState& s) {
+    return s.leftFlipper || s.rightFlipper || s.plunger || s.nudgeLeft || s.nudgeRight ||
+           s.nudgeUp || s.newGame;
+  };
   while (!bytes.empty()) {
     const std::uint8_t control = takeByte(bytes);
     // Ten fingers' worth of ids plus a few far apart, so that both the
@@ -192,18 +200,38 @@ void fuzzTouchScreen(std::string_view bytes) {
     const std::uint8_t idByte = takeByte(bytes);
     const std::uint64_t id = (idByte & 0x80U) != 0 ? std::uint64_t{idByte} << 56U : idByte % 12U;
     const auto phase = static_cast<pinball::TouchPhase>(control & 3U);
-    const pinball::CanvasPoint at = pinball::canvasPoint(layout, takeFloat(bytes), takeFloat(bytes));
+    const float fx = takeFloat(bytes);
+    const float fy = takeFloat(bytes);
+    const pinball::CanvasPoint at = pinball::canvasPoint(layout, fx, fy);
     now += takeByte(bytes) * 8U;
     const pinball::TouchControls::Context context{(control & 4U) != 0, (control & 8U) != 0};
 
     switch ((control >> 4U) & 3U) {
       case 0: {
+        const pinball::InputState before = touch.held();
         touch.handle({.id = id, .phase = phase, .x = at.x, .y = at.y}, layout, context);
         const pinball::InputState held = touch.held();
+        if (phase != pinball::TouchPhase::Move) {
+          std::erase(live, id);
+        }
+        if (phase == pinball::TouchPhase::Down) {
+          live.push_back(id);
+        }
+        // Nothing is held once every finger is up; held never grows on a
+        // Move, Up or Cancel; a control that became held was latched.
+        if (live.empty()) {
+          require(!anyHeld(held) && !touch.view(context).pause);
+        }
+        const pinball::InputState pressed = touch.takePressed();
+        if (phase != pinball::TouchPhase::Down) {
+          require(!anyHeld(pressed));
+        }
+        require(!(held.leftFlipper && !before.leftFlipper) || pressed.leftFlipper);
+        require(!(held.rightFlipper && !before.rightFlipper) || pressed.rightFlipper);
+        require(!(held.plunger && !before.plunger) || pressed.plunger);
         const pinball::TouchControls::View view = touch.view(context);
         require(view.left == held.leftFlipper && view.right == held.rightFlipper);
         require(view.nudgeLeft == held.nudgeLeft && view.nudgeRight == held.nudgeRight);
-        (void)touch.takePressed();
         (void)touch.takePauseRequest();
         break;
       }
@@ -211,8 +239,11 @@ void fuzzTouchScreen(std::string_view bytes) {
         (void)taps.handle(phase, id, pinball::menuTarget(menu, at.x, at.y), now);
         break;
       case 2: {
-        const pinball::OverlayTarget acted =
-            taps.handle(phase, id, pinball::aboutTarget(about, at.x, at.y), now);
+        const pinball::OverlayTarget under = pinball::aboutTarget(about, at.x, at.y);
+        if (under.kind == pinball::OverlayTarget::Kind::AboutTab) {
+          require(under.index < about.tabs.size());
+        }
+        const pinball::OverlayTarget acted = taps.handle(phase, id, under, now);
         if (acted.kind == pinball::OverlayTarget::Kind::AboutTab) {
           require(acted.index < about.tabs.size());
         }
@@ -250,12 +281,40 @@ void fuzzTouchScreen(std::string_view bytes) {
       // A change of screen or layout lets every finger go (App).
       touch.cancelAll();
       taps.cancel();
+      live.clear();
       const pinball::InputState held = touch.held();
       require(!held.leftFlipper && !held.rightFlipper && !held.plunger && !held.nudgeLeft &&
               !held.nudgeRight && !held.nudgeUp && !held.newGame);
       require(taps.pressed().kind == pinball::OverlayTarget::Kind::None);
     }
   }
+}
+
+// The score writer: whatever games are entered, in any order and with any
+// score, rank and initials, the table it writes is one the reader accepts
+// and reads back the same.
+void fuzzScoreWriter(std::string_view bytes) {
+  pinball::HighScores scores;
+  while (bytes.size() >= 12) {
+    pinball::HighScore entry;
+    std::memcpy(&entry.score, bytes.data(), sizeof entry.score);
+    entry.rank = static_cast<std::uint8_t>(bytes[8]);
+    entry.initials = {bytes[9], bytes[10], bytes[11]};
+    bytes.remove_prefix(12);
+    (void)scores.submit(entry);
+  }
+  require(scores.size() <= pinball::HighScores::kCapacity);
+  const std::string written = scores.serialize();
+  require(written.size() <= pinball::HighScores::kMaxTextBytes);
+  pinball::HighScores read;
+  require(read.parse(written));
+  require(read.size() == scores.size());
+  for (std::size_t i = 0; i < scores.size(); ++i) {
+    const pinball::HighScore a = scores.at(i);
+    const pinball::HighScore b = read.at(i);
+    require(a.score == b.score && a.rank == b.rank && a.initials == b.initials);
+  }
+  require(read.serialize() == written);
 }
 
 }  // namespace
@@ -275,6 +334,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
   }
   if (data[0] == '5') {
     fuzzTouchScreen(text);
+    return 0;
+  }
+  if (data[0] == '6') {
+    fuzzScoreWriter(text);
     return 0;
   }
   switch (which) {
