@@ -364,7 +364,7 @@ void Rules::onTarget(std::size_t index) noexcept {
     turboTargetLit_.fill(false);
     extraCreditLit_ = true;
     say(display::Message("EXTRA CREDIT IS LIT"));
-    cue(Sound::BankComplete);
+    cue(Sound::SetComplete);
   }
   addTurbo(tuning::kTurboPerTarget);
 }
@@ -402,7 +402,7 @@ void Rules::onDropTarget(std::size_t index) noexcept {
   if (safety) {
     courseSecondPart_ = true;
   }
-  cue(Sound::BankComplete);
+  cue(Sound::SetComplete);
   say(lockLit() ? display::Message("LOCK IS LIT") : display::Message("BAY DOORS OPEN"));
 }
 
@@ -423,7 +423,7 @@ void Rules::onRollover(std::size_t index, std::size_t ball) noexcept {
       if (lane == skillLane_) {
         award(points::kSkillShot * ballNumber, Feature::SkillShot, false);
         say(display::Message("SKILL SHOT"));
-        cue(Sound::MissionSelect);
+        cue(Sound::SkillShot);
       } else {
         award(points::kSkillShotOtherLane * ballNumber, Feature::SkillShot, false);
       }
@@ -441,7 +441,7 @@ void Rules::onRollover(std::size_t index, std::size_t ball) noexcept {
       award(points::kRollCallComplete, Feature::RollCall);
       rollCallLit_.fill(false);
       ++laneSetsThisBall_;
-      cue(Sound::BankComplete);
+      cue(Sound::SetComplete);
       if (overdrive_ > 1) {
         // Again while it runs: the most there is, and its time over again.
         overdrive_ = kMaxOverdrive;
@@ -474,7 +474,7 @@ void Rules::onRollover(std::size_t index, std::size_t ball) noexcept {
     award(points::kWingComplete, Feature::ReturnLanes);
     wingLit_.fill(false);
     ++laneSetsThisBall_;
-    cue(Sound::BankComplete);
+    cue(Sound::SetComplete);
     if (kickbackLit_) {
       addBonusMultiplier();
       say(display::Message("WINGS EARNED  BONUS X"));
@@ -574,7 +574,7 @@ void Rules::rampMade(Shot shot) noexcept {
     superSkillSteps_ = 0;
     award(points::kSuperSkillShot * static_cast<std::uint64_t>(ball_), Feature::SkillShot, false);
     say(display::Message("SUPER SKILL SHOT"));
-    cue(Sound::MissionSelect);
+    cue(Sound::SkillShot);
   }
   // Ramps relight the Briefing room once a course is over, and Graduation
   // Day after one that was not finished.
@@ -583,7 +583,7 @@ void Rules::rampMade(Shot shot) noexcept {
       if (--gradRampsNeeded_ == 0) {
         gradLit_ = true;
         say(display::Message("GRADUATION DAY IS LIT"));
-        cue(Sound::MissionSelect);
+        cue(Sound::Lit);
       } else {
         say(display::Message("RAMPS FOR BRIEFING"));
       }
@@ -591,7 +591,7 @@ void Rules::rampMade(Shot shot) noexcept {
       if (--rampsNeeded_ == 0) {
         courseLit_ = true;
         say(display::Message("BRIEFING IS LIT"));
-        cue(Sound::MissionSelect);
+        cue(Sound::Lit);
       } else {
         say(display::Message("RAMPS FOR BRIEFING"));
       }
@@ -674,7 +674,7 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
         jackpotsTowardSuper_ = 0;
         award(points::kSuperJackpot, Feature::SuperJackpot);
         sayAlso(display::Message("SUPER JACKPOT"));
-        cue(Sound::Promotion);
+        cue(Sound::SuperJackpot);
         break;
       }
       award(points::kHangar, Feature::Hangar);
@@ -695,7 +695,7 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
         jackpotsTowardSuper_ = 0;
         graceSteps_ = stepsFor(tuning::kAcademyGraceSeconds);
         sayAlso(display::Message("ACADEMY MULTIBALL"));
-        cue(Sound::Promotion);
+        cue(Sound::MultiballStart);
         if (academyMultiballs_ == 2) {
           lightExtraBall();
         }
@@ -734,7 +734,7 @@ void Rules::onBallLocked(std::size_t bay, bool served) noexcept {
   // After what the shot that locked it said (a course step, say).
   sayAlso(locksHeld_ == 1 ? display::Message("BALL 1 LOCKED")
                           : display::Message("BALL 2 LOCKED"));
-  cue(Sound::MissionAccept);
+  cue(Sound::BallLocked);
   if (academyMultiballs_ > 0 || locksHeld_ > tuning::kFirstMultiballOpenLocks) {
     // Only the first multiball of a game keeps the Hangar open between locks.
     doorsOpen_ = false;
@@ -840,13 +840,14 @@ void Rules::turboBallServed() noexcept {
   }
   graceSteps_ = std::max(graceSteps_, stepsFor(tuning::kTurboGraceSeconds));
   say(display::Message("TURBO MULTIBALL"));
-  cue(Sound::Promotion);
+  cue(Sound::MultiballStart);
 }
 
 void Rules::lightOverdrive() noexcept {
   if (overdrive_ == 1 && !overdriveLit_) {
     overdriveLit_ = true;
     sayThen(display::Message("OVERDRIVE IS LIT"));
+    cue(Sound::Lit);
   }
 }
 
@@ -855,12 +856,13 @@ void Rules::startOverdrive() noexcept {
   overdrive_ = 2;
   overdriveSteps_ = stepsFor(tuning::kOverdriveSeconds);
   say(display::Message("OVERDRIVE 2X"));
-  cue(Sound::MissionAccept);
+  cue(Sound::Overdrive);
 }
 
 void Rules::lightExtraBall() noexcept {
   ++extraBallsLit_;
   sayThen(display::Message("EXTRA BALL IS LIT"));
+  cue(Sound::Lit);
 }
 
 void Rules::collectExtraBall() noexcept {
@@ -898,7 +900,7 @@ void Rules::collectExtraCredit() noexcept {
     }
     roll -= entry.weight;
   }
-  cue(Sound::MissionSelect);
+  cue(Sound::ExtraCredit);
   switch (credit) {
     case Credit::Points25:
       award(25'000, Feature::ExtraCredit, false);
@@ -946,7 +948,7 @@ void Rules::majorShot(Shot shot) noexcept {
       }
       examMade_[made] = true;
       award(points::kExamShot, Feature::Graduation);
-      cue(Sound::MissionAccept);
+      cue(Sound::Jackpot);
       const int left = examShotsLeft();
       if (left == 0) {
         gradStage_ = GradStage::Commencement;
@@ -963,7 +965,7 @@ void Rules::majorShot(Shot shot) noexcept {
         commencementThisTime_ = true;
         gradStage_ = GradStage::VictoryLaps;
         say(display::Message("CHANCELLOR"));
-        cue(Sound::Promotion);
+        cue(Sound::SuperJackpot);
       }
       return;
     case GradStage::VictoryLaps:
@@ -1034,7 +1036,7 @@ void Rules::flowShot(Shot shot) noexcept {
   award(points::kCombo[link], Feature::Combos);
   ++combosThisBall_;
   sayAlso(kComboMessages[link]);
-  cue(Sound::MissionSelect);
+  cue(Sound::Combo);
   if (comboChain_ >= kMaxCombo) {
     // The chain is complete: the next flow shot starts a new one.
     comboChain_ = 0;
@@ -1070,11 +1072,12 @@ void Rules::jackpot() noexcept {
   jackpotIndex_ = std::min(jackpotIndex_ + 1, points::kJackpot.size());
   ++jackpotsCollected_;
   say(display::Message("JACKPOT"));
-  cue(Sound::MissionComplete);
+  cue(Sound::Jackpot);
   if (academyMultiball_ && !superLit_ && ++jackpotsTowardSuper_ >= tuning::kJackpotsForSuper) {
     jackpotsTowardSuper_ = 0;
     superLit_ = true;
     sayThen(display::Message("SUPER JACKPOT IS LIT"));
+    cue(Sound::Lit);
   }
 }
 
@@ -1137,7 +1140,7 @@ void Rules::startGraduation() noexcept {
   ballRequests_ += std::max(static_cast<int>(table::kMaxBalls) - ballsInGame(), 0);
   graceSteps_ = stepsFor(tuning::kGraduationGraceSeconds);
   say(display::Message("GRADUATION DAY"));
-  cue(Sound::Promotion);
+  cue(Sound::MultiballStart);
 }
 
 void Rules::endGraduation() noexcept {
@@ -1215,7 +1218,7 @@ void Rules::startCourse() noexcept {
     navSteps_ = stepsFor(kNavigationHopSeconds);
   }
   sayThen(display::Message("CLASS IN SESSION"));
-  cue(Sound::MissionAccept);
+  cue(Sound::CourseStart);
 }
 
 void Rules::courseStep(CourseId id) noexcept {
@@ -1250,7 +1253,7 @@ void Rules::passCourse() noexcept {
   award(value, courseFeature(index), false);
   coursePassed_[index] = true;
   ++coursePasses_;
-  cue(Sound::MissionComplete);
+  cue(Sound::CoursePassed);
   if (allCoursesPassed()) {
     gradLit_ = true;
     say(display::Message("ALL COURSES PASSED"));
@@ -1258,7 +1261,7 @@ void Rules::passCourse() noexcept {
   } else if (graduations_ == 0) {
     rank_ = std::min(static_cast<std::size_t>(coursesPassed()), kTopRank - 1);
     say(display::Message("COURSE PASSED  RANK UP"));
-    cue(Sound::Promotion);
+    cue(Sound::RankUp);
   } else {
     // The top rank is held already.
     say(display::Message("COURSE PASSED"));
@@ -1271,6 +1274,7 @@ void Rules::passCourse() noexcept {
 
 void Rules::failCourse() noexcept {
   say(display::Message("COURSE FAILED"));
+  cue(Sound::CourseFailed);
   courseOver();
 }
 

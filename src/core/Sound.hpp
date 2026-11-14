@@ -48,13 +48,6 @@ enum class Sound : std::uint8_t {
   Overdrive,       // The playfield multiplier starts.
   BallSaved,
   GameOver,
-  // Names core/Rules.cpp used before the rules had cues of their own. They
-  // are the nearest of the cues above, and go once it names those (notes).
-  BankComplete = SetComplete,
-  MissionSelect = Lit,
-  MissionAccept = CourseStart,
-  MissionComplete = Jackpot,
-  Promotion = MultiballStart,
 };
 inline constexpr std::size_t kSoundCount = 32;
 static_assert(std::to_underlying(Sound::GameOver) + 1 == kSoundCount,
