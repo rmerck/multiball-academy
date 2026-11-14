@@ -423,13 +423,12 @@ void TableRenderer::drawElements(SDL_Renderer* r, const Game& game) const {
                {(door.b.x - door.a.x) * 0.5F + door.radius, door.radius}, 2.0F, kDoorDownColor);
     }
   }
-  // Lamps that the table itself answers for: a lock lamp for each ball in
-  // a bay, and the kickback's while it is armed.
+  // Lamps that the table itself answers for: each bay's lock lamp while a
+  // ball is in that bay, and the kickback's while it is armed.
   for (const table::Lamp& lamp : table::kLamps) {
-    const bool lit =
-        (lamp.id == table::LampId::Kickback && game.kickbackArmed()) ||
-        (lamp.id == table::LampId::Lock1 && game.lockedBalls() >= 1) ||
-        (lamp.id == table::LampId::Lock2 && game.lockedBalls() >= 2);
+    const bool lit = (lamp.id == table::LampId::Kickback && game.kickbackArmed()) ||
+                     (lamp.id == table::LampId::Lock1 && game.bayTaken(0)) ||
+                     (lamp.id == table::LampId::Lock2 && game.bayTaken(1));
     if (lit) {
       mesh.disc(lamp.position, table::kStatusLampDiameter * 0.5F, kLitColor);
     }
@@ -448,8 +447,8 @@ void TableRenderer::drawTargets(SDL_Renderer* r, const Game& game) const {
   static const std::array<BarSprite, kBarCount> kSprites = makeBarSprites();
   for (std::size_t i = 0; i < kSprites.size(); ++i) {
     // Turbo targets mint, bay doors orange. A door is the dim tube of an
-    // unlit bar until it has been hit, bright once it is marked, and not
-    // drawn at all while the bank is down.
+    // unlit bar until the rules have marked it, bright once they have, and
+    // not drawn at all while the bank is down.
     const bool door = i >= table::kTargets.size();
     if (door && !game.doorBankUp()) {
       continue;

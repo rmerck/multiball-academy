@@ -123,6 +123,7 @@ void Rules::clearModes() noexcept {
   lockCommand_ = LockCommand::None;
   releasesPending_ = 0;
   locksHeld_ = 0;
+  bayFull_.fill(false);
   hangarHolding_ = 0;
   doorsOpen_ = false;
   kickbackArmSteps_ = 0;
@@ -718,9 +719,11 @@ void Rules::onEject(std::size_t index) noexcept {
 }
 
 void Rules::onBallLocked(std::size_t bay, bool served) noexcept {
-  static_cast<void>(bay);
   if (gameOver_) {
     return;
+  }
+  if (bay < bayFull_.size()) {
+    bayFull_[bay] = true;
   }
   locksHeld_ = std::min(locksHeld_ + 1, kLocksNeeded);
   status_.locked = std::min(status_.locked + 1, kLocksNeeded);
@@ -749,7 +752,9 @@ void Rules::onLockRefused() noexcept {
 }
 
 void Rules::onLockReleased(std::size_t bay) noexcept {
-  static_cast<void>(bay);
+  if (bay < bayFull_.size()) {
+    bayFull_[bay] = false;
+  }
   if (releasesPending_ > 0) {
     --releasesPending_;
   } else {
@@ -1703,9 +1708,9 @@ LampState Rules::lampState(table::LampId lamp) const noexcept {
     case ArrowCircuitRight:
       return arrow(Shot::CircuitRight);
     case Lock1:
-      return lit(locksHeld_ >= 1);
+      return lit(bayFull_[0]);
     case Lock2:
-      return lit(locksHeld_ >= 2);
+      return lit(bayFull_[1]);
     case Course1:
     case Course2:
     case Course3:

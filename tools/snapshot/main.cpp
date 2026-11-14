@@ -8,7 +8,8 @@
 // state    play (the default), launch, pause, interrupted, confirm, about,
 //          about-info, licences, initials, gameover, course, multiball,
 //          locked (a ball locked in the Hangar's first bay and the next on
-//          the plunger), bankdown (the bay doors dropped),
+//          the plunger), bankdown (the bay doors dropped), spinning (the
+//          spinner's blade a quarter turn round, on its edge),
 //          or check: draw the layout's screens one after another and fail
 //          unless every control, window and dialog is really drawn (see
 //          checkLayout below); the picture written is the play frame
@@ -150,6 +151,7 @@ enum class State : std::uint8_t {
   Multiball,
   Locked,
   BankDown,
+  Spinning,
   Check,
 };
 
@@ -157,7 +159,7 @@ struct StateName {
   std::string_view name;
   State state;
 };
-constexpr std::array<StateName, 15> kStates{{
+constexpr std::array<StateName, 16> kStates{{
     {"play", State::Play},
     {"launch", State::Launch},
     {"pause", State::Pause},
@@ -172,6 +174,7 @@ constexpr std::array<StateName, 15> kStates{{
     {"multiball", State::Multiball},
     {"locked", State::Locked},
     {"bankdown", State::BankDown},
+    {"spinning", State::Spinning},
     {"check", State::Check},
 }};
 
@@ -195,7 +198,7 @@ constexpr float kMaxPictureSide = 8192.0F;
 constexpr const char* kUsage =
     "Usage: pinball_snapshot <steps 1..1000000> <name.png> [state] [options]\n"
     "  state: play launch pause interrupted confirm about about-info licences\n"
-    "         initials gameover course multiball locked bankdown check\n"
+    "         initials gameover course multiball locked bankdown spinning check\n"
     "  --layout <preset | WxH[@scale][+top,bottom,left,right]>   points, 100..4096; scale 1..4,\n"
     "           and no more than 8192 pixels a side at that scale\n"
     "  --surface WxH   --insets top,bottom,left,right\n"
@@ -489,6 +492,7 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
     case State::Multiball:
     case State::Locked:
     case State::BankDown:
+    case State::Spinning:
     case State::Check:
       break;
   }
@@ -881,6 +885,23 @@ int run(const Request& request) {
                                ? game.lockedBalls() == 1
                                : !game.doorBankUp();
       if (!reached) {
+        std::fputs("the scene could not be set up\n", stderr);
+        return EXIT_FAILURE;
+      }
+    }
+
+    if (request.state == State::Spinning) {
+      // A ball sent fast up the Turbine lane, through the spinner, and the
+      // blade caught a quarter turn round, when it stands on its edge.
+      using Seam = pinball::GameTestAccess;
+      const std::size_t slot = game.ball().id;
+      const pinball::Vec2 lane = (pinball::table::kSpinner.a + pinball::table::kSpinner.b) * 0.5F;
+      Seam::placeBall(game, slot, {lane.x, lane.y + 30.0F}, {0.0F, -1500.0F});
+      Seam::putInPlay(game, slot);
+      for (int i = 0; i < 240 && (game.spinCount() == 0 || game.spinnerPhase() != 0.25F); ++i) {
+        game.step(pinball::InputState{});
+      }
+      if (game.spinnerPhase() != 0.25F) {
         std::fputs("the scene could not be set up\n", stderr);
         return EXIT_FAILURE;
       }

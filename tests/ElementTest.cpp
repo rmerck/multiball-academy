@@ -569,13 +569,19 @@ void testLock() {
     const InputState idle;
     std::vector<int> steps;
     std::vector<Vec2> velocities;
+    CHECK(game.bayTaken(0) && game.bayTaken(1));
     for (int i = 0; i < 2 * kSecond; ++i) {
       game.step(idle);
       if (const GameEvent* event = findEvent(game, GameEvent::Type::LockReleased)) {
         steps.push_back(i);
         velocities.push_back(Seam::velocity(game, event->ball));
+        // The first bay empties first; the second's lamp is still its own.
+        if (steps.size() == 1) {
+          CHECK(!game.bayTaken(0) && game.bayTaken(1));
+        }
       }
     }
+    CHECK(!game.bayTaken(0) && !game.bayTaken(1));
     CHECK(steps.size() == 2);
     if (steps.size() == 2) {
       CHECK(steps[0] == 0);

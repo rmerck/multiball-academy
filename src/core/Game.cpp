@@ -55,6 +55,15 @@ std::size_t Game::lockedBalls() const noexcept {
   return count;
 }
 
+bool Game::bayTaken(std::size_t bay) const noexcept {
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (ballLocked(slot) && balls_[slot].lockBay == bay + 1U) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::size_t Game::otherLiveBalls(std::size_t slot) const noexcept {
   std::size_t count = 0;
   for (std::size_t other = 0; other < kMaxBalls; ++other) {

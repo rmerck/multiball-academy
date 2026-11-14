@@ -142,6 +142,25 @@ void testMultiball() {
     CHECK(bench.balls.locked == 0 && rules.multiball() == Multiball::Academy);
   }
 
+  {  // A lock lamp belongs to its bay, not to the count of locked balls: a
+     // ball in the second bay alone lights the second lamp, and each lamp
+     // goes out as its own bay empties.
+    RulesBench bench = unsaved();
+    Rules& rules = bench.rules;
+    bench.doors();
+    CHECK(rules.onHole(table::kHangarHole) == Rules::HoleResult::Lock);
+    rules.onBallLocked(1, false);
+    CHECK(rules.lampState(LampId::Lock1) == LampState::Off &&
+          rules.lampState(LampId::Lock2) == LampState::On);
+    rules.onLockReleased(1);
+    CHECK(rules.lampState(LampId::Lock2) == LampState::Off);
+    rules.onBallLocked(0, false);
+    rules.onBallLocked(1, false);
+    rules.onLockReleased(0);
+    CHECK(rules.lampState(LampId::Lock1) == LampState::Off &&
+          rules.lampState(LampId::Lock2) == LampState::On);
+  }
+
   {  // The Hangar told to lock could not (both bays taken): no lock, no lock
      // message, the lock still lit.
     RulesBench bench = unsaved();

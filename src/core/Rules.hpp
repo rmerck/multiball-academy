@@ -608,6 +608,9 @@ class Rules {
   // Balls the Hangar has taken and not yet returned (locked ones aside).
   int hangarHolding_ = 0;
   int locksHeld_ = 0;
+  // Which bays hold a ball, for their lamps: the bays need not fill or
+  // empty in the order of the count.
+  std::array<bool, kLocksNeeded> bayFull_{};
   // Locked balls told to go and not yet out.
   int releasesPending_ = 0;
 

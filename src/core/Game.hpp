@@ -164,6 +164,10 @@ class Game {
   [[nodiscard]] bool ballLocked(std::size_t slot) const noexcept {
     return slot < kMaxBalls && physics_.ballActive(slot) && balls_[slot].lockBay != 0;
   }
+  // Whether a ball is in this bay (0 or 1). The bays empty in order but
+  // need not be taken in order once balls have left, so a lamp for a bay
+  // asks this, not how many are locked.
+  [[nodiscard]] bool bayTaken(std::size_t bay) const noexcept;
   [[nodiscard]] std::uint32_t lockCount() const noexcept { return lockCount_; }
   [[nodiscard]] std::uint32_t lockReleaseCount() const noexcept { return lockReleaseCount_; }
 

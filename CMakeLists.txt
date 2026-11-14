@@ -700,15 +700,18 @@ if(BUILD_TESTING)
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
     set_tests_properties(render_snapshot PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
-    # The table's own moving parts: a ball locked in the Hangar, and the
-    # bay doors down.
+    # The table's own moving parts: a ball locked in the Hangar, the bay
+    # doors down, and the spinner turning.
     add_test(NAME render_locked
       COMMAND pinball_snapshot 60 render_locked.png locked
       WORKING_DIRECTORY ${PINBALL_TEST_DIR})
     add_test(NAME render_bank_down
       COMMAND pinball_snapshot 60 render_bank_down.png bankdown
       WORKING_DIRECTORY ${PINBALL_TEST_DIR})
-    set_tests_properties(render_locked render_bank_down PROPERTIES
+    add_test(NAME render_spinning
+      COMMAND pinball_snapshot 60 render_spinning.png spinning
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
+    set_tests_properties(render_locked render_bank_down render_spinning PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
     # The tool must replace a link at its output name, never write through
     # it, even one that points nowhere. (Not on Windows, where making a link
