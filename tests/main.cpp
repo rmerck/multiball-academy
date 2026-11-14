@@ -20,7 +20,7 @@ void runSuites() {
   testHighScores();
   testHoles();
   testLaunch();
-  testMissions();
+  testCourses();
   testNudge();
   testPhysics();
   testPlunger();

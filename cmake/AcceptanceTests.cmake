@@ -34,7 +34,7 @@ target_link_libraries(pinball_acceptance PRIVATE pinball_core)
 # Music do, for the samples they make: those never reach the ball.)
 set(trajectory_sources "")
 foreach(name IN ITEMS Physics.cpp Physics.hpp Game.cpp Game.hpp Rules.cpp Rules.hpp
-                      Missions.cpp Missions.hpp Vec2.hpp FixedTimestep.hpp Input.hpp)
+                      Courses.cpp Courses.hpp Vec2.hpp FixedTimestep.hpp Input.hpp)
   list(APPEND trajectory_sources ${CMAKE_SOURCE_DIR}/src/core/${name})
 endforeach()
 list(JOIN trajectory_sources "," trajectory_sources)

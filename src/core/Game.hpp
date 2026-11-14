@@ -231,6 +231,10 @@ class Game {
     return slot < kMaxBalls && physics_.ballActive(slot) && balls_[slot].inPlay;
   }
 
+  // Whether a ball is in the launch lane waiting for the player's plunge
+  // (not one the table launches by itself).
+  [[nodiscard]] bool ballAwaitingLaunch() const noexcept;
+
   // Asks for another ball. It is served to the plunger when the lane is
   // empty, kAutoServeSpacingSeconds after the last ball served this way, and
   // kAutoLaunchDelaySeconds later it is launched without the player at
@@ -310,6 +314,8 @@ class Game {
   // Does what the rules ask of the doors and the kickback.
   void applyRules();
   [[nodiscard]] bool doorMouthClear() const;
+  // The balls, as the rules count them.
+  [[nodiscard]] TableStatus tableStatus() const noexcept;
   void updateSpinner();
   void addSpins(float speedAcross, int direction) noexcept;
   // How the ball in a slot is leaving.

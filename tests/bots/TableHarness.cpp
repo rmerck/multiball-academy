@@ -97,7 +97,7 @@ bool TableHarness::nearFlipper(Vec2 p, std::size_t i, float slack) const {
 }
 
 void TableHarness::lightKickback() { Seam::rules(game_).setKickbackLit(true); }
-void TableHarness::setLocks(bool enabled) { Seam::rules(game_).setLocksEnabled(enabled); }
+void TableHarness::setLocks(bool enabled) { Seam::rules(game_).setMultiballEnabled(enabled); }
 
 void TableHarness::settleKick(std::size_t slot, bool safe) {
   if (slot < balls_.size() && balls_[slot].kickTouchPending) {

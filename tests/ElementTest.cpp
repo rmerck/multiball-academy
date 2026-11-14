@@ -273,7 +273,7 @@ void testDoorBank() {
      // own ball, all three doors are marked and the bank drops once.
     Game game;
     run(game, 2);
-    Seam::rules(game).setLocksEnabled(false);
+    Seam::rules(game).setMultiballEnabled(false);
     putBall(game, 0, {254.0F, 430.0F}, {0.0F, -1100.0F});
     const std::size_t second = Seam::addBall(game, {279.0F, 430.0F}, {0.0F, -1100.0F});
     const std::size_t third = Seam::addBall(game, {304.0F, 430.0F}, {0.0F, -1100.0F});
@@ -334,7 +334,7 @@ void testDoorBank() {
         for (const float x : {250.0F, 268.0F, 279.0F, 301.0F}) {
           Game game;
           run(game, 2);
-          Seam::rules(game).setLocksEnabled(false);
+          Seam::rules(game).setMultiballEnabled(false);
           Seam::dropDoorBank(game);
           putBall(game, 0, {x, 520.0F}, {0.0F, -speed});
           const InputState idle;
@@ -382,7 +382,7 @@ void testDoorBank() {
      // bank comes back up half a second later, with its marks cleared.
     Game game;
     run(game, 2);
-    Seam::rules(game).setLocksEnabled(false);
+    Seam::rules(game).setMultiballEnabled(false);
     markDoors(game);
     run(game, 1);
     CHECK(!game.doorBankUp());
@@ -1328,7 +1328,7 @@ void testNothingTunnels() {
   for (int n = 0; n < 500; ++n) {
     Game game;
     run(game, 2);
-    Seam::rules(game).setLocksEnabled(false);
+    Seam::rules(game).setMultiballEnabled(false);
     Seam::rules(game).setKickbackLit(false);
     const std::size_t balls = 1U + static_cast<std::size_t>(n % 3);
     for (std::size_t slot = 0; slot < balls; ++slot) {

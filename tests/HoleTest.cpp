@@ -342,7 +342,7 @@ void testHoles() {
      // game must keep serving balls.
     Game game;
     // One ball throughout: the Hangar returns the ball and does not lock it.
-    pinball::GameTestAccess::rules(game).setLocksEnabled(false);
+    pinball::GameTestAccess::rules(game).setMultiballEnabled(false);
     int stillSteps = 0;
     int worstStill = 0;
     Vec2 previous{};

@@ -8,7 +8,7 @@
 
 #include "core/DisplayText.hpp"
 #include "core/Format.hpp"
-#include "core/Missions.hpp"
+#include "core/Courses.hpp"
 #include "core/PanelLayout.hpp"
 #include "core/Version.hpp"
 #include "platform/Text.hpp"
