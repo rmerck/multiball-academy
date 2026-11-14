@@ -34,6 +34,13 @@ struct CanvasPoint {
 [[nodiscard]] CanvasPoint canvasPoint(const screen::Layout& layout, float fractionX,
                                       float fractionY) noexcept;
 
+// iPadOS puts the handle that resizes an app's window in the window's
+// bottom corners, and a drag that starts there is the system's: it must
+// not press a control or tap a menu as well. A touch that goes down within
+// this many points of either bottom corner is left to the system.
+inline constexpr float kSystemCornerPoints = 32.0F;
+[[nodiscard]] bool inSystemCorner(const screen::Layout& layout, CanvasPoint point) noexcept;
+
 // Turns touches on the playing controls into the same InputState the
 // keyboard produces. No SDL, so it is unit tested like the rest of core.
 //

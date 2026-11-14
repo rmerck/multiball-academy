@@ -434,6 +434,33 @@ void testCanvasPoint() {
   CHECK(nothingHeld(controls.held()));
 }
 
+void testSystemCorners() {
+  // The bottom corners of a tablet window are the system's resize handle:
+  // 32 points in from either side and up from the bottom, in canvas units.
+  const Layout l = pinball::screen::computeLayout({1024.0F, 1366.0F, 24.0F, 20.0F, 0.0F, 0.0F},
+                                                  pinball::screen::Idiom::Touch);
+  const float reach = pinball::kSystemCornerPoints / l.pointsPerUnit;
+  CHECK(pinball::inSystemCorner(l, {l.canvasWidth - 1.0F, l.canvasHeight - 1.0F}));
+  CHECK(pinball::inSystemCorner(l, {1.0F, l.canvasHeight - 1.0F}));
+  CHECK(pinball::inSystemCorner(l, {reach - 0.5F, l.canvasHeight - reach + 0.5F}));
+  CHECK(!pinball::inSystemCorner(l, {reach + 1.0F, l.canvasHeight - 1.0F}));
+  CHECK(!pinball::inSystemCorner(l, {1.0F, l.canvasHeight - reach - 1.0F}));
+  CHECK(!pinball::inSystemCorner(l, {l.canvasWidth * 0.5F, l.canvasHeight - 1.0F}));
+  // The top corners and anything off the canvas are not.
+  CHECK(!pinball::inSystemCorner(l, {1.0F, 1.0F}));
+  CHECK(!pinball::inSystemCorner(l, {-1.0F, -1.0F}));
+  CHECK(!pinball::inSystemCorner(l, {l.canvasWidth + 1.0F, l.canvasHeight - 1.0F}));
+  // No control a player needs is only reachable there: each button keeps
+  // most of its area outside the corners on every preset.
+  for (const pinball::screen::Preset& preset : pinball::screen::presets()) {
+    const Layout p = pinball::screen::computeLayout(preset.surface, preset.idiom);
+    for (const pinball::screen::Rect& r :
+         {p.pauseButton, p.nudgeLeftButton, p.centreButton, p.nudgeRightButton}) {
+      CHECK(!pinball::inSystemCorner(p, {r.x + r.w * 0.5F, r.y + r.h * 0.5F}));
+    }
+  }
+}
+
 void testOverlayTargets(const Layout& layout) {
   using pinball::screen::Rect;
   const auto at = [](const Rect& r) { return centreOf(r); };
@@ -607,6 +634,7 @@ void testOverlayTaps() {
 }  // namespace
 
 void testTouchControls() {
+  testSystemCorners();
   // Every touch preset, so both compositions and all sizes of deck.
   for (const pinball::screen::Preset& preset : pinball::screen::presets()) {
     if (preset.idiom != pinball::screen::Idiom::Touch) {

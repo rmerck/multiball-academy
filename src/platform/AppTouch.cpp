@@ -96,6 +96,12 @@ void App::handleTouch(const SDL_Event& event) {
   // SDL gives a finger's place as a fraction of the window.
   const CanvasPoint at = canvasPoint(layout_, event.tfinger.x, event.tfinger.y);
   const Uint64 now = SDL_GetTicks();
+  // A drag from a bottom corner of an iPad's window resizes the window: a
+  // finger that starts there is the system's, and without its start every
+  // control and menu ignores it to the end.
+  if (phase == TouchPhase::Down && SDL_IsTablet() && inSystemCorner(layout_, at)) {
+    return;
+  }
 
   switch (screen()) {
     case Screen::Play:
