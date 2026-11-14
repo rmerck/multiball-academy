@@ -439,6 +439,7 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
   pinball::DrawOptions options;
   options.dimmed = scene.state == State::Pause || scene.state == State::Interrupted ||
                    scene.state == State::Confirm;
+  options.flippersAtRest = options.dimmed;
 
   SDL_SetRenderDrawColor(r, pinball::screen::kBackdropRgb[0], pinball::screen::kBackdropRgb[1],
                          pinball::screen::kBackdropRgb[2], SDL_ALPHA_OPAQUE);

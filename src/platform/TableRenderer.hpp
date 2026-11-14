@@ -24,6 +24,10 @@ struct DrawOptions {
   bool dimmed = false;
   // The system asks for less motion: the table does not jolt on a nudge.
   bool reduceMotion = false;
+  // The flippers drawn down whatever the physics holds: a paused game has
+  // let go of every button, and a bat held up when it stopped drops as soon
+  // as it goes on, so the picture under the pause shows it down.
+  bool flippersAtRest = false;
   // For the review tool: balls drawn as well as the game's own, so a table
   // with several can be looked at before the game can be played into one.
   std::span<const BallView> extraBalls{};
@@ -130,7 +134,7 @@ class TableRenderer {
   void drawElements(SDL_Renderer* renderer, const Game& game, const TableLights& lights) const;
   void drawSlingshotFlashes(SDL_Renderer* renderer, const Game& game) const;
   void drawPlunger(SDL_Renderer* renderer, const Game& game) const;
-  void drawFlippers(SDL_Renderer* renderer, const Game& game, float alpha) const;
+  void drawFlippers(SDL_Renderer* renderer, const Game& game, float alpha, bool atRest) const;
   // Every ball that is in sight, those on the table first and those riding
   // a ramp's rail over them.
   void drawBalls(SDL_Renderer* renderer, std::span<const BallView> balls) const;

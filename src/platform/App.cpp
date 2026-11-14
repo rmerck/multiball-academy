@@ -683,7 +683,9 @@ void App::render(double alpha, bool cursorLit) {
   // The ball and flippers are drawn part-way between the last two steps.
   table_->drawBackdrop(r, layout_);
   table_->draw(r, game_, static_cast<float>(alpha), layout_,
-               DrawOptions{.dimmed = showPaused, .reduceMotion = reduceMotion_},
+               DrawOptions{.dimmed = showPaused,
+                           .reduceMotion = reduceMotion_,
+                           .flippersAtRest = showPaused},
                HudExtras{highScores_.best(), newHighScore_});
   if (touch) {
     table_->drawTouchOverlay(r, layout_, touch_.view(touchContext()));
