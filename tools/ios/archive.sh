@@ -5,7 +5,10 @@
 # holder to run.
 #
 # Usage: PINBALL_IOS_TEAM_ID=XXXXXXXXXX tools/ios/archive.sh [options]
-#   --build <dir>          build directory (default: build-ios-release)
+#   --source <dir>         the checkout to build (default: the one this
+#                          script is in), e.g. a worktree at origin/main
+#   --build <dir>          build directory (default: build-ios-release,
+#                          relative to the current directory)
 #   --build-number <n>     bundle version (default: 1); must be higher than
 #                          the last upload's for the same version
 #   --allow-dirty          build even if the working tree has changes
@@ -50,11 +53,13 @@ step() {
 [ "$(uname -s)" = Darwin ] || fail "macOS only"
 
 build=build-ios-release
+source_dir=
 build_number=1
 allow_dirty=no
 while [ "$#" -gt 0 ]; do
   case $1 in
     --build) [ "$#" -ge 2 ] || fail "--build needs a directory"; build=$2; shift 2 ;;
+    --source) [ "$#" -ge 2 ] || fail "--source needs a directory"; source_dir=$2; shift 2 ;;
     --build-number) [ "$#" -ge 2 ] || fail "--build-number needs a number"; build_number=$2; shift 2 ;;
     --allow-dirty) allow_dirty=yes; shift ;;
     *) fail "unknown argument: $1 (see the usage at the top of $0)" ;;
@@ -82,7 +87,12 @@ done
 xcode_version=$(xcodebuild -version)
 echo "archive: ${xcode_version//$'\n'/, }"
 
-repo=$(cd "$(dirname "$0")/../.." && pwd -P)
+here=$(cd "$(dirname "$0")" && pwd -P)
+repo=$(cd "${source_dir:-$here/../..}" && pwd -P) || fail "no such directory: $source_dir"
+[ -f "$repo/cmake/Ios.cmake" ] && [ -f "$repo/tools/ios/check_bundle.sh" ] \
+  || fail "not a checkout of the game: $repo"
+mkdir -p "$build"
+build=$(cd "$build" && pwd -P)
 cd "$repo"
 commit=$(git rev-parse HEAD)
 changes=$(git status --porcelain --untracked-files=no)
@@ -97,8 +107,6 @@ $changes"
 fi
 echo "archive: source $repo at $commit, team $team, build number $build_number"
 
-mkdir -p "$build"
-build=$(cd "$build" && pwd -P)
 [ "$build" != "$repo" ] || fail "the build directory must not be the repository itself"
 archive=$build/MultiballAcademy.xcarchive
 export_dir=$build/export
