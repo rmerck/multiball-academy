@@ -1267,7 +1267,7 @@ void testNothingTunnels() {
     Vec2 from;
     Vec2 velocity;
   };
-  const auto shot = [&unit, kCap] {
+  const auto shot = [&unit] {
     const Vec2 from{200.0F + unit() * 160.0F, 470.0F + unit() * 120.0F};
     const Vec2 at{246.0F + unit() * 66.0F, table::kDoorY};
     const Vec2 d = at - from;
