@@ -29,7 +29,7 @@
 
 namespace pinball::save {
 
-inline constexpr std::uint16_t kFormatVersion = 1;
+inline constexpr std::uint16_t kFormatVersion = 2;
 
 // The longest a build id may be ("2.0.0+123456789" is 15).
 inline constexpr std::size_t kMaxBuildIdLength = 32;
@@ -180,6 +180,10 @@ struct BallRecord {
   std::uint32_t stillSteps = 0;
   bool inPlay = false;
   Vec2 takenAt{};
+  // For drawing a ball on its way into a hole and out of it.
+  std::uint64_t takenStep = 0;
+  Vec2 ejectFrom{};
+  bool ejectFromBay = false;
   bool autoLaunch = false;
   std::uint32_t launchSteps = 0;
   bool launched = false;
