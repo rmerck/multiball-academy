@@ -70,6 +70,11 @@ struct AppOptions {
   // whatever the clock, so that a test can see attract games end. 1 to
   // kMaxAttractStepsPerFrame.
   std::optional<int> attractStepsPerFrame;
+  // Less motion, as the system's Reduce Motion setting asks: given, it is
+  // used instead of the system's, which is read otherwise (at start and on
+  // every return to the foreground). Tests give it, so that they do not
+  // depend on the machine's accessibility settings.
+  std::optional<bool> reduceMotion;
   // Where the high scores and the saved game are kept (a separator is
   // added at the end if missing); empty for the player's preferences
   // directory. For tests,

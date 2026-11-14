@@ -270,7 +270,7 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
   gamesBegunSeen_ = game_.gamesBegun();
 
   systemCorners_ = options.systemCorners.value_or(SDL_IsTablet());
-  reduceMotion_ = systemReduceMotion();
+  reduceMotion_ = options_.reduceMotion.value_or(systemReduceMotion());
   ios::attachWindow(window_.get());
   hapticsAvailable_ = ios::hapticsAvailable();
   accessibilityEvent_ = SDL_RegisterEvents(1);

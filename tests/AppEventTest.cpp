@@ -48,6 +48,8 @@ AppOptions playerOptions(pinball::screen::Idiom idiom) {
   options.fixedFrameSeconds = kFastFrame;
   // Straight to the game: the title has tests of its own.
   options.showTitle = false;
+  // Whatever the machine's own accessibility settings say.
+  options.reduceMotion = false;
   return options;
 }
 
@@ -1802,7 +1804,34 @@ void testTouchGameOverGuard() {
   CHECK(app->status().frontOpen);
 }
 
+// With Reduce Motion the title is built at once and attract mode stands
+// still: the first key already chooses.
+void testTitleReduceMotion() {
+  AppOptions options = titleOptions(pinball::screen::Idiom::Desktop);
+  options.reduceMotion = true;
+  const std::unique_ptr<App> app = App::create(options);
+  CHECK(app != nullptr);
+  if (!app) {
+    return;
+  }
+  CHECK(frames(*app, 5));
+  App::Status status = app->status();
+  CHECK(status.frontOpen && status.introDone);
+  CHECK(status.attractSteps == 0);
+  key(*app, SDLK_DOWN, SDL_SCANCODE_DOWN);
+  CHECK(app->status().front.titleFocus == TitleItem::Scores);
+  // And the same run without it: the intro plays and attract mode moves.
+  options.reduceMotion = false;
+  const std::unique_ptr<App> moving = App::create(options);
+  CHECK(moving != nullptr);
+  if (moving) {
+    CHECK(frames(*moving, 3));
+    CHECK(!moving->status().introDone && moving->status().attractSteps > 0);
+  }
+}
+
 void runFront() {
+  testTitleReduceMotion();
   testTitleKeys();
   testTitleTouch();
   testGameOverReturnsToTitle();

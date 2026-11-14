@@ -98,7 +98,7 @@ void App::handleLifecycle(Uint32 type) {
         // No device opened before; there may be one now.
         audioRetryWanted_ = true;
       }
-      reduceMotion_ = systemReduceMotion();
+      reduceMotion_ = options_.reduceMotion.value_or(systemReduceMotion());
       // The time away is not played back as a burst of catch-up steps
       // (a timed run is not paused, so the pause does not see to it).
       (void)clock_.simulated(0.0, true);
