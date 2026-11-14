@@ -1605,7 +1605,12 @@ void testAttractKeepsNoScore() {
       CHECK(frames(*app, 2));
       CHECK(app->status().front.titleFocus == TitleItem::Play);
       key(*app, SDLK_F2, SDL_SCANCODE_F2);
-      CHECK(frames(*app, 10));
+      // A ball into play: only then is it a game in progress, to be kept.
+      for (int i = 0; i < 12; ++i) {
+        key(*app, SDLK_SPACE, SDL_SCANCODE_SPACE);
+        CHECK(frames(*app, 1));
+      }
+      CHECK(frames(*app, 30));
       CHECK(app->status().steps > 0 && !app->status().gameOver);
       CHECK(app->finish() == 0);
     }
