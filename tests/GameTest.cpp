@@ -660,7 +660,9 @@ void testSeveralBalls() {
           captured[b] = i;
           CHECK(game.rules().score() > score);  // Scored on arrival.
           score = game.rules().score();
-          CHECK(!find(game.balls(), b).visible);
+          // Still in sight, on its way down into the hole.
+          const BallView in = find(game.balls(), b);
+          CHECK(in.visible && in.sink > 0.0F && in.sink < 1.0F);
         } else if (!held && captured[b] >= 0 && released[b] < 0 && Seam::live(game, b)) {
           released[b] = i;
           const BallView view = find(game.balls(), b);
@@ -701,8 +703,12 @@ void testSeveralBalls() {
       CHECK(Seam::held(game, b) && game.holeCount(holes[b]) == 1);
     }
     CHECK(game.ballHeld());
-    // In the two pockets the ball is out of sight; on the rail it is not.
-    CHECK(!find(game.balls(), 0).visible && !find(game.balls(), 1).visible);
+    // In the two pockets the ball is on its way down out of sight; on the
+    // rail it is in sight and raised.
+    for (std::size_t b = 0; b < 2; ++b) {
+      const BallView in = find(game.balls(), b);
+      CHECK(in.visible && in.sink > 0.0F && in.sink < 1.0F && !in.raised);
+    }
     CHECK(find(game.balls(), 2).visible && find(game.balls(), 2).raised);
     int steps = 1;
     while (steps < 200 && (Seam::held(game, 0) || Seam::held(game, 1))) {
