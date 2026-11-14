@@ -39,6 +39,16 @@ struct SceneStage {
     game.enterPlay();
   }
 
+  // The plunger pulled all the way and let go; true once the ball is in play.
+  bool plunge() {
+    InputState pull;
+    pull.plunger = true;
+    for (int i = 0; i < 120; ++i) {
+      game.step(pull);
+    }
+    return runUntil(240, [this] { return rules().ballInPlay(); });
+  }
+
   // The three bay doors hit, and the bank down.
   bool openDoors() {
     if (!runUntil(600, [this] { return game.doorBankUp() && !game.doorRaisePending(); })) {
@@ -192,10 +202,9 @@ struct SceneStage {
           return false;
         }
         shoot(Shot::Skyway);
-        // The ball is fed to the left flipper, as the Briefing room does.
-        send(game.ball().id, table::kHoles[table::kScoopHole].exitPosition, {-60.0F, 40.0F});
-        run(60);
-        return rules().courseRunning() && rules().goalRemaining() > 0;
+        // And the player plunges the ball: a full pull, so it laps the arch
+        // and the course's clock is running.
+        return plunge() && rules().courseRunning() && rules().goalRemaining() > 0;
       }
       case Scene::Graduation: {
         for (std::size_t course = 0; course < kCourseCount; ++course) {
