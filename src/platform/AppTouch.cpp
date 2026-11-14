@@ -99,7 +99,7 @@ void App::handleTouch(const SDL_Event& event) {
   // A drag from a bottom corner of an iPad's window resizes the window: a
   // finger that starts there is the system's, and without its start every
   // control and menu ignores it to the end.
-  if (phase == TouchPhase::Down && SDL_IsTablet() && inSystemCorner(layout_, at)) {
+  if (phase == TouchPhase::Down && systemCorners_ && inSystemCorner(layout_, at)) {
     return;
   }
 

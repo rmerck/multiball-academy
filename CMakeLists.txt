@@ -834,6 +834,14 @@ if(BUILD_TESTING)
     "trailing_junk:--frames|5x"
     "missing_value:--frames"
     "unknown_flag:--bogus")
+  # --scene is read by debug builds only: anywhere else it is an unknown
+  # option, even with a good name (the --frames after it would end a run
+  # that wrongly took it). A debug build refuses a name that is no scene.
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    list(APPEND bad_args_cases "unknown_scene:--scene|bogus" "scene_missing_value:--scene")
+  elseif(NOT CMAKE_CONFIGURATION_TYPES)
+    list(APPEND bad_args_cases "scene_not_debug:--scene|table|--frames|5")
+  endif()
   foreach(case IN LISTS bad_args_cases)
     string(REGEX MATCH "^[^:]+" name "${case}")
     string(REGEX REPLACE "^[^:]+:" "" args "${case}")

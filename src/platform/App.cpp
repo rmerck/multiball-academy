@@ -8,7 +8,9 @@
 
 #include "core/LoopPolicy.hpp"
 #include "core/OverlayLayout.hpp"
+#if !defined(NDEBUG) || defined(PINBALL_IOS_TEST_EXIT)
 #include "core/Scenes.hpp"
+#endif
 #include "core/Version.hpp"
 #include "platform/About.hpp"
 #include "platform/Assets.hpp"
@@ -233,7 +235,10 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
   SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "About menu item routed to the game: %s",
                routed ? "yes" : "no");
 
-  // A staged scene, for screenshots (debug builds only pass one).
+  // A staged scene, for screenshots. Only builds that read --scene can stage
+  // one (src/main.cpp, src/main_ios.cpp): elsewhere the staging is not even
+  // linked, and a scene given here only keeps the score file out of the run.
+#if !defined(NDEBUG) || defined(PINBALL_IOS_TEST_EXIT)
   if (options.scene) {
     const std::string_view name = sceneName(*options.scene);
     if (stageScene(game_, *options.scene)) {
@@ -243,7 +248,9 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
                   static_cast<int>(name.size()), name.data());
     }
   }
+#endif
 
+  systemCorners_ = options.systemCorners.value_or(SDL_IsTablet());
   reduceMotion_ = ios::reduceMotionEnabled();
   // The player's own music is playing: the game's tune stays out of its
   // way until the player turns it on.

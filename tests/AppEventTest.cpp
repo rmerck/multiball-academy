@@ -8,13 +8,17 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <stdlib.h>  // mkdtemp
 #include <exception>
 #include <memory>
+#include <string>
 
 #include "Check.hpp"
+#include "core/Args.hpp"
 #include "core/OverlayLayout.hpp"
 #include "core/ScreenLayout.hpp"
 #include "core/TouchControls.hpp"
+#include "core/Version.hpp"
 #include "platform/About.hpp"
 #include "platform/App.hpp"
 #include "platform/AudioOutput.hpp"
@@ -304,6 +308,55 @@ void testQuitAtThePromptKeepsTheScore() {
   CHECK(!app->status().entryOpen);
 }
 
+// A run given a scene is not the player's game: when it ends with a score
+// that makes the table, nothing is written to the score file, even with
+// scores kept (in a build that stages scenes the game is the staged one; in
+// any other the scene is ignored but the score is still not kept). The same
+// game without a scene does write it, which shows the test sees the file. Only where the preferences directory can be sent to a scratch place
+// (Linux: XDG_DATA_HOME); elsewhere it would be the player's own file.
+void testStagedSceneKeepsNoScore() {
+  char scratch[] = "/tmp/pinball-app-scores-XXXXXX";
+  if (mkdtemp(scratch) == nullptr) {
+    CHECK(false);
+    return;
+  }
+  SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME", scratch, true);
+  char* const pref = SDL_GetPrefPath(pinball::kDataOrganisation, pinball::kDataDirectory);
+  const std::string directory = pref != nullptr ? pref : "";
+  SDL_free(pref);
+  if (directory.rfind(scratch, 0) != 0) {
+    std::puts("app_tests: staged-scene score check skipped (no scratch preferences directory)");
+    return;
+  }
+  const std::string file = directory + "highscores.txt";
+  const auto playOut = [&](bool staged) {
+    std::remove(file.c_str());
+    AppOptions options = playerOptions(pinball::screen::Idiom::Desktop);
+    options.keepScores = true;
+    if (staged) {
+      options.scene = pinball::Scene::Course;
+    }
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(playToGameOver(
+        *app, [&app] { key(*app, SDLK_SPACE, SDL_SCANCODE_SPACE); }, [] {}));
+    CHECK(app->status().entryOpen);
+    SDL_Delay(750);
+    key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    CHECK(!app->status().entryOpen);
+    CHECK(app->finish() == 0);
+  };
+  playOut(false);
+  CHECK(SDL_GetPathInfo(file.c_str(), nullptr));
+  playOut(true);
+  CHECK(!SDL_GetPathInfo(file.c_str(), nullptr));
+  std::remove(file.c_str());
+  SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME");
+}
+
 void testLifecycle() {
   const std::unique_ptr<App> app = App::create(playerOptions(pinball::screen::Idiom::Touch));
   CHECK(app != nullptr);
@@ -451,6 +504,40 @@ void testBackgroundKeepsAScoreAtThePrompt() {
   CHECK(!app->status().paused);
   CHECK(frames(*app, 3));
   CHECK(!app->status().gameOver);
+}
+
+// On a tablet a finger that starts in a bottom corner of the window is the
+// system's (it resizes the window from there): it presses nothing, to the
+// end, while one just outside the corner works its flipper as ever.
+void testSystemCornerTouches() {
+  for (const bool corners : {true, false}) {
+    AppOptions options = playerOptions(pinball::screen::Idiom::Touch);
+    options.systemCorners = corners;
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(frames(*app, 3));
+    const pinball::screen::Layout layout = app->status().layout;
+    const float reach = pinball::kSystemCornerPoints / layout.pointsPerUnit;
+    const Point corner{layout.canvasWidth - reach * 0.5F, layout.canvasHeight - reach * 0.5F};
+    const Point beside{layout.canvasWidth - reach - 8.0F, layout.canvasHeight - reach * 0.5F};
+    finger(*app, SDL_EVENT_FINGER_DOWN, 7, corner);
+    CHECK(frames(*app, 2));
+    CHECK(app->status().input.rightFlipper == !corners);
+    finger(*app, SDL_EVENT_FINGER_MOTION, 7, beside);
+    CHECK(frames(*app, 2));
+    CHECK(app->status().input.rightFlipper == !corners);
+    finger(*app, SDL_EVENT_FINGER_UP, 7, beside);
+    CHECK(frames(*app, 2));
+    CHECK(!app->status().input.rightFlipper);
+    finger(*app, SDL_EVENT_FINGER_DOWN, 8, beside);
+    CHECK(frames(*app, 2));
+    CHECK(app->status().input.rightFlipper);
+    finger(*app, SDL_EVENT_FINGER_UP, 8, beside);
+    CHECK(frames(*app, 2));
+  }
 }
 
 void testTouchPlayAndMenus() {
@@ -938,8 +1025,10 @@ void testNoAudioRetriesOnReturn() {
 void runAll() {
   testDesktopKeys();
   testQuitAtThePromptKeepsTheScore();
+  testStagedSceneKeepsNoScore();
   testLifecycle();
   testBackgroundKeepsAScoreAtThePrompt();
+  testSystemCornerTouches();
   testTouchPlayAndMenus();
   testTouchInitials();
   testWindowChanges();

@@ -32,8 +32,12 @@ enum class Sound : std::uint8_t {
   Tilt,
   // The rules.
   SkillShot,       // Skill shot and super skill shot.
-  SetComplete,     // Roll call, W-I-N-G, both turbo targets, the third bay door.
-  Lit,             // Something waits to be collected: Briefing room, lock, extra ball.
+  // Roll call, W-I-N-G, both turbo targets, the third bay door (and with it
+  // the lock, when the doors' drop lights it).
+  SetComplete,
+  // Something waits to be collected: the Briefing room, Graduation Day,
+  // overdrive, an extra ball, the super jackpot.
+  Lit,
   Combo,           // Each link of a combo chain.
   CourseStart,     // Class in session.
   CoursePassed,

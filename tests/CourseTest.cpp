@@ -8,6 +8,7 @@
 #include "core/Courses.hpp"
 #include "core/DisplayText.hpp"
 #include "core/Rules.hpp"
+#include "core/Sound.hpp"
 #include "core/TableLayout.hpp"
 #include "platform/Font5x7.hpp"
 
@@ -699,5 +700,117 @@ void testCourses() {
     CHECK(bench.launched == launched && bench.refused == 0 && bench.total() == 2);
     CHECK(rules.multiball() == Multiball::Graduation && rules.turboMultiballs() == 0);
     CHECK(rules.turboMeter() == 0);
+  }
+
+  {  // Each kind of event has its own sound: the rules' cues, one table row
+     // each, from the events that make them.
+    using pinball::Sound;
+    using pinball::SoundSet;
+    using pinball::soundBit;
+    const auto has = [](SoundSet sounds, Sound sound) { return (sounds & soundBit(sound)) != 0U; };
+
+    RulesBench fresh;  // A ball on the plunger: the skill shot is offered.
+    fresh.rules.takeSounds();
+    fresh.rollCall(fresh.rules.skillShotLane());
+    CHECK(has(fresh.rules.takeSounds(), Sound::SkillShot));
+
+    RulesBench bench = single();
+    bench.rules.setMultiballEnabled(true);
+    Rules& rules = bench.rules;
+    rules.takeSounds();
+    // Roll call complete: a set, and overdrive lit.
+    for (std::size_t lane = 0; lane < 3; ++lane) {
+      bench.rollCall(lane);
+    }
+    SoundSet sounds = rules.takeSounds();
+    CHECK(has(sounds, Sound::SetComplete) && has(sounds, Sound::Lit));
+    // The Turbine lane starts overdrive.
+    bench.wait(tuning::kComboSeconds);
+    rules.takeSounds();
+    bench.turbine();
+    CHECK(has(rules.takeSounds(), Sound::Overdrive));
+    // Two different flow shots in a row: a combo.
+    bench.wait(tuning::kComboSeconds);
+    bench.runway();
+    rules.takeSounds();
+    bench.skyway();
+    CHECK(has(rules.takeSounds(), Sound::Combo));
+    // A course: started, passed with a rank, and another failed.
+    bench.wait(tuning::kOverdriveSeconds);
+    rules.takeSounds();
+    start(bench, CourseId::BumperBasics);
+    CHECK(has(rules.takeSounds(), Sound::CourseStart));
+    finish(bench);
+    sounds = rules.takeSounds();
+    CHECK(has(sounds, Sound::CoursePassed) && has(sounds, Sound::RankUp));
+    start(bench, CourseId::RunwayDrills);
+    rules.takeSounds();
+    bench.wait(pinball::kCourses[idx(CourseId::RunwayDrills)].seconds + 1.0);
+    CHECK(!rules.courseRunning() && has(rules.takeSounds(), Sound::CourseFailed));
+    // Both turbo targets light extra credit; the Briefing room collects it
+    // (a course on offer is started first).
+    rules.onTarget(0);
+    rules.onTarget(1);
+    CHECK(rules.extraCreditLit());
+    rules.takeSounds();
+    for (int i = 0; i < 4 && rules.extraCreditLit(); ++i) {
+      bench.wait(tuning::kComboSeconds);
+      bench.scoop();
+      if (rules.courseRunning()) {
+        finish(bench);
+      }
+    }
+    CHECK(!rules.extraCreditLit() && has(rules.takeSounds(), Sound::ExtraCredit));
+    // The lock, then Academy multiball, its jackpots and the super jackpot,
+    // on a table of their own.
+    {
+      RulesBench mb;
+      mb.rules.onSlingshot(0);
+      mb.wait(Rules::kBallSaveSeconds);
+      mb.rules.takeSounds();
+      SoundSet heard = 0;
+      for (int i = 0; i < 8 && mb.rules.multiball() != Multiball::Academy; ++i) {
+        if (mb.doorsUp) {
+          mb.doors();
+        }
+        mb.hangar();
+        mb.step();
+        heard |= mb.rules.takeSounds();
+      }
+      CHECK(mb.rules.multiball() == Multiball::Academy);
+      CHECK(has(heard, Sound::BallLocked) && has(heard, Sound::MultiballStart));
+      heard = 0;
+      for (int i = 0; i < tuning::kJackpotsForSuper; ++i) {
+        mb.wait(tuning::kComboSeconds);
+        mb.runway();
+        heard |= mb.rules.takeSounds();
+      }
+      CHECK(has(heard, Sound::Jackpot) && mb.rules.superJackpotLit() && has(heard, Sound::Lit));
+      mb.step(2);
+      mb.hangar();
+      CHECK(has(mb.rules.takeSounds(), Sound::SuperJackpot));
+    }
+    // An extra ball: lit by the third course passed, collected at the
+    // Briefing room.
+    sounds = 0;
+    for (int i = 0; i < 12 && rules.coursesPassed() < 3; ++i) {
+      bench.wait(tuning::kComboSeconds);
+      for (int ramp = 0; ramp < 4 && !rules.briefingLit(); ++ramp) {
+        bench.runway();
+      }
+      bench.scoop();
+      if (rules.courseRunning()) {
+        finish(bench);
+      }
+    }
+    for (int i = 0; i < 4 && rules.extraBalls() == 0; ++i) {
+      bench.wait(tuning::kComboSeconds);
+      bench.scoop();
+      sounds |= rules.takeSounds();
+      if (rules.courseRunning()) {
+        finish(bench);
+      }
+    }
+    CHECK(rules.extraBalls() == 1 && has(sounds, Sound::ExtraBall));
   }
 }

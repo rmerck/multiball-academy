@@ -49,6 +49,10 @@ struct AppOptions {
   // A staged game's score is not the player's: the score file is left alone
   // as for a timed run. Only debug builds read it from the command line.
   std::optional<Scene> scene;
+  // Whether a touch that starts in a bottom corner of the window is left to
+  // the system, which resizes the window from there (inSystemCorner). By
+  // default where the system does that: on a tablet.
+  std::optional<bool> systemCorners;
 };
 
 enum class FrameResult : std::uint8_t { Continue, Quit };
@@ -253,6 +257,8 @@ class App {
   // The system's Reduce Motion setting, read at start and on every return
   // to the foreground.
   bool reduceMotion_ = false;
+  // Touches from the window's bottom corners are the system's (AppOptions).
+  bool systemCorners_ = false;
   // Whether the screen is being kept awake; unset until first decided.
   std::optional<bool> keepingAwake_;
   // Only with AppOptions::backgroundAudioOpen. Declared before audio_, so
