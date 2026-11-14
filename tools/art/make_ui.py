@@ -15,10 +15,11 @@ from common import (BAYER4, C, ROOT, Stage, blur, chrome_sweep, deck_plates, fil
 L = layout()
 APP = L["screen"]["appName"].upper().split(" ", 1)
 SCR = L["screen"]
-# The display windows are drawn where the game has them today (strip:: and panel:: in the C++ headers, as
-# pinball_layout prints them), so the art and the text in it cannot disagree. hud_layout.py holds the
-# windows proposed for the HUD rework; when the headers take them, this art follows on regeneration.
-STRIP_WELLS = [SCR["strip"][k] for k in ("scoreWell", "statusWell", "rankWell", "missionWell", "messageWell")]
+# The display windows are drawn where the game has them (strip:: in src/core/ScreenLayout.hpp and panel:: in
+# src/core/PanelLayout.hpp, the single source, as pinball_layout prints them), so the art and the text and
+# icons drawn in it cannot disagree.
+STRIP_WELLS = [SCR["strip"][k] for k in ("scoreWell", "statusWell", "rankWell", "courseWell", "meterWell",
+                                         "messageWell", "lampWell")]
 STRIP_PAUSE = SCR["strip"]["pauseButton"]
 PANEL_WELLS = L["panel"]["wells"]
 PANEL_TITLE = SCR["panelAreas"]["title"]

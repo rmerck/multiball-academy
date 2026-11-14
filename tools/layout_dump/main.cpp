@@ -207,8 +207,10 @@ void screenLayouts() {
   member("scoreWell", strip::kScoreWell);
   member("statusWell", strip::kStatusWell);
   member("rankWell", strip::kRankWell);
-  member("missionWell", strip::kMissionWell);
-  member("messageWell", strip::kMessageWell, true);
+  member("courseWell", strip::kCourseWell);
+  member("meterWell", strip::kMeterWell);
+  member("messageWell", strip::kMessageWell);
+  member("lampWell", strip::kLampWell, true);
   // Relative to the deck's origin.
   std::printf("},\n    \"deck\": {");
   member("nudgeLeftButton", deck::kNudgeLeftButton);

@@ -278,6 +278,24 @@ void testDesktop() {
   CHECK(!overlap(panel::kTouchTitleArea, panel::kPauseButton));
   CHECK(inside(panel::kTouchTitleArea, panel::kTitleArea, 0.0F));
   CHECK(inside(panel::kFlipperCorner, panel::kControlsArea, 0.0F));
+  // On a touch screen the title keeps the pause button's margin from it.
+  CHECK(panel::kPauseButton.x - (panel::kTouchTitleArea.x + panel::kTouchTitleArea.w) >=
+        panel::kPauseButton.x - panel::kPauseHit.x + 8.0F);
+
+  // The strip's windows lie in the strip, clear of each other and of the
+  // pause button, and each is tall enough for a line of the smallest text
+  // with a margin.
+  namespace strip = pinball::strip;
+  const Rect stripArea{0.0F, 0.0F, pinball::screen::kStackWidth, pinball::screen::kStripHeight};
+  CHECK(noneOverlap(std::to_array(strip::kWells)));
+  for (const Rect& well : strip::kWells) {
+    CHECK(inside(well, stripArea, 0.0F));
+    CHECK(!overlap(well, strip::kPauseHit));
+    CHECK(well.h >= kHudTextSize * kFontRows + 2.0F * 8.0F);
+  }
+  for (const Rect& well : panel::kWells) {
+    CHECK(well.h >= kHudTextSize * kFontRows + 2.0F * 8.0F);
+  }
 }
 
 struct Expected {
@@ -591,9 +609,9 @@ void testMinimumHitSize() {
 }
 
 // Nothing is drawn smaller than 8 points high: on every preset the status
-// display and the dialogs, and from the smallest scene up the Stack's strip
-// and the dialogs. (The Classic panel has lines at size 2, which a window
-// just wide enough for Classic and only 602 points high shows at 7.7.)
+// display and the dialogs, and from the smallest scene up the status
+// display of either composition (all of it at kHudTextSize or larger) and
+// the dialogs.
 void testSmallestText() {
   const auto points = [](float size, const Layout& l) noexcept {
     return size * kFontRows * l.pointsPerUnit;
@@ -610,9 +628,8 @@ void testSmallestText() {
     for (float height = kMinSceneHeight; height < 1500.0F; height += 17.0F) {
       const Layout l = touch(width, height);
       CHECK(points(smallestTextSize(l), l) >= kMinTextPoints);
-      if (l.composition == Composition::Stack) {
-        CHECK(points(hudTextSize(l), l) >= kMinTextPoints);
-      }
+      // Both compositions: Classic is only chosen where it draws larger.
+      CHECK(points(hudTextSize(l), l) >= kMinTextPoints);
     }
   }
   // Size 2 is kept where it is large enough, so a tablet's dialogs do not grow.

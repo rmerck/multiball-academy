@@ -4,7 +4,6 @@
 
 #include <array>
 #include <cstdint>
-#include <optional>
 #include <string_view>
 
 #include "core/Game.hpp"
@@ -19,11 +18,9 @@ namespace pinball {
 struct HudPreview {
   // Shown in place of the rules' message, if not empty.
   std::string_view message;
-  // Show a running course with the longest name and goal there are, a
-  // three-figure count: the fullest the course window gets.
+  // Show a running course with the longest name and goal there are: the
+  // fullest the course window gets.
   bool course = false;
-  // Shown in place of what the rules say about multiball.
-  std::optional<MultiballView> multiball;
 };
 
 // Things the panel shows that are not part of the game's own state.
@@ -56,8 +53,11 @@ struct HudArt {
   SDL_Texture* title = nullptr;  // The game's name, 480 x 120 units.
 };
 
-// Draws the status display at layout.hud: score, ball, rank, course, awards
-// and messages. Classic gets the panel beside the table, Stack the strip
+// Draws the status display at layout.hud: score and best score; ball, extra
+// balls, multiplier, combo, ball saver, W-I-N-G and kickback; rank; the
+// course with its clock, goal and progress, and the course lamps; bay doors,
+// lock bays, turbo meter and jackpot; messages. Every lamp-like thing shows
+// what the table's own lamp shows (TableLights.hpp). Classic gets the panel beside the table, Stack the strip
 // above it. The keyboard hints, and the key that starts a new game, are
 // shown to the desktop idiom only; a touch screen has its buttons there
 // (TableRenderer::drawTouchOverlay).

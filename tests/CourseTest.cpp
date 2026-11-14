@@ -152,7 +152,7 @@ void shoot(RulesBench& bench, Shot shot) {
 }  // namespace
 
 void testCourses() {
-  {  // The display limits. They are worked out from the panel windows and
+  {  // The display limits. They are worked out from the display windows and
      // the font, and every rank and message is held to them when the game
      // is compiled: this pins the arithmetic behind that.
     static_assert(display::kAdvance == pinball::font::kAdvance &&
@@ -162,7 +162,15 @@ void testCourses() {
     // 440 pixels inside a window: a line of n characters is 6n - 1 font
     // pixels wide.
     static_assert(display::charsThatFit(240.0F, 3.0F) == 13);  // 77 * 3 = 231, and 14 need 249.
-    static_assert(display::kMaxRankNameLength == 13);
+    // At 2.5 units to the font pixel: the strip's rank window is 148 inside
+    // (10 characters are 59 * 2.5 = 147.5), its course window 388 (26 are
+    // 155 * 2.5 = 387.5) and the panel's message window 440 (29 are 433.75).
+    static_assert(display::charsThatFit(148.0F, 2.5F) == 10 &&
+                  display::charsThatFit(147.0F, 2.5F) == 9);
+    static_assert(display::charsThatFit(388.0F, 2.5F) == 26 &&
+                  display::charsThatFit(387.0F, 2.5F) == 25);
+    static_assert(display::charsThatFit(440.0F, 2.5F) == 29);
+    static_assert(display::kMaxRankNameLength == 10 && display::kMaxMessageLength == 29);
     static_assert(display::charsThatFit(440.0F, 4.0F) == 18);  // 107 * 4 = 428, and 19 need 452.
     static_assert(display::charsThatFit(440.0F, 3.0F) == 24);  // 143 * 3 = 429, and 25 need 447.
     static_assert(display::charsThatFit(440.0F, 2.0F) == 36);  // 215 * 2 = 430, and 37 need 442.
@@ -179,9 +187,9 @@ void testCourses() {
                   !display::fits("A~B", 10) && !display::fits("\xC9", 10));
     // A line made while the game runs: the longest label with the largest
     // number is exactly the window, and nothing can be added past it.
-    static_assert(display::numbered("TWENTY CHARACTERS IT", display::kMaxNumber).view().size() ==
+    static_assert(display::numbered("THIRTEEN CHAR", display::kMaxNumber).view().size() ==
                   display::kMaxMessageLength);
-    display::Text text = display::numbered("TWENTY CHARACTERS IT", ~std::uint64_t{0});
+    display::Text text = display::numbered("THIRTEEN CHAR", ~std::uint64_t{0});
     text.append("MORE");
     CHECK(text.view().size() == display::kMaxMessageLength);
     CHECK(display::fits(text.view(), display::kMaxMessageLength));

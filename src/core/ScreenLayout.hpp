@@ -111,10 +111,15 @@ inline constexpr float kMinTextPoints = 8.0F;
 [[nodiscard]] constexpr float smallestTextSize(const Layout& layout) noexcept {
   return 2.0F * kFontRows * layout.pointsPerUnit >= kMinTextPoints ? 2.0F : 3.0F;
 }
-// The smallest size the status display draws at: the Stack's strip, which
-// phones show, is all at 3; the Classic panel has lines at 2.
+// The smallest size the status display draws at on a touch screen: 2.5
+// units to the font pixel, which is kMinTextPoints at the smallest scene in
+// either composition (Classic is only chosen where it draws larger than
+// Stack would). The desktop's key list is at 2, on a canvas shown at least
+// at its own size.
+inline constexpr float kHudTextSize = 2.5F;
+inline constexpr float kDesktopKeyTextSize = 2.0F;
 [[nodiscard]] constexpr float hudTextSize(const Layout& layout) noexcept {
-  return layout.composition == Composition::Stack ? 3.0F : 2.0F;
+  return layout.idiom == Idiom::Desktop ? kDesktopKeyTextSize : kHudTextSize;
 }
 
 // The layout for a window. Never fails: a side that is not a usable size
@@ -154,16 +159,30 @@ struct Preset {
 }  // namespace pinball::screen
 
 // The status strip of the Stack composition, relative to the strip's origin.
+// These windows are the single source: the display draws in them, the
+// display limits (core/DisplayText.hpp) are worked out from them, and the
+// strip's art draws its glass where pinball_layout prints them.
 namespace pinball::strip {
 
 inline constexpr screen::Rect kPauseButton{16.0F, 8.0F, 88.0F, 84.0F};
 // What a touch on the pause button may land in: a little more than is drawn.
 inline constexpr screen::Rect kPauseHit{8.0F, 0.0F, 104.0F, 100.0F};
-inline constexpr screen::Rect kScoreWell{112.0F, 8.0F, 408.0F, 84.0F};
-inline constexpr screen::Rect kStatusWell{528.0F, 8.0F, 224.0F, 84.0F};
-inline constexpr screen::Rect kRankWell{16.0F, 100.0F, 264.0F, 76.0F};
-inline constexpr screen::Rect kMissionWell{288.0F, 100.0F, 464.0F, 76.0F};
-inline constexpr screen::Rect kMessageWell{16.0F, 184.0F, 736.0F, 40.0F};
+// The score alone, with the best score above it.
+inline constexpr screen::Rect kScoreWell{116.0F, 10.0F, 400.0F, 80.0F};
+// Ball, extra balls; multiplier, combo, ball saver; W-I-N-G, kickback.
+inline constexpr screen::Rect kStatusWell{528.0F, 10.0F, 224.0F, 80.0F};
+// The rank's name and a pip for each rank.
+inline constexpr screen::Rect kRankWell{16.0F, 102.0F, 172.0F, 70.0F};
+// The course: its name and clock, its goal and count, a progress bar.
+inline constexpr screen::Rect kCourseWell{200.0F, 102.0F, 412.0F, 70.0F};
+// Icons only: the three bay doors and the two lock bays, the turbo meter.
+inline constexpr screen::Rect kMeterWell{624.0F, 102.0F, 128.0F, 70.0F};
+inline constexpr screen::Rect kMessageWell{16.0F, 184.0F, 520.0F, 40.0F};
+// The six course lamps and Graduation Day's.
+inline constexpr screen::Rect kLampWell{548.0F, 184.0F, 204.0F, 40.0F};
+
+inline constexpr screen::Rect kWells[] = {kScoreWell, kStatusWell,  kRankWell, kCourseWell,
+                                          kMeterWell, kMessageWell, kLampWell};
 
 }  // namespace pinball::strip
 

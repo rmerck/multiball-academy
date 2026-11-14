@@ -6,7 +6,11 @@
 // Usage: pinball_snapshot <steps> <name.png> [state] [options]
 //
 // state    play (the default), launch, pause, interrupted, confirm, about,
-//          about-info, licences, initials, gameover, course, multiball,
+//          about-info, licences, initials, gameover, longest (the course
+//          window at its fullest, the longest lines there can be),
+//          the store's staged scenes (core/Scenes.hpp: table, multiball,
+//          hangar, course, graduation; the steps run after the scene, with
+//          no buttons pressed),
 //          locked (a ball locked in the Hangar's first bay and the next on
 //          the plunger), bankdown (the bay doors dropped), spinning (the
 //          spinner's blade a quarter turn round, on its edge),
@@ -52,6 +56,7 @@
 #include "core/InitialsEntry.hpp"
 #include "core/OverlayLayout.hpp"
 #include "core/PanelLayout.hpp"
+#include "core/Scenes.hpp"
 #include "core/ScreenLayout.hpp"
 #include "core/SurfaceSpec.hpp"
 #include "core/TouchControls.hpp"
@@ -148,8 +153,12 @@ enum class State : std::uint8_t {
   Licences,
   Initials,
   GameOver,
+  Longest,
+  Table,
   Course,
   Multiball,
+  Hangar,
+  Graduation,
   Locked,
   BankDown,
   Spinning,
@@ -160,7 +169,7 @@ struct StateName {
   std::string_view name;
   State state;
 };
-constexpr std::array<StateName, 16> kStates{{
+constexpr std::array<StateName, 20> kStates{{
     {"play", State::Play},
     {"launch", State::Launch},
     {"pause", State::Pause},
@@ -171,8 +180,12 @@ constexpr std::array<StateName, 16> kStates{{
     {"licences", State::Licences},
     {"initials", State::Initials},
     {"gameover", State::GameOver},
+    {"longest", State::Longest},
+    {"table", State::Table},
     {"course", State::Course},
     {"multiball", State::Multiball},
+    {"hangar", State::Hangar},
+    {"graduation", State::Graduation},
     {"locked", State::Locked},
     {"bankdown", State::BankDown},
     {"spinning", State::Spinning},
@@ -199,7 +212,8 @@ constexpr float kMaxPictureSide = 8192.0F;
 constexpr const char* kUsage =
     "Usage: pinball_snapshot <steps 1..1000000> <name.png> [state] [options]\n"
     "  state: play launch pause interrupted confirm about about-info licences\n"
-    "         initials gameover course multiball locked bankdown spinning check\n"
+    "         initials gameover longest table course multiball hangar graduation\n"
+    "         locked bankdown spinning check\n"
     "  --layout <preset | WxH[@scale][+top,bottom,left,right]>   points, 100..4096; scale 1..4,\n"
     "           and no more than 8192 pixels a side at that scale\n"
     "  --surface WxH   --insets top,bottom,left,right\n"
@@ -401,13 +415,6 @@ pinball::HighScores sampleScores() {
   return sample;
 }
 
-// Two more balls for the multiball scene: one low on the table, one riding
-// the ramp.
-constexpr std::array<pinball::BallView, 2> kMoreBalls{{
-    {.position = {250.0F, 640.0F}},
-    {.position = {120.0F, 330.0F}, .scale = 1.3F, .raised = true},
-}};
-
 // One picture: what to draw over the game.
 struct Scene {
   State state = State::Play;
@@ -428,16 +435,8 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
   // What a scripted game cannot be steered into is shown by asking.
   pinball::HudPreview preview;
   preview.message = scene.message;
-  preview.course = scene.state == State::Course;
+  preview.course = scene.state == State::Longest;
   pinball::DrawOptions options;
-  if (scene.state == State::Multiball) {
-    pinball::MultiballView multiball;
-    multiball.locksKnown = true;
-    multiball.ballsLive = static_cast<int>(game.ballCount() + kMoreBalls.size());
-    multiball.jackpotLit = true;
-    preview.multiball = multiball;
-    options.extraBalls = kMoreBalls;
-  }
   options.dimmed = scene.state == State::Pause || scene.state == State::Interrupted ||
                    scene.state == State::Confirm;
 
@@ -493,8 +492,12 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
     case State::Play:
     case State::Launch:
     case State::GameOver:
+    case State::Longest:
+    case State::Table:
     case State::Course:
     case State::Multiball:
+    case State::Hangar:
+    case State::Graduation:
     case State::Locked:
     case State::BankDown:
     case State::Spinning:
@@ -716,7 +719,8 @@ constexpr pinball::screen::Rect placed(const pinball::screen::Rect& r, float dx,
 
 // Runs every check for the layout. game is some way into play; fresh has
 // not started. Returns the number of failures.
-int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& fresh) {
+int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& fresh,
+                const pinball::Game& multiball, const pinball::Game& graduation) {
   namespace screen = pinball::screen;
   const screen::Layout& layout = check.layout;
   const bool touch = layout.idiom == screen::Idiom::Touch;
@@ -734,8 +738,14 @@ int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& 
   const screen::Rect score = placed(stack ? pinball::strip::kScoreWell : pinball::panel::kScoreWell, hx, hy);
   const screen::Rect status = placed(stack ? pinball::strip::kStatusWell : pinball::panel::kStatusWell, hx, hy);
   const screen::Rect rank = placed(stack ? pinball::strip::kRankWell : pinball::panel::kRankWell, hx, hy);
-  const screen::Rect course = placed(stack ? pinball::strip::kMissionWell : pinball::panel::kMissionWell, hx, hy);
+  const screen::Rect course = placed(stack ? pinball::strip::kCourseWell : pinball::panel::kCourseWell, hx, hy);
+  const screen::Rect meter = placed(stack ? pinball::strip::kMeterWell : pinball::panel::kMeterWell, hx, hy);
   const screen::Rect message = placed(stack ? pinball::strip::kMessageWell : pinball::panel::kMessageWell, hx, hy);
+  // The course lamps: a window of their own on the strip, the foot of the
+  // course window on the panel.
+  const screen::Rect lamps =
+      stack ? placed(pinball::strip::kLampWell, hx, hy)
+            : screen::Rect{course.x, course.y + course.h - 50.0F, course.w, 50.0F};
   check.letteredIn(play, score, pinball::kHudLettering, "score window has lettering");
   check.letteredIn(play, status, pinball::kHudLettering, "status window has lettering");
   check.letteredIn(play, rank, pinball::kHudLettering, "rank window has lettering");
@@ -743,17 +753,20 @@ int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& 
   const Pixels start = check.picture(fresh, {});
   check.differs(play, start, score, "score window follows the score");
   check.differs(play, start, message, "message window follows the message");
-  const Pixels running = check.picture(game, {.state = State::Course, .message = "CLASS IN SESSION"});
+  const Pixels running = check.picture(game, {.state = State::Longest, .message = "CLASS IN SESSION"});
   check.differs(play, running, course, "course window shows a running course");
   check.letteredIn(running, message, pinball::kHudLettering, "message window shows a message");
-  const Pixels many = check.picture(game, {.state = State::Multiball});
-  check.differs(play, many, status, "status window shows a multiball");
-  for (const pinball::BallView& ball : kMoreBalls) {
-    check.differs(play, many,
-                  {layout.playfield.x + ball.position.x - 20.0F,
-                   layout.playfield.y + ball.position.y - 20.0F, 40.0F, 40.0F},
-                  "each extra ball is drawn on the table");
+  const Pixels many = check.picture(multiball, {});
+  for (const pinball::BallView& ball : multiball.balls()) {
+    check.differs(start, many,
+                  {layout.playfield.x + ball.position.x - 12.0F,
+                   layout.playfield.y + ball.position.y - 12.0F, 24.0F, 24.0F},
+                  "each ball of a multiball is drawn on the table");
   }
+  const Pixels graduating = check.picture(graduation, {});
+  check.differs(play, graduating, meter, "meter window follows the doors and the turbo meter");
+  check.differs(start, graduating, lamps, "course lamps show the courses passed");
+  check.differs(start, graduating, rank, "rank window follows the rank");
 
   // --- The touch controls.
   if (touch) {
@@ -943,7 +956,34 @@ int run(const Request& request) {
         return EXIT_FAILURE;
       }
     }
-    const bool idle = request.state == State::GameOver || request.state == State::Launch;
+    // The store's scenes are set up first; the steps asked for follow,
+    // with nothing pressed.
+    std::optional<pinball::Scene> staged;
+    switch (request.state) {
+      case State::Table:
+        staged = pinball::Scene::Table;
+        break;
+      case State::Course:
+        staged = pinball::Scene::Course;
+        break;
+      case State::Multiball:
+        staged = pinball::Scene::Multiball;
+        break;
+      case State::Hangar:
+        staged = pinball::Scene::Hangar;
+        break;
+      case State::Graduation:
+        staged = pinball::Scene::Graduation;
+        break;
+      default:
+        break;
+    }
+    if (staged && !pinball::stageScene(game, *staged)) {
+      std::fputs("the scene could not be set up\n", stderr);
+      return EXIT_FAILURE;
+    }
+    const bool idle =
+        request.state == State::GameOver || request.state == State::Launch || staged.has_value();
     for (std::uint32_t i = 0; i < request.steps; ++i) {
       game.step(idle ? pinball::InputState{} : scriptedInput(step++));
     }
@@ -1001,7 +1041,15 @@ int run(const Request& request) {
         return EXIT_FAILURE;
       }
       Checker checker{surface.get(), r, *table, layout};
-      if (const int failures = checkLayout(checker, game, fresh); failures > 0) {
+      pinball::Game multiball;
+      pinball::Game graduation;
+      if (!pinball::stageScene(multiball, pinball::Scene::Multiball) ||
+          !pinball::stageScene(graduation, pinball::Scene::Graduation)) {
+        std::fputs("the scenes could not be set up\n", stderr);
+        return EXIT_FAILURE;
+      }
+      if (const int failures = checkLayout(checker, game, fresh, multiball, graduation);
+          failures > 0) {
         std::fprintf(stderr, "%d check(s) failed for this layout\n", failures);
         return EXIT_FAILURE;
       }
