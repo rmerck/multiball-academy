@@ -14,6 +14,10 @@
 
 namespace pinball {
 
+namespace save {
+struct Snapshot;
+}  // namespace save
+
 // What the renderer needs to draw a ball.
 struct BallView {
   Vec2 position;        // Playfield pixels.
@@ -254,6 +258,24 @@ class Game {
   // table::kAutoLaunchSpeed. Refused (false) when the game is over or the
   // balls on the table and those still waiting would exceed kMaxBalls.
   bool requestBall() noexcept;
+  // --- A game saved and resumed (core/Snapshot.hpp, docs/RESUME.md) ----------
+  // A game the player has started (a ball has been in play since it began,
+  // or it was resumed) and that is not over. Only such a game is saved.
+  [[nodiscard]] bool inProgress() const noexcept { return started_ && !rules_.gameOver(); }
+  // Games begun on this table: one for each new game asked for, one for
+  // each game restored, and one for the game it was made with once a ball
+  // of it has gone into play. For whoever must notice that the game is not
+  // the one it was.
+  [[nodiscard]] std::uint32_t gamesBegun() const noexcept { return gamesBegun_; }
+  // Everything that carries the game on, between two steps. Only
+  // meaningful while inProgress().
+  [[nodiscard]] save::Snapshot snapshot() const;
+  // Puts a saved game back exactly: the rules, the table and every ball,
+  // where it was and moving as it was. Refused (false, nothing changed) if
+  // the snapshot is not save::valid(). The controls are released: the next
+  // step sees no button held.
+  bool restore(const save::Snapshot& snapshot);
+
   // Balls asked for and not yet served.
   [[nodiscard]] std::size_t queuedBalls() const noexcept { return queuedBalls_; }
   static constexpr double kAutoServeSpacingSeconds = 0.75;
@@ -443,6 +465,9 @@ class Game {
   SoundSet sounds_ = 0;
   // Flipper angles one step ago, for drawing between steps.
   std::array<float, table::kFlippers.size()> previousFlipperAngles_{};
+  // A ball has been in play in this game (or the game was resumed).
+  bool started_ = false;
+  std::uint32_t gamesBegun_ = 0;
 };
 
 }  // namespace pinball

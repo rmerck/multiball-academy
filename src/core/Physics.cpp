@@ -766,7 +766,12 @@ void PhysicsWorld::step(float stepSeconds) {
       driveFlippers(part);
       drivePlunger(part);
       b2World_Step(world_, part, kSubSteps);
-      collectEvents();
+      if (skipTouches_) {
+        // Contacts the restored world found already touching (restoreBalls).
+        skipTouches_ = false;
+      } else {
+        collectEvents();
+      }
       // Always in slot order, so a step has one outcome.
       for (std::size_t slot = 0; slot < balls_.size(); ++slot) {
         if (!balls_[slot].active) {

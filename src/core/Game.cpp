@@ -186,6 +186,9 @@ void Game::snapshotForDrawing() {
 
 void Game::startNewGame() {
   rules_.startGame();
+  // Another game, in progress once a ball is in play.
+  started_ = false;
+  ++gamesBegun_;
   bumperFlash_.fill(0.0F);
   slingshotFlash_.fill(0.0F);
   for (BallState& ball : balls_) {
@@ -515,6 +518,13 @@ void Game::step(const InputState& input) {
 }
 
 void Game::enterPlay() {
+  if (!started_ && !rules_.gameOver()) {
+    started_ = true;
+    // The game the table was made with counts once it is played.
+    if (gamesBegun_ == 0) {
+      gamesBegun_ = 1;
+    }
+  }
   // Once per ball: the rules arm the ball save when they hear it.
   if (!rules_.ballInPlay()) {
     rules_.onBallInPlay();

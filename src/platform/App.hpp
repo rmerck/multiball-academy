@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "core/AboutPages.hpp"
@@ -16,11 +17,13 @@
 #include "core/InitialsEntry.hpp"
 #include "core/LoopPolicy.hpp"
 #include "core/ScreenLayout.hpp"
+#include "core/Snapshot.hpp"
 #include "core/Sound.hpp"
 #include "core/Args.hpp"
 #include "core/TouchControls.hpp"
 #include "platform/About.hpp"
 #include "platform/AudioOutput.hpp"
+#include "platform/SaveStore.hpp"
 #include "platform/ScoreStore.hpp"
 #include "platform/TableRenderer.hpp"
 
@@ -37,9 +40,10 @@ struct AppOptions {
   // seconds (see AudioOpener).
   bool backgroundAudioOpen = false;
   // Read the player's high score file at start and write it when a score
-  // is entered. Off, the game starts with an empty table and leaves the
-  // file alone, as a timed run always does. For tests that play as a
-  // player would.
+  // is entered; and keep a game in progress when the application leaves the
+  // foreground or quits, to be resumed (docs/RESUME.md). Off, the game
+  // starts with an empty table and leaves both files alone, as a timed run
+  // and a staged scene always do. For tests that play as a player would.
   bool keepScores = true;
   // Give the simulation this many seconds for every frame, whatever the
   // clock says, so that a test's game runs the same on any machine and as
@@ -53,6 +57,12 @@ struct AppOptions {
   // the system, which resizes the window from there (inSystemCorner). By
   // default where the system does that: on a tablet.
   std::optional<bool> systemCorners;
+  // Where the high scores and the saved game are kept (a separator is
+  // added at the end if missing); empty for the player's preferences
+  // directory. For tests,
+  // which give a scratch directory so that the player's files are never
+  // touched; no command line sets it.
+  std::string dataDirectory;
 };
 
 enum class FrameResult : std::uint8_t { Continue, Quit };
@@ -88,6 +98,21 @@ class App {
   // The desktop's loop: frame() until it says Quit, sleeping while nothing
   // moves and pacing the frames when the display does not, then finish().
   [[nodiscard]] int run();
+
+  // --- The saved game (docs/RESUME.md) ----------------------------------------
+  // For the title menu: a game left in progress when the application last
+  // went to the background or quit, checked and ready to resume. Only that
+  // menu's CONTINUE should depend on it.
+  [[nodiscard]] bool hasSavedGame() const noexcept { return savedGame_.has_value(); }
+  // Puts the saved game on the table in place of the one there, paused,
+  // exactly as it was left. The file is deleted first: a save is resumed
+  // once, and if it cannot be deleted it is not resumed (false). False too
+  // with no saved game.
+  bool resumeSavedGame();
+  // Deletes the saved game, if there is one. Starting a new game and
+  // finishing one do this by themselves; a menu may call it for a PLAY that
+  // starts nothing yet.
+  void discardSavedGame();
 
   // What the application is showing and doing, for tests and diagnostics.
   struct Status {
@@ -185,6 +210,19 @@ class App {
   void interrupt();
   // The application is leaving the front: interrupt(), and no sound.
   void leaveForeground();
+  // Whether this run keeps the player's saved game (AppOptions::keepScores,
+  // and never for a timed run or a staged scene).
+  [[nodiscard]] bool keepsSavedGame() const noexcept;
+  // Writes the game in progress to the saved-game file (when leaving the
+  // foreground, being ended or quitting). Nothing for a game not in
+  // progress, or one already written as it stands.
+  void saveGameInProgress();
+  // Back in front with the game still in memory: the file written on the
+  // way out goes, so that no copy of a game is left behind it.
+  void withdrawSavedGame();
+  // After each step: a game begun or ended on the table makes the saved one
+  // stale, and it goes.
+  void followSavedGame();
   // Takes a device the background open has produced, and starts another
   // open when one is due.
   void serviceAudio();
@@ -290,6 +328,15 @@ class App {
   Game game_;
   // Declared before the table it loads.
   ScoreStore scoreStore_;
+  // The saved game: the one offered to resume, read at start; whether the
+  // file may be on disk; whether this run wrote it on the way out, and at
+  // which step; and the table's count of games begun when last looked at.
+  SaveStore saveStore_;
+  std::optional<save::Snapshot> savedGame_;
+  bool saveOnDisk_ = false;
+  bool wroteSave_ = false;
+  std::uint64_t savedAtStep_ = 0;
+  std::uint32_t gamesBegunSeen_ = 0;
   // Best games on this machine, loaded at start and saved when a game ends.
   // A timed automated run starts with an empty table and saves nothing.
   HighScores highScores_;
