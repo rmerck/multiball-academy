@@ -339,7 +339,7 @@ pinball_apply_hardening(pinball_core PUBLIC)
 # same input gives the same game on x86-64 and arm64, and the trajectory the
 # tests record holds everywhere. Box2D is already built this way.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  target_compile_options(pinball_core PUBLIC -ffp-contract=off)
+  pinball_c_options(pinball_core PUBLIC -ffp-contract=off)
 endif()
 if(PINBALL_IOS)
   # For the few places where the source must tell iOS from macOS.
@@ -384,18 +384,13 @@ elseif(PINBALL_IOS)
   # A library of its own, so that none of the C++ flags (warnings,
   # hardening, sanitizers) reach the Swift compiler.
   enable_language(Swift)
+  # (cmake/Hardening.cmake scopes every flag it adds to the C languages, so
+  # none reaches the Swift compiler.)
   add_library(pinball_review STATIC src/platform/ios/Review.swift)
-  # The directory's own options (cmake/Hardening.cmake's add_compile_options)
-  # are C and C++ flags the Swift driver refuses: none here.
   set_target_properties(pinball_review PROPERTIES
-    COMPILE_OPTIONS ""
     XCODE_ATTRIBUTE_SWIFT_VERSION 5.0
     XCODE_ATTRIBUTE_SKIP_INSTALL YES)
   target_link_libraries(pinball_platform PRIVATE pinball_review)
-  # With Swift in the project CMake hands every target's compile options to
-  # the Swift driver as well, and the application links through it once a
-  # library it links has Swift in it. None of those flags are Swift's.
-  set_target_properties(pinball_review PROPERTIES XCODE_ATTRIBUTE_OTHER_SWIFT_FLAGS "")
   # Named here, not left to SDL's own list, which follows SDL's options.
   target_link_libraries(pinball_platform PRIVATE
     "-framework Foundation" "-framework UIKit" "-framework AVFoundation"
