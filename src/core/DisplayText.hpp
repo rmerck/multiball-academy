@@ -9,7 +9,8 @@
 
 // How much text each display window holds. The display draws a fixed-width
 // font, so a line fits when it is short enough: these limits are worked out
-// from the panel windows and checked when the game is compiled, so a name or
+// from the display windows (strip:: in core/ScreenLayout.hpp, panel:: in
+// core/PanelLayout.hpp) and checked when the game is compiled, so a name or
 // message that would run off the display never reaches a player.
 namespace pinball::display {
 
@@ -19,11 +20,12 @@ inline constexpr char kFirstChar = ' ';
 inline constexpr char kLastChar = '_';
 inline constexpr int kAdvance = 6;  // Font pixels per character, gap included.
 
-// Text is drawn at a whole multiple of the font's pixels, inside a margin.
+// Text is drawn at a multiple of the font's pixels, inside a margin. Every
+// line may be drawn as small as kSmallestSize (screen::kHudTextSize: 8 points
+// at the smallest scene), and the limits are worked out at that size, in the
+// narrower of the two displays' windows.
 inline constexpr float kPad = 12.0F;
-inline constexpr float kRankSize = 4.0F;
-inline constexpr float kMissionSize = 3.0F;
-inline constexpr float kSmallestSize = 2.0F;  // Goal lines, and a long message.
+inline constexpr float kSmallestSize = screen::kHudTextSize;
 
 // Characters that fit a width: the last one needs no trailing gap.
 constexpr std::size_t charsThatFit(float width, float pixelSize) noexcept {
@@ -34,30 +36,31 @@ constexpr std::size_t charsThatFit(float width, float pixelSize) noexcept {
 }
 
 constexpr float innerWidth(const panel::Rect& well) noexcept { return well.w - 2.0F * kPad; }
+constexpr std::size_t charsThatFit(const panel::Rect& well) noexcept {
+  return charsThatFit(innerWidth(well), kSmallestSize);
+}
+constexpr std::size_t smaller(std::size_t a, std::size_t b) noexcept { return a < b ? a : b; }
 
-// The rank name. The panel's rank window is the roomiest place it is shown:
-// the high score table and the narrow rank window of the phone display
-// (240 pixels across, drawn at the mission size) hold less, so those set
-// the limit.
-inline constexpr float kNarrowRankWidth = 240.0F;
-inline constexpr std::size_t kMaxRankNameLength = charsThatFit(kNarrowRankWidth, kMissionSize);
-static_assert(kMaxRankNameLength <= charsThatFit(innerWidth(panel::kRankWell), kRankSize),
-              "a rank name must also fit the panel's rank window");
-// The mission name, at its one size.
+// The rank name: the strip's rank window is the narrowest place it is shown
+// (the panel's and the high score table are wider).
+inline constexpr std::size_t kMaxRankNameLength =
+    smaller(charsThatFit(strip::kRankWell), charsThatFit(panel::kRankWell));
+// The course name shares its line with the course's clock, two digits and a
+// space.
+inline constexpr std::size_t kClockLength = 2;
 inline constexpr std::size_t kMaxMissionNameLength =
-    charsThatFit(innerWidth(panel::kMissionWell), kMissionSize);
-// A goal shares its line with the count still to go ("255 TO GO" at most)
-// and a space between them.
-inline constexpr std::size_t kCountLength = 9;
+    smaller(charsThatFit(strip::kCourseWell), charsThatFit(panel::kCourseWell)) - kClockLength - 1;
+// The goal line has the line to itself; a count beside it ("2/3") is drawn
+// where there is room, and the progress bar under it always shows the same.
 inline constexpr std::size_t kMaxGoalTextLength =
-    charsThatFit(innerWidth(panel::kMissionWell), kSmallestSize) - kCountLength - 1;
-// A message shrinks to fit, down to the smallest size.
+    smaller(charsThatFit(strip::kCourseWell), charsThatFit(panel::kCourseWell));
+// A message is drawn as large as fits, down to the smallest size.
 inline constexpr std::size_t kMaxMessageLength =
-    charsThatFit(innerWidth(panel::kMessageWell), kSmallestSize);
+    smaller(charsThatFit(strip::kMessageWell), charsThatFit(panel::kMessageWell));
 
-static_assert(kMaxRankNameLength == 13 && kMaxMissionNameLength == 24 &&
-              kMaxGoalTextLength == 26 && kMaxMessageLength == 36,
-              "the panel changed: check every name and message against the new limits");
+static_assert(kMaxRankNameLength == 10 && kMaxMissionNameLength == 23 &&
+                  kMaxGoalTextLength == 26 && kMaxMessageLength == 29,
+              "the display windows changed: check every name and message against the new limits");
 
 // True if the display can show the text whole: not empty, not too long, only
 // characters the font has, and no space at either end to put it off centre.
@@ -173,6 +176,6 @@ static_assert(numbered(NumberLabel("BONUS 5X", 2), 981250).view() == "BONUS 5X  
 static_assert(numbered("X", 0).view() == "X 0" && numbered("X", 999).view() == "X 999" &&
               numbered("X", 1000).view() == "X 1,000");
 static_assert(numbered("X", ~std::uint64_t{0}).view() == "X 999,999,999,999");
-static_assert(fits(numbered("A LABEL OF TWENTY CH", ~std::uint64_t{0}).view(), kMaxMessageLength));
+static_assert(fits(numbered("THIRTEEN CHAR", ~std::uint64_t{0}).view(), kMaxMessageLength));
 
 }  // namespace pinball::display

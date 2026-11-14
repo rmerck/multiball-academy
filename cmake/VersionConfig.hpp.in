@@ -19,5 +19,7 @@ inline constexpr const char* kDataOrganisation = "@PINBALL_DATA_ORG@";
 inline constexpr const char* kDataDirectory = "@PINBALL_DATA_DIR@";
 // Where the privacy policy is published.
 inline constexpr const char* kPrivacyUrl = "@PINBALL_PRIVACY_URL@";
+// Where players write for support (the About page, docs/SUPPORT.md).
+inline constexpr const char* kSupportEmail = "@PINBALL_SUPPORT_EMAIL@";
 
 }  // namespace pinball

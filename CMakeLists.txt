@@ -83,6 +83,13 @@ if(NOT pinball_privacy_url_ok)
   message(FATAL_ERROR "PINBALL_PRIVACY_URL must be a page of https://github.com/rmerck/multiball-academy/ "
                       "with a plain path (no .., query or fragment). It is '${PINBALL_PRIVACY_URL}'")
 endif()
+# The public contact address for support, shown on the About page and in
+# docs/SUPPORT.md and docs/PRIVACY.md. The display has capitals, digits and
+# a few marks only, so it must be plain: lower case letters, digits, dots.
+set(PINBALL_SUPPORT_EMAIL "dev@mrck.app")
+if(NOT PINBALL_SUPPORT_EMAIL MATCHES "^[a-z0-9]+(\\.[a-z0-9]+)*@[a-z0-9]+(\\.[a-z0-9]+)+$")
+  message(FATAL_ERROR "PINBALL_SUPPORT_EMAIL must be a plain address: '${PINBALL_SUPPORT_EMAIL}'")
+endif()
 # The copyright line of the application bundles.
 set(PINBALL_COPYRIGHT "Copyright 2026 rmerck. MIT licence.")
 project(MultiballAcademy VERSION 2.0.0 LANGUAGES CXX)
@@ -269,6 +276,7 @@ add_library(pinball_core STATIC
   src/core/Physics.cpp
   src/core/PngHeader.cpp
   src/core/Rules.cpp
+  src/core/Scenes.cpp
   src/core/ScreenLayout.cpp
   src/core/Sha256.cpp
   src/core/Music.cpp
@@ -826,6 +834,14 @@ if(BUILD_TESTING)
     "trailing_junk:--frames|5x"
     "missing_value:--frames"
     "unknown_flag:--bogus")
+  # --scene is read by debug builds only: anywhere else it is an unknown
+  # option, even with a good name (the --frames after it would end a run
+  # that wrongly took it). A debug build refuses a name that is no scene.
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    list(APPEND bad_args_cases "unknown_scene:--scene|bogus" "scene_missing_value:--scene")
+  elseif(NOT CMAKE_CONFIGURATION_TYPES)
+    list(APPEND bad_args_cases "scene_not_debug:--scene|table|--frames|5")
+  endif()
   foreach(case IN LISTS bad_args_cases)
     string(REGEX MATCH "^[^:]+" name "${case}")
     string(REGEX REPLACE "^[^:]+:" "" args "${case}")

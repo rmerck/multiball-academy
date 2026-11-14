@@ -22,8 +22,8 @@ pip refuse anything else, including a package the list does not name.
 - `make_sprites.py`, `make_table.py`, `make_ui.py`, `make_icons.py`: the generators. Each can be run alone
   with an output path. `make_table.py` bakes the unlit lamp inserts from `assets/sprites`, so run
   `make_sprites.py` first (`make_all.py` does).
-- `hud_layout.py`: the display windows PROPOSED for the HUD rework. Nothing uses it yet: `make_ui.py`
-  draws the windows where the game has them (`strip` and `panel` in `layout.json`).
+- The display windows are not defined here: `make_ui.py` draws them where the game has them (`strip` and
+  `panel` in `layout.json`, from `strip::` and `panel::` in the C++ headers).
 - `render_sim.py`: draws the table as `TableRenderer` does, from the shipped files.
 - `check_sums.py`, `SHA256SUMS`: the hashes of everything `make_all.py` writes. ctest `art_sums` checks
   the committed files against them; run on a scratch root it checks a regeneration.

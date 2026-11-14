@@ -76,6 +76,16 @@ SDL_AudioStream* openStream() {
     SDL_DestroyAudioStream(stream);
     return nullptr;
   }
+  // One line when sound is on, so that a run's log shows it: what
+  // drives it, at what rate and in what buffers.
+  SDL_AudioSpec device{};
+  int frames = 0;
+  if (!SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(stream), &device, &frames)) {
+    device.freq = 0;
+  }
+  const char* driver = SDL_GetCurrentAudioDriver();
+  SDL_Log("Audio open: driver %s, device %d Hz, buffer %d frames", driver != nullptr ? driver : "?",
+          device.freq, frames);
   return stream;
 }
 

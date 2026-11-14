@@ -15,16 +15,21 @@ inline constexpr float kHeight = 960.0F;
 inline constexpr float kInset = 24.0F;
 inline constexpr float kWellWidth = kWidth - 2.0F * kInset;
 
-// Recessed display windows, top to bottom.
-inline constexpr Rect kScoreWell{kLeft + kInset, 150.0F, kWellWidth, 110.0F};
-inline constexpr Rect kStatusWell{kLeft + kInset, 280.0F, kWellWidth, 70.0F};
-inline constexpr Rect kRankWell{kLeft + kInset, 370.0F, kWellWidth, 90.0F};
-inline constexpr Rect kMissionWell{kLeft + kInset, 480.0F, kWellWidth, 170.0F};
-inline constexpr Rect kMessageWell{kLeft + kInset, 670.0F, kWellWidth, 110.0F};
-inline constexpr Rect kHighScoreWell{kLeft + kInset, 800.0F, kWellWidth, 70.0F};
+// Recessed display windows, top to bottom. The single source for the
+// display, its limits (core/DisplayText.hpp) and the panel's art.
+inline constexpr Rect kScoreWell{kLeft + kInset, 150.0F, kWellWidth, 100.0F};
+// Ball, extra balls, ball saver; multiplier, combo, W-I-N-G, kickback.
+inline constexpr Rect kStatusWell{kLeft + kInset, 262.0F, kWellWidth, 56.0F};
+inline constexpr Rect kRankWell{kLeft + kInset, 330.0F, kWellWidth, 84.0F};
+// Name and clock, goal and count, progress bar, the row of course lamps.
+inline constexpr Rect kCourseWell{kLeft + kInset, 426.0F, kWellWidth, 150.0F};
+// Bay doors and lock bays, turbo meter, jackpot.
+inline constexpr Rect kMeterWell{kLeft + kInset, 588.0F, kWellWidth, 84.0F};
+inline constexpr Rect kMessageWell{kLeft + kInset, 684.0F, kWellWidth, 96.0F};
+inline constexpr Rect kHighScoreWell{kLeft + kInset, 792.0F, kWellWidth, 70.0F};
 
-inline constexpr Rect kWells[] = {kScoreWell, kStatusWell,  kRankWell,
-                                  kMissionWell, kMessageWell, kHighScoreWell};
+inline constexpr Rect kWells[] = {kScoreWell,  kStatusWell,  kRankWell,     kCourseWell,
+                                  kMeterWell, kMessageWell, kHighScoreWell};
 
 // Every window lies inside the panel, and they run down it without touching.
 constexpr bool wellsAreLaidOut() noexcept {
@@ -58,8 +63,9 @@ inline constexpr Rect kNudgeLeftHit{792.0F, 860.0F, 96.0F, 96.0F};
 inline constexpr Rect kCentreHit{896.0F, 860.0F, 132.0F, 96.0F};
 inline constexpr Rect kNudgeRightHit{1036.0F, 860.0F, 96.0F, 96.0F};
 inline constexpr Rect kPauseHit{1168.0F, 12.0F, 96.0F, 96.0F};
-// On a touch screen the title keeps clear of the pause button.
-inline constexpr Rect kTouchTitleArea{kLeft + kInset, 20.0F, 368.0F, 116.0F};
+// On a touch screen the title keeps clear of the pause button, with the
+// pause button's own margin again between them.
+inline constexpr Rect kTouchTitleArea{kLeft + kInset, 20.0F, 352.0F, 116.0F};
 // Where the right thumb's corner is marked.
 inline constexpr Rect kFlipperCorner{1148.0F, 876.0F, 108.0F, 76.0F};
 

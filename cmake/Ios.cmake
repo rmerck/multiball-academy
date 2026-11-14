@@ -26,6 +26,8 @@ if(PINBALL_IOS_TEST_EXIT)
                         "is refused")
   endif()
   target_compile_definitions(pinball PRIVATE PINBALL_IOS_TEST_EXIT=1)
+  # The library too: App stages a --scene only in builds that read one.
+  target_compile_definitions(pinball_platform PRIVATE PINBALL_IOS_TEST_EXIT=1)
 endif()
 
 # The icon in the asset catalog must be the real one. A placeholder (marked

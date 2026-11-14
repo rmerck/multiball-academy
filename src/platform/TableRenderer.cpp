@@ -622,13 +622,17 @@ void TableRenderer::drawPlunger(SDL_Renderer* r, const Game& game) const {
   SDL_RenderTexture(r, textures_.plunger.get(), nullptr, &plunger);
 }
 
-void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game, float alpha) const {
+void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game, float alpha,
+                                 bool atRest) const {
   SDL_Texture* const sprite = textures_.flipper.get();
   // The pivot inside the sprite: the centre of the base circle.
   const SDL_FPoint pivotInSprite{kFlipperSpriteMargin + table::kFlipperBaseRadius,
                                  kFlipperSpriteHeight * 0.5F};
   for (std::size_t i = 0; i < table::kFlippers.size(); ++i) {
-    const FlipperView flipper = game.flipper(i, alpha);
+    FlipperView flipper = game.flipper(i, alpha);
+    if (atRest) {
+      flipper.angle = table::kFlippers[i].restAngle;
+    }
     const SDL_FRect dst{flipper.pivot.x - pivotInSprite.x, flipper.pivot.y - pivotInSprite.y,
                         kFlipperSpriteWidth, kFlipperSpriteHeight};
     // The right flipper points left, so its sprite is mirrored top to bottom
@@ -813,7 +817,7 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
   drawBumpers(r, game);
   drawSlingshotFlashes(r, game);
   drawPlunger(r, game);
-  drawFlippers(r, game, alpha);
+  drawFlippers(r, game, alpha, options.flippersAtRest);
   {
     // The shadows follow the same in-between positions as the balls.
     const DrawnBalls balls = ballsToDraw(game, alpha, options.extraBalls);

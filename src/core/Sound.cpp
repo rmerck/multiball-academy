@@ -25,12 +25,19 @@ constexpr float kCutTailDecay = 0.99F;
 constexpr float kCutTailSilent = 1.0e-5F;
 
 // Musical notes, in Hz.
+constexpr float kA4 = 440.0F;
 constexpr float kC5 = 523.25F;
+constexpr float kD5 = 587.33F;
+constexpr float kEb5 = 622.25F;
 constexpr float kE5 = 659.25F;
 constexpr float kG5 = 783.99F;
+constexpr float kA5 = 880.0F;
+constexpr float kB5 = 987.77F;
 constexpr float kC6 = 1046.5F;
+constexpr float kD6 = 1174.7F;
 constexpr float kE6 = 1318.5F;
 constexpr float kG6 = 1568.0F;
+constexpr float kC7 = 2093.0F;
 
 // The noise generator's state as a level in [-1, 1).
 constexpr float noiseLevel(std::uint32_t state) noexcept {
@@ -131,46 +138,28 @@ void SoundMixer::startSound(Sound sound) noexcept {
       start(Wave::Sine, 140.0F, 950.0F, 0.20F, 0.40F);
       startNoise(0.05F, 0.20F);
       break;
+    case Sound::Spinner:
+      // A light tick for each turn of the blade, so a fast spin rattles.
+      start(Wave::Square, 1900.0F, 1500.0F, 0.035F, 0.30F);
+      startNoise(0.015F, 0.18F);
+      break;
+    case Sound::Kickback:
+      // A thump from below and the ball rushing back up the lane.
+      start(Wave::Sine, 70.0F, 240.0F, 0.20F, 0.60F);
+      startSweptNoise(500.0F, 3500.0F, 0.30F, 0.30F);
+      break;
+    case Sound::DoorsDrop:
+      // Three doors clacking down one after another, and the bank settling.
+      start(Wave::Square, 360.0F, 220.0F, 0.05F, 0.32F);
+      start(Wave::Square, 330.0F, 200.0F, 0.05F, 0.32F, 0.06F);
+      start(Wave::Square, 300.0F, 180.0F, 0.05F, 0.32F, 0.12F);
+      startNoise(0.04F, 0.22F);
+      start(Wave::Sine, 120.0F, 55.0F, 0.25F, 0.45F, 0.16F);
+      break;
     case Sound::Drain:
       start(Wave::Triangle, kG5, kG5, 0.18F, 0.40F);
       start(Wave::Triangle, kE5, kE5, 0.18F, 0.40F, 0.16F);
       start(Wave::Triangle, kC5 * 0.5F, kC5 * 0.5F, 0.40F, 0.45F, 0.32F);
-      break;
-    case Sound::BallSaved:
-      start(Wave::Sine, kC5, kC5, 0.10F, 0.35F);
-      start(Wave::Sine, kG5, kG5, 0.16F, 0.35F, 0.10F);
-      break;
-    case Sound::ExtraBall:
-      start(Wave::Sine, kC5, kC5, 0.10F, 0.40F);
-      start(Wave::Sine, kE5, kE5, 0.10F, 0.40F, 0.09F);
-      start(Wave::Sine, kG5, kG5, 0.10F, 0.40F, 0.18F);
-      start(Wave::Sine, kC6, kC6, 0.30F, 0.45F, 0.27F);
-      break;
-    case Sound::BankComplete:
-      start(Wave::Sine, kE5, kE5, 0.09F, 0.38F);
-      start(Wave::Sine, kG5, kG5, 0.09F, 0.38F, 0.08F);
-      start(Wave::Sine, kE6, kE6, 0.22F, 0.38F, 0.16F);
-      break;
-    case Sound::MissionSelect:
-      start(Wave::Square, kC5, kC5, 0.08F, 0.20F);
-      start(Wave::Square, kG5, kG5, 0.12F, 0.20F, 0.09F);
-      break;
-    case Sound::MissionAccept:
-      start(Wave::Triangle, kC5, kC5, 0.10F, 0.40F);
-      start(Wave::Triangle, kG5, kG5, 0.10F, 0.40F, 0.10F);
-      start(Wave::Triangle, kC6, kC6, 0.25F, 0.40F, 0.20F);
-      break;
-    case Sound::MissionComplete:
-      start(Wave::Sine, kC5, kC5, 0.12F, 0.40F);
-      start(Wave::Sine, kE5, kE5, 0.12F, 0.40F, 0.11F);
-      start(Wave::Sine, kG5, kG5, 0.12F, 0.40F, 0.22F);
-      start(Wave::Sine, kC6, kC6, 0.12F, 0.40F, 0.33F);
-      start(Wave::Sine, kG6, kG6, 0.45F, 0.42F, 0.44F);
-      break;
-    case Sound::Promotion:
-      start(Wave::Triangle, kC6, kC6, 0.14F, 0.40F, 0.95F);
-      start(Wave::Triangle, kE6, kE6, 0.14F, 0.40F, 1.08F);
-      start(Wave::Triangle, kG6, kG6, 0.60F, 0.45F, 1.21F);
       break;
     case Sound::TiltWarning:
       start(Wave::Square, 220.0F, 220.0F, 0.10F, 0.28F);
@@ -178,6 +167,120 @@ void SoundMixer::startSound(Sound sound) noexcept {
       break;
     case Sound::Tilt:
       start(Wave::Square, 95.0F, 60.0F, 0.80F, 0.40F);
+      break;
+    case Sound::SkillShot:
+      // A quick run up the major chord to a ringing top note.
+      start(Wave::Square, kC6, kC6, 0.06F, 0.20F);
+      start(Wave::Square, kE6, kE6, 0.06F, 0.20F, 0.05F);
+      start(Wave::Square, kG6, kG6, 0.06F, 0.20F, 0.10F);
+      start(Wave::Sine, kC7, kC7, 0.30F, 0.35F, 0.15F);
+      break;
+    case Sound::SetComplete:
+      start(Wave::Sine, kE5, kE5, 0.09F, 0.38F);
+      start(Wave::Sine, kG5, kG5, 0.09F, 0.38F, 0.08F);
+      start(Wave::Sine, kE6, kE6, 0.22F, 0.38F, 0.16F);
+      break;
+    case Sound::Lit:
+      // Two bell strokes, a fourth apart: something waits to be collected.
+      start(Wave::Triangle, kA5, kA5, 0.25F, 0.40F);
+      start(Wave::Sine, kA5 * 2.0F, kA5 * 2.0F, 0.12F, 0.12F);
+      start(Wave::Triangle, kD6, kD6, 0.35F, 0.40F, 0.14F);
+      start(Wave::Sine, kD6 * 2.0F, kD6 * 2.0F, 0.15F, 0.12F, 0.14F);
+      break;
+    case Sound::Combo:
+      // A whip upwards: the chain goes on.
+      start(Wave::Sine, 500.0F, 1700.0F, 0.12F, 0.40F);
+      start(Wave::Triangle, 1000.0F, 3400.0F, 0.10F, 0.15F);
+      start(Wave::Sine, kG6, kG6, 0.10F, 0.25F, 0.11F);
+      break;
+    case Sound::CourseStart:
+      start(Wave::Triangle, kC5, kC5, 0.10F, 0.40F);
+      start(Wave::Triangle, kG5, kG5, 0.10F, 0.40F, 0.10F);
+      start(Wave::Triangle, kC6, kC6, 0.25F, 0.40F, 0.20F);
+      break;
+    case Sound::CoursePassed:
+      start(Wave::Sine, kC5, kC5, 0.12F, 0.40F);
+      start(Wave::Sine, kE5, kE5, 0.12F, 0.40F, 0.11F);
+      start(Wave::Sine, kG5, kG5, 0.12F, 0.40F, 0.22F);
+      start(Wave::Sine, kC6, kC6, 0.12F, 0.40F, 0.33F);
+      start(Wave::Sine, kG6, kG6, 0.45F, 0.42F, 0.44F);
+      break;
+    case Sound::CourseFailed:
+      // Down a minor third and a third more, slowly: time is up.
+      start(Wave::Triangle, kG5, kG5, 0.20F, 0.38F);
+      start(Wave::Triangle, kEb5, kEb5, 0.20F, 0.38F, 0.20F);
+      start(Wave::Triangle, kC5, kC5 * 0.97F, 0.55F, 0.40F, 0.40F);
+      break;
+    case Sound::RankUp:
+      // A fanfare that waits for the course's own run to finish.
+      start(Wave::Triangle, kC6, kC6, 0.14F, 0.40F, 0.95F);
+      start(Wave::Triangle, kE6, kE6, 0.14F, 0.40F, 1.08F);
+      start(Wave::Triangle, kG6, kG6, 0.60F, 0.45F, 1.21F);
+      break;
+    case Sound::BallLocked:
+      // A heavy clunk as the bay closes, then two rising notes.
+      start(Wave::Sine, 180.0F, 50.0F, 0.22F, 0.65F);
+      startNoise(0.03F, 0.25F);
+      start(Wave::Triangle, kA4, kA4, 0.12F, 0.40F, 0.18F);
+      start(Wave::Triangle, kE5, kE5, 0.30F, 0.40F, 0.30F);
+      break;
+    case Sound::MultiballStart:
+      // Three rising sirens and a held chord: every ball is coming.
+      start(Wave::Square, 330.0F, 880.0F, 0.22F, 0.24F);
+      start(Wave::Square, 392.0F, 1046.5F, 0.22F, 0.24F, 0.24F);
+      start(Wave::Square, 440.0F, 1318.5F, 0.22F, 0.24F, 0.48F);
+      start(Wave::Triangle, kC5, kC5, 0.70F, 0.30F, 0.72F);
+      start(Wave::Triangle, kE5, kE5, 0.70F, 0.30F, 0.72F);
+      start(Wave::Triangle, kG5, kG5, 0.70F, 0.30F, 0.72F);
+      start(Wave::Sine, kC6, kC6, 0.70F, 0.30F, 0.72F);
+      break;
+    case Sound::Jackpot:
+      // Bright and fast: the shot that matters in a multiball.
+      start(Wave::Square, kC6, kC6, 0.07F, 0.22F);
+      start(Wave::Square, kE6, kE6, 0.07F, 0.22F, 0.06F);
+      start(Wave::Square, kG6, kG6, 0.07F, 0.22F, 0.12F);
+      start(Wave::Square, kC7, kC7, 0.07F, 0.22F, 0.18F);
+      start(Wave::Sine, kC6, kC6, 0.45F, 0.40F, 0.24F);
+      start(Wave::Sine, kG6, kG6, 0.45F, 0.25F, 0.24F);
+      break;
+    case Sound::SuperJackpot:
+      // The jackpot's run twice over, a sweep, and a long chord.
+      start(Wave::Square, kC6, kC6, 0.07F, 0.22F);
+      start(Wave::Square, kE6, kE6, 0.07F, 0.22F, 0.06F);
+      start(Wave::Square, kG6, kG6, 0.07F, 0.22F, 0.12F);
+      start(Wave::Square, kC7, kC7, 0.07F, 0.22F, 0.18F);
+      start(Wave::Square, kC6, kC6, 0.07F, 0.22F, 0.30F);
+      start(Wave::Square, kE6, kE6, 0.07F, 0.22F, 0.36F);
+      start(Wave::Square, kG6, kG6, 0.07F, 0.22F, 0.42F);
+      start(Wave::Square, kC7, kC7, 0.07F, 0.22F, 0.48F);
+      start(Wave::Sine, 300.0F, 2400.0F, 0.40F, 0.30F, 0.54F);
+      start(Wave::Triangle, kC5, kC5, 0.90F, 0.32F, 0.60F);
+      start(Wave::Triangle, kG5, kG5, 0.90F, 0.32F, 0.60F);
+      start(Wave::Sine, kE6, kE6, 0.90F, 0.30F, 0.60F);
+      break;
+    case Sound::ExtraBall:
+      start(Wave::Sine, kC5, kC5, 0.10F, 0.40F);
+      start(Wave::Sine, kE5, kE5, 0.10F, 0.40F, 0.09F);
+      start(Wave::Sine, kG5, kG5, 0.10F, 0.40F, 0.18F);
+      start(Wave::Sine, kC6, kC6, 0.30F, 0.45F, 0.27F);
+      break;
+    case Sound::ExtraCredit:
+      // A wobble between two notes while the award is picked, then the pick.
+      start(Wave::Triangle, kB5, kB5, 0.06F, 0.30F);
+      start(Wave::Triangle, kD6, kD6, 0.06F, 0.30F, 0.07F);
+      start(Wave::Triangle, kB5, kB5, 0.06F, 0.30F, 0.14F);
+      start(Wave::Triangle, kD6, kD6, 0.06F, 0.30F, 0.21F);
+      start(Wave::Sine, kG6, kG6, 0.35F, 0.40F, 0.28F);
+      break;
+    case Sound::Overdrive:
+      // An engine winding up.
+      startSweptNoise(250.0F, 2500.0F, 0.60F, 0.25F);
+      start(Wave::Square, 82.0F, 330.0F, 0.60F, 0.28F);
+      start(Wave::Sine, kD5, kD6, 0.40F, 0.25F, 0.30F);
+      break;
+    case Sound::BallSaved:
+      start(Wave::Sine, kC5, kC5, 0.10F, 0.35F);
+      start(Wave::Sine, kG5, kG5, 0.16F, 0.35F, 0.10F);
       break;
     case Sound::GameOver:
       start(Wave::Triangle, kC5, kC5, 0.25F, 0.40F);

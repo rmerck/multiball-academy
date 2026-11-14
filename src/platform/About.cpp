@@ -197,6 +197,11 @@ void drawFacts(SDL_Renderer* r, const Body& body, float middle, float y, float w
   std::array<char, 48> build{};
   drawText(r, formatText(build.data(), build.size(), "BUILD %s", kBuildNumber), middle, y,
            body.size, kDim, TextAlign::Center);
+  y += body.step;
+  // Where to write for help: the one contact detail the game shows.
+  std::array<char, 64> support{};
+  drawText(r, formatText(support.data(), support.size(), "SUPPORT  %s", kSupportEmail), middle, y,
+           body.size, kAmber, TextAlign::Center);
   y += 7.0F * body.size + 20.0F;
   drawNeonText(r, "YOUR PRIVACY", middle, y, 3.0F, kWhite, kCyan, kViolet,
                TextAlign::Center);

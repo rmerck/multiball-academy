@@ -266,9 +266,10 @@ if [ "$release" = yes ]; then
     fail "build paths found in the executable"
   fi
   # A Release application ignores its launch arguments (src/main_ios.cpp):
-  # the code that reads them is compiled out, and with it the option's
-  # name. Only a build configured for tests (PINBALL_IOS_TEST_EXIT) keeps it.
-  if [ "$PINBALL_IOS_TEST_EXIT" = OFF ] && grep -q -e '--frames' <<<"$all_strings"; then
+  # the code that reads them is compiled out, and with it the options'
+  # names (--frames, --scene). Only a build configured for tests
+  # (PINBALL_IOS_TEST_EXIT) keeps them.
+  if [ "$PINBALL_IOS_TEST_EXIT" = OFF ] && grep -q -e '--frames' -e '--scene' <<<"$all_strings"; then
     fail "the executable reads launch arguments, but the build was not configured for tests"
   fi
   # The debug symbols are beside the bundle and are this executable's.

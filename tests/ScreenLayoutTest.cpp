@@ -278,6 +278,24 @@ void testDesktop() {
   CHECK(!overlap(panel::kTouchTitleArea, panel::kPauseButton));
   CHECK(inside(panel::kTouchTitleArea, panel::kTitleArea, 0.0F));
   CHECK(inside(panel::kFlipperCorner, panel::kControlsArea, 0.0F));
+  // On a touch screen the title keeps the pause button's margin from it.
+  CHECK(panel::kPauseButton.x - (panel::kTouchTitleArea.x + panel::kTouchTitleArea.w) >=
+        panel::kPauseButton.x - panel::kPauseHit.x + 8.0F);
+
+  // The strip's windows lie in the strip, clear of each other and of the
+  // pause button, and each is tall enough for a line of the smallest text
+  // with a margin.
+  namespace strip = pinball::strip;
+  const Rect stripArea{0.0F, 0.0F, pinball::screen::kStackWidth, pinball::screen::kStripHeight};
+  CHECK(noneOverlap(std::to_array(strip::kWells)));
+  for (const Rect& well : strip::kWells) {
+    CHECK(inside(well, stripArea, 0.0F));
+    CHECK(!overlap(well, strip::kPauseHit));
+    CHECK(well.h >= kHudTextSize * kFontRows + 2.0F * 8.0F);
+  }
+  for (const Rect& well : panel::kWells) {
+    CHECK(well.h >= kHudTextSize * kFontRows + 2.0F * 8.0F);
+  }
 }
 
 struct Expected {
@@ -297,7 +315,7 @@ void testPresets() {
       {"phone-pro", Composition::Stack, 1.910F, 768.0F, 1670.0F, 294.0F},
       {"pad-portrait-11", Composition::Stack, 1.141F, 951.5F, 1362.0F, 120.0F},
       {"phone-max", Composition::Stack, 1.745F, 768.0F, 1669.0F, 309.0F},
-      {"duo-outer", Composition::Stack, 1.935F, 902.0F, 1312.0F, 120.0F},
+      {"duo-outer", Composition::Stack, 2.0373F, 949.4F, 1381.3F, 120.0F},
       {"duo-inner", Composition::Stack, 1.380F, 923.0F, 1312.0F, 120.0F},
       {"pad-portrait", Composition::Stack, 0.992F, 1016.0F, 1356.0F, 120.0F},
       // The deck is what the safe area leaves under the table: the 24 and
@@ -399,12 +417,23 @@ void testStackGeometry() {
     CHECK(near(l.flipperLeftZone.y + l.flipperLeftZone.h, l.canvasHeight));
     checkTouchLayout(l);
   }
-  {  // Insets on one side only: the column is centred in the safe area,
-     // and the zones still reach the edges of the window.
+  {  // Insets on one side only: the column is centred on the screen when
+     // the safe area leaves room, and the zones still reach the edges of
+     // the window.
     const Layout l = touch(900.0F, 1000.0F, 0.0F, 0.0F, 120.0F, 0.0F);
     CHECK(l.composition == Composition::Stack);
-    CHECK(near(l.playfield.x + 384.0F, l.safe.x + l.safe.w * 0.5F, 0.5F));
-    CHECK(l.flipperLeftZone.w > l.flipperRightZone.w);
+    CHECK(near(l.playfield.x + 384.0F, l.canvasWidth * 0.5F, 0.5F));
+    CHECK(l.playfield.x >= l.safe.x);
+    CHECK(near(l.flipperLeftZone.w, l.flipperRightZone.w, 1.0F));
+    checkTouchLayout(l);
+  }
+  {  // Where it does not (the iPhone Duo's outer display, inset on the right
+     // only), as near the centre as the safe area allows: against its far
+     // edge, never past it.
+    const Layout l = computeLayout(findPreset("duo-outer")->surface, Idiom::Touch);
+    CHECK(l.composition == Composition::Stack);
+    CHECK(l.playfield.x + kPlayfieldWidth <= l.safe.x + l.safe.w);
+    CHECK(l.safe.x + l.safe.w - (l.playfield.x + kPlayfieldWidth) < 1.0F);
     checkTouchLayout(l);
   }
 }
@@ -591,9 +620,9 @@ void testMinimumHitSize() {
 }
 
 // Nothing is drawn smaller than 8 points high: on every preset the status
-// display and the dialogs, and from the smallest scene up the Stack's strip
-// and the dialogs. (The Classic panel has lines at size 2, which a window
-// just wide enough for Classic and only 602 points high shows at 7.7.)
+// display and the dialogs, and from the smallest scene up the status
+// display of either composition (all of it at kHudTextSize or larger) and
+// the dialogs.
 void testSmallestText() {
   const auto points = [](float size, const Layout& l) noexcept {
     return size * kFontRows * l.pointsPerUnit;
@@ -610,9 +639,8 @@ void testSmallestText() {
     for (float height = kMinSceneHeight; height < 1500.0F; height += 17.0F) {
       const Layout l = touch(width, height);
       CHECK(points(smallestTextSize(l), l) >= kMinTextPoints);
-      if (l.composition == Composition::Stack) {
-        CHECK(points(hudTextSize(l), l) >= kMinTextPoints);
-      }
+      // Both compositions: Classic is only chosen where it draws larger.
+      CHECK(points(hudTextSize(l), l) >= kMinTextPoints);
     }
   }
   // Size 2 is kept where it is large enough, so a tablet's dialogs do not grow.

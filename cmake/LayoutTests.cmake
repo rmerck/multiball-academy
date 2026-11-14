@@ -42,20 +42,20 @@ endforeach()
 foreach(preset IN ITEMS phone-pro pad-landscape)
   string(REPLACE "-" "_" name "${preset}")
   foreach(state IN ITEMS launch pause interrupted confirm about about-info licences initials
-                         gameover course multiball)
+                         gameover longest table course multiball hangar graduation)
     string(REPLACE "-" "_" state_name "${state}")
     pinball_layout_render(${name}_${state_name} 60 ${state} --layout ${preset})
   endforeach()
 endforeach()
-foreach(state IN ITEMS pause about-info licences gameover course)
+foreach(state IN ITEMS pause about-info licences gameover longest multiball graduation)
   string(REPLACE "-" "_" state_name "${state}")
   pinball_layout_render(desktop_${state_name} 60 ${state})
 endforeach()
 pinball_layout_render(phone_short_pressed 1200 play --layout phone-short --zones
   --pressed left,right,centre,nl,nr,pause)
 pinball_layout_render(phone_pro_device_pixels 60 launch --layout phone-pro@3)
-pinball_layout_render(phone_longest_message 60 course --layout phone
-  --message "A MESSAGE OF THE GREATEST LENGTH: 36")
+pinball_layout_render(phone_longest_message 60 longest --layout phone
+  --message "LONGEST MESSAGE THERE IS: 29!")
 pinball_layout_render(phone_last_licence_page 60 licences --layout phone --page 99)
 
 # Any window: twelve shapes from 0.40 to 2.2 wide for their height, with

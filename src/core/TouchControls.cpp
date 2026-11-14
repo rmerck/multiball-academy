@@ -17,6 +17,17 @@ CanvasPoint canvasPoint(const screen::Layout& layout, float fractionX, float fra
   return {fractionX * layout.canvasWidth, fractionY * layout.canvasHeight};
 }
 
+bool inSystemCorner(const screen::Layout& layout, CanvasPoint point) noexcept {
+  if (!(layout.pointsPerUnit > 0.0F)) {
+    return false;
+  }
+  const float reach = kSystemCornerPoints / layout.pointsPerUnit;
+  const bool low = point.y >= layout.canvasHeight - reach && point.y <= layout.canvasHeight;
+  const bool left = point.x >= 0.0F && point.x <= reach;
+  const bool right = point.x >= layout.canvasWidth - reach && point.x <= layout.canvasWidth;
+  return low && (left || right);
+}
+
 TouchControls::Slot* TouchControls::find(std::uint64_t id) noexcept {
   const auto found = std::ranges::find_if(
       slots_, [id](const Slot& slot) noexcept { return slot.role != Role::Free && slot.id == id; });

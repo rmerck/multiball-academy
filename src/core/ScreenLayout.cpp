@@ -73,10 +73,19 @@ float snapped(float wanted, float extent, float low, float high) noexcept {
   return std::floor(low);
 }
 
+// Where a composition of this width goes across the canvas: centred on the
+// screen, not on the safe area, as far as the safe area allows. With
+// unequal side insets (the iPhone Duo's outer display reports one on its
+// right only) a column centred on the safe area would stand off the
+// screen's centre by half the difference.
+float across(const Layout& layout, float width) noexcept {
+  const Rect& safe = layout.safe;
+  return snapped((layout.canvasWidth - width) * 0.5F, width, safe.x, safe.x + safe.w);
+}
+
 Layout classicTouch(Layout layout) noexcept {
   const Rect& safe = layout.safe;
-  const float x =
-      snapped(safe.x + (safe.w - kClassicWidth) * 0.5F, kClassicWidth, safe.x, safe.x + safe.w);
+  const float x = across(layout, kClassicWidth);
   const float y =
       snapped(safe.y + (safe.h - kClassicHeight) * 0.5F, kClassicHeight, safe.y, safe.y + safe.h);
   layout.composition = Composition::Classic;
@@ -103,8 +112,7 @@ Layout stack(Layout layout) noexcept {
   const float spare = std::max(safe.h - kStripHeight - kPlayfieldHeight, kDeckMinHeight);
   const float spacer = spare - std::min(spare, kDeckMaxHeight);
   const float blocks = kStripHeight + kPlayfieldHeight + kDeckMinHeight;
-  const float x =
-      snapped(safe.x + (safe.w - kStackWidth) * 0.5F, kStackWidth, safe.x, safe.x + safe.w);
+  const float x = across(layout, kStackWidth);
   const float y = snapped(safe.y + spacer * 0.5F, blocks, safe.y, safeBottom);
   layout.composition = Composition::Stack;
   layout.hud = {x, y, kStackWidth, kStripHeight};
@@ -133,7 +141,8 @@ constexpr std::array<Preset, 12> kPresets{{
     {"phone-pro", {402.0F, 874.0F, 62.0F, 34.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"phone-short", {375.0F, 667.0F, 20.0F, 0.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"phone-max", {440.0F, 956.0F, 62.0F, 34.0F, 0.0F, 0.0F}, Idiom::Touch},
-    {"duo-outer", {466.0F, 678.0F, 0.0F, 0.0F, 0.0F, 0.0F}, Idiom::Touch},
+    // The insets the simulator reports for the outer display in portrait.
+    {"duo-outer", {466.0F, 678.0F, 0.0F, 34.0F, 0.0F, 84.0F}, Idiom::Touch},
     {"duo-inner", {669.0F, 951.0F, 0.0F, 0.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"pad-portrait", {1024.0F, 1366.0F, 24.0F, 20.0F, 0.0F, 0.0F}, Idiom::Touch},
     {"pad-portrait-11", {834.0F, 1194.0F, 24.0F, 20.0F, 0.0F, 0.0F}, Idiom::Touch},
