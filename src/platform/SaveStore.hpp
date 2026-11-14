@@ -1,6 +1,8 @@
 #pragma once
 
 #include <optional>
+#include <string>
+#include <utility>
 
 #include "core/Snapshot.hpp"
 
@@ -11,6 +13,10 @@ namespace pinball {
 // until a method is called.
 class SaveStore {
  public:
+  // directory: where the file is kept, ending in a separator; empty (the
+  // default) for the per-user preferences directory. Only tests give one.
+  explicit SaveStore(std::string directory = {}) : directory_(std::move(directory)) {}
+
   // Reads the file and checks every byte of it (save::decode). A file that
   // is there and is not a game this build can resume (damaged, cut short,
   // too large, from another version or table, not a plain file) is deleted:
@@ -26,8 +32,9 @@ class SaveStore {
   bool remove();
 
  private:
-  // The preferences directory's file, or empty with none.
-  [[nodiscard]] static std::string path();
+  // The file's full path, or empty with no preferences directory.
+  [[nodiscard]] std::string path() const;
+  std::string directory_;
 };
 
 }  // namespace pinball

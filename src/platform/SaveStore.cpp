@@ -23,7 +23,10 @@ constexpr const char* kFileName = "savedgame.bin";
 
 }  // namespace
 
-std::string SaveStore::path() {
+std::string SaveStore::path() const {
+  if (!directory_.empty()) {
+    return directory_ + kFileName;
+  }
   const std::unique_ptr<char, decltype([](char* text) { SDL_free(text); })> directory(
       SDL_GetPrefPath(kDataOrganisation, kDataDirectory));
   if (!directory) {
