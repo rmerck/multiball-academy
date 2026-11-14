@@ -28,6 +28,15 @@ struct BallView {
   bool raised = false;
   // Locked in one of the Hangar's bays: in view, at rest, out of play.
   bool locked = false;
+  // For the eye only, while the Briefing room or the Hangar takes the ball
+  // in or lets it out (table::kHoleSinkSeconds): it is drawn at drawnAt(),
+  // this far from position, and sunk this far into the hole, from 0 (on
+  // the table) to 1 (down out of sight), drawn smaller and darker the
+  // further down it is. position stays where the game has the ball.
+  Vec2 drawOffset{};
+  float sink = 0.0F;
+
+  [[nodiscard]] constexpr Vec2 drawnAt() const noexcept { return position + drawOffset; }
 };
 
 // Something the table did during a step, beside what the balls touched
@@ -345,6 +354,9 @@ class Game {
   [[nodiscard]] std::size_t primaryBall() const noexcept;
   [[nodiscard]] BallView ballView(std::size_t slot) const;
   [[nodiscard]] BallView ballView(std::size_t slot, float alpha) const;
+  // How far through a span of seconds that started at mark (one more than
+  // a step) the game is, from 0 to 1. A mark of 0 is long past.
+  [[nodiscard]] float progressSince(std::uint64_t mark, double seconds) const noexcept;
 
   PhysicsWorld physics_;
   Rules rules_{kStepSeconds};
@@ -383,6 +395,13 @@ class Game {
     bool inPlay = false;
     // Where it was when a hole took it: a rail's ride starts there.
     Vec2 takenAt{};
+    // One more than the step at which a hole last took it; 0 if none has.
+    // For drawing it on its way in.
+    std::uint64_t takenStep = 0;
+    // Where the scoop or the hangar let it out from, for drawing it on its
+    // way out: the hole's centre, or the bay it was locked in.
+    Vec2 ejectFrom{};
+    bool ejectFromBay = false;
     // Served by requestBall(): launched without the player.
     bool autoLaunch = false;
     // Steps until the launch, while waiting for it; then steps spent at

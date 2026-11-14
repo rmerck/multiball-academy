@@ -758,7 +758,16 @@ if(BUILD_TESTING)
     add_test(NAME render_spinning
       COMMAND pinball_snapshot 60 render_spinning.png spinning
       WORKING_DIRECTORY ${PINBALL_TEST_DIR})
-    set_tests_properties(render_locked render_bank_down render_spinning PROPERTIES
+    # Balls on their way into a hole and out of a lock bay, drawn between
+    # where the game has them and the hole (table::kHoleSinkSeconds).
+    add_test(NAME render_scoop_in
+      COMMAND pinball_snapshot 7 render_scoop_in.png scoop-in
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
+    add_test(NAME render_lock_out
+      COMMAND pinball_snapshot 4 render_lock_out.png lock-out
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
+    set_tests_properties(render_locked render_bank_down render_spinning render_scoop_in
+                         render_lock_out PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
     # The tool must replace a link at its output name, never write through
     # it, even one that points nowhere. (Not on Windows, where making a link
