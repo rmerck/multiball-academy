@@ -1135,12 +1135,6 @@ SoakResult soak(const SoakOptions& options) {
         harness.right = false;
       }
       const Touch drain = advance();
-      if (start != kNotStarted) {
-        // Since the later of entering play and the last flipper contact.
-        const std::uint64_t flipper = harness.lastFlipperStep(0);
-        const std::uint64_t since = flipper > start ? flipper - 1 : start;
-        result.longestNoFlipper = std::max(result.longestNoFlipper, harness.step() - since);
-      }
       const double played = start == kNotStarted
                                 ? 0.0
                                 : static_cast<double>(harness.step() - start) / kStepsPerSecond;
@@ -1202,6 +1196,7 @@ SoakResult soak(const SoakOptions& options) {
   result.circuitEntered = harness.circuitEntered;
   result.circuitTop = harness.circuitTop;
   result.circuitDone = harness.circuitDone;
+  result.longestNoFlipper = harness.longestNoFlipper;
   result.hangarEntries = harness.hangarEntries;
   result.hangarEntriesDoorsUp = harness.hangarEntriesDoorsUp;
   result.bankDrops = harness.bankDrops;

@@ -388,6 +388,13 @@ void TableHarness::watchBall(std::size_t slot) {
     const bool raised = f == table::kLeftFlipperIndex ? left : right;
     cradled = cradled || (raised && nearFlipper(p, f, 6.0F));
   }
+  if (inPlay) {
+    if (state.playStep == 0) {
+      state.playStep = step_ + 1;
+    }
+    const std::uint64_t since = std::max(state.flipperStep, state.playStep);
+    longestNoFlipper = std::max(longestNoFlipper, step_ + 1 - since);
+  }
   const Vec2 moved = p - state.anchor;
   if (moved.x * moved.x + moved.y * moved.y > kStuckRadius * kStuckRadius) {
     state.anchor = p;

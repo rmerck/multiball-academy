@@ -142,6 +142,10 @@ class TableHarness {
   void setSaver(bool enabled);
   // Steps on which a ball was against a flipper.
   std::uint64_t flipperTouches = 0;
+  // The longest any free ball in play went without being against a flipper,
+  // in steps, counted from the later of its entering play and its last
+  // flipper contact, and while it was on the table (not as it left).
+  std::uint64_t longestNoFlipper = 0;
   // Drains of every ball, by way out: centre, left outlane, right outlane.
   std::array<std::uint64_t, 3> drains{};
   // Balls that left the table any other way (the game's fail-safe).
@@ -182,6 +186,7 @@ class TableHarness {
     std::uint64_t outlaneStep = 0;  // One more than the step; 0 if never.
     Touch outlane = Touch::None;
     std::uint64_t flipperStep = 0;  // One more than the step; 0 if never.
+    std::uint64_t playStep = 0;     // One more than the step it was first seen in play.
     // One more than the step at which the kickback set it down; 0 if never.
     std::uint64_t kickStep = 0;
     bool kickTouchPending = false;
