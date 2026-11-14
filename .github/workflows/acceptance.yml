@@ -1,0 +1,61 @@
+name: Table acceptance
+
+# The table's long acceptance suite (TABLE.md section 5; cmake/AcceptanceTests.cmake):
+# about half a billion simulation steps, too long for every push. Once a
+# week, and by hand, it is built optimised and run in full. A FAIL row (a
+# hard criterion, or a known miss that has gone beyond its pin) fails the
+# run, which sends a notification. This is not a required check. GitHub
+# switches scheduled workflows off after 60 days without activity in a
+# public repository; re-enable it if so.
+on:
+  schedule:
+    - cron: "41 6 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install build headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev \
+            libgl1-mesa-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
+      - name: Configure
+        env:
+          CC: gcc
+          CXX: g++
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DPINBALL_FETCH_DEPS=ON
+          -DPINBALL_WERROR=ON
+          -DPINBALL_ACCEPTANCE_TESTS=ON
+      - name: Build
+        run: cmake --build build --parallel --target pinball_acceptance
+      - name: Run the acceptance suite
+        run: |
+          ctest --test-dir build -L acceptance --parallel "$(nproc)" --no-tests=error \
+            --verbose --output-log acceptance.log > /dev/null
+      - name: The report
+        if: always()
+        run: |
+          if [ -f acceptance.log ]; then
+            grep -h -E 'ROW \||Test +#|tests passed' acceptance.log || true
+          fi
+      - name: Keep the full output
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-log
+          path: acceptance.log
+          if-no-files-found: ignore

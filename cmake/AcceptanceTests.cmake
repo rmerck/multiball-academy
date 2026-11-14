@@ -15,8 +15,9 @@
 #   build/pinball_acceptance | grep '^ROW'
 #
 # Use an optimized build without sanitizers for it. A FAIL line (a fairness
-# or structural criterion not met) fails the test; a KNOWN-MISS line (a
-# pacing criterion the design is known to miss) is reported and does not.
+# or structural criterion not met, or a known miss gone beyond its pin)
+# fails the test; a KNOWN-MISS line (a pacing criterion the design is known
+# to miss, no worse than the value recorded for it plus a margin) does not.
 option(PINBALL_ACCEPTANCE_TESTS
        "Register the table's long acceptance tests with CTest (label: acceptance)" OFF)
 

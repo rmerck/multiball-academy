@@ -218,7 +218,10 @@ struct SoakResult {
   std::array<std::uint64_t, 3> drains{};  // Centre, left outlane, right outlane.
   int under5 = 0;
   int under10 = 0;
-  int timeouts = 0;   // Balls ended by the 20 minute cap.
+  int timeouts = 0;  // Balls ended by the 20 minute cap.
+  // The longest a ball in play went without touching a flipper, in steps
+  // (D3: a ball that circulates by itself is not being played).
+  std::uint64_t longestNoFlipper = 0;
   int replunges = 0;  // Plunges that did not leave the lane.
   std::uint64_t saves = 0;
   std::uint64_t steps = 0;
