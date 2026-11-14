@@ -8,10 +8,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <stdlib.h>  // mkdtemp
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <string>
+#include <system_error>
 
 #include "Check.hpp"
 #include "core/Args.hpp"
@@ -312,19 +313,33 @@ void testQuitAtThePromptKeepsTheScore() {
 // that makes the table, nothing is written to the score file, even with
 // scores kept (in a build that stages scenes the game is the staged one; in
 // any other the scene is ignored but the score is still not kept). The same
-// game without a scene does write it, which shows the test sees the file. Only where the preferences directory can be sent to a scratch place
+// game without a scene does write it, which shows the test sees the file.
+// Only where the preferences directory can be sent to a scratch place
 // (Linux: XDG_DATA_HOME); elsewhere it would be the player's own file.
 void testStagedSceneKeepsNoScore() {
-  char scratch[] = "/tmp/pinball-app-scores-XXXXXX";
-  if (mkdtemp(scratch) == nullptr) {
+  namespace fs = std::filesystem;
+  std::error_code error;
+  const fs::path base = fs::temp_directory_path(error);
+  const fs::path scratchPath =
+      base / ("pinball-app-scores-" + std::to_string(SDL_GetTicksNS()));
+  if (error || !fs::create_directory(scratchPath, error)) {
     CHECK(false);
     return;
   }
-  SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME", scratch, true);
+  const std::string scratch = scratchPath.string();
+  struct Cleanup {
+    fs::path path;
+    ~Cleanup() {
+      std::error_code ignored;
+      fs::remove_all(path, ignored);
+    }
+  } const cleanup{scratchPath};
+  SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME", scratch.c_str(), true);
   char* const pref = SDL_GetPrefPath(pinball::kDataOrganisation, pinball::kDataDirectory);
   const std::string directory = pref != nullptr ? pref : "";
   SDL_free(pref);
   if (directory.rfind(scratch, 0) != 0) {
+    SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME");
     std::puts("app_tests: staged-scene score check skipped (no scratch preferences directory)");
     return;
   }
