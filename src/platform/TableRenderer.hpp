@@ -32,7 +32,15 @@ struct DrawOptions {
 // can arrive file by file.
 enum class TextureSet : std::uint8_t { Desktop, All };
 
-// Draws the game onto the logical canvas. Owns every texture. Used by the
+// Draws the game onto the logical canvas. Owns every texture.
+//
+// The playfield itself is art (table/background.png) when the build has it.
+// When the asset manifest does not list that file, the table is drawn from
+// src/core/TableLayout.hpp instead, in plain colours: every wall, lane,
+// element outline and lamp where the physics has it, once, into a texture
+// that each frame then copies. That is what a build
+// shows while the art for a new layout is still to be drawn, so that the
+// picture always matches the table being played. Used by the
 // game window and by the offscreen snapshot tool, so both show the same thing.
 class TableRenderer {
  public:
@@ -68,7 +76,7 @@ class TableRenderer {
 
  private:
   struct Textures {
-    TexturePtr background;
+    TexturePtr background;  // The art, or the table drawn from its layout.
     TexturePtr ball;
     TexturePtr flipper;
     TexturePtr bumper;
@@ -94,13 +102,13 @@ class TableRenderer {
   // A soft additive light of the given colour and strength (0 to 1).
   void drawGlow(SDL_Renderer* renderer, Vec2 center, float radius, Rgb color,
                 float strength) const;
-  void drawLights(SDL_Renderer* renderer, const Game& game) const;
   void drawBumpers(SDL_Renderer* renderer, const Game& game) const;
-  void drawTargets(SDL_Renderer* renderer, const Game& game) const;
-  void drawPlungerAndGate(SDL_Renderer* renderer, const Game& game) const;
+  void drawTargets(SDL_Renderer* renderer) const;
+  void drawSlingshotFlashes(SDL_Renderer* renderer, const Game& game) const;
+  void drawPlunger(SDL_Renderer* renderer, const Game& game) const;
   void drawFlippers(SDL_Renderer* renderer, const Game& game, float alpha) const;
   // Every ball that is in sight, those on the table first and those riding
-  // the ramp over them.
+  // a ramp's rail over them.
   void drawBalls(SDL_Renderer* renderer, std::span<const BallView> balls) const;
 
   Textures textures_;

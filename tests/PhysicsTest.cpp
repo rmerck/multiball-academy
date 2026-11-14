@@ -33,17 +33,22 @@ struct Lcg {
 // True while the ball centre is inside the shell. A ball that tunnelled
 // through a wall has its centre outside, and keeps going.
 bool insideShell(Vec2 p) {
-  if (p.x < table::kWallLeft || p.x > table::kWallRight || p.y > table::kFloorY) {
+  if (p.x < table::kWallLeft || p.x > table::kWallRight || p.y > table::kFloorY || p.y < 40.0F) {
     return false;
   }
-  if (p.y < table::kArchCenterY) {
-    const float nx = (p.x - table::kArchCenterX) / table::kArchRadiusX;
-    const float ny = (p.y - table::kArchCenterY) / table::kArchRadiusY;
+  // Left of the arch's top the shell is the arch itself; right of it the
+  // launch curve bulges out to the lane's wall.
+  if (p.y < table::kArchCenter.y && p.x <= table::kArchCenter.x) {
+    const float nx = (p.x - table::kArchCenter.x) / table::kArchRadiusX;
+    const float ny = (p.y - table::kArchCenter.y) / table::kArchRadiusY;
     if (nx * nx + ny * ny > 1.0F) {
       return false;
     }
   }
-  return true;
+  // Beyond the left circuit wall, above the outlane pocket, is outside.
+  constexpr float kLeftCircuitWall = 88.0F;
+  constexpr float kPocketTop = 556.0F;
+  return !(p.x < kLeftCircuitWall && p.y < kPocketTop);
 }
 
 float length(Vec2 v) { return std::sqrt(v.x * v.x + v.y * v.y); }
@@ -86,7 +91,6 @@ void testSeveralBalls() {
     world.resetBall(1, {300.0F, 300.0F}, {50.0F, 0.0F});
     world.pushBall(2, {100.0F, 0.0F});
     world.releaseBall(1, {300.0F, 300.0F}, {0.0F, 0.0F});
-    world.setBallPassesGate(1, true);
     world.deactivateBall(2);
     world.resetBall(0, kOpenField, {0.0F, 0.0F});
     bool onlyTheFirst = true;
@@ -98,7 +102,7 @@ void testSeveralBalls() {
     }
     CHECK(onlyTheFirst);
     for (const std::size_t slot : {std::size_t{1}, std::size_t{2}}) {
-      CHECK(!world.ballActive(slot) && !world.ballHeld(slot) && !world.ballPassesGate(slot));
+      CHECK(!world.ballActive(slot) && !world.ballHeld(slot));
       CHECK(world.ballPosition(slot).x == 0.0F && world.ballPosition(slot).y == 0.0F);
       CHECK(world.ballVelocity(slot).x == 0.0F && world.ballVelocity(slot).y == 0.0F);
       CHECK(world.ballAngle(slot) == 0.0F);
@@ -122,8 +126,7 @@ void testSeveralBalls() {
       world.resetBall(slot, kOpenField, {0.0F, 0.0F});
       world.pushBall(slot, {10.0F, 0.0F});
       world.releaseBall(slot, kOpenField, {0.0F, 0.0F});
-      world.setBallPassesGate(slot, true);
-      CHECK(!world.ballActive(slot) && !world.ballHeld(slot) && !world.ballPassesGate(slot));
+      CHECK(!world.ballActive(slot) && !world.ballHeld(slot));
       CHECK(world.heldHole(slot) == 0);
       CHECK(world.ballPosition(slot).x == 0.0F && world.ballVelocity(slot).x == 0.0F);
       CHECK(world.ballAngle(slot) == 0.0F);
@@ -175,12 +178,11 @@ void testSeveralBalls() {
     CHECK(world.activeBallCount() == 3);
 
     // A held ball can be deactivated, and comes back free and unheld.
-    world.resetBall(2, table::kHyperspace, {0.0F, 0.0F});
+    world.resetBall(2, table::kHoles[table::kScoopHole].center, {0.0F, 0.0F});
     world.step(kStep);
-    CHECK(world.ballHeld(2) && world.heldHole(2) == 4);
-    world.setBallPassesGate(2, true);
+    CHECK(world.ballHeld(2) && world.heldHole(2) == table::kScoopHole);
     world.deactivateBall(2);
-    CHECK(!world.ballHeld(2) && !world.ballActive(2) && !world.ballPassesGate(2));
+    CHECK(!world.ballHeld(2) && !world.ballActive(2));
     CHECK(world.activateBall(2, kOpenField + Vec2{60.0F, 0.0F}, {0.0F, 0.0F}));
     CHECK(!world.ballHeld(2));
     for (int i = 0; i < 120; ++i) {
@@ -306,8 +308,8 @@ void testSeveralBalls() {
   {  // Each ball has its own bumper latch: two balls on one bumper at the
      // same moment are both kicked, once each.
     PhysicsWorld world;
-    constexpr std::size_t kSatellite = 7;
-    const table::Circle& bumper = table::kBumpers[kSatellite].shape;
+    constexpr std::size_t kThruster = 1;  // The right-hand thruster, clear on both sides.
+    const table::Circle& bumper = table::kBumpers[kThruster].shape;
     const float reach = bumper.radius + table::kBallRadius + 0.5F;
     world.resetBall(0, bumper.center + Vec2{-reach, 0.0F}, {0.0F, 0.0F});
     CHECK(world.activateBall(1, bumper.center + Vec2{reach, 0.0F}, {0.0F, 0.0F}));
@@ -316,7 +318,7 @@ void testSeveralBalls() {
       world.step(kStep);
       for (const PhysicsEvent& event : world.events()) {
         if (event.type == PhysicsEvent::Type::Hit &&
-            event.element.kind == table::ElementKind::Bumper && event.element.index == kSatellite &&
+            event.element.kind == table::ElementKind::Bumper && event.element.index == kThruster &&
             event.ball < kicks.size()) {
           ++kicks[event.ball];
         }
@@ -342,30 +344,31 @@ void testSeveralBalls() {
   {  // A hole that has just returned one ball ignores that ball until it is
      // clear, and takes any other at once.
     PhysicsWorld world;
-    constexpr std::size_t kChute = 4;
+    constexpr std::size_t kChute = table::kScoopHole;
     const table::Hole& hole = table::kHoles[kChute];
     world.resetBall(0, hole.center, {0.0F, 0.0F});
     world.step(kStep);
     CHECK(world.ballHeld(0) && world.heldHole(0) == kChute);
     CHECK(countEvents(world, PhysicsEvent::Type::Capture, 0) == 1);
-    world.releaseBall(0, hole.exitPosition, hole.exitVelocity);
-    // The first ball is on its way out: clear of the hole itself, but still
-    // inside the distance at which the hole rearms for it.
+    // Let go inside the box, moving out of it.
+    world.releaseBall(0, hole.center, {0.0F, 300.0F});
+    // The first ball is on its way out: still inside the box, and inside
+    // the distance at which the hole rearms for it.
     bool firstTakenAgain = false;
     for (int i = 0; i < 30 && length(world.ballPosition(0) - hole.center) < 26.0F; ++i) {
       world.step(kStep);
       firstTakenAgain = firstTakenAgain || world.ballHeld(0);
     }
     CHECK(length(world.ballPosition(0) - hole.center) < table::kHoleRearmDistance);
-    CHECK(world.activateBall(1, hole.center, {0.0F, 0.0F}));
+    CHECK(world.activateBall(1, hole.center + Vec2{0.0F, -14.0F}, {0.0F, 0.0F}));
     world.step(kStep);
     CHECK(world.ballHeld(1) && world.heldHole(1) == kChute);
     CHECK(countEvents(world, PhysicsEvent::Type::Capture, 1) == 1);
     CHECK(!firstTakenAgain && !world.ballHeld(0));
     // Both can be held at once, by the same hole or by different ones.
-    world.resetBall(0, table::kBlackHole, {0.0F, 0.0F});
+    world.resetBall(0, table::kHoles[table::kHangarHole].center, {0.0F, 0.0F});
     world.step(kStep);
-    CHECK(world.ballHeld(0) && world.heldHole(0) == 3 && world.ballHeld(1));
+    CHECK(world.ballHeld(0) && world.heldHole(0) == table::kHangarHole && world.ballHeld(1));
     // Releasing one leaves the other where it is.
     world.releaseBall(1, kOpenField, {0.0F, 0.0F});
     CHECK(!world.ballHeld(1) && world.ballHeld(0));
@@ -374,34 +377,33 @@ void testSeveralBalls() {
     CHECK(world.ballHeld(0) && world.ballVelocity(0).x == 0.0F);
   }
 
-  {  // The closed lane gate stops a ball coming up the lane, unless that
-     // ball has been given the pass.
-    for (const bool pass : {false, true}) {
+  {  // The inner arch is one-sided: a ball coming up the launch channel
+     // behind it passes out onto the field, whichever slot it is in and
+     // whatever else is on the table, and no ball gets back in from the
+     // field. There is no gate to open or shut.
+    for (const std::size_t slot : {std::size_t{0}, std::size_t{2}}) {
       PhysicsWorld world;
-      world.setLaneGateClosed(true);
-      world.setBallPassesGate(0, pass);
-      CHECK(world.ballPassesGate(0) == pass);
-      world.resetBall(0, table::kBallStart, {0.0F, -1500.0F});
+      world.resetBall(0, kOpenField, {0.0F, 0.0F});
+      if (slot != 0) {
+        CHECK(world.activateBall(slot, table::kBallStart, {0.0F, 0.0F}));
+      }
+      world.resetBall(slot, table::kBallStart, {0.0F, -1500.0F});
       bool out = false;
       for (int i = 0; i < 240 && !out; ++i) {
         world.step(kStep);
-        out = world.ballPosition(0).x < table::kLaneGateCloseX;
+        out = table::inPlayArea(world.ballPosition(slot));
       }
-      CHECK(out == pass);
-      // Taking the pass back makes the gate solid for it again.
-      world.setBallPassesGate(0, false);
-      CHECK(!world.ballPassesGate(0));
-      if (pass) {
-        const Vec2 mid = (table::kLaneGate.a + table::kLaneGate.b) * 0.5F;
-        world.resetBall(0, mid + Vec2{-40.0F, 0.0F}, {900.0F, 0.0F});
-        bool inLane = false;
-        for (int i = 0; i < 60; ++i) {
-          world.step(kStep);
-          inLane = inLane || (world.ballPosition(0).x > table::kLaneWallX + table::kBallRadius &&
-                              world.ballPosition(0).y > table::kLaneWallTopY);
-        }
-        CHECK(!inLane);
+      CHECK(out);
+      // Straight back at the arch where it came through.
+      world.resetBall(slot, {540.0F, 160.0F}, {900.0F, -300.0F});
+      bool inLane = false;
+      for (int i = 0; i < 90; ++i) {
+        world.step(kStep);
+        const Vec2 p = world.ballPosition(slot);
+        inLane =
+            inLane || (p.x > table::kLaneWallX + table::kBallRadius && p.y > table::kLaneWallTopY);
       }
+      CHECK(!inLane);
     }
   }
 
@@ -528,7 +530,7 @@ void testSeveralBalls() {
     CHECK(countEvents(world, PhysicsEvent::Type::Enter, 1) == 1);
     world.deactivateBall(1);
 
-    const table::Circle& bumper = table::kBumpers[7].shape;
+    const table::Circle& bumper = table::kBumpers[1].shape;
     const Vec2 touching = bumper.center + Vec2{bumper.radius + table::kBallRadius + 0.5F, 0.0F};
     for (int round = 0; round < 2; ++round) {
       CHECK(world.activateBall(1, touching, {0.0F, 0.0F}));
@@ -537,11 +539,11 @@ void testSeveralBalls() {
       world.deactivateBall(1);
     }
 
-    const table::Hole& chute = table::kHoles[4];
+    const table::Hole& chute = table::kHoles[table::kScoopHole];
     CHECK(world.activateBall(2, chute.center, {0.0F, 0.0F}));
     world.step(kStep);
     CHECK(world.ballHeld(2));
-    world.releaseBall(2, chute.exitPosition, {0.0F, 0.0F});  // The hole now ignores it.
+    world.releaseBall(2, chute.center, {0.0F, 0.0F});  // The hole now ignores it.
     world.deactivateBall(2);
     CHECK(world.activateBall(2, chute.center, {0.0F, 0.0F}));
     world.step(kStep);
@@ -554,7 +556,7 @@ void testSeveralBalls() {
      // kick comes in the last slice of a step: hence every start within one
      // step's travel is tried.
     for (std::size_t slot = 0; slot < table::kMaxBalls; ++slot) {
-      const table::Circle& bumper = table::kBumpers[7].shape;
+      const table::Circle& bumper = table::kBumpers[1].shape;
       int kicks = 0;
       bool capped = true;
       for (float aside = 34.0F; aside <= 36.5F; aside += 0.5F) {
@@ -580,30 +582,33 @@ void testSeveralBalls() {
 
   {  // A ball in a hole is off the table: a ball passing close by is not
      // closing on anything, and moves exactly as if the hole were empty.
-    const table::Hole& hole = table::kHoles[0];
-    const Vec2 from = hole.center + Vec2{110.0F, -20.0F};
+     // A ramp's mouth is in the open, and a ball falling back through it
+     // is not taken.
+    const table::Hole& hole = table::kHoles[table::kSkywayHole];
+    const Vec2 from = hole.center + Vec2{-8.0F, -110.0F};
     PhysicsWorld occupied;
     PhysicsWorld empty;
-    occupied.resetBall(0, hole.center, {0.0F, 0.0F});
+    occupied.resetBall(0, hole.center + Vec2{0.0F, 4.0F}, {0.0F, -900.0F});
     empty.deactivateBall(0);
     occupied.step(kStep);
     empty.step(kStep);
     CHECK(occupied.ballHeld(0));
-    CHECK(occupied.activateBall(1, from, {-2500.0F, 0.0F}));
-    CHECK(empty.activateBall(1, from, {-2500.0F, 0.0F}));
+    const Vec2 heldAt = occupied.ballPosition(0);
+    CHECK(occupied.activateBall(1, from, {0.0F, 2500.0F}));
+    CHECK(empty.activateBall(1, from, {0.0F, 2500.0F}));
     bool identical = true;
     float nearest = 1.0e9F;
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 8; ++i) {
       occupied.step(kStep);
       empty.step(kStep);
       const Vec2 a = occupied.ballPosition(1);
       const Vec2 b = empty.ballPosition(1);
       identical = identical && a.x == b.x && a.y == b.y && occupied.events().empty();
-      nearest = std::min(nearest, length(a - hole.center));
+      nearest = std::min(nearest, length(a - heldAt));
     }
     CHECK(identical);
     CHECK(nearest < 2.0F * table::kBallRadius && !occupied.ballHeld(1));
-    CHECK(occupied.ballPosition(1).x < hole.center.x);  // It went past.
+    CHECK(occupied.ballPosition(1).y > hole.center.y);  // It went past.
   }
 
   {  // Three balls loose on the table: the same world twice gives the same
@@ -611,9 +616,9 @@ void testSeveralBalls() {
     PhysicsWorld a;
     PhysicsWorld b;
     for (PhysicsWorld* world : {&a, &b}) {
-      world->resetBall(0, {300.0F, 300.0F}, {400.0F, -200.0F});
-      CHECK(world->activateBall(1, {420.0F, 420.0F}, {-300.0F, 100.0F}));
-      CHECK(world->activateBall(2, {250.0F, 500.0F}, {100.0F, -700.0F}));
+      world->resetBall(0, {300.0F, 520.0F}, {400.0F, -200.0F});
+      CHECK(world->activateBall(1, {420.0F, 560.0F}, {-300.0F, 100.0F}));
+      CHECK(world->activateBall(2, {250.0F, 600.0F}, {100.0F, -700.0F}));
     }
     bool identical = true;
     for (int i = 0; i < 120 * 20 && identical; ++i) {
@@ -650,11 +655,11 @@ void testPhysics() {
 
   {  // Gravity pulls down the screen (positive y).
     PhysicsWorld world;
-    world.resetBall({table::kFieldCenterX, 400.0F}, {0.0F, 0.0F});
+    world.resetBall({table::kFieldCenterX, 600.0F}, {0.0F, 0.0F});
     for (int i = 0; i < 30; ++i) {
       world.step(kStep);
     }
-    CHECK(world.ballPosition().y > 400.0F);
+    CHECK(world.ballPosition().y > 600.0F);
     CHECK(world.ballVelocity().y > 0.0F);
   }
 
@@ -666,7 +671,8 @@ void testPhysics() {
       PhysicsWorld world;
       const float angle = rng.unit() * 6.2831853F;
       const float speed = 1000.0F + rng.unit() * 9000.0F;  // Up to 100 m/s requested.
-      const Vec2 origin{120.0F + rng.unit() * 500.0F, 150.0F + rng.unit() * 450.0F};
+      // Anywhere on the field below the arch, clear of the circuit walls.
+      const Vec2 origin{120.0F + rng.unit() * 470.0F, 310.0F + rng.unit() * 290.0F};
       world.resetBall(origin, {std::cos(angle) * speed, std::sin(angle) * speed});
       for (int i = 0; i < 240; ++i) {
         world.step(kStep);

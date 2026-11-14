@@ -1,57 +1,43 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
 
 #include "core/DisplayText.hpp"
-#include "core/Missions.hpp"
 #include "core/Sound.hpp"
 #include "core/TableLayout.hpp"
 
 namespace pinball {
 
-// Point values. Everything a table feature awards is multiplied by the field
-// multiplier, except the end-of-ball bonus which says so itself.
+// Point values. Provisional: one flat value for each thing the ball can do
+// on the table, so that a game has a score while the table's own rule set
+// (courses, multiball, combos, bonus) is still to come.
 namespace points {
-inline constexpr std::uint64_t kAttackBumper[4] = {500, 1000, 1500, 2000};
-inline constexpr std::uint64_t kEngineBumper = 1500;
-inline constexpr std::uint64_t kSatelliteBumper = 1000;
-inline constexpr std::uint64_t kSlingshot = 500;
-inline constexpr std::uint64_t kTarget = 750;
-inline constexpr std::uint64_t kReEntryLane = 5000;
-inline constexpr std::uint64_t kReEntryComplete = 10000;
-inline constexpr std::uint64_t kInlane = 5000;
-inline constexpr std::uint64_t kBonusLane = 20000;
-inline constexpr std::uint64_t kWormhole = 2000;
-inline constexpr std::uint64_t kBlackHole = 20000;
-inline constexpr std::uint64_t kHyperspace[3] = {10000, 20000, 30000};
-inline constexpr std::uint64_t kRamp = 5000;
-inline constexpr std::uint64_t kReflexShot = 25000;
-inline constexpr std::uint64_t kBoosterBank = 5000;
-inline constexpr std::uint64_t kMedalBank[3] = {10000, 50000, 100000};
-inline constexpr std::uint64_t kMultiplierBank = 5000;
-inline constexpr std::uint64_t kJackpot = 500000;
-inline constexpr std::uint64_t kBonusPerHit = 250;
+inline constexpr std::uint64_t kBumper = 1000;
+inline constexpr std::uint64_t kSlingshot = 250;
+inline constexpr std::uint64_t kTarget = 2500;
+inline constexpr std::uint64_t kBayDoor = 2000;
+inline constexpr std::uint64_t kRollCallLane = 3000;
+inline constexpr std::uint64_t kReturnLane = 1000;
+inline constexpr std::uint64_t kBriefingRoom = 5000;
+inline constexpr std::uint64_t kHangar = 10000;
+inline constexpr std::uint64_t kRamp = 6000;
 inline constexpr std::uint64_t kMaxScore = 999'999'999'999ULL;
-// Awards that climb in steps never step down.
-static_assert(std::ranges::is_sorted(kAttackBumper) && std::ranges::is_sorted(kHyperspace) &&
-              std::ranges::is_sorted(kMedalBank));
 }  // namespace points
 
-// The rules of the game: scoring, lights, balls and awards. It knows nothing
-// about physics. Game tells it what the ball did and asks it what to show.
+// The rules of the game: scoring, balls and messages. It knows nothing about
+// physics. Game tells it what the ball did and asks it what to show.
+//
+// This is a provisional rule set for the new table: every element scores a
+// flat value, a game is three balls, the ball save and the tilt work as they
+// always have. Nothing lights, there are no courses and rank is never earned.
 class Rules {
  public:
   static constexpr int kBallsPerGame = 3;
-  static constexpr int kMaxExtraBalls = 5;
-  static constexpr std::array<int, 5> kFieldMultipliers{1, 2, 3, 5, 10};
   // A ball that drains this soon after entering play is returned for free.
   static constexpr double kBallSaveSeconds = 6.0;
-  // Repeating the ramp or the hyperspace chute within this window is a reflex shot.
-  static constexpr double kReflexSeconds = 5.0;
   static constexpr double kMessageSeconds = 3.0;
   // Tilt: each nudge adds one unit of heat, which cools at one unit per
   // kTiltCoolSeconds. Reaching kTiltLimit tilts the table for the rest of
@@ -60,13 +46,11 @@ class Rules {
   static constexpr double kTiltLimit = 2.5;
   static constexpr double kTiltCoolSeconds = 2.5;
 
-  static_assert(kFieldMultipliers.front() == 1 && std::ranges::is_sorted(kFieldMultipliers));
-
-  enum class DrainResult : std::uint8_t { BallSaved, ShootAgain, NextBall, GameOver };
+  enum class DrainResult : std::uint8_t { BallSaved, NextBall, GameOver };
 
   explicit Rules(double stepSeconds) noexcept;
 
-  // Begins a new game: ball one, score zero, everything unlit.
+  // Begins a new game: ball one, score zero.
   void startGame() noexcept;
 
   // --- What the ball did. Indices are into the TableLayout arrays; out of
@@ -74,20 +58,19 @@ class Rules {
   void onBumper(std::size_t index) noexcept;
   void onSlingshot(std::size_t index) noexcept;
   void onTarget(std::size_t index) noexcept;
+  void onDropTarget(std::size_t index) noexcept;
   void onRollover(std::size_t index) noexcept;
   void onHole(std::size_t index) noexcept;
   // The launched ball has left the lane and entered play. Once per ball in
   // play: it arms the ball save.
   void onBallInPlay() noexcept;
   // The ball is back on the plunger without having drained (Game's fail-safe
-  // for a lost ball). It is out of play until launched again: fuel stops
-  // burning, nudges stop counting, and a tilt is cleared so that the plunger
-  // works. Nothing is scored or forfeited and the ball number stays.
+  // for a lost ball). It is out of play until launched again: nudges stop
+  // counting, and a tilt is cleared so that the plunger works. Nothing is
+  // scored or forfeited and the ball number stays.
   void onBallReturned() noexcept;
   // The ball went down the drain. Says what happens next.
   DrainResult onDrain() noexcept;
-  // A flipper button went down: lit re-entry lanes rotate that way.
-  void onFlipper(bool left) noexcept;
   // The player shoved the table. Returns true if the shove should move the
   // ball: false once tilted or when the game is over.
   bool onNudge() noexcept;
@@ -97,32 +80,17 @@ class Rules {
   // --- What to show.
   std::uint64_t score() const noexcept { return score_; }
   int ball() const noexcept { return ball_; }
-  int extraBalls() const noexcept { return extraBalls_; }
   bool gameOver() const noexcept { return gameOver_; }
   // Tilted: the controls are dead and nothing scores until the ball drains.
   bool tilted() const noexcept { return tilted_; }
   // Tilt heat as a fraction of the limit, 0 to 1. Drives a warning light.
   double tiltWarning() const noexcept { return tiltHeat_ / kTiltLimit; }
-  int fieldMultiplier() const noexcept { return kFieldMultipliers[multiplierLevel_]; }
-  std::uint64_t bonus() const noexcept { return bonus_; }
   bool ballSaveActive() const noexcept { return ballSaveSteps_ > 0; }
   // Between entering play and draining (or being returned to the plunger).
   bool ballInPlay() const noexcept { return ballInPlay_; }
-  bool jackpotLit() const noexcept { return jackpotLit_; }
-  bool bonusLaneLit() const noexcept { return bonusLaneLit_; }
-  int attackBumperLevel() const noexcept { return attackLevel_; }
-  int boosterLevel() const noexcept { return boosterLevel_; }
-  int medalLevel() const noexcept { return medalLevel_; }
-  int hyperspaceLevel() const noexcept { return hyperspaceLevel_; }
-  bool targetLit(std::size_t index) const noexcept {
-    return index < targetLit_.size() && targetLit_[index];
-  }
-  // Re-entry lane lights, left to right.
-  bool laneLit(std::size_t index) const noexcept {
-    return index < laneLit_.size() && laneLit_[index];
-  }
-  // Rank, mission and fuel.
-  const MissionControl& missions() const noexcept { return missions_; }
+  // Index into the rank names (core/Missions.hpp). Rank is earned by passing
+  // courses, which this rule set does not have: always the first.
+  std::size_t rank() const noexcept { return 0; }
 
   // Sounds the rules asked for since the last call. Calling it clears them.
   SoundSet takeSounds() noexcept {
@@ -138,54 +106,25 @@ class Rules {
   static constexpr display::Message kGameOverMessage{"GAME OVER"};
 
  private:
-  void award(std::uint64_t basePoints) noexcept;
-  void addScore(std::uint64_t amount) noexcept;
-  void addBonus() noexcept;
+  void award(std::uint64_t points) noexcept;
   // Every message is checked against the display when it is compiled.
   void say(display::Message text) noexcept;
   void cue(Sound sound) noexcept { sounds_ |= soundBit(sound); }
-  // A mission announcement. It is not replaced by lesser messages from the
-  // same event (the bank award that the completing hit also earned, say).
-  void sayMission(display::Message text) noexcept;
-  // False if the most allowed are already held.
-  bool awardExtraBall() noexcept;
-  void clearBank(table::TargetBank bank) noexcept;
-  void completeBank(table::TargetBank bank) noexcept;
   void resetBall() noexcept;
-  void report(GoalSet goals) noexcept;
-  void handleMission(const MissionControl::Outcome& outcome) noexcept;
   std::uint32_t stepsFor(double seconds) const noexcept;
 
   double stepSeconds_;
-  MissionControl missions_;
   std::uint64_t score_ = 0;
-  std::uint64_t bonus_ = 0;
   int ball_ = 1;
-  int extraBalls_ = 0;
   bool gameOver_ = false;
   bool tilted_ = false;
   double tiltHeat_ = 0.0;
-  std::size_t multiplierLevel_ = 0;
-
-  std::array<bool, table::kTargets.size()> targetLit_{};
-  std::array<bool, 3> laneLit_{};
-  int attackLevel_ = 0;
-  int boosterLevel_ = 0;
-  int medalLevel_ = 0;
-  int hyperspaceLevel_ = 0;
-  bool jackpotLit_ = false;
-  bool bonusLaneLit_ = false;
 
   std::uint32_t ballSaveSteps_ = 0;
   // The save is offered once per ball, not after every saved ball.
   bool ballSaveUsed_ = false;
-  // Between entering play and draining. Mission fuel only burns then.
+  // Between entering play and draining.
   bool ballInPlay_ = false;
-  bool missionMessageThisStep_ = false;
-  // A mission ran out of fuel while the display was held by TILT.
-  bool abortUnannounced_ = false;
-  std::uint32_t rampReflexSteps_ = 0;
-  std::uint32_t hyperspaceReflexSteps_ = 0;
   std::uint32_t messageSteps_ = 0;
   std::string_view message_;
   SoundSet sounds_ = 0;

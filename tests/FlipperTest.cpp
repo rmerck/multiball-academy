@@ -176,7 +176,7 @@ void testFlippers() {
   {  // A ball rolling down the inlane feeds onto the resting flipper smoothly:
      // it stays close to the bat rather than hopping off the pivot. Swept
      // over start positions, so over arrival speeds.
-    const table::Capsule& guide = table::kLeftGuideLower;
+    const table::Capsule& guide = table::kLeftDividerLower;
     const table::Flipper& f = table::kLeftFlipper;
     const Vec2 run = guide.b - guide.a;
     const float runLength = std::sqrt(run.x * run.x + run.y * run.y);

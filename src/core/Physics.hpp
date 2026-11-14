@@ -14,7 +14,7 @@ namespace pinball {
 
 // Something that happened to a ball during a step.
 struct PhysicsEvent {
-  // Hit: touched a bumper, slingshot face or target.
+  // Hit: touched a bumper, slingshot face, target or bay door.
   // Enter: rolled onto a rollover.
   // Capture: dropped into a hole. The ball is held until releaseBall().
   // BallHit: two balls touched. There is no element; ball is the lower slot
@@ -101,16 +101,14 @@ class PhysicsWorld {
   static constexpr float kPlungerChargeSeconds = 1.0F;
   // These are plunger speeds in m/s. The ball leaves about 1.3 times faster,
   // because it rebounds off the moving face with its own restitution.
-  static constexpr float kPlungerMinSpeed = 3.0F;   // Lightest tap.
+  // The lightest tap must still send the ball out of the lane: below about
+  // 9.5 m/s it cannot climb the launch curve and comes back to the plunger.
+  static constexpr float kPlungerMinSpeed = 9.6F;   // Lightest tap.
   static constexpr float kPlungerMaxSpeed = 12.5F;  // Full draw.
 
   void setPlunger(bool held) noexcept;
   // How far the plunger is drawn back, in pixels: 0 at rest.
   [[nodiscard]] float plungerPull() const noexcept { return plungerPull_; }
-
-  // Opens or closes the one-way gate at the top of the launch lane.
-  void setLaneGateClosed(bool closed);
-  [[nodiscard]] bool laneGateClosed() const noexcept { return laneGateClosed_; }
 
   // Speed added to a ball, in m/s, when it touches a bumper.
   static constexpr float kBumperKickSpeed = 5.5F;
@@ -123,6 +121,13 @@ class PhysicsWorld {
   // Restitution between two balls: steel on steel is livelier than a ball
   // against the table.
   static constexpr float kBallBallRestitution = 0.85F;
+  // Friction between two balls: none. Polished steel slides on polished
+  // steel, and with any grip between them two balls arriving together at a
+  // narrowing lane (the mouth of an inlane, the gap between the flippers)
+  // lean on each other and on the walls and stay there: the grip between
+  // the balls is what holds the arch up. Each ball keeps its friction
+  // against the table.
+  static constexpr float kBallBallFriction = 0.0F;
 
   // Events from the most recent step, in the order they happened. Cleared at
   // the start of each step.
@@ -189,14 +194,6 @@ class PhysicsWorld {
   [[nodiscard]] bool ballIsSane(std::size_t ball) const;
   [[nodiscard]] bool ballIsSane() const { return ballIsSane(0); }
 
-  // Lets a ball through the closed lane gate, or stops it again. For a ball
-  // that must leave the launch lane while others are in play and the gate
-  // is shut behind them. Ignored for an inactive slot.
-  void setBallPassesGate(std::size_t ball, bool passes);
-  [[nodiscard]] bool ballPassesGate(std::size_t ball) const noexcept {
-    return ball < balls_.size() && balls_[ball].passesGate;
-  }
-
  private:
   void buildTable();
   void buildBall(std::size_t slot, bool enabled);
@@ -246,7 +243,6 @@ class PhysicsWorld {
     bool active = false;
     bool held = false;
     std::size_t heldHole = 0;
-    bool passesGate = false;
     // Bumpers the ball is touching, so each touch kicks once.
     std::array<bool, table::kBumpers.size()> touchingBumper{};
     // Rollovers the ball is currently on, so each pass reports once.
@@ -258,8 +254,6 @@ class PhysicsWorld {
 
   PhysicsEventList events_;
 
-  b2BodyId laneGate_{};
-  bool laneGateClosed_ = false;
 };
 
 }  // namespace pinball

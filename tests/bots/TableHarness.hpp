@@ -1,0 +1,159 @@
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+#include "bots/Bots.hpp"
+#include "core/Game.hpp"
+#include "core/Input.hpp"
+#include "core/TableLayout.hpp"
+#include "core/Vec2.hpp"
+
+// A game on the bench: one Game, driven a step at a time, with everything
+// the acceptance tests of TABLE.md section 5 need to see written down as it
+// happens. It drives the real Game, rules and all, through its public
+// interface and the test seam; nothing here knows what the rules are.
+namespace pinball::bots {
+
+// What a ball touched, or how it left. The order is the shots from left to
+// right, then the rest.
+enum class Touch : std::uint8_t {
+  None,
+  CircuitLeft,  // Crossed the left circuit's mouth going up.
+  Runway,       // Taken by the left ramp.
+  TargetLeft,   // Turbo target, left.
+  Door,         // A bay door.
+  Hangar,       // Taken by the hangar.
+  Briefing,     // Taken by the scoop.
+  Turbine,      // Crossed the spinner going up.
+  TargetRight,
+  Skyway,  // Taken by the right ramp.
+  CircuitRight,
+  Bumper,
+  Slingshot,
+  RollCall,  // A roll call lane.
+  InlaneLeft,
+  InlaneRight,
+  OutlaneLeft,
+  OutlaneRight,
+  DrainCentre,  // Left between the flippers.
+  Flipper,      // Only as a first touch: see firstTouch().
+  Count,
+};
+inline constexpr std::size_t kTouchCount = static_cast<std::size_t>(Touch::Count);
+[[nodiscard]] const char* touchName(Touch touch) noexcept;
+
+struct TouchEvent {
+  std::uint64_t step = 0;
+  Touch touch = Touch::None;
+  float speed = 0.0F;
+  std::uint8_t ball = 0;
+};
+
+class TableHarness {
+ public:
+  TableHarness();
+
+  [[nodiscard]] Game& game() noexcept { return game_; }
+  [[nodiscard]] const Game& game() const noexcept { return game_; }
+
+  // The controls, applied by the next advance().
+  bool left = false;
+  bool right = false;
+  bool plunger = false;
+  // Lets a bot set the flippers for the next step.
+  void act(Bot& bot) {
+    const Flippers flippers = bot.act(sense());
+    left = flippers.left;
+    right = flippers.right;
+  }
+  // What a bot may see: the balls on the table that are not in a hole.
+  [[nodiscard]] Sense sense() const;
+
+  // Puts the ball of a live slot somewhere, moving. inPlay says whether it
+  // counts as having left the launch channel.
+  void put(std::size_t slot, Vec2 position, Vec2 velocity, bool inPlay);
+  // Puts another ball on the table, in play. Returns its slot or kMaxBalls.
+  std::size_t add(Vec2 position, Vec2 velocity);
+
+  // One step of the game. Returns how the ball in slot 0 left the table
+  // during it (an outlane or DrainCentre), or None.
+  Touch advance();
+  [[nodiscard]] std::uint64_t step() const noexcept { return step_; }
+
+  // Everything touched, in order. A long run may clear it.
+  std::vector<TouchEvent> events;
+  // How many of each.
+  std::array<std::uint64_t, kTouchCount> count{};
+  std::array<std::uint64_t, table::kBumpers.size()> bumperHits{};
+  std::array<std::uint64_t, table::kTargets.size()> targetHits{};
+  std::array<std::uint64_t, table::kDropTargets.size()> doorHits{};
+  std::array<std::uint64_t, table::kRollovers.size()> rolloverHits{};
+  std::array<std::uint64_t, table::kHoles.size()> holeHits{};
+  std::array<std::uint64_t, table::kSlingshots.size()> slingHits{};
+  // Circuits, left then right: mouth crossed going up; top of the arch
+  // crossed the same way round; far inlane reached.
+  std::array<std::uint64_t, 2> circuitEntered{};
+  std::array<std::uint64_t, 2> circuitTop{};
+  std::array<std::uint64_t, 2> circuitDone{};
+  // Steps on which a ball was against a flipper.
+  std::uint64_t flipperTouches = 0;
+  // Drains of every ball, by way out: centre, left outlane, right outlane.
+  std::array<std::uint64_t, 3> drains{};
+  // Balls that left the table any other way (the game's fail-safe).
+  std::uint64_t lostBalls = 0;
+  // Stuck balls: a free ball in play that stayed within kStuckRadius for
+  // kStuckSteps, not cradled on a raised flipper. Each is given a shove.
+  static constexpr float kStuckRadius = 12.0F;
+  static constexpr int kStuckSteps = 600;
+  std::uint64_t stuck = 0;
+  std::vector<Vec2> stuckAt;
+  // Steps on which a ball in play was inside the launch lane.
+  std::uint64_t laneIntrusions = 0;
+  // Steps on which a ball was faster than the speed cap allows.
+  std::uint64_t overSpeed = 0;
+
+  // Whether p is against flipper i as it stands now, to within slack.
+  [[nodiscard]] bool nearFlipper(Vec2 p, std::size_t i, float slack = 3.0F) const;
+  // Whether the ball in a slot has touched a flipper since it was put there.
+  [[nodiscard]] std::uint64_t lastFlipperStep(std::size_t slot) const noexcept {
+    return slot < balls_.size() ? balls_[slot].flipperStep : 0;
+  }
+  [[nodiscard]] Vec2 position(std::size_t slot) const;
+  [[nodiscard]] Vec2 velocity(std::size_t slot) const;
+  [[nodiscard]] bool live(std::size_t slot) const;
+  [[nodiscard]] bool held(std::size_t slot) const;
+
+ private:
+  void log(Touch touch, float speed, std::size_t ball);
+  void watchBall(std::size_t slot);
+
+  struct Ball {
+    bool tracked = false;
+    Vec2 previous{};
+    Vec2 anchor{};
+    int still = 0;
+    bool circuitLeft = false;  // Entered that mouth going up, not yet resolved.
+    bool circuitRight = false;
+    std::uint64_t outlaneStep = 0;  // One more than the step; 0 if never.
+    Touch outlane = Touch::None;
+    std::uint64_t flipperStep = 0;  // One more than the step; 0 if never.
+  };
+
+  Game game_;
+  std::array<Ball, table::kMaxBalls> balls_{};
+  std::uint64_t step_ = 0;
+};
+
+// The first thing a ball meets, for the launch and exit tests: the first
+// touch event, or a flipper, or a drain, whichever comes first. Circuit
+// mouths and the spinner are passed through, not met, and are skipped.
+struct FirstTouch {
+  Touch touch = Touch::None;  // None: nothing within the time allowed.
+  int steps = 0;
+};
+[[nodiscard]] FirstTouch firstTouch(TableHarness& harness, int maxSteps);
+
+}  // namespace pinball::bots

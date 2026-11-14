@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 
@@ -18,23 +19,14 @@ constexpr float kStep = 1.0F / 120.0F;
 
 Vec2 midpoint(const table::Capsule& c) { return (c.a + c.b) * 0.5F; }
 
-// A unit vector from which to approach a target so the shot is square to its
-// face and comes from open playfield.
+// A unit vector square to a turbo target's face, pointing at it from the
+// nest (the targets are set into the rim, facing in).
 Vec2 approachDirection(const table::Target& target) {
-  switch (target.bank) {
-    case table::TargetBank::Mission:
-      return {-1.0F, 0.0F};  // On the left wall: travel left.
-    case table::TargetBank::Booster:
-      return {1.0F, 0.0F};  // On the right wall: travel right.
-    case table::TargetBank::Medal:
-      return {0.0F, -1.0F};  // Faces the flippers: travel up.
-    case table::TargetBank::Multiplier:
-      break;
-  }
-  // Diagonal bank on the upper left: travel up and left, square to it.
   const Vec2 d = target.shape.b - target.shape.a;
   const float len = std::sqrt(d.x * d.x + d.y * d.y);
-  return {d.y / len, -d.x / len};
+  const Vec2 normal{d.y / len, -d.x / len};
+  const Vec2 fromNest = midpoint(target.shape) - Vec2{table::kFieldCenterX, 230.0F};
+  return normal.x * fromNest.x + normal.y * fromNest.y > 0.0F ? normal : normal * -1.0F;
 }
 
 }  // namespace
@@ -44,25 +36,26 @@ void testTargets() {
     CHECK(table::isValid({table::ElementKind::Target, 0}));
     CHECK(!table::isValid({table::ElementKind::Target, 200}));
     CHECK(!table::isValid({table::ElementKind::None, 0}));
+    CHECK(table::isValid({table::ElementKind::DropTarget, 2}));
+    CHECK(!table::isValid({table::ElementKind::DropTarget, 3}));
     CHECK(table::elementCount(table::ElementKind::Slingshot) == 2);
-    std::size_t perBank[table::kTargetBankCount] = {};
-    for (const table::Target& t : table::kTargets) {
-      ++perBank[static_cast<std::size_t>(t.bank)];
-    }
-    CHECK(perBank[static_cast<std::size_t>(table::TargetBank::Booster)] == 3);
-    CHECK(perBank[static_cast<std::size_t>(table::TargetBank::Medal)] == 3);
-    CHECK(perBank[static_cast<std::size_t>(table::TargetBank::Mission)] == 3);
-    CHECK(perBank[static_cast<std::size_t>(table::TargetBank::Multiplier)] == 2);
+    CHECK(table::elementCount(table::ElementKind::Target) == 2);
+    CHECK(table::elementCount(table::ElementKind::DropTarget) == 3);
+    // The two turbo targets mirror each other.
+    CHECK(table::kTargets[0].id == table::TargetId::NestLeft);
+    CHECK(table::kTargets[1].id == table::TargetId::NestRight);
+    CHECK(midpoint(table::kTargets[0].shape).x + midpoint(table::kTargets[1].shape).x ==
+          2.0F * table::kFieldCenterX);
   }
 
-  // A square shot at each target reports a hit on exactly that target first,
-  // and the ball bounces back.
+  // A square shot at each turbo target reports a hit on exactly that target
+  // first, and the ball bounces back.
   for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
     const table::Target& target = table::kTargets[i];
     const Vec2 dir = approachDirection(target);
     const Vec2 mid = midpoint(target.shape);
     PhysicsWorld world;
-    world.resetBall(mid - dir * 60.0F, dir * 900.0F);
+    world.resetBall(mid - dir * 50.0F, dir * 900.0F);
     bool hit = false;
     for (int step = 0; step < 60 && !hit; ++step) {
       world.step(kStep);
@@ -77,6 +70,48 @@ void testTargets() {
     CHECK(hit);
     const Vec2 v = world.ballVelocity();
     CHECK(v.x * dir.x + v.y * dir.y < 0.0F);
+  }
+
+  // The bay doors stand across the Hangar's mouth. A ball shot up at each
+  // reports a hit on that door, bounces back, and does not get into the
+  // Hangar behind it. (The third door is half behind the Briefing room's
+  // flare for a ball coming straight up: it is shot from the left, as the
+  // right flipper's shots come.)
+  for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
+    const Vec2 mid = midpoint(table::kDropTargets[i]);
+    const Vec2 from{mid.x - (i + 1 == table::kDropTargets.size() ? 18.0F : 0.0F), mid.y + 60.0F};
+    const Vec2 aim = mid - from;
+    const float reach = std::sqrt(aim.x * aim.x + aim.y * aim.y);
+    PhysicsWorld world;
+    world.resetBall(from, aim * (900.0F / reach));
+    bool hit = false;
+    for (int step = 0; step < 60; ++step) {
+      world.step(kStep);
+      for (const PhysicsEvent& e : world.events()) {
+        if (!hit) {
+          CHECK(e.element.kind == table::ElementKind::DropTarget);
+          CHECK(e.element.index == i);
+        }
+        hit = true;
+      }
+      CHECK(!world.ballHeld());
+      CHECK(world.ballPosition().y > table::kDoorY);
+    }
+    CHECK(hit);
+  }
+  {  // Nor between two doors, nor past the end of the bank: the mouth is shut.
+    for (int k = 0; k <= 40; ++k) {
+      const float x = table::kHangarLeft.a.x + 6.0F +
+                      static_cast<float>(k) *
+                          (table::kHangarRight.a.x - table::kHangarLeft.a.x - 12.0F) / 40.0F;
+      PhysicsWorld world;
+      world.resetBall({x, table::kDoorY + 70.0F}, {0.0F, -1400.0F});
+      for (int step = 0; step < 90; ++step) {
+        world.step(kStep);
+        CHECK(!world.ballHeld());
+        CHECK(world.ballPosition().y > table::kDoorY);
+      }
+    }
   }
 
   // Each slingshot kicks a ball that lands on the middle of its face, away
@@ -128,39 +163,69 @@ void testTargets() {
 
   {  // Accessors tolerate out-of-range indices.
     pinball::Game game;
-    CHECK(!game.targetLit(0));
-    CHECK(!game.targetLit(999));
     CHECK(game.slingshotFlash(999) == 0.0F);
   }
 
-  {  // No ledge on the wall-mounted banks: a ball running down either side
-     // wall, slow or fast, does not come to rest on the top target.
-    for (const float x : {table::kWallLeft + table::kBallRadius + 0.5F,
-                          table::kLaneWallX - table::kWallRadius - table::kBallRadius - 0.5F}) {
-      for (const float speed : {0.0F, 150.0F, 600.0F}) {
+  {  // A dead post takes the bounce out of a ball; an ordinary wall gives a
+     // good part of it back. Both struck square at the same speed.
+    const auto reboundFrom = [](const table::Capsule& wall, float side) {
+      const Vec2 mid = midpoint(wall);
+      PhysicsWorld world;
+      world.resetBall({mid.x + side * 40.0F, mid.y}, {-side * 600.0F, 0.0F});
+      float rebound = 0.0F;
+      for (int step = 0; step < 12; ++step) {
+        world.step(kStep);
+        rebound = std::max(rebound, world.ballVelocity().x * side);
+      }
+      return rebound;
+    };
+    const float dead = reboundFrom(table::kTurbineRail, 1.0F);
+    const float lively = reboundFrom(table::kHangarLeft, -1.0F);
+    CHECK(dead < 600.0F * table::kDeadPostRestitution * 1.5F);
+    CHECK(lively > 600.0F * 0.35F);
+    CHECK(std::ranges::find_if(table::kDeadPosts, [](const table::Capsule& post) {
+            return post.a.x == table::kTurbineRail.a.x && post.a.y == table::kTurbineRail.a.y;
+          }) != table::kDeadPosts.end());
+  }
+
+  {  // A slingshot vane is a wall from the circuit lane and nothing from the
+     // field: a ball in the lane cannot reach the slingshot's top through
+     // it, a ball from the field passes into the lane.
+    for (int side = 0; side < 2; ++side) {
+      const auto& vane = side == 0 ? table::kSlingVaneLeft : table::kSlingVaneRight;
+      const Vec2 mid = (vane[1] + vane[2]) * 0.5F;
+      const float out = side == 0 ? -1.0F : 1.0F;  // From the vane towards the lane.
+      {
         PhysicsWorld world;
-        world.resetBall({x, 400.0F}, {0.0F, speed});
-        int restingSteps = 0;
-        for (int step = 0; step < 120 * 6; ++step) {
+        world.resetBall({mid.x + out * 30.0F, mid.y}, {-out * 400.0F, 0.0F});
+        for (int step = 0; step < 20; ++step) {
           world.step(kStep);
-          const Vec2 p = world.ballPosition();
-          const Vec2 v = world.ballVelocity();
-          const bool nearBank = p.y > 470.0F && p.y < 640.0F && std::fabs(p.x - x) < 40.0F;
-          restingSteps = nearBank && v.x * v.x + v.y * v.y < 25.0F ? restingSteps + 1 : 0;
+          CHECK((world.ballPosition().x - mid.x) * out > table::kBallRadius - 4.0F);
         }
-        CHECK(restingSteps < 60);
+      }
+      {
+        PhysicsWorld world;
+        world.resetBall({mid.x - out * 30.0F, mid.y}, {out * 400.0F, 0.0F});
+        bool through = false;
+        for (int step = 0; step < 20; ++step) {
+          world.step(kStep);
+          through = through || (world.ballPosition().x - mid.x) * out > table::kBallRadius;
+        }
+        CHECK(through);
       }
     }
   }
 
-  {  // A ball dropped on the medal island's roof rolls off; it cannot rest there.
-    for (const float dx : {-40.0F, -10.0F, 0.5F, 12.0F, 45.0F}) {
+  {  // A ball dropped on the roofs of the Hangar and the Briefing room rolls
+     // off into a lane beside them; it cannot rest there.
+    for (float x = table::kHangarLeft.a.x - 6.0F; x <= table::kScoopRight.a.x + 6.0F; x += 7.5F) {
       PhysicsWorld world;
-      world.resetBall({table::kFieldCenterX + dx, 380.0F}, {0.0F, 0.0F});
-      for (int step = 0; step < 120 * 4; ++step) {
+      world.resetBall({x, 270.0F}, {0.0F, 0.0F});
+      for (int step = 0; step < 120 * 5; ++step) {
         world.step(kStep);
       }
-      CHECK(world.ballPosition().y > table::kMedalBankY + 20.0F);
+      CHECK(!world.ballHeld());
+      CHECK(world.ballPosition().y > 440.0F);
     }
   }
 }

@@ -5,6 +5,7 @@
 #include "Check.hpp"
 #include "Suites.hpp"
 #include "core/HighScores.hpp"
+#include "core/Missions.hpp"
 #include "core/InitialsEntry.hpp"
 #include "core/Rules.hpp"
 

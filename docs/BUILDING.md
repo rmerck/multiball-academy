@@ -176,7 +176,7 @@ cmake -DBUILD=build-ios-sim -P cmake/MakeIosPreseed.cmake
 
 ## Tests and CI
 
-`ctest` runs 119 tests, and 120 on macOS; 100 of them are the layout renders and checks (label `layout`), and one, `app_events`, is slow (`ctest -LE slow` leaves it out). Among the rest: the core unit tests (`core_tests`, no display needed), the file handling tests, the same file handling tests built without the system's single-call move-without-replace so that the `link()` fallback other systems use is run everywhere (`safe_files_fallback`), two asset checks, three offscreen render checks, a check that the snapshot tool replaces a symbolic link at its output name instead of writing through it, the layout dump check, a check that the recorded configure results for iOS hold only probe results, a headless run of the real game, and six rejected command lines. On macOS `bundle_layout` also checks the application bundle: a valid `Info.plist` with the identifier and version the game reports, the icon, the assets, and nothing but the game in `Contents/MacOS`. They need no display or audio device, and scratch files stay in the build directory, beside the bundle and never in it. A timed run (`--frames`) never opens the high score file, and on Linux the tests also point the per-user preferences directory into the build tree.
+`ctest` runs 120 tests, and 121 on macOS; 100 of them are the layout renders and checks (label `layout`), and one, `app_events`, is slow (`ctest -LE slow` leaves it out). Among the rest: the core unit tests (`core_tests`, no display needed), a check that the table's layout header uses none of the C library's mathematics (`table_layout_no_libm`), the file handling tests, the same file handling tests built without the system's single-call move-without-replace so that the `link()` fallback other systems use is run everywhere (`safe_files_fallback`), two asset checks, three offscreen render checks, a check that the snapshot tool replaces a symbolic link at its output name instead of writing through it, the layout dump check, a check that the recorded configure results for iOS hold only probe results, a headless run of the real game, and six rejected command lines. On macOS `bundle_layout` also checks the application bundle: a valid `Info.plist` with the identifier and version the game reports, the icon, the assets, and nothing but the game in `Contents/MacOS`. They need no display or audio device, and scratch files stay in the build directory, beside the bundle and never in it. A timed run (`--frames`) never opens the high score file, and on Linux the tests also point the per-user preferences directory into the build tree.
 
 Every pull request must pass seven CI jobs, all with warnings as errors. The first six build SDL3 and Box2D from the pinned sources, which are fetched and verified on every run. Only SDL's compiled objects are cached between runs, never source code, and only runs on `main` write the cache.
 
@@ -189,3 +189,21 @@ Every pull request must pass seven CI jobs, all with warnings as errors. The fir
 An eighth job, not required, builds and tests on Linux with clang and libc++ under sanitizers. libc++ is the standard library macOS uses, so a missing include shows up there before it breaks the macOS jobs.
 
 A ninth, `ios (simulator)`, also not required yet, builds the iOS application on a macOS 26 runner with Xcode 26.6, Release with warnings as errors and nothing signed, for the simulator and for a device. It checks both bundles with `tools/ios/check_bundle.sh` and runs the core and file handling tests inside a simulator with `tools/ios/simulator_tests.sh`. The game is started there for 300 frames and must report a good run and end by itself. It caches nothing; it configures from the recorded results described above when they match.
+
+### The table's acceptance suite
+
+The table is judged by bots: an idle one, a random one, a reflex player with a timing error of 3 to 8 simulation steps, and a scripted one that sweeps every flipper timing (`tests/bots`). The quick checks run inside `core_tests` with every build: no launch drains, every exit feeds a flipper or an inlane, no ball sticks with one, two or three balls in play, and the same seed plays the same game. The statistical criteria (ball times, drain split, shot windows, ten million steps with three balls) are a program of their own, `pinball_acceptance`, which plays about half a billion steps: about three quarters of an hour on two cores. It is built with everything else but its tests are registered only when asked for:
+
+```sh
+cmake -B build-acceptance -DCMAKE_BUILD_TYPE=Release -DPINBALL_ACCEPTANCE_TESTS=ON
+cmake --build build-acceptance --target pinball_acceptance
+ctest --test-dir build-acceptance -L acceptance -j 2 --output-on-failure
+```
+
+Or run it directly for the report as one table, all of it or the sections named (`launch shots lanes exits rest wedge p1 p2 p2saver stress`; `p2:5` is one timing error, `stress:p1` one bot; `--quick` cuts the samples to try it out):
+
+```sh
+build-acceptance/pinball_acceptance | grep '^ROW'
+```
+
+Each line is a criterion with its threshold, the measured value and a verdict. `FAIL` is a fairness or structural criterion not met, and the program then ends with status 1. `KNOWN-MISS` is a pacing criterion the design is known to miss: it is reported with its value and does not fail while it is no worse than its pin, the value recorded for it plus a margin for the size of the sample; beyond the pin it is a `FAIL`. `INFO` is measured for the record, and `DEFERRED` needs an element the game does not have yet. Use an optimized build without sanitizers. The thresholds are in `tests/AcceptanceMain.cpp`; change one only with the design. The suite runs in full once a week and on request (`.github/workflows/acceptance.yml`); it is not a required check.

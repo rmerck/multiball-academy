@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -50,7 +51,8 @@ table::ElementRef unpackElement(const void* data) noexcept {
   // Validate before trusting: only known kinds with in-range indices pass.
   // Rollovers and holes are detected by position and are never shape tags.
   for (const table::ElementKind kind :
-       {table::ElementKind::Bumper, table::ElementKind::Slingshot, table::ElementKind::Target}) {
+       {table::ElementKind::Bumper, table::ElementKind::Slingshot, table::ElementKind::Target,
+        table::ElementKind::DropTarget}) {
     if (kindValue == std::to_underlying(kind)) {
       const table::ElementRef ref{kind, index};
       return table::isValid(ref) ? ref : table::ElementRef{};
@@ -72,22 +74,32 @@ constexpr b2Vec2 toMeters(Vec2 p) noexcept { return {toMeters(p.x), toMeters(p.y
 
 bool isFinite(Vec2 v) noexcept { return std::isfinite(v.x) && std::isfinite(v.y); }
 
-// Collision categories. Everything collides with everything; the gate has a
-// category of its own only so that one ball can be told to ignore it.
-constexpr std::uint64_t kBallCategory = 0x2U;
-constexpr std::uint64_t kGateCategory = 0x4U;
-
 // Marks ball shapes for the restitution rule below.
 constexpr std::uint64_t kBallMaterial = 1U;
+// Marks dead posts and vanes: metal that takes the bounce out of a ball.
+constexpr std::uint64_t kDeadMaterial = 2U;
 
 // Box2D's own rule is the larger of the two values. Two balls get a value of
-// their own. A pure function: Box2D may call it from any step.
+// their own, and anything against a dead post gets the post's. A pure
+// function: Box2D may call it from any step.
 float mixRestitution(float restitutionA, std::uint64_t materialA, float restitutionB,
                      std::uint64_t materialB) {
   if (materialA == kBallMaterial && materialB == kBallMaterial) {
     return PhysicsWorld::kBallBallRestitution;
   }
+  if (materialA == kDeadMaterial || materialB == kDeadMaterial) {
+    return table::kDeadPostRestitution;
+  }
   return restitutionA > restitutionB ? restitutionA : restitutionB;
+}
+
+// Box2D's own rule is the geometric mean of the two values.
+float mixFriction(float frictionA, std::uint64_t materialA, float frictionB,
+                  std::uint64_t materialB) {
+  if (materialA == kBallMaterial && materialB == kBallMaterial) {
+    return PhysicsWorld::kBallBallFriction;
+  }
+  return std::sqrt(frictionA * frictionB);
 }
 
 b2ShapeDef wallShapeDef() {
@@ -151,6 +163,7 @@ PhysicsWorld::PhysicsWorld() {
   }
 
   b2World_SetRestitutionCallback(world_, mixRestitution);
+  b2World_SetFrictionCallback(world_, mixFriction);
 
   // The order of creation fixes Box2D's internal ids, and the order in which
   // it solves contacts follows from them. The first ball stays where it
@@ -179,29 +192,67 @@ void PhysicsWorld::buildTable() {
   bodyDef.type = b2_staticBody;
   table_ = b2CreateBody(world_, &bodyDef);
 
-  // Outer shell: one closed chain, which avoids ghost collisions at the joints.
-  const std::vector<Vec2> outline = table::outerBoundary();
-  std::vector<b2Vec2> points;
-  points.reserve(outline.size());
-  for (const Vec2 p : outline) {
-    points.push_back(toMeters(p));
-  }
+  // Chains are one-sided and have no joints for a ball to catch on. Each is
+  // wound so that the ball's side is the solid one.
   b2SurfaceMaterial material = b2DefaultSurfaceMaterial();
   material.friction = kWallFriction;
   material.restitution = kWallRestitution;
-  b2ChainDef chainDef = b2DefaultChainDef();
-  chainDef.points = points.data();
-  chainDef.pointCount = static_cast<int>(points.size());
-  chainDef.materials = &material;
-  chainDef.materialCount = 1;
-  chainDef.isLoop = true;
-  b2CreateChain(table_, &chainDef);
+  const auto addLoop = [this, &material](std::span<const Vec2> outline) {
+    std::vector<b2Vec2> points;
+    points.reserve(outline.size());
+    for (const Vec2 p : outline) {
+      points.push_back(toMeters(p));
+    }
+    b2ChainDef chainDef = b2DefaultChainDef();
+    chainDef.points = points.data();
+    chainDef.pointCount = static_cast<int>(points.size());
+    chainDef.materials = &material;
+    chainDef.materialCount = 1;
+    chainDef.isLoop = true;
+    b2CreateChain(table_, &chainDef);
+  };
+  // An open chain: the first and last points are ghosts, which shape the
+  // end normals and are never collided with. A ball whose centre is behind
+  // a segment is ignored by it, so an open chain is a wall from one side
+  // and nothing from the other.
+  const auto addOneSided = [this](std::span<const Vec2> outline,
+                                  const b2SurfaceMaterial& surface) {
+    std::vector<b2Vec2> points;
+    points.reserve(outline.size());
+    for (const Vec2 p : outline) {
+      points.push_back(toMeters(p));
+    }
+    b2ChainDef chainDef = b2DefaultChainDef();
+    chainDef.points = points.data() + 1;
+    chainDef.pointCount = static_cast<int>(points.size()) - 2;
+    chainDef.ghost1 = points.front();
+    chainDef.ghost2 = points.back();
+    chainDef.materials = &surface;
+    chainDef.materialCount = 1;
+    chainDef.isLoop = false;
+    b2CreateChain(table_, &chainDef);
+  };
+  addLoop(table::kShell);
+  addLoop(table::kLaneIsland);
+  // The inner arch is the launch lane's one-way gate: a launched ball comes
+  // up behind it and passes through; a ball in play cannot pass back.
+  addOneSided(table::kInnerArch, material);
 
   const b2ShapeDef shapeDef = wallShapeDef();
-  for (const table::Capsule& wall : table::kWalls) {
+  for (const table::Capsule& wall : table::kAllWalls) {
     const b2Capsule capsule{toMeters(wall.a), toMeters(wall.b), toMeters(wall.radius)};
     b2CreateCapsuleShape(table_, &shapeDef, &capsule);
   }
+  b2ShapeDef deadDef = wallShapeDef();
+  deadDef.material.restitution = table::kDeadPostRestitution;
+  deadDef.material.userMaterialId = kDeadMaterial;
+  for (const table::Capsule& post : table::kDeadPosts) {
+    const b2Capsule capsule{toMeters(post.a), toMeters(post.b), toMeters(post.radius)};
+    b2CreateCapsuleShape(table_, &deadDef, &capsule);
+  }
+  addOneSided(table::kSlingVaneLeft, deadDef.material);
+  addOneSided(table::kSlingVaneRight, deadDef.material);
+
   const auto addTriangle = [this](const table::Triangle& triangle, const b2ShapeDef& def) {
     b2Vec2 corners[3];
     for (std::size_t i = 0; i < 3; ++i) {
@@ -221,7 +272,6 @@ void PhysicsWorld::buildTable() {
         packElement({table::ElementKind::Slingshot, static_cast<std::uint8_t>(i)});
     addTriangle(table::kSlingshots[i], slingDef);
   }
-  addTriangle(table::kMedalIsland, shapeDef);
 }
 
 void PhysicsWorld::buildBall(std::size_t slot, bool enabled) {
@@ -248,7 +298,6 @@ void PhysicsWorld::buildBall(std::size_t slot, bool enabled) {
   // Off by default in Box2D. Only one shape of a pair needs it.
   shapeDef.enableContactEvents = true;
   shapeDef.material.userMaterialId = kBallMaterial;
-  shapeDef.filter.categoryBits = kBallCategory;
   const b2Circle circle{{0.0F, 0.0F}, toMeters(table::kBallRadius)};
   ball.shape = b2CreateCircleShape(ball.body, &shapeDef, &circle);
 }
@@ -341,18 +390,6 @@ void PhysicsWorld::buildPlunger() {
   const b2Polygon block =
       b2MakeOffsetBox(halfWidth, halfHeight, {0.0F, halfHeight}, b2MakeRot(0.0F));
   b2CreatePolygonShape(plunger_, &shapeDef, &block);
-
-  // Lane gate on its own body so it can be switched on and off.
-  b2BodyDef gateDef = b2DefaultBodyDef();
-  gateDef.type = b2_staticBody;
-  laneGate_ = b2CreateBody(world_, &gateDef);
-  b2ShapeDef gateShape = wallShapeDef();
-  gateShape.filter.categoryBits = kGateCategory;
-  const b2Capsule gate{toMeters(table::kLaneGate.a), toMeters(table::kLaneGate.b),
-                       toMeters(table::kLaneGate.radius)};
-  b2CreateCapsuleShape(laneGate_, &gateShape, &gate);
-  b2Body_Disable(laneGate_);
-  laneGateClosed_ = false;
 }
 
 void PhysicsWorld::buildBumpers() {
@@ -374,6 +411,15 @@ void PhysicsWorld::buildTargets() {
   for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
     const table::Capsule& c = table::kTargets[i].shape;
     shapeDef.userData = packElement({table::ElementKind::Target, static_cast<std::uint8_t>(i)});
+    const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
+    b2CreateCapsuleShape(table_, &shapeDef, &capsule);
+  }
+  // The bay doors. For now they are targets that stay up: each reports its
+  // hits, and the Hangar behind them cannot be entered.
+  for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
+    const table::Capsule& c = table::kDropTargets[i];
+    shapeDef.userData =
+        packElement({table::ElementKind::DropTarget, static_cast<std::uint8_t>(i)});
     const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
     b2CreateCapsuleShape(table_, &shapeDef, &capsule);
   }
@@ -549,8 +595,9 @@ void PhysicsWorld::checkZones(std::size_t slot) {
     // A strip across the lane, not the drawn circle: the circle is narrower
     // than the lane and missed a ball running down the lane's wall.
     const table::Circle& zone = table::kRollovers[i].zone;
-    const bool inside = std::fabs(p.x - zone.center.x) < table::kRolloverReach &&
-                        std::fabs(p.y - zone.center.y) < zone.radius;
+    const Vec2 half = table::rolloverHalfSize(table::kRollovers[i]);
+    const bool inside =
+        std::fabs(p.x - zone.center.x) < half.x && std::fabs(p.y - zone.center.y) < half.y;
     if (inside && !ball.onRollover[i]) {
       pushEvent(PhysicsEvent::Type::Enter,
                 {table::ElementKind::Rollover, static_cast<std::uint8_t>(i)}, speed, slot);
@@ -565,18 +612,17 @@ void PhysicsWorld::checkZones(std::size_t slot) {
       ball.holeArmed[i] = distance > table::kHoleRearmDistance;
       continue;
     }
-    if (hole.type == table::HoleType::Ramp) {
-      // The mouth is a strip across the ball's path. As deep as a hole, so
-      // the fastest ball (about 6 px per slice) cannot step over it.
-      const bool inMouth = std::fabs(p.x - hole.center.x) < table::kRampMouthReach &&
-                           std::fabs(p.y - hole.center.y) < table::kHoleCaptureRadius;
-      // Fast enough up the table, and leaning left into the mouth.
-      const bool shotIn =
-          v.y <= -table::kRampMinUpwardSpeed && v.x <= table::kRampMinLeftLean * v.y;
-      if (!inMouth || !shotIn) {
-        continue;
-      }
-    } else if (distance >= table::kHoleCaptureRadius) {
+    // A box, not a point: the scoop and the hangar are pockets, and a ball
+    // inside one is taken whatever its speed. The box is deep enough that
+    // the fastest ball (about 6 px per slice) cannot step over it.
+    const bool inBox = std::fabs(p.x - hole.center.x) < hole.halfSize.x &&
+                       std::fabs(p.y - hole.center.y) < hole.halfSize.y;
+    if (!inBox) {
+      continue;
+    }
+    // A ramp takes only a ball shot up the table. Written so that a speed
+    // that is not a number is not taken.
+    if (table::isRamp(hole.type) && !(v.y <= -table::kRampMinUpwardSpeed)) {
       continue;
     }
     // Take the ball off the table. Disabling the body removes it from
@@ -611,18 +657,6 @@ void PhysicsWorld::releaseBall(std::size_t slot, Vec2 position, Vec2 velocity) {
 }
 
 void PhysicsWorld::setPlunger(bool held) noexcept { plungerHeld_ = held; }
-
-void PhysicsWorld::setLaneGateClosed(bool closed) {
-  if (closed == laneGateClosed_) {
-    return;
-  }
-  if (closed) {
-    b2Body_Enable(laneGate_);
-  } else {
-    b2Body_Disable(laneGate_);
-  }
-  laneGateClosed_ = closed;
-}
 
 void PhysicsWorld::drivePlunger(float stepSeconds) {
   if (plungerHeld_) {
@@ -802,7 +836,6 @@ void PhysicsWorld::deactivateBall(std::size_t slot) {
     return;
   }
   BallSlot& ball = balls_[slot];
-  setBallPassesGate(slot, false);
   if (!ball.held) {
     b2Body_SetLinearVelocity(ball.body, {0.0F, 0.0F});
     b2Body_SetAngularVelocity(ball.body, 0.0F);
@@ -810,17 +843,6 @@ void PhysicsWorld::deactivateBall(std::size_t slot) {
   }
   ball.active = false;
   ball.held = false;
-}
-
-void PhysicsWorld::setBallPassesGate(std::size_t slot, bool passes) {
-  if (!ballActive(slot) || balls_[slot].passesGate == passes) {
-    return;
-  }
-  BallSlot& ball = balls_[slot];
-  b2Filter filter = b2Shape_GetFilter(ball.shape);
-  filter.maskBits = passes ? ~kGateCategory : B2_DEFAULT_MASK_BITS;
-  b2Shape_SetFilter(ball.shape, filter);
-  ball.passesGate = passes;
 }
 
 void PhysicsWorld::resetBall(std::size_t slot, Vec2 position, Vec2 velocity) {

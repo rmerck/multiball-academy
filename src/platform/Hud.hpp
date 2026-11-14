@@ -18,7 +18,7 @@ struct HudPreview {
   // Shown in place of the rules' message, if not empty.
   std::string_view message;
   // Show a running course with the longest name and goal there are, a
-  // three-figure count and low energy: the fullest the course window gets.
+  // three-figure count: the fullest the course window gets.
   bool course = false;
   // Shown in place of what the rules say about multiball.
   std::optional<MultiballView> multiball;

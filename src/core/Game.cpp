@@ -1,8 +1,10 @@
 #include "core/Game.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 
 #include "core/TableLayout.hpp"
 
@@ -15,15 +17,12 @@ float blendFactor(float alpha) noexcept {
   return alpha >= 0.0F && alpha <= 1.0F ? alpha : (alpha < 0.0F ? 0.0F : 1.0F);
 }
 
-// On the playfield proper: past the old closing line at the top of the
-// table, or anywhere left of the lane wall and below its top. The second
-// part covers the right-hand channel (the hyperspace chute, the booster
-// targets, the right outlane), which lies between that line and the wall. A
-// ball's centre there is at least a ball's radius below the gate's foot, so
-// the gate never closes on it; in the lane it is right of the wall.
-bool onPlayfield(Vec2 p) noexcept {
-  return p.x < table::kLaneGateCloseX ||
-         (p.x < table::kLaneWallX && p.y > table::kLaneWallTopY + table::kBallRadius);
+// Length of a vector. Exactly rounded operations only, so that every
+// platform draws a riding ball at the same place.
+float lengthOf(Vec2 v) noexcept { return std::sqrt(v.x * v.x + v.y * v.y); }
+
+std::uint32_t stepsIn(double seconds) noexcept {
+  return static_cast<std::uint32_t>(seconds / Game::kStepSeconds + 0.5);
 }
 
 }  // namespace
@@ -47,15 +46,15 @@ void Game::serveBall() {
   for (std::size_t slot = 1; slot < kMaxBalls; ++slot) {
     removeBall(slot);
   }
+  queuedBalls_ = 0;
   if (physics_.ballActive(0)) {
-    physics_.setBallPassesGate(0, false);
     physics_.resetBall(table::kBallStart, {0.0F, 0.0F});
   } else {
     // Its state was cleared when it was taken off the table.
     physics_.activateBall(0, table::kBallStart, {0.0F, 0.0F});
   }
-  physics_.setLaneGateClosed(false);
   balls_[0].inPlay = false;
+  balls_[0].autoLaunch = false;
   balls_[0].placed = true;
 }
 
@@ -88,9 +87,9 @@ void Game::handleNudges(const InputState& input) {
     shake_ = {};
   }
 
-  // As in the original, a bump from one side sends the ball towards the
-  // other: bump from the left and the ball jumps right. A bump from the
-  // bottom sends it up the table.
+  // A bump from one side sends the ball towards the other: bump from the
+  // left and the ball jumps right. A bump from the bottom sends it up the
+  // table.
   struct Nudge {
     bool pressed;
     Vec2 ballKick;
@@ -157,6 +156,12 @@ void Game::handleLostBalls() {
     }
     if (physics_.activeBallCount() > 1) {
       loseBallWithOthersLive(slot, lost ? BallLoss::OutOfBounds : BallLoss::Drained);
+    } else if (queuedBalls_ > 0) {
+      // The last ball on the table, but not the last in the game: one is
+      // still waiting to be served. It takes this one's place at once, so
+      // that there is always a ball on the table.
+      loseBallWithOthersLive(slot, lost ? BallLoss::OutOfBounds : BallLoss::Drained);
+      serveQueuedBall(slot);
     } else if (lost) {
       // Fail safe: a ball outside the table or with a corrupt state is put
       // back. Rules must hear of it: there is no drain to end a tilt, and a
@@ -169,35 +174,95 @@ void Game::handleLostBalls() {
   }
 }
 
-void Game::updateLaneGate() {
-  // A ball in a hole is on the playfield wherever the hole is.
+void Game::updateInPlay() {
   bool anyInPlay = false;
   for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
     if (!physics_.ballActive(slot)) {
       continue;
     }
+    // A ball in a hole is on the playfield wherever the hole is. There is
+    // no gate to shut behind a launched ball: the inner arch lets a ball
+    // out of the launch channel and never back in.
     BallState& ball = balls_[slot];
     ball.inPlay =
-        ball.inPlay || physics_.ballHeld(slot) || onPlayfield(physics_.ballPosition(slot));
+        ball.inPlay || physics_.ballHeld(slot) || table::inPlayArea(physics_.ballPosition(slot));
     anyInPlay = anyInPlay || ball.inPlay;
   }
-  // Once a launched ball is clear of the lane, shut the gate behind it.
-  if (!physics_.laneGateClosed() && anyInPlay) {
-    physics_.setLaneGateClosed(true);
+  if (anyInPlay) {
     enterPlay();
   }
-  if (!physics_.laneGateClosed()) {
+}
+
+bool Game::requestBall() noexcept {
+  if (rules_.gameOver() || physics_.activeBallCount() + queuedBalls_ >= kMaxBalls) {
+    return false;
+  }
+  ++queuedBalls_;
+  return true;
+}
+
+void Game::serveQueuedBall(std::size_t slot) {
+  if (queuedBalls_ == 0 || !physics_.activateBall(slot, table::kBallStart, {0.0F, 0.0F})) {
     return;
   }
-  // The gate keeps balls in play out of the lane. A ball still in the lane
-  // behind the shut gate is let through it until it too has reached the
-  // playfield, however many balls there are: the others may all have
-  // drained since. In a game with one ball the gate shuts only once that
-  // ball is in play, so it is never given the pass.
+  --queuedBalls_;
+  BallState& ball = balls_[slot];
+  ball = {};
+  ball.searchAnchor = table::kBallStart;
+  ball.previous = ballView(slot);
+  ball.placed = true;
+  ball.autoLaunch = true;
+  ball.launchSteps = stepsIn(kAutoLaunchDelaySeconds);
+  lastAutoServeStep_ = stepCount_ + 1;
+}
+
+void Game::updateAutoLaunch() {
+  // Launch, or launch again, the balls that are served this way.
   for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
-    if (physics_.ballActive(slot)) {
-      physics_.setBallPassesGate(slot, !balls_[slot].inPlay);
+    BallState& ball = balls_[slot];
+    if (!physics_.ballActive(slot) || !ball.autoLaunch || ball.inPlay) {
+      continue;
     }
+    const Vec2 p = physics_.ballPosition(slot);
+    if (!ball.launched) {
+      if (ball.launchSteps > 0) {
+        --ball.launchSteps;
+        continue;
+      }
+    } else {
+      // Launched and seen back at rest on the plunger: once more.
+      const bool atRest = p.y > table::kBallStart.y - 2.0F * table::kBallRadius &&
+                          std::fabs(physics_.ballVelocity(slot).y) < 8.0F;
+      ball.launchSteps = atRest ? ball.launchSteps + 1 : 0;
+      if (ball.launchSteps < stepsIn(kAutoRelaunchSeconds)) {
+        continue;
+      }
+      ++autoRelaunchCount_;
+    }
+    physics_.resetBall(slot, p, {0.0F, -table::kAutoLaunchSpeed});
+    ball.launched = true;
+    ball.launchSteps = 0;
+    ++autoLaunchCount_;
+    sounds_ |= soundBit(Sound::Launch);
+  }
+  if (queuedBalls_ == 0) {
+    return;
+  }
+  // Serve the next one into an empty lane, a while after the last.
+  if (lastAutoServeStep_ != 0 &&
+      stepCount_ + 1 - lastAutoServeStep_ < stepsIn(kAutoServeSpacingSeconds)) {
+    return;
+  }
+  std::size_t freeSlot = kMaxBalls;
+  for (std::size_t slot = kMaxBalls; slot-- > 0;) {
+    if (!physics_.ballActive(slot)) {
+      freeSlot = slot;
+    } else if (!balls_[slot].inPlay) {
+      return;  // A ball is still in the lane.
+    }
+  }
+  if (freeSlot < kMaxBalls) {
+    serveQueuedBall(freeSlot);
   }
 }
 
@@ -229,12 +294,8 @@ void Game::step(const InputState& input) {
   }
   handleNudges(input);
   const bool playable = !rules_.gameOver() && !rules_.tilted();
-  if (playable && input.leftFlipper && !previousInput_.leftFlipper) {
-    rules_.onFlipper(true);
-    sounds_ |= soundBit(Sound::Flipper);
-  }
-  if (playable && input.rightFlipper && !previousInput_.rightFlipper) {
-    rules_.onFlipper(false);
+  if (playable && ((input.leftFlipper && !previousInput_.leftFlipper) ||
+                   (input.rightFlipper && !previousInput_.rightFlipper))) {
     sounds_ |= soundBit(Sound::Flipper);
   }
   // The plunger lets go: a launch sound if it was drawn back at all.
@@ -261,7 +322,8 @@ void Game::step(const InputState& input) {
   rules_.tick();
 
   handleLostBalls();
-  updateLaneGate();
+  updateInPlay();
+  updateAutoLaunch();
 
   for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
     if (physics_.ballActive(slot) && balls_[slot].placed) {
@@ -303,7 +365,13 @@ void Game::handleEvents() {
       continue;
     }
     // Anything the ball can hit is on the playfield, so the first hit puts
-    // the ball in play even if it has not been seen clear of the lane yet.
+    // the ball in play even if it has not been seen clear of the lane yet:
+    // the corner of the field under the arch on the right (x 440 to 623
+    // above y 300) is not in table::inPlayArea, because the launch channel
+    // crosses it.
+    if (event.ball < kMaxBalls) {
+      balls_[event.ball].inPlay = true;
+    }
     enterPlay();
     const std::size_t index = event.element.index;
     switch (event.element.kind) {
@@ -327,6 +395,10 @@ void Game::handleEvents() {
         hitSounds |= soundBit(Sound::Target);
         rules_.onTarget(index);
         break;
+      case DropTarget:
+        hitSounds |= soundBit(Sound::Target);
+        rules_.onDropTarget(index);
+        break;
       case Rollover:
         ++rolloverCounts_[index];
         hitSounds |= soundBit(Sound::Rollover);
@@ -344,6 +416,13 @@ void Game::handleEvents() {
   if (live) {
     sounds_ |= hitSounds;
   }
+}
+
+std::uint64_t Game::nextRandom() noexcept {
+  random_ ^= random_ << 13U;
+  random_ ^= random_ >> 7U;
+  random_ ^= random_ << 17U;
+  return random_;
 }
 
 bool Game::exitIsClear(std::size_t slot, std::size_t hole) const {
@@ -375,16 +454,26 @@ void Game::updateHeldBall(std::size_t slot) {
     // can drop entries when a step is very busy.
     ball.heldBy = std::min(physics_.heldHole(slot), table::kHoles.size() - 1);
     ball.heldSteps = 0;
+    // The held body stays where it was taken.
+    ball.takenAt = physics_.ballPosition(slot);
   }
   ball.wasHeld = held;
   if (!held) {
     return;
   }
   ++ball.heldSteps;
-  if (static_cast<double>(ball.heldSteps) * kStepSeconds >= kHoleHoldSeconds &&
+  const table::Hole& hole = table::kHoles[ball.heldBy];
+  if (static_cast<double>(ball.heldSteps) * kStepSeconds >= holdSeconds(hole.type) &&
       exitIsClear(slot, ball.heldBy)) {
-    const table::Hole& hole = table::kHoles[ball.heldBy];
-    physics_.releaseBall(slot, hole.exitPosition, hole.exitVelocity);
+    Vec2 velocity = hole.exitVelocity;
+    if (table::isRamp(hole.type)) {
+      // Set down a little faster or slower each time.
+      constexpr std::uint64_t kValues =
+          2U * static_cast<std::uint64_t>(table::kRampExitJitter) + 1U;
+      velocity.y +=
+          static_cast<float>(static_cast<int>(nextRandom() % kValues) - table::kRampExitJitter);
+    }
+    physics_.releaseBall(slot, hole.exitPosition, velocity);
     lastReleaseStep_[ball.heldBy] = stepCount_ + 1;
     ball.placed = true;
     // So that a capture on the very next step still counts as a new one.
@@ -459,20 +548,38 @@ BallView Game::ballView(std::size_t slot) const {
   }
   const BallState& state = balls_[slot];
   const table::Hole& hole = table::kHoles[state.heldBy];
-  if (hole.type != table::HoleType::Ramp) {
+  if (!table::isRamp(hole.type)) {
     view.visible = false;
     return view;
   }
-  // On the ramp the ball stays in sight, travelling over the table to the
-  // exit and looking larger at the top of its arc. It starts from where it
-  // was taken (the held body stays there), which can be anywhere across the
-  // ramp's mouth.
-  const float t = std::clamp(
-      static_cast<float>(static_cast<double>(state.heldSteps) * kStepSeconds / kHoleHoldSeconds),
-      0.0F, 1.0F);
+  // On a ramp the ball stays in sight, riding the rail over the table to the
+  // exit at a steady speed. The ride starts from where the ball was taken,
+  // which can be anywhere across the ramp's mouth, and joins the rail at its
+  // second point.
+  const std::array<Vec2, 9>& rail = table::rampRail(hole.type);
+  const auto point = [&rail, &state](std::size_t i) { return i == 0 ? state.takenAt : rail[i]; };
+  float length = 0.0F;
+  for (std::size_t i = 1; i < rail.size(); ++i) {
+    length += lengthOf(point(i) - point(i - 1));
+  }
+  const float t = std::clamp(static_cast<float>(static_cast<double>(state.heldSteps) *
+                                                kStepSeconds / table::kRampRideSeconds),
+                             0.0F, 1.0F);
   view.raised = true;
-  view.position = view.position + (hole.exitPosition - view.position) * t;
-  view.scale = 1.0F + 0.35F * 4.0F * t * (1.0F - t);
+  // Larger while it rides; a ball kept waiting at the end for the exit to
+  // clear is drawn there full size.
+  view.scale = t < 1.0F ? kRailScale : 1.0F;
+  view.position = rail.back();
+  float left = t * length;
+  for (std::size_t i = 1; i < rail.size(); ++i) {
+    const Vec2 run = point(i) - point(i - 1);
+    const float runLength = lengthOf(run);
+    if (left < runLength && runLength > 0.0F) {
+      view.position = point(i - 1) + run * (left / runLength);
+      break;
+    }
+    left -= runLength;
+  }
   return view;
 }
 

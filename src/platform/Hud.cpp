@@ -48,22 +48,12 @@ static_assert(display::fits(kGameOverWithHint, display::kMaxMessageLength));
 
 // Fixed lines of the course window. Each is held to the width it is drawn in.
 constexpr std::string_view kNoCourse = "NO COURSE";
-constexpr std::string_view kNoCourseHint = "HIT A COURSE TARGET, LEFT WALL";
-constexpr std::string_view kEnrolHint = "SHOOT THE RUNWAY TO ENROL";
 static_assert(kNoCourse.size() <= display::kMaxMissionNameLength);
-static_assert(kNoCourseHint.size() <=
-              display::charsThatFit(display::innerWidth(panel::kMissionWell), kLabelSize));
-static_assert(kEnrolHint.size() <=
-              display::charsThatFit(display::innerWidth(panel::kMissionWell), kLabelSize));
 
 // The strip's lines are all at one size, larger than the panel's smallest,
-// because a phone shows them smaller. Its own short forms of the two hints.
+// because a phone shows them smaller.
 constexpr float kStripSize = 3.0F;
 constexpr float kStripInner = strip::kMissionWell.w - 2.0F * kPad;
-constexpr std::string_view kStripNoCourseHint = "HIT A LEFT WALL TARGET";
-constexpr std::string_view kStripEnrolHint = "SHOOT THE RUNWAY";
-static_assert(kStripNoCourseHint.size() <= display::charsThatFit(kStripInner, kStripSize) &&
-              kStripEnrolHint.size() <= display::charsThatFit(kStripInner, kStripSize));
 
 // The review tool's fullest course window: every line at its limit.
 constexpr std::string_view kPreviewCourse = "COURSE NAME AT ITS LIMIT";
@@ -106,29 +96,18 @@ float fittedSize(std::string_view text, float width, float start) noexcept {
 
 // What the course window shows, from the game or from the review tool.
 struct CourseView {
-  MissionControl::Phase phase = MissionControl::Phase::Idle;
+  bool running = false;
   std::string_view name;
   std::string_view goal;
   int remaining = 0;
-  int energy = 0;
 };
 
-CourseView courseView(const MissionControl& missions, const HudPreview* preview) noexcept {
-  CourseView view;
+// The provisional rules have no courses, so the game itself never shows one.
+CourseView courseView(const HudPreview* preview) noexcept {
   if (preview != nullptr && preview->course) {
-    view = {MissionControl::Phase::Active, kPreviewCourse, kPreviewGoal, 255, 2};
-    return view;
+    return {true, kPreviewCourse, kPreviewGoal, 255};
   }
-  if (const Mission* mission = missions.mission()) {
-    view.phase = missions.phase();
-    view.name = mission->name;
-    if (const MissionStage* stage = missions.stage()) {
-      view.goal = goalText(stage->goal);
-      view.remaining = missions.remaining();
-      view.energy = missions.fuelLights();
-    }
-  }
-  return view;
+  return {};
 }
 
 // The line about locks and balls in play. Empty when there is nothing to say.
@@ -183,33 +162,6 @@ void drawTitle(SDL_Renderer* r, SDL_Texture* art, const screen::Rect& area) {
   }
 }
 
-// A row of gauge segments, the first `lit` of them in the lit colour.
-void drawSegments(SDL_Renderer* r, float x, float y, float width, float height, float gap,
-                  int count, int lit, SDL_Color litColor) {
-  for (int i = 0; i < count; ++i) {
-    // The colour changes at most twice along the gauge: set it only then.
-    if (i == 0 || i == lit) {
-      setColor(r, i < lit ? litColor : kUnlit);
-    }
-    fill(r, x + static_cast<float>(i) * (width + gap), y, width, height);
-  }
-}
-
-void drawRankGauge(SDL_Renderer* r, const screen::Rect& well, float y, int progress) {
-  const float gap = 4.0F;
-  const float segment = (well.w - 2.0F * kPad - gap * (kProgressPerRank - 1)) /
-                        static_cast<float>(kProgressPerRank);
-  drawSegments(r, well.x + kPad, y, segment, 8.0F, gap, kProgressPerRank, progress, kAmber);
-}
-
-// The energy lights: green, red and blinking when nearly out.
-void drawEnergy(SDL_Renderer* r, float x, float y, float width, float height, float gap,
-                int energy, bool blinkOn) {
-  const bool low = energy <= 2;
-  const int lit = low && !blinkOn ? 0 : energy;
-  drawSegments(r, x, y, width, height, gap, MissionControl::kFuelLights, lit, low ? kRed : kGreen);
-}
-
 void drawMessage(SDL_Renderer* r, const screen::Rect& well, const Content& c, float largest) {
   if (c.message.empty()) {
     return;
@@ -255,7 +207,6 @@ void drawPanel(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
   const panel::Rect rankWell = placed(panel::kRankWell);
   const panel::Rect missionWell = placed(panel::kMissionWell);
   const panel::Rect messageWell = placed(panel::kMessageWell);
-  const panel::Rect systemsWell = placed(panel::kHighScoreWell);
   const bool desktop = layout.idiom == screen::Idiom::Desktop;
 
   const SDL_FRect area{layout.hud.x, layout.hud.y, panel::kWidth, panel::kHeight};
@@ -281,98 +232,45 @@ void drawPanel(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
            formatText(buffer.data(), buffer.size(), "BALL %d OF %d", rules.ball(),
                       Rules::kBallsPerGame),
            statusWell.x + kPad, statusWell.y + 14.0F, 3.0F, kWhite);
-  if (rules.extraBalls() > 0) {
-    drawText(r, formatText(buffer.data(), buffer.size(), "EXTRA BALLS %d", rules.extraBalls()),
-             statusWell.x + kPad, statusWell.y + 44.0F, kLabelSize, kGreen);
-  }
   if (const std::string_view line = multiballLine(c.multiball, buffer); !line.empty()) {
     drawText(r, line, statusWell.x + 190.0F, statusWell.y + 44.0F, kLabelSize,
              c.multiball.running() ? kAmber : kCyan);
   }
-  drawText(r, formatText(buffer.data(), buffer.size(), "X%d", rules.fieldMultiplier()),
-           statusWell.x + statusWell.w - kPad, statusWell.y + 14.0F, 5.0F,
-           rules.fieldMultiplier() > 1 ? kAmber : kDim, TextAlign::Right);
-
-  const MissionControl& missions = rules.missions();
-
-  // Rank and progress towards the next one.
+  // Rank. (How it is earned comes with the table's rules.)
   label(r, rankWell, "RANK");
-  drawText(r, rankName(missions.rank()), rankWell.x + kPad, rankWell.y + 30.0F,
-           display::kRankSize, kCyan);
-  drawRankGauge(r, rankWell, rankWell.y + rankWell.h - 18.0F, missions.progress());
+  drawText(r, rankName(rules.rank()), rankWell.x + kPad, rankWell.y + 30.0F, display::kRankSize,
+           kCyan);
 
   // Course.
   label(r, missionWell, "COURSE");
   const float missionX = missionWell.x + kPad;
   const float missionY = missionWell.y + 34.0F;
   const CourseView& course = c.course;
-  if (course.phase != MissionControl::Phase::Idle) {
+  if (course.running) {
     drawText(r, course.name, missionX, missionY, display::kMissionSize, kAmber);
-    if (course.phase == MissionControl::Phase::Selected) {
-      if (c.blinkOn) {
-        drawText(r, kEnrolHint, missionX, missionY + 34.0F, kLabelSize, kGreen);
-      }
-    } else if (!course.goal.empty()) {
+    if (!course.goal.empty()) {
       drawText(r, course.goal, missionX, missionY + 34.0F, kLabelSize, kWhite);
       drawText(r, formatText(buffer.data(), buffer.size(), "%d TO GO", course.remaining),
                missionWell.x + missionWell.w - kPad, missionY + 34.0F, kLabelSize, kWhite,
                TextAlign::Right);
-      // Energy gauge.
-      drawText(r, "ENERGY", missionX, missionY + 62.0F, kLabelSize, kDim);
-      drawEnergy(r, missionX + 84.0F, missionY + 60.0F, 28.0F, 16.0F, 6.0F, course.energy,
-                 c.blinkOn);
     }
   } else {
     drawText(r, kNoCourse, missionX, missionY, display::kMissionSize, kDim);
-    drawText(r, kNoCourseHint, missionX, missionY + 34.0F, kLabelSize, kDim);
   }
   // Lit awards along the bottom of the course window.
   {
     const float y = missionWell.y + missionWell.h - 26.0F;
-    const bool jackpot = rules.jackpotLit() || c.multiball.jackpotLit || c.multiball.superJackpotLit;
+    const bool jackpot = c.multiball.jackpotLit || c.multiball.superJackpotLit;
     drawText(r, "JACKPOT", missionX, y, kLabelSize, jackpot ? kAmber : kDim);
     if (c.multiball.locksKnown) {
       // With multiball there is a lock to show, next to the jackpot.
       drawText(r, "LOCK", missionX + 100.0F, y, kLabelSize, c.multiball.lockLit ? kAmber : kDim);
-      drawText(r, "OUTLANE BONUS", missionX + 164.0F, y, kLabelSize,
-               rules.bonusLaneLit() ? kAmber : kDim);
-    } else {
-      drawText(r, "OUTLANE BONUS", centerX(missionWell), y, kLabelSize,
-               rules.bonusLaneLit() ? kAmber : kDim, TextAlign::Center);
     }
     drawText(r, "BALL SAVE", missionWell.x + missionWell.w - kPad, y, kLabelSize,
              rules.ballSaveActive() ? kGreen : kDim, TextAlign::Right);
   }
-
-  // Systems: the levels of the four ladders, and the bonus so far.
-  {
-    const panel::Rect& well = systemsWell;
-    const float left = well.x + kPad;
-    const float right = well.x + well.w - kPad;
-    std::array<char, 48> line{};
-    drawText(r, formatText(line.data(), line.size(), "METEOR %d", rules.attackBumperLevel() + 1),
-             left, well.y + 16.0F, kLabelSize, kWhite);
-    drawText(r, formatText(line.data(), line.size(), "TURBO %d/4", rules.boosterLevel()),
-             centerX(well), well.y + 16.0F, kLabelSize, kWhite, TextAlign::Center);
-    drawText(r, formatText(line.data(), line.size(), "MERIT %d/3", rules.medalLevel()), right,
-             well.y + 16.0F, kLabelSize, kWhite, TextAlign::Right);
-    const std::string_view quasar =
-        formatText(line.data(), line.size(), "QUASAR %d/4", rules.hyperspaceLevel());
-    drawText(r, quasar, left, well.y + 42.0F, kLabelSize, kWhite);
-    const float room = right - left - textWidth(quasar, kLabelSize) - 2.0F * kPad;
-    ScoreText bonusBuffer{};
-    const std::string_view bonus = formatScore(rules.bonus(), bonusBuffer);
-    std::array<char, 48> bonusLine{};
-    std::string_view text =
-        formatText(bonusLine.data(), bonusLine.size(), "END OF BALL BONUS %.*s",
-                   static_cast<int>(bonus.size()), bonus.data());
-    if (textWidth(text, kLabelSize) > room) {
-      // The largest bonus there is needs the shorter label.
-      text = formatText(bonusLine.data(), bonusLine.size(), "BONUS %.*s",
-                        static_cast<int>(bonus.size()), bonus.data());
-    }
-    drawText(r, text, right, well.y + 42.0F, kLabelSize, kDim, TextAlign::Right);
-  }
+  // The window below is for the table's own rules, which are still to
+  // come: nothing is shown in it.
 
   drawMessage(r, messageWell, c, 4.0F);
 
@@ -474,64 +372,44 @@ void drawStrip(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
            formatText(buffer.data(), buffer.size(), "BALL %d OF %d", rules.ball(),
                       Rules::kBallsPerGame),
            statusWell.x + kPad, statusWell.y + 6.0F, kStripSize, kWhite);
-  drawText(r, formatText(buffer.data(), buffer.size(), "X%d", rules.fieldMultiplier()),
-           statusWell.x + kPad, statusWell.y + 31.0F, kStripSize,
-           rules.fieldMultiplier() > 1 ? kAmber : kDim);
-  if (rules.extraBalls() > 0) {
-    drawText(r, formatText(buffer.data(), buffer.size(), "EXTRA %d", rules.extraBalls()),
-             statusWell.x + statusWell.w - kPad, statusWell.y + 31.0F, kStripSize, kGreen,
-             TextAlign::Right);
-  }
   if (const std::string_view line = multiballLine(c.multiball, buffer); !line.empty()) {
     drawText(r, line, statusWell.x + kPad, statusWell.y + 56.0F, kStripSize,
              c.multiball.running() ? kAmber : kCyan);
   }
 
-  // Rank and progress towards the next one.
-  const MissionControl& missions = rules.missions();
+  // Rank.
   drawText(r, "RANK", rankWell.x + kPad, rankWell.y + 6.0F, kStripSize, kDim);
-  drawText(r, rankName(missions.rank()), rankWell.x + kPad, rankWell.y + 31.0F, kStripSize,
-           kCyan);
-  drawRankGauge(r, rankWell, rankWell.y + 60.0F, missions.progress());
+  drawText(r, rankName(rules.rank()), rankWell.x + kPad, rankWell.y + 31.0F, kStripSize, kCyan);
 
-  // Course: its name; the goal; then the count to go, the energy, and the
-  // lit awards as lamps.
+  // Course: its name; the goal; then the count to go and the lit awards as
+  // lamps.
   const float missionX = missionWell.x + kPad;
   const float missionRight = missionWell.x + missionWell.w - kPad;
   const float nameY = missionWell.y + 5.0F;
   const float goalY = missionWell.y + 28.0F;
   const float lampY = missionWell.y + 51.0F;
   const CourseView& course = c.course;
-  if (course.phase != MissionControl::Phase::Idle) {
+  if (course.running) {
     drawText(r, course.name, missionX, nameY, kStripSize, kAmber);
-    if (course.phase == MissionControl::Phase::Selected) {
-      if (c.blinkOn) {
-        drawText(r, kStripEnrolHint, missionX, goalY, kStripSize, kGreen);
-      }
-    } else if (!course.goal.empty()) {
+    if (!course.goal.empty()) {
       // Every goal there is fits at this size; one at the very limit of
       // what the rules allow would be drawn a size smaller.
       drawText(r, course.goal, missionX, goalY,
                fittedSize(course.goal, kStripInner, kStripSize), kWhite);
-      const std::string_view count =
-          formatText(buffer.data(), buffer.size(), "%d TO GO", course.remaining);
-      drawText(r, count, missionX, lampY, kStripSize, kWhite);
-      drawEnergy(r, missionX + textWidth("255 TO GO", kStripSize) + 14.0F, lampY + 3.0F, 11.0F,
-                 15.0F, 2.0F, course.energy, c.blinkOn);
+      drawText(r, formatText(buffer.data(), buffer.size(), "%d TO GO", course.remaining),
+               missionX, lampY, kStripSize, kWhite);
     }
   } else {
     drawText(r, kNoCourse, missionX, nameY, kStripSize, kDim);
-    drawText(r, kStripNoCourseHint, missionX, goalY, kStripSize, kDim);
   }
   {
-    // JP jackpot, LK lock, OL outlane bonus, SV ball save.
+    // JP jackpot, LK lock, SV ball save.
     float right = missionRight;
     right = drawLamp(r, "SV", right, lampY, rules.ballSaveActive(), kGreen);
-    right = drawLamp(r, "OL", right, lampY, rules.bonusLaneLit(), kAmber);
     if (c.multiball.locksKnown) {
       right = drawLamp(r, "LK", right, lampY, c.multiball.lockLit, kAmber);
     }
-    const bool jackpot = rules.jackpotLit() || c.multiball.jackpotLit || c.multiball.superJackpotLit;
+    const bool jackpot = c.multiball.jackpotLit || c.multiball.superJackpotLit;
     drawLamp(r, "JP", right, lampY, jackpot, kAmber);
   }
 
@@ -549,7 +427,7 @@ void drawHud(SDL_Renderer* r, const HudArt& art, const Game& game, const screen:
   const HudPreview* const preview = extras.preview;
   Content content{.rules = rules,
                   .extras = extras,
-                  .course = courseView(rules.missions(), preview),
+                  .course = courseView(preview),
                   .multiball = preview != nullptr && preview->multiball
                                    ? *preview->multiball
                                    : multiballView(game),

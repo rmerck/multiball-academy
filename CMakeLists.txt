@@ -262,7 +262,6 @@ add_library(pinball_core STATIC
   src/core/Sha256.cpp
   src/core/Music.cpp
   src/core/Sound.cpp
-  src/core/TableLayout.cpp
   src/core/TouchControls.cpp
 )
 target_include_directories(pinball_core PUBLIC src ${PINBALL_VERSION_DIR})
@@ -537,6 +536,7 @@ include(CTest)
 if(BUILD_TESTING)
   add_executable(core_tests
     tests/main.cpp
+    tests/AcceptanceTest.cpp
     tests/ArgsTest.cpp
     tests/AssetNameTest.cpp
     tests/BumperTest.cpp
@@ -546,6 +546,7 @@ if(BUILD_TESTING)
     tests/GameTest.cpp
     tests/HighScoreTest.cpp
     tests/HoleTest.cpp
+    tests/LaunchTest.cpp
     tests/MissionTest.cpp
     tests/NudgeTest.cpp
     tests/PhysicsTest.cpp
@@ -556,9 +557,13 @@ if(BUILD_TESTING)
     tests/Sha256Test.cpp
     tests/MusicTest.cpp
     tests/SoundTest.cpp
+    tests/TableGeometryTest.cpp
     tests/TargetTest.cpp
     tests/TouchControlsTest.cpp
+    tests/bots/Acceptance.cpp
+    tests/bots/TableHarness.cpp
   )
+  target_include_directories(core_tests PRIVATE tests)
   target_link_libraries(core_tests PRIVATE pinball_core)
   # (No test is registered for iOS: see below, where an iOS build stops.)
   if(NOT PINBALL_IOS)
@@ -705,6 +710,8 @@ if(BUILD_TESTING)
 
   # Renders of every screen layout. (None yet.)
   include(cmake/LayoutTests.cmake)
+  # The table's acceptance tests: the statistical suite and its CTest label.
+  include(cmake/AcceptanceTests.cmake)
 
   # The recorded SDL configure results an iOS build may start from hold
   # nothing but yes-or-no probe results (cmake/IosPreseed.cmake).
