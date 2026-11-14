@@ -89,7 +89,10 @@ set_target_properties(pinball PROPERTIES
   # An archive holds the application and nothing else. (CMakeLists.txt sets
   # SKIP_INSTALL for every other target.)
   XCODE_ATTRIBUTE_SKIP_INSTALL NO
-  XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)")
+  XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
+  # No Swift of its own, but it links the review library's: the C++ flags
+  # CMake would also give the Swift driver are not Swift's.
+  XCODE_ATTRIBUTE_OTHER_SWIFT_FLAGS "")
 
 # A Release application: the debug information goes to a .dSYM beside the
 # bundle, for reading crash reports, and the executable is stripped, so it

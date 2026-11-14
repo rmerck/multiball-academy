@@ -351,6 +351,10 @@ elseif(PINBALL_IOS)
     XCODE_ATTRIBUTE_SWIFT_VERSION 5.0
     XCODE_ATTRIBUTE_SKIP_INSTALL YES)
   target_link_libraries(pinball_platform PRIVATE pinball_review)
+  # With Swift in the project CMake hands every target's compile options to
+  # the Swift driver as well, and the application links through it once a
+  # library it links has Swift in it. None of those flags are Swift's.
+  set_target_properties(pinball_review PROPERTIES XCODE_ATTRIBUTE_OTHER_SWIFT_FLAGS "")
   # Named here, not left to SDL's own list, which follows SDL's options.
   target_link_libraries(pinball_platform PRIVATE
     "-framework Foundation" "-framework UIKit" "-framework AVFoundation"
