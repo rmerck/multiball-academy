@@ -414,8 +414,23 @@ void drawHowTo(SDL_Renderer* r, const screen::Layout& layout, const FrontView& v
   const screen::PageLayout page = screen::pageLayout(layout, FrontPage::HowTo, guide);
   const howto::Page& text = howto::kPages[number];
   card(r, art, page, "HOW TO PLAY");
-  const float size = screen::smallestTextSize(layout);
   const screen::Rect& body = page.body;
+  // The largest size, up to 4, at which every page fits (the same size on
+  // every page); the smallest of the layout always does (tests/FrontTest).
+  float size = screen::smallestTextSize(layout);
+  for (float larger = 4.0F; larger > size; larger -= 1.0F) {
+    const float textHeight = body.h - (larger + 1.0F) * 12.0F;
+    const bool fits = std::ranges::all_of(howto::kPages, [&](const howto::Page& p) {
+      return static_cast<float>(lineCount(howto::text(p, !view.keyboard),
+                                          charsAcross(body.w, larger))) *
+                 kLinePitch * larger <=
+             textHeight;
+    });
+    if (fits) {
+      size = larger;
+      break;
+    }
+  }
   // The page's own title, then its text set from the left.
   drawNeonText(r, text.title, body.x, body.y, size + 1.0F, kCream, kAqua, kViolet);
   const screen::Rect area{body.x, body.y + (size + 1.0F) * 12.0F, body.w,

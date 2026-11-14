@@ -423,7 +423,11 @@ void checkFront(const Layout& l, const char* name) {
         }
         // Every page of text fits the body, the first beside the guide button.
         for (const howto::Page& text : howto::kPages) {
-          CHECK(textFits(howto::text(text, touch), p.body, size));
+          // Under the page's own title, a line of size + 1.
+          const Rect below{p.body.x, p.body.y + (size + 1.0F) * 12.0F, p.body.w,
+                           p.body.h - (size + 1.0F) * 12.0F};
+          CHECK(textFits(howto::text(text, touch), below, size));
+          CHECK(textFits(howto::text(text, !touch), below, size));
           CHECK(screen::kMinTextPoints <= size * screen::kFontRows * l.pointsPerUnit + 0.001F);
         }
       }
