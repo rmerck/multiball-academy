@@ -136,6 +136,11 @@ class TableHarness {
   // the Hangar, launch a second from a full turbo meter, start Graduation
   // Day. Off for the measurements made with one ball at a time.
   void setLocks(bool enabled);
+  // Opens the Hangar for a shot at it: locks off and the three doors marked,
+  // as the rules open it, so it stays open until a ball has been in. (A
+  // bank dropped behind the rules' back is raised again by the raise they
+  // ask for at a new game.)
+  void openHangar();
   // Whether the rules give drained balls back (ball saver and multiball
   // grace). Off on the bench unless asked for: the measurements of the table
   // itself count every ball that leaves it. On for whole games.

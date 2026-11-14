@@ -198,6 +198,16 @@ void testAcceptance() {
     CHECK(way == Touch::OutlaneRight && harness.drains[2] == 1);
   }
 
+  {  // The bench opens the Hangar for the shot sweep, and it stays open:
+     // the rules' raise at a new game must not shut it again.
+    TableHarness harness;
+    harness.openHangar();
+    for (int i = 0; i < 120 * 3; ++i) {
+      harness.game().step(pinball::InputState{});
+    }
+    CHECK(!harness.game().doorBankUp());
+  }
+
   {  // B5, eject safety: a ball let go at each exit (the Briefing room, the
      // Hangar, both rails), a little off the exact release each time, meets
      // a flipper or an inlane first. Never a slingshot, an outlane or the

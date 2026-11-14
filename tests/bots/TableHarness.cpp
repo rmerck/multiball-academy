@@ -100,6 +100,13 @@ bool TableHarness::nearFlipper(Vec2 p, std::size_t i, float slack) const {
 
 void TableHarness::lightKickback() { Seam::rules(game_).setKickbackLit(true); }
 void TableHarness::setLocks(bool enabled) { Seam::rules(game_).setMultiballEnabled(enabled); }
+void TableHarness::openHangar() {
+  setLocks(false);
+  for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
+    Seam::rules(game_).onDropTarget(door);
+  }
+  game_.step(InputState{});
+}
 void TableHarness::setSaver(bool enabled) { Seam::rules(game_).setBallSaveEnabled(enabled); }
 
 void TableHarness::settleKick(std::size_t slot, bool safe) {

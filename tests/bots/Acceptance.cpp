@@ -435,8 +435,7 @@ Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bo
   const bool dry = pressStep < 0;
   TableHarness harness;
   if (bankDown) {
-    harness.setLocks(false);
-    GameTestAccess::dropDoorBank(harness.game());
+    harness.openHangar();
   }
   setUpFeed(harness, feed, rightSide, variant);
   const std::size_t flipper = rightSide ? table::kRightFlipperIndex : table::kLeftFlipperIndex;
