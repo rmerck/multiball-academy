@@ -214,6 +214,14 @@ void Rules::setTable(const TableStatus& status) noexcept {
   locksHeld_ = status_.locked - releasesPending_;
 }
 
+void Rules::addLiveBall() noexcept {
+  // Never more balls than the table has: a ball counted live here may also
+  // still be counted queued until the next setTable() says otherwise.
+  if (status_.live + status_.queued + status_.locked < static_cast<int>(table::kMaxBalls)) {
+    ++status_.live;
+  }
+}
+
 int Rules::ballsInGame() const noexcept {
   return status_.live + status_.queued + status_.locked + ballRequests_ + requestsInFlight_;
 }
@@ -367,6 +375,39 @@ void Rules::onTarget(std::size_t index) noexcept {
     cue(Sound::SetComplete);
   }
   addTurbo(tuning::kTurboPerTarget);
+}
+
+bool Rules::onDrone() noexcept {
+  if (dead()) {
+    return false;
+  }
+  noteSwitch();
+  award(1'000, Feature::Spinner);
+  addTurbo(3);
+  if (++droneHits_ < 5) {
+    return false;
+  }
+  droneHits_ = 0;
+  award(25'000, Feature::Spinner);
+  say(display::Message("DRONE DOWN"));
+  return true;
+}
+
+void Rules::onStandup(std::size_t index, float /*speed*/) noexcept {
+  if (dead() || index >= table::kStandups.size()) {
+    return;
+  }
+  noteSwitch();
+  award(500, Feature::Slingshots);
+}
+
+void Rules::onCaptiveBall(float /*speed*/) noexcept {
+  // Stub (phase 3 brings the G-meter): what phase 1's post paid for a hard hit.
+  if (dead()) {
+    return;
+  }
+  noteSwitch();
+  award(5'000, Feature::TurboTargets);
 }
 
 void Rules::markAllDoors() noexcept { doorMarked_.fill(true); }
@@ -621,7 +662,7 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
     case RampRight:
       rampMade(Shot::Skyway);
       break;
-    case Scoop: {
+    case Subway: {
       if (graduationRunning()) {
         majorShot(Shot::Briefing);
         break;
@@ -731,6 +772,8 @@ void Rules::onBallLocked(std::size_t bay, bool served) noexcept {
   locksHeld_ = std::min(locksHeld_ + 1, kLocksNeeded);
   status_.locked = std::min(status_.locked + 1, kLocksNeeded);
   status_.live = std::max(status_.live - 1, 0);
+  // Free balls are live balls (setTable keeps it so; this must too).
+  status_.free = std::min(status_.free, status_.live);
   // After what the shot that locked it said (a course step, say).
   sayAlso(locksHeld_ == 1 ? display::Message("BALL 1 LOCKED")
                           : display::Message("BALL 2 LOCKED"));
@@ -741,7 +784,7 @@ void Rules::onBallLocked(std::size_t bay, bool served) noexcept {
   }
   if (served) {
     // The player has a new ball to launch, with its own saver.
-    ++status_.live;
+    addLiveBall();
     saverArmable_ = true;
     saverSteps_ = 0;
     offerSkillShot();
@@ -766,7 +809,7 @@ void Rules::onLockReleased(std::size_t bay) noexcept {
     locksHeld_ = std::max(locksHeld_ - 1, 0);
   }
   status_.locked = std::max(status_.locked - 1, 0);
-  ++status_.live;
+  addLiveBall();
 }
 
 void Rules::onDoorBank(bool up) noexcept {
@@ -1349,6 +1392,8 @@ int Rules::goalRemaining() const noexcept {
 
 bool Rules::onBallLost(const DrainInfo& info) noexcept {
   status_.live = std::max(status_.live - 1, 0);
+  // The lost ball was free: never more free balls than live ones.
+  status_.free = std::clamp(status_.free - 1, 0, status_.live);
   if (dead()) {
     return false;
   }
@@ -1804,6 +1849,63 @@ LampState Rules::lampState(table::LampId lamp) const noexcept {
     case WingG:
       return lit(wingLit_[static_cast<std::size_t>(std::to_underlying(lamp) -
                                                    std::to_underlying(WingW))]);
+    // Revision 3's ladders (TABLE_REV3.md 3.10). Stubs from what the rules
+    // keep today; the rules (phase 3) refine them.
+    case DroneArmour1:
+    case DroneArmour2:
+    case DroneArmour3:
+    case DroneArmour4:
+    case DroneArmour5: {
+      // One lamp a hit; the next to win blinks.
+      const int k = std::to_underlying(lamp) - std::to_underlying(DroneArmour1);
+      if (k < droneHits_) {
+        return LampState::On;
+      }
+      return k == droneHits_ && droneHits_ > 0 ? LampState::Blink : LampState::Off;
+    }
+    case GForce1:
+    case GForce2:
+    case GForce3:
+    case GForce4:
+    case GForce5:
+      // The G-meter is the rules' to keep (phase 3): dark until then.
+      return LampState::Off;
+    case TaxiT:
+    case TaxiA:
+    case TaxiX:
+    case TaxiI:
+      // T-A-X-I letters likewise (phase 3).
+      return LampState::Off;
+    case Rank1:
+    case Rank2:
+    case Rank3:
+    case Rank4:
+    case Rank5:
+    case Rank6:
+    case Rank7: {
+      // Every rank won, held; none at the first.
+      const auto k = static_cast<std::size_t>(std::to_underlying(lamp) - std::to_underlying(Rank1));
+      return lit(k < rank_);
+    }
+    case Combo2X:
+    case Combo3X:
+    case Combo4X:
+    case Combo5X: {
+      // The chain's level, the next link blinking while it runs.
+      const int level = comboLevel();
+      const int x = std::to_underlying(lamp) - std::to_underlying(Combo2X) + 2;
+      if (x <= level) {
+        return LampState::On;
+      }
+      return level > 0 && x == level + 1 ? LampState::Blink : LampState::Off;
+    }
+    case Bonus2X:
+    case Bonus3X:
+    case Bonus4X:
+    case Bonus5X: {
+      const int x = std::to_underlying(lamp) - std::to_underlying(Bonus2X) + 2;
+      return lit(x <= bonusMultiplier_);
+    }
     case Count:
       break;
   }

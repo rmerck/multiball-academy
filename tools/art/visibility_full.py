@@ -55,7 +55,15 @@ def reachable(x, y):
     arch = L["innerArch"][1:-1]
     if min(seg_dist(x, y, arch[i], arch[i + 1]) for i in range(len(arch) - 1)) < 12.5:
         return False
-    for w in L["walls"] + L["deadPosts"] + [t["shape"] for t in L["targets"]]:
+    gate = L["laneGate"][1:-1]
+    if min(seg_dist(x, y, gate[i], gate[i + 1]) for i in range(len(gate) - 1)) < 12.5:
+        return False
+    if math.hypot(x - R.DRONE_AT[0], y - R.DRONE_AT[1]) < L["drone"]["radius"] + 12.0:   # drawn there; it patrols
+        return False
+    cb = L["captiveBall"]   # the captive ball at rest (its channel walls are among the walls)
+    if math.hypot(x - cb["home"][0], y - cb["home"][1]) < cb["r"] + 12.3:
+        return False
+    for w in L["walls"] + L["deadPosts"] + [t["shape"] for t in L["targets"]] + [u["shape"] for u in L["standups"]]:
         if seg_dist(x, y, w["a"], w["b"]) < w["r"] + 12.3:
             return False
     for b in L["bumpers"]:
@@ -92,8 +100,9 @@ def ball_layer(scale):
 
 
 def nearest(x, y):
-    best = min(R.LAMPS.items(), key=lambda kv: math.hypot(kv[1][0][0] - x, kv[1][0][1] - y))
-    return "%s %.0f units away" % (best[0], math.hypot(best[1][0][0] - x, best[1][0][1] - y))
+    every = [(n, v[0]) for n, v in R.LAMPS.items()] + [(n, v[2]) for n, v in R.PLANNED.items()]
+    best = min(every, key=lambda kv: math.hypot(kv[1][0] - x, kv[1][1] - y))
+    return "%s %.0f units away" % (best[0], math.hypot(best[1][0] - x, best[1][1] - y))
 
 
 def measure(empty, layer, pos, scale, bs=1.0):
@@ -147,8 +156,8 @@ def main():
     for r in ("runwayRail", "skywayRail"):
         pts += [R.rail_point(L[r], t) + (1.15, "on rail") for t in np.linspace(0.0, 1.0, 60)]
     md = ["# Ball visibility: the whole playfield", "",
-          "Shipped background and sprites, drawn as the game draws them (tools/art/render_sim.py). Every lamp lit, all three",
-          "thrusters flashing, doors up and marked. %d ball positions: a 9-unit grid of every place a ball's centre can be" % len(pts),
+          "Shipped background and sprites, drawn as the game draws them (tools/art/render_sim.py). Every lamp lit (revision 3's",
+          "new inserts, stand-ups and flasher domes too), all three thrusters flashing, doors up and marked, the drone mid-patrol. %d ball positions: a 9-unit grid of every place a ball's centre can be" % len(pts),
           "(%d), both lock bays, both rail landings, and 60 points along each ramp rail at the raised scale 1.15." % sum(1 for p in pts if p[3] == "field"),
           "Luminance is relative (0 to 1); contrast is (lighter + 0.05) / (darker + 0.05). Columns as in visibility.md.", ""]
     allres = {}

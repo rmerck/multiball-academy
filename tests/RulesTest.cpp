@@ -7,6 +7,7 @@
 #include "Suites.hpp"
 #include "core/Courses.hpp"
 #include "core/Rules.hpp"
+#include "core/Snapshot.hpp"
 #include "core/TableLayout.hpp"
 
 // The table's rules, an event at a time: one group for each rule of the
@@ -414,6 +415,33 @@ void testRules() {
       bench.wait(0.2);
     }
     CHECK(given >= 290);
+  }
+
+  {  // The rules never count more than the table's three balls: a lock that
+     // serves a new ball, or a release, while another ball is still counted
+     // as queued (found by a saved game that valid() refused, revision 3).
+    const auto counted = [](const Rules& rules) {
+      const pinball::save::RulesRecord r = rules.record();
+      return r.statusLive + r.statusQueued + r.statusLocked;
+    };
+    RulesBench bench = started();
+    bench.rules.setTable({.live = 1, .free = 1, .queued = 1, .locked = 1});
+    bench.rules.onBallLocked(1, true);
+    CHECK(counted(bench.rules) <= static_cast<int>(table::kMaxBalls));
+    bench.rules.setTable({.live = 2, .free = 2, .queued = 0, .locked = 1});
+    bench.rules.onLockReleased(0);
+    CHECK(counted(bench.rules) <= static_cast<int>(table::kMaxBalls));
+    bench.rules.setTable({.live = 1, .free = 1, .queued = 1, .locked = 1});
+    bench.rules.onLockReleased(0);
+    CHECK(counted(bench.rules) == 3);
+    // A lock takes a live ball: never more free balls than live ones.
+    bench.rules.setTable({.live = 2, .free = 2, .queued = 0, .locked = 0});
+    bench.rules.onBallLocked(0, false);
+    CHECK(bench.rules.record().statusFree <= bench.rules.record().statusLive);
+    // And a drain takes a free ball.
+    bench.rules.setTable({.live = 2, .free = 2, .queued = 0, .locked = 0});
+    bench.drain();
+    CHECK(bench.rules.record().statusFree <= bench.rules.record().statusLive);
   }
 
   {  // 4.3 Briefing room: 5,000 the first time on a ball and when something

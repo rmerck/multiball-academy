@@ -744,7 +744,7 @@ void testScoop() {
     for (const float speed : {40.0F, 300.0F, 1200.0F, 2900.0F}) {
       Game game;
       run(game, 2);
-      putBall(game, 0, {kScoop.center.x, 440.0F}, {0.0F, -speed});
+      putBall(game, 0, {kScoop.center.x - 12.0F, 445.0F}, {0.3F * speed, -speed});
       // A slow ball needs a push to get in at all: start it inside the mouth.
       if (speed < 100.0F) {
         Seam::placeBall(game, 0, {kScoop.center.x, kScoop.center.y + kScoop.halfSize.y - 1.0F},
@@ -787,7 +787,7 @@ void testScoop() {
     for (const int gap : {0, 1, 7, 40}) {
       Game game;
       run(game, 2);
-      putBall(game, 0, {kScoop.center.x - 6.0F, 436.0F}, {0.0F, -900.0F});
+      putBall(game, 0, {kScoop.center.x - 10.0F, 440.0F}, {270.0F, -900.0F});
       const InputState idle;
       std::size_t second = Game::kMaxBalls;
       std::vector<int> outAt;
@@ -795,7 +795,7 @@ void testScoop() {
       int bothTakenAt = -1;
       for (int i = 0; i < 5 * kSecond; ++i) {
         if (i == gap) {
-          second = Seam::addBall(game, {kScoop.center.x + 6.0F, 462.0F}, {0.0F, -900.0F});
+          second = Seam::addBall(game, {kScoop.center.x - 16.0F, 470.0F}, {270.0F, -900.0F});
           Seam::putInPlay(game, second);
         }
         game.step(idle);
@@ -824,7 +824,7 @@ void testScoop() {
      // waits until the exit is clear.
     Game game;
     run(game, 2);
-    putBall(game, 0, {kScoop.center.x, 440.0F}, {0.0F, -900.0F});
+    putBall(game, 0, {kScoop.center.x - 12.0F, 445.0F}, {270.0F, -900.0F});
     const std::size_t blocker = Seam::addBall(game, {600.0F, 600.0F});
     const InputState idle;
     int returnedAt = -1;
@@ -854,7 +854,7 @@ void testScoop() {
     for (const bool soon : {true, false}) {
       Game game;
       run(game, 2);
-      putBall(game, 0, {kScoop.center.x, 440.0F}, {0.0F, -900.0F});
+      putBall(game, 0, {kScoop.center.x - 12.0F, 445.0F}, {270.0F, -900.0F});
       // Let the ball save run out while the ball is being placed around.
       const InputState idle;
       bool out = false;
@@ -885,7 +885,7 @@ void testScoop() {
      // back: another is served and launched.
     Game game;
     run(game, 2);
-    putBall(game, 0, {kScoop.center.x, 440.0F}, {0.0F, -900.0F});
+    putBall(game, 0, {kScoop.center.x - 12.0F, 445.0F}, {270.0F, -900.0F});
     const std::size_t other = Seam::addBall(game, {600.0F, 600.0F});
     Seam::putInPlay(game, other);
     const InputState idle;
@@ -919,8 +919,8 @@ void testSensors() {
       {1, {595.0F, 425.0F}, {0.0F, 600.0F}, -1},
       {2, {340.0F, 100.0F}, {900.0F, 0.0F}, 1},
       {2, {371.0F, 100.0F}, {-900.0F, 0.0F}, -1},
-      {3, {432.0F, 430.0F}, {0.0F, -1500.0F}, 1},
-      {3, {432.0F, 400.0F}, {0.0F, 700.0F}, -1},
+      {3, {356.0F, 419.0F}, {0.0F, -1500.0F}, 1},
+      {3, {356.0F, 389.0F}, {0.0F, 700.0F}, -1},
   }};
   for (const Pass& pass : passes) {
     // In slot 0 and in slot 1: the event names the ball.
@@ -955,16 +955,16 @@ void testSensors() {
   {  // Past the end of a line is not across it, and a ball put somewhere by
      // hand has crossed nothing on the way.
     PhysicsWorld world;
-    world.resetBall({480.0F, 430.0F}, {0.0F, -1200.0F});  // Beside the spinner, behind the rail.
+    world.resetBall({300.0F, 430.0F}, {0.0F, -1200.0F});  // Beside the spinner, past its end.
     for (int s = 0; s < 10; ++s) {
       world.step(kStep);
       for (const PhysicsEvent& e : world.events()) {
         CHECK(e.type != PhysicsEvent::Type::Cross);
       }
     }
-    world.resetBall({432.0F, 430.0F}, {0.0F, 0.0F});
+    world.resetBall({356.0F, 419.0F}, {0.0F, 0.0F});
     world.step(kStep);
-    world.resetBall({432.0F, 400.0F}, {0.0F, 0.0F});
+    world.resetBall({356.0F, 389.0F}, {0.0F, 0.0F});
     world.step(kStep);
     for (const PhysicsEvent& e : world.events()) {
       CHECK(e.type != PhysicsEvent::Type::Cross);
@@ -975,7 +975,7 @@ void testSensors() {
      // on a table that reports nothing. (Same world, same ball; compare with
      // free flight over the spinner.)
     PhysicsWorld world;
-    world.resetBall({432.0F, 430.0F}, {0.0F, -900.0F});
+    world.resetBall({356.0F, 430.0F}, {0.0F, -900.0F});
     Vec2 before = world.ballVelocity();
     for (int s = 0; s < 6; ++s) {
       world.step(kStep);
@@ -992,9 +992,10 @@ void testSensors() {
 // at a speed up the table (negative: down). A ball put somewhere by hand is
 // watched from the end of its first slice, so it starts more than a slice's
 // travel short of the line.
-Vec2 spinnerStart(float speedUp) {
+Vec2 spinnerStart(float speedUp, std::size_t spinner = table::kLaneSpinner) {
   const float lead = 1.5F + std::fabs(speedUp) / 400.0F;
-  return {432.0F, table::kSpinner.a.y + (speedUp > 0.0F ? lead : -lead)};
+  const table::Spinner& s = table::kSpinners[spinner];
+  return {(s.a.x + s.b.x) * 0.5F, s.a.y + (speedUp > 0.0F ? lead : -lead)};
 }
 
 void testSpinner() {
@@ -1114,6 +1115,343 @@ void testSpinner() {
     run(game, kSecond);
     CHECK(game.spinCount() == 6);
     CHECK(game.rules().score() == score);
+  }
+}
+
+// Revision 3: three spinners, each with its own turns and its own blade.
+void testThreeSpinners() {
+  static_assert(Game::kSpinners == 3);
+  static_assert(table::kSpinners[table::kLaneSpinner].bothWays);
+  static_assert(!table::kSpinners[table::kCircuitSpinnerLeft].bothWays &&
+                !table::kSpinners[table::kCircuitSpinnerRight].bothWays);
+  const InputState idle;
+  {  // Up a circuit: its spinner turns, the others stay as they were; the
+     // events name it; the score is a spin's for each turn.
+    for (const std::size_t which : {table::kCircuitSpinnerLeft, table::kCircuitSpinnerRight}) {
+      Game game;
+      run(game, 2);
+      const std::uint64_t scoreBefore = game.rules().score();
+      putBall(game, 0, spinnerStart(1270.0F, which), {0.0F, -1270.0F});
+      int crossedAt = -1;
+      std::vector<int> spinAt;
+      for (int i = 0; i < 2 * kSecond; ++i) {
+        if (crossedAt >= 0) {
+          Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+        }
+        game.step(idle);
+        for (const PhysicsEvent& e : game.events()) {
+          if (e.type == PhysicsEvent::Type::Cross &&
+              e.element.index == table::kSpinners[which].sensor) {
+            crossedAt = i;
+          }
+        }
+        for (const GameEvent& e : game.gameEvents()) {
+          if (e.type == GameEvent::Type::Spin) {
+            CHECK(e.index == which);
+            spinAt.push_back(i);
+          }
+        }
+        for (std::size_t other = 0; other < Game::kSpinners; ++other) {
+          if (other != which) {
+            CHECK(game.spinnerPhase(other) == 0.0F && game.spinCount(other) == 0);
+          }
+        }
+      }
+      CHECK(crossedAt >= 0);
+      // 1270 px/s less what gravity took on the way: eight turns.
+      CHECK(spinAt.size() == 8);
+      CHECK(!spinAt.empty() && spinAt[0] == crossedAt);
+      CHECK(game.spinCount(which) == 8 && game.spinCount() == 8);
+      CHECK(game.rules().score() - scoreBefore == 8U * pinball::points::kSpin);
+    }
+  }
+
+  {  // Down a circuit (a made circuit's return) the ball crosses the mouth,
+     // and its spinner does not turn for it.
+    Game game;
+    run(game, 2);
+    putBall(game, 0, spinnerStart(-900.0F, table::kCircuitSpinnerLeft), {0.0F, 900.0F});
+    bool crossed = false;
+    for (int i = 0; i < kSecond; ++i) {
+      if (crossed) {
+        Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+      }
+      game.step(idle);
+      for (const PhysicsEvent& e : game.events()) {
+        crossed = crossed || (e.type == PhysicsEvent::Type::Cross &&
+                              e.element.index == table::kSpinners[table::kCircuitSpinnerLeft].sensor);
+      }
+      CHECK(countEvents(game, GameEvent::Type::Spin) == 0);
+    }
+    CHECK(crossed);
+    CHECK(game.spinCount() == 0 && game.spinnerPhase(table::kCircuitSpinnerLeft) == 0.0F);
+  }
+
+  {  // Two at once: the lane's and the right circuit's, crossed in the same
+     // step. Each pays one turn every six steps on its own count, side by
+     // side, and each blade turns its own way at its own pace.
+    Game game;
+    run(game, 2);
+    putBall(game, 0, spinnerStart(1570.0F, table::kLaneSpinner), {0.0F, -1570.0F});
+    const std::size_t second = Seam::addBall(
+        game, spinnerStart(1270.0F, table::kCircuitSpinnerRight), {0.0F, -1270.0F});
+    CHECK(second == 1);
+    Seam::putInPlay(game, second);
+    std::array<std::vector<int>, Game::kSpinners> spinAt{};
+    for (int i = 0; i < 2 * kSecond; ++i) {
+      if (i >= 3) {
+        Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+        Seam::placeBall(game, second, {kParked.x + 60.0F, kParked.y}, {0.0F, 0.0F});
+      }
+      game.step(idle);
+      for (const GameEvent& e : game.gameEvents()) {
+        if (e.type == GameEvent::Type::Spin) {
+          CHECK(e.index < Game::kSpinners);
+          spinAt[e.index].push_back(i);
+        }
+      }
+      if (i == 4) {
+        // Both under way, neither waiting on the other.
+        CHECK(game.spinsOwed(table::kLaneSpinner) > 0 &&
+              game.spinsOwed(table::kCircuitSpinnerRight) > 0);
+        CHECK(game.spinsOwed() == game.spinsOwed(table::kLaneSpinner) +
+                                      game.spinsOwed(table::kCircuitSpinnerRight));
+        CHECK(game.spinnerPhase(table::kLaneSpinner) > 0.0F &&
+              game.spinnerPhase(table::kCircuitSpinnerRight) > 0.0F);
+      }
+    }
+    CHECK(spinAt[table::kLaneSpinner].size() == 10);
+    CHECK(spinAt[table::kCircuitSpinnerRight].size() == 8);
+    CHECK(spinAt[table::kCircuitSpinnerLeft].empty());
+    // They started together and kept their own pace: the first eight side by side.
+    for (std::size_t k = 0; k < 8 && k < spinAt[table::kCircuitSpinnerRight].size(); ++k) {
+      CHECK(spinAt[table::kLaneSpinner][k] == spinAt[table::kCircuitSpinnerRight][k]);
+    }
+    for (const std::vector<int>& at : spinAt) {
+      for (std::size_t k = 1; k < at.size(); ++k) {
+        CHECK(at[k] - at[k - 1] == table::kSpinPayoutSteps);
+      }
+    }
+    CHECK(game.spinCount() == 18 && game.spinsOwed() == 0);
+    // At rest flat, one way up or the other, each by its own count.
+    CHECK(game.spinnerPhase(table::kLaneSpinner) == 0.0F);
+    CHECK(game.spinnerPhase(table::kCircuitSpinnerRight) == 0.0F);
+  }
+}
+
+// Revision 3: the training drone.
+constexpr int kPatrolSteps = static_cast<int>(table::kDronePatrolSeconds * kSecond + 0.5);
+constexpr int kDiveSteps = static_cast<int>(table::kDroneDiveSeconds * kSecond + 0.5);
+
+// Steps a game with its ball parked out of the way until an event; returns
+// the step it came in, or -1.
+int stepUntil(Game& game, GameEvent::Type type, int steps, const GameEvent** found = nullptr) {
+  const InputState idle;
+  for (int i = 0; i < steps; ++i) {
+    Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+    game.step(idle);
+    if (const GameEvent* e = findEvent(game, type)) {
+      if (found != nullptr) {
+        *found = e;
+      }
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Shoots the ball up the lane, through the gate, into the drone from
+// below; returns the DroneHit event's index, or -1 if it was not hit.
+int hitDrone(Game& game) {
+  const InputState idle;
+  // Where the lane is clear of its walls under it: the middle of its patrol.
+  for (int i = 0; i < 2 * (kPatrolSteps + kDiveSteps) &&
+                  !(game.drone().up && game.drone().sink == 0.0F &&
+                    std::fabs(game.drone().position.x - 356.0F) < 12.0F);
+       ++i) {
+    Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+    game.step(idle);
+  }
+  Seam::placeBall(game, 0, {game.drone().position.x, 350.0F}, {0.0F, -900.0F});
+  Seam::putInPlay(game, 0);
+  int stage = -1;
+  for (int i = 0; i < 30 && stage < 0; ++i) {
+    game.step(idle);
+    if (const GameEvent* e = findEvent(game, GameEvent::Type::DroneHit)) {
+      CHECK(e->ball == 0);
+      stage = e->index;
+    }
+  }
+  return stage;
+}
+
+void testDrone() {
+  const InputState idle;
+  {  // Its patrol: on its line and within its range, the same every time;
+     // at the end of the patrol it dives (DroneDive), drawn sinking out of
+     // sight, and comes up again (DroneRise, index 0) a dive later, drawn
+     // coming up, solid from its first step up.
+    Game game;
+    run(game, 2);
+    float lowest = 1.0e9F;
+    float highest = -1.0e9F;
+    int diveAt = -1;
+    int riseAt = -1;
+    float lastSink = 0.0F;
+    for (int i = 0; i < kPatrolSteps + kDiveSteps + kSecond; ++i) {
+      Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+      game.step(idle);
+      const pinball::DroneView drone = game.drone();
+      CHECK(drone.position.y == table::kDroneY && drone.recoil == 0.0F && !drone.knocked);
+      CHECK(drone.sink >= 0.0F && drone.sink <= 1.0F);
+      if (findEvent(game, GameEvent::Type::DroneDive) != nullptr) {
+        CHECK(diveAt < 0 && drone.up == false);
+        diveAt = i;
+      }
+      if (const GameEvent* rise = findEvent(game, GameEvent::Type::DroneRise)) {
+        CHECK(riseAt < 0 && drone.up && rise->index == 0);
+        riseAt = i;
+        lastSink = 1.0F;
+      }
+      CHECK(countEvents(game, GameEvent::Type::DroneDown) == 0);
+      if (diveAt < 0) {
+        CHECK(drone.up && drone.sink == 0.0F);
+        lowest = std::min(lowest, drone.position.x);
+        highest = std::max(highest, drone.position.x);
+      } else if (riseAt < 0) {
+        // Sinking, then out of sight.
+        CHECK(!drone.up && drone.sink >= lastSink);
+        const int down = i - diveAt + 1;
+        CHECK((drone.sink == 1.0F) == (down >= static_cast<int>(table::kDroneSinkSeconds * kSecond + 0.5)));
+        lastSink = drone.sink;
+      } else {
+        // Coming up, then up.
+        CHECK(drone.up && drone.sink <= lastSink);
+        const int up = i - riseAt + 1;
+        CHECK((drone.sink == 0.0F) == (up >= static_cast<int>(table::kDroneRiseSeconds * kSecond + 0.5)));
+        lastSink = drone.sink;
+      }
+    }
+    CHECK(diveAt == kPatrolSteps - 3);  // Two steps before the loop, and the patrol's last.
+    CHECK(riseAt - diveAt == kDiveSteps);
+    // Out to the right end and back to the left.
+    CHECK(lowest == table::kDroneLeftX || lowest < table::kDroneLeftX + 0.5F);
+    CHECK(highest > table::kDroneRightX - 0.5F && highest <= table::kDroneRightX);
+  }
+
+  {  // It comes up only when its place is clear: a ball held where it rises
+     // keeps it down; the step after the ball has gone, it is up.
+    Game game;
+    run(game, 2);
+    CHECK(stepUntil(game, GameEvent::Type::DroneDive, kPatrolSteps) >= 0);
+    const Vec2 risesAt{table::kDroneLeftX, table::kDroneY};
+    for (int i = 0; i < kDiveSteps + kSecond; ++i) {
+      Seam::placeBall(game, 0, risesAt, {0.0F, 0.0F});
+      game.step(idle);
+      CHECK(!game.drone().up && countEvents(game, GameEvent::Type::DroneRise) == 0);
+    }
+    Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+    game.step(idle);
+    CHECK(game.drone().up && countEvents(game, GameEvent::Type::DroneRise) == 1);
+  }
+
+  {  // A hit from below: DroneHit, the first armour lamp; drawn thrown back up
+     // the table, away from the ball, kDroneRecoil at the most, and back on
+     // its line within kDroneRecoilSeconds. Only the drawing moves: the body
+     // keeps to its patrol.
+    Game game;
+    run(game, 2);
+    const std::uint64_t scoreBefore = game.rules().score();
+    CHECK(hitDrone(game) == 1);
+    CHECK(game.droneHitCount() == 1 && game.rules().droneHits() == 1);
+    CHECK(game.rules().score() > scoreBefore);
+    float most = 0.0F;
+    float lastRecoil = game.drone().recoil;
+    bool rising = true;
+    const int recoilSteps = static_cast<int>(table::kDroneRecoilSeconds * kSecond + 0.5);
+    for (int i = 0; i < recoilSteps + 2; ++i) {
+      const pinball::DroneView drone = game.drone();
+      // Up the table, away from the ball below it (straight up for a ball
+      // straight below).
+      const float back = table::kDroneY - drone.position.y;
+      CHECK(back >= 0.0F && back <= table::kDroneRecoil * drone.recoil + 0.001F);
+      CHECK(back >= 0.8F * table::kDroneRecoil * drone.recoil);
+      most = std::max(most, back);
+      if (drone.recoil < lastRecoil) {
+        rising = false;
+      }
+      // Out, then back: never out again once it has started back.
+      CHECK(rising || drone.recoil <= lastRecoil);
+      lastRecoil = drone.recoil;
+      Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+      game.step(idle);
+    }
+    CHECK(most > 0.8F * table::kDroneRecoil);
+    CHECK(game.drone().recoil == 0.0F && game.drone().position.y == table::kDroneY);
+  }
+
+  {  // Five hits: the armour lamps one to four, then DRONE DOWN with the
+     // fifth (DroneHit index 5 and DroneDown). Knocked down it is not solid,
+     // is drawn sinking out of sight, its down time runs from 1 to 0, and it
+     // comes up (DroneRise, index 1) when the time is out, not at the end of
+     // the patrol after it.
+    Game game;
+    run(game, 2);
+    std::vector<int> stages;
+    int downAt = -1;
+    for (int hit = 0; hit < 5; ++hit) {
+      stages.push_back(hitDrone(game));
+      if (findEvent(game, GameEvent::Type::DroneDown) != nullptr) {
+        downAt = static_cast<int>(game.stepCount());
+      }
+      // Away, and the recoil over, before the next.
+      for (int i = 0; i < 30 && hit < 4; ++i) {
+        Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+        game.step(idle);
+      }
+    }
+    CHECK((stages == std::vector<int>{1, 2, 3, 4, table::kDroneArmour}));
+    CHECK(downAt >= 0 && game.rules().droneHits() == 0);
+    pinball::DroneView drone = game.drone();
+    CHECK(drone.knocked && !drone.up && drone.downLeft > 0.99F);
+    // It does not come back for twenty seconds, whatever its patrol clock says.
+    float lastLeft = drone.downLeft;
+    const GameEvent* rise = nullptr;
+    const int rose = stepUntil(game, GameEvent::Type::DroneRise,
+                               static_cast<int>(table::kDroneDownSeconds * kSecond) + kSecond, &rise);
+    CHECK(rose >= 0 && rise != nullptr && rise->index == 1);
+    const int downSteps = static_cast<int>(game.stepCount()) - downAt;
+    CHECK(downSteps >= static_cast<int>(table::kDroneDownSeconds * kSecond) &&
+          downSteps <= static_cast<int>(table::kDroneDownSeconds * kSecond) + 2);
+    drone = game.drone();
+    CHECK(drone.up && !drone.knocked && drone.downLeft == 0.0F && drone.sink > 0.8F);
+    (void)lastLeft;
+    // And it can be hit again.
+    run(game, kSecond / 4);
+    CHECK(hitDrone(game) == 1);
+  }
+
+  {  // While it is down its time counts down, and it is drawn out of sight.
+    Game game;
+    run(game, 2);
+    for (int hit = 0; hit < 5; ++hit) {
+      CHECK(hitDrone(game) == hit + 1);
+      for (int i = 0; i < 30 && hit < 4; ++i) {
+        Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+        game.step(idle);
+      }
+    }
+    float lastLeft = 2.0F;
+    for (int i = 0; i < 10 * kSecond; ++i) {
+      Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+      game.step(idle);
+      const pinball::DroneView drone = game.drone();
+      CHECK(drone.knocked && !drone.up && drone.downLeft < lastLeft);
+      if (i > kSecond) {
+        CHECK(drone.sink == 1.0F);
+      }
+      lastLeft = drone.downLeft;
+    }
   }
 }
 
@@ -1674,12 +2012,14 @@ void followOut(Game& game, std::size_t slot, Vec2 from, Vec2 exit, float sunk) {
 
 void testHoleViews() {
   const InputState idle;
-  {  // The Briefing room: the ball is drawn rolling on into the hole and
-     // dropping in, not lost from sight where it crossed into the box; out
-     // of sight while held; and drawn coming up out of the hole when let go.
+  {  // The Briefing room (a subway): the ball is drawn rolling on into the
+     // hole and dropping in, not lost from sight where it crossed into the
+     // box; out of sight while held, shown by a glow under the playfield that
+     // builds under the room, then runs along the subway to the set-down; and
+     // drawn coming up out of the floor there when let go.
     Game game;
     run(game, 2);
-    putBall(game, 0, {kScoop.center.x - 6.0F, 450.0F}, {20.0F, -900.0F});
+    putBall(game, 0, {kScoop.center.x - 14.0F, 450.0F}, {270.0F, -900.0F});
     for (int i = 0; i < kSecond && !Seam::held(game, 0); ++i) {
       game.step(idle);
     }
@@ -1688,21 +2028,101 @@ void testHoleViews() {
     // Taken at the box's lower edge, well short of the hole's centre: what
     // a player saw vanish.
     // It is seen to drop where the art draws the hole, below the middle of
-    // the box that takes it.
-    const Vec2 drop{356.0F, 400.0F};
+    // the box that takes it, where the subway starts.
+    const Vec2 drop = table::kScoopDropPoint;
     CHECK(near(table::holeDropPoint(kScoop), drop) && !near(kScoop.center, drop));
+    CHECK(near(table::kBriefingSubway.front(), drop));
+    CHECK(near(table::kBriefingSubway.back(), kScoop.exitPosition));
+    CHECK(near(table::holeRisePoint(kScoop), kScoop.exitPosition));
     CHECK(distance(takenAt, drop) > 15.0F);
     CHECK(followIn(game, 0, takenAt, drop, true));
+    // Under the playfield: how far along the subway the glow is, by length.
+    const auto alongSubway = [](Vec2 p) {
+      float best = 1.0e9F;
+      float along = 0.0F;
+      float result = 0.0F;
+      for (std::size_t i = 1; i < table::kBriefingSubway.size(); ++i) {
+        const Vec2 a = table::kBriefingSubway[i - 1];
+        const Vec2 b = table::kBriefingSubway[i];
+        const float d = distanceToSegment(p, a, b);
+        if (d < best) {
+          best = d;
+          result = along + distance(p, a);
+        }
+        along += distance(a, b);
+      }
+      CHECK(best < 0.05F);  // On the subway's line.
+      return result;
+    };
     int returned = -1;
+    int rideAt = -1;
+    float lastGlow = 0.0F;
+    float lastAlong = 0.0F;
+    const int holdSteps = kScoopHoldSteps;
+    const int rideSteps = static_cast<int>(table::kSubwayRideSeconds * kSecond + 0.5);
     for (int i = 0; i < 2 * kSecond && returned < 0; ++i) {
-      CHECK(!viewOf(game, 0).visible);
+      const BallView view = viewOf(game, 0);
+      CHECK(!view.visible && view.underground);
+      CHECK(view.glow >= lastGlow && view.glow <= 1.0F);
+      const float along = alongSubway(view.glowAt);
+      CHECK(along >= lastAlong - 0.001F);
+      if (rideAt < 0) {
+        // Building under the room while it waits there.
+        CHECK(along == 0.0F);
+      }
+      // Smoothly between steps: half a step on, it is between the two.
+      const BallView half = drawnView(game, 0, 0.5F);
+      CHECK(half.underground && half.glow <= view.glow + 0.001F);
+      lastGlow = view.glow;
+      lastAlong = along;
       game.step(idle);
+      if (const GameEvent* ride = findEvent(game, GameEvent::Type::SubwayRide)) {
+        CHECK(rideAt < 0 && ride->index == table::kScoopHole && ride->ball == 0);
+        rideAt = i;
+      }
       if (findEvent(game, GameEvent::Type::HoleEject) != nullptr) {
         returned = i;
       }
     }
-    CHECK(returned >= 0);
-    followOut(game, 0, drop, kScoop.exitPosition, 1.0F);
+    CHECK(rideAt >= 0 && returned >= 0);
+    // The ride is the last kSubwayRideSeconds of the hold; the glow was at
+    // full strength by its start and at the set-down by its end.
+    CHECK(returned - rideAt == rideSteps);
+    CHECK(lastGlow == 1.0F);
+    CHECK(lastAlong > 0.95F * alongSubway(table::kBriefingSubway.back()));
+    (void)holdSteps;
+    // Up out of the floor at the set-down: where the ball is, sunk all the
+    // way at first and coming up over the rise; no glow any more.
+    BallView view = viewOf(game, 0);
+    CHECK(view.visible && !view.underground && view.glow == 0.0F);
+    CHECK(near(view.position, kScoop.exitPosition));
+    for (int step = 1; step < kRiseSteps; ++step) {
+      view = viewOf(game, 0);
+      const float left = 1.0F - easeOut(static_cast<float>(step) / static_cast<float>(kRiseSteps));
+      CHECK(view.drawOffset.x == 0.0F && view.drawOffset.y == 0.0F);
+      CHECK(std::fabs(view.sink - left) < 0.01F);
+      CHECK(near(view.position, Seam::position(game, 0)));
+      game.step(idle);
+    }
+    game.step(idle);
+    view = viewOf(game, 0);
+    CHECK(view.visible && view.sink == 0.0F && !view.underground);
+  }
+
+  {  // A subway ride kept waiting for its set-down to clear is shown waiting
+     // under it, the glow at full strength, not running on or gone.
+    Game game;
+    run(game, 2);
+    putBall(game, 0, {kScoop.center.x - 12.0F, 445.0F}, {270.0F, -900.0F});
+    const std::size_t blocker = Seam::addBall(game, {600.0F, 600.0F});
+    for (int i = 0; i < 3 * kSecond; ++i) {
+      Seam::placeBall(game, blocker, {kScoop.exitPosition.x + 14.0F, kScoop.exitPosition.y},
+                      {0.0F, 0.0F});
+      game.step(idle);
+      CHECK(findEvent(game, GameEvent::Type::HoleEject) == nullptr);
+    }
+    const BallView view = viewOf(game, 0);
+    CHECK(view.underground && view.glow == 1.0F && near(view.glowAt, kScoop.exitPosition));
   }
 
   {  // The Hangar, when it only passes the ball through: the same.
@@ -1756,7 +2176,353 @@ void testHoleViews() {
 }
 }  // namespace
 
+// --- The captive ball (TABLE_REV3 3.5) ------------------------------------------------
+
+// A small generator of the tests' own, so that every run is the same.
+struct Shuffle {
+  std::uint64_t state;
+  float unit() {
+    state ^= state << 13U;
+    state ^= state >> 7U;
+    state ^= state << 17U;
+    return static_cast<float>(state >> 40U) / 16777216.0F;
+  }
+};
+
+float distanceToCapsule(Vec2 p, const table::Capsule& c) {
+  const Vec2 ab = c.b - c.a;
+  const float t =
+      std::clamp(((p.x - c.a.x) * ab.x + (p.y - c.a.y) * ab.y) / (ab.x * ab.x + ab.y * ab.y),
+                 0.0F, 1.0F);
+  return distance(p, c.a + ab * t);
+}
+
+// Inside the channel, past its mouth: where no playfield ball's centre can be.
+bool inChannel(Vec2 p) {
+  const float along = table::captiveTranslationAt(p);
+  return along > 4.0F && along < 40.0F && std::fabs(table::captiveOffsetAt(p)) < 16.5F;
+}
+
+// A ball shot at the captive ball from below the mouth, up and a little
+// left (a weak Runway shot's line): the switch, the events and their order
+// in the first stroke (the ball can come back and strike it again later).
+struct CaptiveShot {
+  int strikes = 0;
+  int switches = 0;
+  float switchSpeed = 0.0F;
+  std::size_t switchBall = 99;
+  float furthest = 0.0F;
+};
+CaptiveShot shootCaptive(float speed, std::size_t slot = 0) {
+  PhysicsWorld world;
+  const Vec2 direction{-0.3F, -0.954F};
+  const Vec2 from = table::kCaptiveHome - direction * 70.0F;
+  if (slot == 0) {
+    world.resetBall(0, from, direction * speed);
+  } else {
+    world.deactivateBall(0);
+    CHECK(world.activateBall(slot, from, direction * speed));
+  }
+  CaptiveShot shot;
+  bool moved = false;
+  bool strokeOver = false;
+  for (int i = 0; i < 2 * kSecond; ++i) {
+    world.step(kStep);
+    const float along = world.captiveTranslation();
+    strokeOver = strokeOver || (moved && along < 0.5F);
+    moved = moved || along > 1.0F;
+    if (strokeOver) {
+      continue;
+    }
+    shot.furthest = std::max(shot.furthest, along);
+    for (const PhysicsEvent& e : world.events()) {
+      if (e.element.kind != table::ElementKind::CaptiveBall) {
+        continue;
+      }
+      if (e.element.index == table::kCaptiveBallStruck) {
+        CHECK(e.ball == slot && e.type == PhysicsEvent::Type::Hit);
+        ++shot.strikes;
+      } else {
+        // The switch is never reported before the ball that drove it there.
+        CHECK(shot.strikes > 0);
+        ++shot.switches;
+        shot.switchSpeed = e.speed;
+        shot.switchBall = e.ball;
+      }
+    }
+  }
+  CHECK(world.captiveResets() == 0);
+  // Back at rest at the mouth, switch open, by the end.
+  CHECK(std::fabs(world.captiveTranslation()) < 0.05F && !world.captiveSwitchClosed());
+  return shot;
+}
+
+void testCaptiveBall() {
+  {  // At rest: it stays at its mouth, on its line, in no contact, for a minute.
+    PhysicsWorld world;
+    world.deactivateBall(0);
+    CHECK(near(world.captivePosition(), table::kCaptiveHome));
+    float drift = 0.0F;
+    int events = 0;
+    for (int i = 0; i < 60 * kSecond; ++i) {
+      world.step(kStep);
+      drift = std::max({drift, std::fabs(world.captiveTranslation()),
+                        std::fabs(table::captiveOffsetAt(world.captivePosition()))});
+      events += static_cast<int>(world.events().size());
+    }
+    CHECK(drift < 0.05F);
+    CHECK(events == 0);
+    CHECK(!world.captiveSwitchClosed() && world.captiveResets() == 0);
+  }
+
+  {  // The switch takes a firm hit: soft ones lift the ball and let it fall
+     // back; from somewhere above 400 px/s on this line every one closes the
+     // switch, once, for the ball that struck, with the stroke's speed.
+    float softest = 1.0e9F;
+    float hardestMiss = 0.0F;
+    for (float speed = 100.0F; speed <= 3000.0F; speed += 50.0F) {
+      const CaptiveShot shot = shootCaptive(speed);
+      CHECK(shot.switches <= 1);
+      if (shot.switches == 1) {
+        softest = std::min(softest, speed);
+        CHECK(shot.switchBall == 0);
+        CHECK(shot.switchSpeed > 200.0F && shot.switchSpeed <= speed * 1.01F);
+        CHECK(shot.furthest >= table::kCaptiveSwitchAt);
+      } else {
+        hardestMiss = std::max(hardestMiss, speed);
+        CHECK(shot.furthest < table::kCaptiveSwitchAt);
+      }
+    }
+    std::fprintf(stderr, "captive ball: switch closed from %.0f px/s, missed up to %.0f px/s\n",
+                 static_cast<double>(softest), static_cast<double>(hardestMiss));
+    CHECK(hardestMiss < softest);
+    CHECK(softest >= 400.0F && softest <= 800.0F);
+    // Any ball slot drives it and is named by its switch.
+    const CaptiveShot second = shootCaptive(1200.0F, 2);
+    CHECK(second.switches == 1 && second.switchBall == 2);
+  }
+
+  {  // At the speed cap, one to three balls at a time from every side of the
+     // mouth: the joint holds the ball to its line and its stop (no
+     // explosion), no ball goes through it or into its channel or through
+     // the channel's walls (no tunnelling), and the system of balls,
+     // captive ball and its spring never gains energy.
+    constexpr float kCap = PhysicsWorld::kMaxBallSpeed * PhysicsWorld::kPixelsPerMeter;
+    // Masses go with the disc's area; gravity 950 px/s^2; the spring's
+    // stiffness from its frequency (test code: the library's pi is fine).
+    constexpr double kBallMass = 144.0;
+    constexpr double kCaptiveMass = 121.0;
+    constexpr double kGravity = 950.0;
+    const double omega = 2.0 * 3.14159265358979 * static_cast<double>(table::kCaptiveSpringHertz);
+    const double stiffness = kCaptiveMass * omega * omega;
+    Shuffle rng{0x2545F4914F6CDD1DULL};
+    double worstGain = -1.0;
+    float worstAside = 0.0F;
+    float lowest = 0.0F;
+    float highest = 0.0F;
+    float nearestWall = 1.0e9F;
+    float deepest = 0.0F;
+    int inside = 0;
+    int strikes = 0;
+    int switches = 0;
+    for (int n = 0; n < 1500; ++n) {
+      PhysicsWorld world;
+      const std::size_t balls = 1U + static_cast<std::size_t>(n % 3);
+      for (std::size_t slot = 0; slot < balls; ++slot) {
+        Vec2 from{170.0F + rng.unit() * 90.0F, 320.0F + rng.unit() * 60.0F};
+        from.x += static_cast<float>(slot) * 28.0F;
+        const Vec2 at{table::kCaptiveHome.x - 25.0F + rng.unit() * 50.0F,
+                      table::kCaptiveHome.y - 25.0F + rng.unit() * 50.0F};
+        const Vec2 d = at - from;
+        const Vec2 v = d * (kCap / std::sqrt(d.x * d.x + d.y * d.y));
+        if (slot == 0) {
+          world.resetBall(from, v);
+        } else {
+          CHECK(world.activateBall(slot, from, v));
+        }
+      }
+      const auto energy = [&world, balls, stiffness] {
+        double e = 0.0;
+        for (std::size_t slot = 0; slot < balls; ++slot) {
+          if (!world.ballHeld(slot)) {
+            const Vec2 v = world.ballVelocity(slot);
+            e += 0.5 * kBallMass * static_cast<double>(v.x * v.x + v.y * v.y) -
+                 kBallMass * kGravity * static_cast<double>(world.ballPosition(slot).y);
+          }
+        }
+        const Vec2 v = world.captiveVelocity();
+        const double x = std::max(0.0, static_cast<double>(world.captiveTranslation()));
+        return e + 0.5 * kCaptiveMass * static_cast<double>(v.x * v.x + v.y * v.y) -
+               kCaptiveMass * kGravity * static_cast<double>(world.captivePosition().y) +
+               0.5 * stiffness * x * x;
+      };
+      const double start = energy();
+      const double scale = 0.5 * kBallMass * static_cast<double>(kCap * kCap) *
+                           static_cast<double>(balls);
+      for (int i = 0; i < 48; ++i) {
+        world.step(kStep);
+        for (const PhysicsEvent& e : world.events()) {
+          if (e.element.kind == table::ElementKind::CaptiveBall) {
+            (e.element.index == table::kCaptiveBallSwitch ? switches : strikes) += 1;
+          }
+        }
+        worstGain = std::max(worstGain, (energy() - start) / scale);
+        const Vec2 c = world.captivePosition();
+        worstAside = std::max(worstAside, std::fabs(table::captiveOffsetAt(c)));
+        lowest = std::min(lowest, world.captiveTranslation());
+        highest = std::max(highest, world.captiveTranslation());
+        for (std::size_t slot = 0; slot < balls; ++slot) {
+          if (world.ballHeld(slot)) {
+            continue;
+          }
+          const Vec2 p = world.ballPosition(slot);
+          inside += inChannel(p) ? 1 : 0;
+          nearestWall = std::min({nearestWall, distanceToCapsule(p, table::kCaptiveWallUpper),
+                                  distanceToCapsule(p, table::kCaptiveWallLower)});
+          deepest = std::max(deepest, table::kBallRadius + table::kCaptiveBallRadius - distance(p, c));
+        }
+      }
+      CHECK(world.captiveResets() == 0);
+    }
+    std::fprintf(stderr,
+                 "captive ball at the speed cap: %d strikes, %d switches; off its line %.2f px, "
+                 "travel %.2f to %.2f; nearest a ball came to a wall's line %.1f (17 touching), "
+                 "deepest into the captive ball %.2f px; %d ball steps in the channel; energy "
+                 "gained at most %.5f of the shots'\n",
+                 strikes, switches, static_cast<double>(worstAside), static_cast<double>(lowest),
+                 static_cast<double>(highest), static_cast<double>(nearestWall),
+                 static_cast<double>(deepest), inside, worstGain);
+    CHECK(strikes > 600 && switches > 400);
+    CHECK(worstAside < 1.0F);
+    CHECK(lowest > -0.5F && highest < table::kCaptiveTravel + 0.5F);
+    CHECK(nearestWall > 12.0F);
+    CHECK(deepest < 6.0F);
+    CHECK(inside == 0);
+    CHECK(worstGain < 1.0e-3);
+  }
+
+  {  // D1/D6 on a bench: balls dropped anywhere around the channel, the
+     // flippers idle. None comes to rest there (none still for three
+     // seconds) and every one leaves (drained) within fifteen seconds.
+    Shuffle rng{0x9E3779B97F4A7C15ULL};
+    int placed = 0;
+    int stuck = 0;
+    int stayed = 0;
+    std::vector<Vec2> where;
+    for (int n = 0; n < 150; ++n) {
+      PhysicsWorld world;
+      const std::size_t balls = 1U + static_cast<std::size_t>(n % 3);
+      for (std::size_t slot = 0; slot < balls; ++slot) {
+        Vec2 p{};
+        for (int tries = 0; tries < 200; ++tries) {
+          p = {150.0F + rng.unit() * 95.0F, 225.0F + rng.unit() * 110.0F};
+          const float along = table::captiveTranslationAt(p);
+          bool free = distance(p, table::kCaptiveHome) > 24.0F &&
+                      distanceToCapsule(p, table::kCaptiveWallUpper) > 18.0F &&
+                      distanceToCapsule(p, table::kCaptiveWallLower) > 18.0F &&
+                      distanceToCapsule(p, table::kNestTargetLeft) > 18.0F &&
+                      distance(p, table::kBumpers[0].shape.center) > 37.0F &&
+                      !(p.x > 230.0F && p.y > 300.0F) &&
+                      !(along > -2.0F && along < 45.0F &&
+                        std::fabs(table::captiveOffsetAt(p)) < 22.0F);
+          for (std::size_t other = 0; other < slot; ++other) {
+            free = free && distance(p, world.ballPosition(other)) > 25.0F;
+          }
+          if (free) {
+            break;
+          }
+        }
+        const Vec2 v{(rng.unit() - 0.5F) * 300.0F, (rng.unit() - 0.5F) * 300.0F};
+        if (slot == 0) {
+          world.resetBall(p, v);
+        } else {
+          CHECK(world.activateBall(slot, p, v));
+        }
+        ++placed;
+      }
+      std::array<int, table::kMaxBalls> still{};
+      std::array<Vec2, table::kMaxBalls> last{};
+      std::array<bool, table::kMaxBalls> gone{};
+      for (int i = 0; i < 15 * kSecond; ++i) {
+        world.step(kStep);
+        for (std::size_t slot = 0; slot < balls; ++slot) {
+          const Vec2 p = world.ballPosition(slot);
+          gone[slot] = gone[slot] || world.ballHeld(slot) || p.y > table::kDrainY;
+          if (gone[slot]) {
+            continue;
+          }
+          still[slot] = distance(p, last[slot]) < 0.05F ? still[slot] + 1 : 0;
+          last[slot] = p;
+          if (still[slot] == 3 * kSecond) {
+            ++stuck;
+            where.push_back(p);
+          }
+        }
+      }
+      for (std::size_t slot = 0; slot < balls; ++slot) {
+        stayed += gone[slot] ? 0 : 1;
+      }
+      CHECK(world.captiveResets() == 0);
+    }
+    for (const Vec2 p : where) {
+      std::fprintf(stderr, "captive ball bench: a ball came to rest at (%.1f, %.1f)\n",
+                   static_cast<double>(p.x), static_cast<double>(p.y));
+    }
+    CHECK(placed > 250);
+    CHECK(stuck == 0);
+    CHECK(stayed == 0);
+  }
+
+  {  // Deterministic: the same shots on two tables, the captive ball's every
+     // place bit for bit the same.
+    PhysicsWorld a;
+    PhysicsWorld b;
+    bool same = true;
+    for (int i = 0; i < 6 * kSecond && same; ++i) {
+      if (i % kSecond == 0) {
+        const Vec2 from{205.0F + static_cast<float>(i % 7), 360.0F};
+        const Vec2 v{-200.0F - static_cast<float>(i % 300), -1500.0F};
+        a.resetBall(from, v);
+        b.resetBall(from, v);
+      }
+      a.step(kStep);
+      b.step(kStep);
+      const Vec2 pa = a.captivePosition();
+      const Vec2 pb = b.captivePosition();
+      same = pa.x == pb.x && pa.y == pb.y && a.captiveSwitchClosed() == b.captiveSwitchClosed();
+    }
+    CHECK(same);
+  }
+
+  {  // In a game: the switch is the rules' G-force switch, scored once per
+     // stroke; a strike that does not reach it scores nothing. A dead table
+     // still counts it, as every other switch.
+    Game game;
+    run(game, 2);
+    const Vec2 direction{-0.3F, -0.954F};
+    const Vec2 from = table::kCaptiveHome - direction * 70.0F;
+    putBall(game, 0, from, direction * 1500.0F);
+    const std::uint64_t before = game.rules().score();
+    bool closedSeen = false;
+    for (int i = 0; i < kSecond / 2; ++i) {
+      run(game, 1);
+      closedSeen = closedSeen || game.captiveSwitchClosed();
+    }
+    CHECK(closedSeen);
+    CHECK(game.captiveSwitchCount() == 1);
+    CHECK(game.rules().score() - before >= 5'000);
+    // Soft: no switch, no score from the captive ball.
+    run(game, 2 * kSecond);
+    putBall(game, 0, from, direction * 300.0F);
+    const std::uint64_t soft = game.rules().score();
+    run(game, kSecond / 2);
+    CHECK(game.captiveSwitchCount() == 1);
+    CHECK(game.rules().score() == soft);
+  }
+}
+
 void testElements() {
+  testCaptiveBall();
   testNothingTunnels();
   testDoorBank();
   testLock();
@@ -1764,5 +2530,7 @@ void testElements() {
   testHoleViews();
   testSensors();
   testSpinner();
+  testThreeSpinners();
+  testDrone();
   testKickback();
 }

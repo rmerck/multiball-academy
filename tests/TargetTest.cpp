@@ -217,11 +217,13 @@ void testTargets() {
   }
 
   {  // A ball dropped on the roofs of the Hangar and the Briefing room rolls
-     // off into a lane beside them; it cannot rest there.
-    for (float x = table::kHangarLeft.a.x - 6.0F; x <= table::kScoopRight.a.x + 6.0F; x += 7.5F) {
+     // off into a lane beside them; it cannot rest there. (Revision 3: the
+     // gate over the lane and the Briefing room's roof carry it right, past
+     // the drone, which may hold it back for a patrol: 8 s.)
+    for (float x = table::kHangarLeft.a.x - 6.0F; x <= table::kBriefingRoof.b.x + 6.0F; x += 7.5F) {
       PhysicsWorld world;
       world.resetBall({x, 270.0F}, {0.0F, 0.0F});
-      for (int step = 0; step < 120 * 5; ++step) {
+      for (int step = 0; step < 120 * 8; ++step) {
         world.step(kStep);
       }
       CHECK(!world.ballHeld());

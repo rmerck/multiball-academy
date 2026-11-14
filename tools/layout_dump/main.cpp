@@ -66,8 +66,8 @@ const char* name(table::RolloverGroup g) {
 const char* name(table::HoleType t) {
   switch (t) {
     using enum table::HoleType;
-    case Scoop:
-      return "scoop";
+    case Subway:
+      return "subway";
     case Hangar:
       return "hangar";
     case RampLeft:
@@ -290,6 +290,23 @@ int main() {
   std::printf("},\n  \"kickback\": {\"c\": ");
   point(table::kKickbackZone.center);
   std::printf(", \"r\": %.1f},\n", static_cast<double>(table::kKickbackZone.radius));
+  // The captive ball: its centre at rest ("home"), the unit direction up its
+  // channel, how far its centre travels, and the switch behind the stop.
+  // The channel's two walls are among "walls".
+  std::printf("  \"captiveBall\": {\"home\": ");
+  point(table::kCaptiveHome);
+  std::printf(", \"axis\": ");
+  point(table::kCaptiveAxis);
+  std::printf(", \"r\": %.1f, \"travel\": %.1f, \"switchAt\": %.1f, \"switch\": ",
+              static_cast<double>(table::kCaptiveBallRadius),
+              static_cast<double>(table::kCaptiveTravel),
+              static_cast<double>(table::kCaptiveSwitchAt));
+  capsule(table::kCaptiveSwitch);
+  std::printf(", \"walls\": [");
+  capsule(table::kCaptiveWallUpper);
+  std::printf(", ");
+  capsule(table::kCaptiveWallLower);
+  std::printf("]},\n");
   std::printf("  \"lampSizes\": {\"arrowLength\": %.1f, \"course\": %.1f, \"status\": %.1f},\n",
               static_cast<double>(table::kArrowLampLength),
               static_cast<double>(table::kCourseLampDiameter),
@@ -308,9 +325,27 @@ int main() {
   list("flippers", table::kFlippers, [](const table::Flipper& f) {
     std::printf("{\"pivot\": ");
     point(f.pivot);
-    std::printf(", \"rest\": %.5f, \"active\": %.5f}", static_cast<double>(f.restAngle),
-                static_cast<double>(f.activeAngle));
+    std::printf(", \"rest\": %.5f, \"active\": %.5f, \"length\": %.1f}",
+                static_cast<double>(f.restAngle), static_cast<double>(f.activeAngle),
+                static_cast<double>(f.length));
   });
+  // The lane's one-way gate: an open one-sided chain, solid from above; the
+  // first and last points are ghosts.
+  list("laneGate", table::kLaneGate, [](Vec2 p) { point(p); });
+  // T-A-X-I stand-ups, in switch order (0 T, 1 A, 2 X, 3 I).
+  {
+    std::size_t letter = 0;
+    list("standups", table::kStandups, [&letter](const table::Capsule& c) {
+      std::printf("{\"shape\": ");
+      capsule(c);
+      std::printf(", \"letter\": \"%c\"}", "TAXI"[letter++ % 4]);
+    });
+  }
+  std::printf("  \"drone\": {\"radius\": %.1f, \"y\": %.1f, \"leftX\": %.1f, \"rightX\": %.1f, "
+              "\"patrolSeconds\": %.2f, \"diveSeconds\": %.2f},\n",
+              static_cast<double>(table::kDroneRadius), static_cast<double>(table::kDroneY),
+              static_cast<double>(table::kDroneLeftX), static_cast<double>(table::kDroneRightX),
+              table::kDronePatrolSeconds, table::kDroneDiveSeconds);
   list("bumpers", table::kBumpers, [](const table::Bumper& b) {
     std::printf("{\"c\": ");
     point(b.shape.center);
@@ -352,16 +387,32 @@ int main() {
     std::printf("}");
   });
   list("kickbackPath", table::kKickbackPath, [](Vec2 p) { point(p); });
+  // Revision 3: the three spinners (0 the Afterburner lane's, 1 and 2 the
+  // circuit mouths'), the Briefing room's subway from under its hole to the
+  // set-down, and the drone's patrol (its centre from left to right).
+  list("spinners", table::kSpinners, [](const table::Spinner& s) {
+    std::printf("{\"a\": ");
+    point(s.a);
+    std::printf(", \"b\": ");
+    point(s.b);
+    std::printf(", \"bothWays\": %s}", s.bothWays ? "true" : "false");
+  });
+  list("briefingSubway", table::kBriefingSubway, [](Vec2 p) { point(p); });
+  std::printf("  \"drone\": {\"radius\": %.1f, \"y\": %.1f, \"leftX\": %.1f, \"rightX\": %.1f},\n",
+              static_cast<double>(table::kDroneRadius), static_cast<double>(table::kDroneY),
+              static_cast<double>(table::kDroneLeftX), static_cast<double>(table::kDroneRightX));
   list("runwayRail", table::kRunwayRail, [](Vec2 p) { point(p); });
   list("skywayRail", table::kSkywayRail, [](Vec2 p) { point(p); });
-  // Lamps in LampId order; "kind" is arrow, course or status.
+  // Lamps in LampId order; "kind" is arrow, course, status, or planned (revision 3's
+  // inserts, drawn from tools/art/palette.py PLANNED_LAMPS).
   list(
       "lamps", table::kLamps,
       [](const table::Lamp& lamp) {
         std::printf("{\"id\": %d, \"kind\": \"%s\", \"c\": ", static_cast<int>(lamp.id),
-                    table::isArrowLamp(lamp.id)
-                        ? "arrow"
-                        : (table::isCourseLamp(lamp.id) ? "course" : "status"));
+                    table::isArrowLamp(lamp.id)    ? "arrow"
+                    : table::isCourseLamp(lamp.id) ? "course"
+                    : table::isLadderLamp(lamp.id) ? "planned"
+                                                   : "status");
         point(lamp.position);
         std::printf("}");
       },

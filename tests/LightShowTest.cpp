@@ -3,11 +3,13 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "Check.hpp"
 #include "GameTestAccess.hpp"
 #include "Suites.hpp"
+#include "core/Courses.hpp"
 #include "core/Game.hpp"
 #include "core/Input.hpp"
 #include "core/Physics.hpp"
@@ -185,7 +187,8 @@ void testSameGameSameLights() {
     step(a, sa, flipping(i));
     step(b, sb, flipping(i));
     same = same && sa.lampLevels() == sb.lampLevels() && sa.giLevel() == sb.giLevel() &&
-           sa.spinnerLevel() == sb.spinnerLevel() && sa.burstsStarted() == sb.burstsStarted();
+           sa.spinnerLevel(0) == sb.spinnerLevel(0) &&
+           sa.spinnerLevel(2) == sb.spinnerLevel(2) && sa.burstsStarted() == sb.burstsStarted();
   }
   CHECK(same);
 }
@@ -889,6 +892,183 @@ void testRollCallSharesTheNestGate() {
   CHECK(later);
 }
 
+// --- Revision 3 -------------------------------------------------------------------
+
+void testRev3LampStubs() {
+  // The ladders follow what the rules keep: one armour lamp a drone hit,
+  // the next blinking; dark after DRONE DOWN. The rank, combo and bonus
+  // ladders start dark; the G-meter and T-A-X-I wait for the rules (phase 3).
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  pinball::Rules& rules = Seam::rules(game);
+  const auto state = [&rules](LampId id) { return rules.lampState(id); };
+  CHECK(state(LampId::DroneArmour1) == LampState::Off);
+  CHECK(!rules.onDrone() && !rules.onDrone());
+  CHECK(state(LampId::DroneArmour1) == LampState::On);
+  CHECK(state(LampId::DroneArmour2) == LampState::On);
+  CHECK(state(LampId::DroneArmour3) == LampState::Blink);
+  CHECK(state(LampId::DroneArmour4) == LampState::Off);
+  CHECK(state(LampId::DroneArmour5) == LampState::Off);
+  step(game, show);
+  CHECK(show.lampState(LampId::DroneArmour2) == LampState::On);
+  CHECK(!rules.onDrone() && !rules.onDrone() && rules.onDrone());  // DRONE DOWN.
+  bool dark = true;
+  for (int k = 0; k < 5; ++k) {
+    dark = dark && state(static_cast<LampId>(std::to_underlying(LampId::DroneArmour1) + k)) ==
+                       LampState::Off;
+  }
+  CHECK(dark);
+  bool laddersDark = true;
+  for (std::size_t i = 0; i < table::kLamps.size(); ++i) {
+    const LampId id = table::kLamps[i].id;
+    if (id >= LampId::GForce1) {
+      laddersDark = laddersDark && state(id) == LampState::Off;
+    }
+  }
+  CHECK(laddersDark);  // A new game: first rank, no combo, bonus 1X.
+  CHECK(table::taxiLamp(0) == LampId::TaxiT && table::taxiLamp(3) == LampId::TaxiI);
+  CHECK(pinball::kRankCount <= 7);  // One chevron a rank.
+}
+
+void testDomesWhereTheyStand() {
+  // Every dome a flasher fires is a FlasherId, drawn where the art bakes it.
+  std::array<int, static_cast<std::size_t>(table::FlasherId::Count)> fired{};
+  for (std::uint8_t f = 0; f < static_cast<std::uint8_t>(fx::Flasher::Count); ++f) {
+    const auto flasher = static_cast<fx::Flasher>(f);
+    const table::FlasherId dome = fx::domeOf(flasher);
+    if (dome == table::FlasherId::Count) {
+      continue;
+    }
+    ++fired[static_cast<std::size_t>(dome)];
+    const Vec2 at = fx::flasherPosition(flasher);
+    CHECK(at.x == table::kFlasherDomes[static_cast<std::size_t>(dome)].x &&
+          at.y == table::kFlasherDomes[static_cast<std::size_t>(dome)].y);
+  }
+  // Each dome has exactly one flasher.
+  CHECK(std::ranges::all_of(fired, [](int n) { return n == 1; }));
+  CHECK(fx::domeOf(fx::Flasher::Table) == table::FlasherId::Count);
+  CHECK(fx::domeOf(fx::Flasher::Drone) == table::FlasherId::Count);
+}
+
+constexpr Vec2 kParked{300.0F, 560.0F};
+
+// Shoots the ball into the drone from below, the show watching; true if
+// it was hit.
+bool hitDrone(Game& game, LightShow& show) {
+  for (int i = 0; i < 4000 && !(game.drone().up && game.drone().sink == 0.0F &&
+                                 std::fabs(game.drone().position.x - 356.0F) < 12.0F);
+       ++i) {
+    Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+    step(game, show);
+  }
+  Seam::placeBall(game, 0, {game.drone().position.x, 350.0F}, {0.0F, -900.0F});
+  Seam::putInPlay(game, 0);
+  for (int i = 0; i < 30; ++i) {
+    const int before = game.rules().droneHits();
+    const std::uint32_t hits = game.droneHitCount();
+    step(game, show);
+    if (game.droneHitCount() != hits || game.rules().droneHits() != before) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void testDroneHitsLightTheArmour() {
+  // A hit: the drone's flash, through its gate, and the armour lamp it won
+  // flashes. The fifth hit knocks it down: the armour runs up its ladder
+  // and the lane's dome fires.
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  CHECK(hitDrone(game, show));
+  CHECK(show.droneFlash() == 1.0F);
+  CHECK(show.lampLevel(LampId::DroneArmour1) > 0.9F);
+  for (int i = 0; i < 40; ++i) {
+    Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+    step(game, show);
+  }
+  CHECK(show.droneFlash() < 1.0F);
+  CHECK(show.lampState(LampId::DroneArmour1) == LampState::On);
+  CHECK(show.lampState(LampId::DroneArmour2) == LampState::Blink);
+  int hits = 1;
+  bool domeFired = false;
+  bool armourSwept = false;
+  for (int k = 0; k < 8 && hits < 5; ++k) {
+    if (hitDrone(game, show)) {
+      ++hits;
+    }
+    for (int i = 0; i < 60; ++i) {
+      Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+      step(game, show);
+      const fx::BurstViews bursts = show.bursts();
+      for (const fx::BurstView& b : bursts.span()) {
+        domeFired = domeFired || fx::domeOf(b.where) == table::FlasherId::Afterburner;
+      }
+      // Down, the rules' armour is dark; the sweep lights it anyway.
+      armourSwept = armourSwept || (game.rules().droneHits() == 0 &&
+                                    show.lampLevel(LampId::DroneArmour3) > 0.9F);
+    }
+  }
+  CHECK(hits == 5);
+  CHECK(domeFired);
+  CHECK(armourSwept);
+}
+
+void testLaddersFill() {
+  // A rank won: the rank ladder fills from the bottom, all the way up,
+  // then holds the ranks won. (A combo of 2X or more and a raised bonus
+  // multiplier fill theirs the same way.)
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  // Bumper Basics, offered at the start: into the Briefing room, then its
+  // twelve thrusters (as core/Scenes.cpp starts a course).
+  pinball::Rules& rules = Seam::rules(game);
+  const std::size_t rank = rules.rank();
+  CHECK(rules.briefingLit() && rules.courseOffered() == 0);
+  rules.onHole(table::kScoopHole, game.ball().id);
+  rules.onEject(table::kScoopHole);
+  CHECK(rules.courseRunning());
+  for (std::size_t i = 0; i < 12; ++i) {
+    rules.onBumper(i % table::kBumpers.size());
+  }
+  CHECK(rules.rank() == rank + 1);
+  float bottom = 0.0F;
+  float top = 0.0F;
+  for (int i = 0; i < 200; ++i) {
+    step(game, show);
+    bottom = std::max(bottom, show.lampLevel(LampId::Rank1));
+    top = std::max(top, show.lampLevel(LampId::Rank7));
+  }
+  CHECK(bottom > 0.9F);
+  CHECK(top > 0.9F);  // The whole ladder, not only the rank won.
+  CHECK(show.lampState(LampId::Rank1) == LampState::On);
+}
+
+void testCircuitSpinnersLight() {
+  // Revision 3's circuit spinners each light on their own turns, and their
+  // shot's arrow with them; the lane's stays dark.
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  const table::Spinner& left = table::kSpinners[table::kCircuitSpinnerLeft];
+  const Vec2 mid = (left.a + left.b) * 0.5F;
+  bool lit = false;
+  for (int k = 0; k < 6 && !lit; ++k) {
+    Seam::placeBall(game, game.ball().id, {mid.x, mid.y + 30.0F}, {0.0F, -1400.0F});
+    for (int i = 0; i < 30 && !lit; ++i) {
+      step(game, show);
+      lit = show.spinnerLevel(table::kCircuitSpinnerLeft) > 0.0F;
+    }
+  }
+  CHECK(lit);
+  CHECK(show.spinnerLevel(table::kLaneSpinner) == 0.0F);
+  CHECK(show.spinnerLevel(table::kCircuitSpinnerRight) == 0.0F);
+  CHECK(show.spinnerLevel(table::kSpinners.size()) == 0.0F);
+}
+
 }  // namespace
 
 void testLightShow() {
@@ -918,4 +1098,9 @@ void testLightShow() {
   testDomeGates();
   testDrainDipThroughTheLimiter();
   testRollCallSharesTheNestGate();
+  testRev3LampStubs();
+  testDomesWhereTheyStand();
+  testDroneHitsLightTheArmour();
+  testLaddersFill();
+  testCircuitSpinnersLight();
 }

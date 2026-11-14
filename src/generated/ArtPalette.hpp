@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string_view>
 
 namespace pinball::art {
 
@@ -32,7 +33,7 @@ inline constexpr Rgb kChLo{43, 53, 80};
 inline constexpr Rgb kBackdrop{18, 18, 58};
 
 // Lamp colours in LampId order: tint for the insert sprite and for its glow.
-inline constexpr std::array<Rgb, 29> kLampColours{{
+inline constexpr std::array<Rgb, 58> kLampColours{{
     {99, 230, 216},  // ArrowCircuitLeft
     {185, 140, 255},  // ArrowRunway
     {255, 107, 26},  // ArrowHangar
@@ -62,11 +63,40 @@ inline constexpr std::array<Rgb, 29> kLampColours{{
     {99, 230, 216},  // WingI
     {99, 230, 216},  // WingN
     {99, 230, 216},  // WingG
+    {47, 140, 255},  // DroneArmour1
+    {47, 140, 255},  // DroneArmour2
+    {47, 140, 255},  // DroneArmour3
+    {47, 140, 255},  // DroneArmour4
+    {47, 140, 255},  // DroneArmour5
+    {46, 209, 107},  // GForce1
+    {46, 209, 107},  // GForce2
+    {255, 210, 60},  // GForce3
+    {255, 107, 26},  // GForce4
+    {255, 46, 136},  // GForce5
+    {255, 210, 60},  // TaxiT
+    {255, 210, 60},  // TaxiA
+    {255, 210, 60},  // TaxiX
+    {255, 210, 60},  // TaxiI
+    {185, 140, 255},  // Rank1
+    {185, 140, 255},  // Rank2
+    {185, 140, 255},  // Rank3
+    {185, 140, 255},  // Rank4
+    {185, 140, 255},  // Rank5
+    {185, 140, 255},  // Rank6
+    {185, 140, 255},  // Rank7
+    {99, 230, 216},  // Combo2X
+    {99, 230, 216},  // Combo3X
+    {99, 230, 216},  // Combo4X
+    {99, 230, 216},  // Combo5X
+    {255, 46, 136},  // Bonus2X
+    {255, 46, 136},  // Bonus3X
+    {255, 46, 136},  // Bonus4X
+    {255, 46, 136},  // Bonus5X
 }};
 
 // Colour multiplier for each lamp when lit (light hues are held down so the ball stays the lightest thing).
-inline constexpr std::array<float, 29> kLampLitLevels{{
-    0.82F, 1.00F, 1.00F, 0.81F, 0.95F, 1.00F, 0.82F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.81F, 0.82F, 1.00F, 0.81F, 0.95F, 0.81F, 0.70F, 0.70F, 0.70F, 0.70F, 0.82F, 0.82F, 0.82F, 0.82F
+inline constexpr std::array<float, 58> kLampLitLevels{{
+    0.82F, 1.00F, 1.00F, 0.81F, 0.95F, 1.00F, 0.82F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.81F, 0.82F, 1.00F, 0.81F, 0.95F, 0.81F, 0.70F, 0.70F, 0.70F, 0.70F, 0.82F, 0.82F, 0.82F, 0.82F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.95F, 0.95F, 0.81F, 1.00F, 1.00F, 0.81F, 0.81F, 0.81F, 0.81F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.82F, 0.82F, 0.82F, 0.82F, 1.00F, 1.00F, 1.00F, 1.00F
 }};
 
 // Where each of the seven shot arrows points, in LampId order (playfield units).
@@ -74,8 +104,8 @@ inline constexpr std::array<std::array<float, 2>, 7> kArrowAims{{
     {118.0F, 440.0F},  // ArrowCircuitLeft
     {192.0F, 425.0F},  // ArrowRunway
     {279.0F, 392.0F},  // ArrowHangar
-    {356.0F, 428.0F},  // ArrowBriefing
-    {432.0F, 415.0F},  // ArrowTurbine
+    {441.0F, 400.0F},  // ArrowBriefing
+    {356.0F, 415.0F},  // ArrowTurbine
     {519.0F, 425.0F},  // ArrowSkyway
     {593.0F, 440.0F},  // ArrowCircuitRight
 }};
@@ -108,7 +138,7 @@ inline constexpr float kBallShadowOffsetY = 6.0F;
 inline constexpr float kBallShadowAlpha = 0.80F;
 
 // Light show: lit lamps in the neon of their colour, LampId order, with the lens level for each.
-inline constexpr std::array<Rgb, 29> kLampNeon{{
+inline constexpr std::array<Rgb, 58> kLampNeon{{
     {30, 235, 255},  // ArrowCircuitLeft
     {196, 92, 255},  // ArrowRunway
     {255, 138, 0},  // ArrowHangar
@@ -138,9 +168,38 @@ inline constexpr std::array<Rgb, 29> kLampNeon{{
     {30, 235, 255},  // WingI
     {30, 235, 255},  // WingN
     {30, 235, 255},  // WingG
+    {60, 200, 255},  // DroneArmour1
+    {60, 200, 255},  // DroneArmour2
+    {60, 200, 255},  // DroneArmour3
+    {60, 200, 255},  // DroneArmour4
+    {60, 200, 255},  // DroneArmour5
+    {157, 255, 30},  // GForce1
+    {157, 255, 30},  // GForce2
+    {255, 234, 40},  // GForce3
+    {255, 138, 0},  // GForce4
+    {255, 46, 200},  // GForce5
+    {255, 234, 40},  // TaxiT
+    {255, 234, 40},  // TaxiA
+    {255, 234, 40},  // TaxiX
+    {255, 234, 40},  // TaxiI
+    {196, 92, 255},  // Rank1
+    {196, 92, 255},  // Rank2
+    {196, 92, 255},  // Rank3
+    {196, 92, 255},  // Rank4
+    {196, 92, 255},  // Rank5
+    {196, 92, 255},  // Rank6
+    {196, 92, 255},  // Rank7
+    {30, 235, 255},  // Combo2X
+    {30, 235, 255},  // Combo3X
+    {30, 235, 255},  // Combo4X
+    {30, 235, 255},  // Combo5X
+    {255, 46, 200},  // Bonus2X
+    {255, 46, 200},  // Bonus3X
+    {255, 46, 200},  // Bonus4X
+    {255, 46, 200},  // Bonus5X
 }};
-inline constexpr std::array<float, 29> kLampNeonLevels{{
-    0.83F, 1.00F, 1.00F, 0.77F, 0.78F, 1.00F, 0.83F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.77F, 0.83F, 1.00F, 0.77F, 0.78F, 0.77F, 0.74F, 0.74F, 0.74F, 0.74F, 0.83F, 0.83F, 0.83F, 0.83F
+inline constexpr std::array<float, 58> kLampNeonLevels{{
+    0.83F, 1.00F, 1.00F, 0.77F, 0.78F, 1.00F, 0.83F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.77F, 0.83F, 1.00F, 0.77F, 0.78F, 0.77F, 0.74F, 0.74F, 0.74F, 0.74F, 0.83F, 0.83F, 0.83F, 0.83F, 0.96F, 0.96F, 0.96F, 0.96F, 0.96F, 0.78F, 0.78F, 0.77F, 1.00F, 1.00F, 0.77F, 0.77F, 0.77F, 0.77F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.83F, 0.83F, 0.83F, 0.83F, 1.00F, 1.00F, 1.00F, 1.00F
 }};
 
 inline constexpr Rgb kFxCyan{30, 235, 255};
@@ -159,5 +218,72 @@ inline constexpr float kGiStrength = 0.75F;
 inline constexpr float kBallPoolAlpha = 0.70F;  // the dark pool round each ball
 inline constexpr float kBallPoolRadii = 2.4F;  // its radius in ball radii
 inline constexpr float kFlareUnits = 64.0F;    // flare.png and ring.png at scale 1
+
+// Revision 3 (TABLE_REV3.md 3.10): the inserts baked into the background for the LampIds from
+// DroneArmour1 on (in this order, after the rev 2 lamps in kLampColours and the rest), and the flasher
+// domes (FlasherId). Positions are the art's (tools/art/palette.py); TableLayout.hpp uses exactly these.
+enum class InsertShape : std::uint8_t { Round, Hex, Chevron };
+struct PlannedLamp {
+  std::string_view name;
+  InsertShape shape;
+  float x, y;
+  Rgb colour, neon;
+  float litLevel, neonLevel;
+};
+inline constexpr float kLadderDiameter = 12.0F;
+inline constexpr float kHexDiameter = 11.0F;
+inline constexpr float kChevronWidth = 18.0F;
+inline constexpr float kChevronHeight = 9.0F;
+inline constexpr std::array<PlannedLamp, 29> kPlannedLamps{{
+    {"DroneArmour1", InsertShape::Hex, 356.0F, 386.0F, {47, 140, 255}, {60, 200, 255}, 1.00F, 0.96F},
+    {"DroneArmour2", InsertShape::Hex, 356.0F, 373.5F, {47, 140, 255}, {60, 200, 255}, 1.00F, 0.96F},
+    {"DroneArmour3", InsertShape::Hex, 356.0F, 361.0F, {47, 140, 255}, {60, 200, 255}, 1.00F, 0.96F},
+    {"DroneArmour4", InsertShape::Hex, 356.0F, 348.5F, {47, 140, 255}, {60, 200, 255}, 1.00F, 0.96F},
+    {"DroneArmour5", InsertShape::Hex, 356.0F, 336.0F, {47, 140, 255}, {60, 200, 255}, 1.00F, 0.96F},
+    {"GForce1", InsertShape::Round, 212.0F, 370.0F, {46, 209, 107}, {157, 255, 30}, 0.95F, 0.78F},
+    {"GForce2", InsertShape::Round, 212.0F, 356.0F, {46, 209, 107}, {157, 255, 30}, 0.95F, 0.78F},
+    {"GForce3", InsertShape::Round, 212.0F, 342.0F, {255, 210, 60}, {255, 234, 40}, 0.81F, 0.77F},
+    {"GForce4", InsertShape::Round, 212.0F, 328.0F, {255, 107, 26}, {255, 138, 0}, 1.00F, 1.00F},
+    {"GForce5", InsertShape::Round, 212.0F, 314.0F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"TaxiT", InsertShape::Round, 176.0F, 462.0F, {255, 210, 60}, {255, 234, 40}, 0.81F, 0.77F},
+    {"TaxiA", InsertShape::Round, 535.0F, 462.0F, {255, 210, 60}, {255, 234, 40}, 0.81F, 0.77F},
+    {"TaxiX", InsertShape::Round, 221.0F, 392.0F, {255, 210, 60}, {255, 234, 40}, 0.81F, 0.77F},
+    {"TaxiI", InsertShape::Round, 487.0F, 450.0F, {255, 210, 60}, {255, 234, 40}, 0.81F, 0.77F},
+    {"Rank1", InsertShape::Chevron, 355.5F, 662.0F, {185, 140, 255}, {196, 92, 255}, 1.00F, 1.00F},
+    {"Rank2", InsertShape::Chevron, 355.5F, 650.0F, {185, 140, 255}, {196, 92, 255}, 1.00F, 1.00F},
+    {"Rank3", InsertShape::Chevron, 355.5F, 638.0F, {185, 140, 255}, {196, 92, 255}, 1.00F, 1.00F},
+    {"Rank4", InsertShape::Chevron, 355.5F, 626.0F, {185, 140, 255}, {196, 92, 255}, 1.00F, 1.00F},
+    {"Rank5", InsertShape::Chevron, 355.5F, 614.0F, {185, 140, 255}, {196, 92, 255}, 1.00F, 1.00F},
+    {"Rank6", InsertShape::Chevron, 355.5F, 602.0F, {185, 140, 255}, {196, 92, 255}, 1.00F, 1.00F},
+    {"Rank7", InsertShape::Chevron, 355.5F, 590.0F, {185, 140, 255}, {196, 92, 255}, 1.00F, 1.00F},
+    {"Combo2X", InsertShape::Round, 262.0F, 648.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"Combo3X", InsertShape::Round, 278.0F, 642.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"Combo4X", InsertShape::Round, 294.0F, 636.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"Combo5X", InsertShape::Round, 310.0F, 630.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"Bonus2X", InsertShape::Round, 449.0F, 648.0F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"Bonus3X", InsertShape::Round, 433.0F, 642.0F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"Bonus4X", InsertShape::Round, 417.0F, 636.0F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"Bonus5X", InsertShape::Round, 401.0F, 630.0F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+}};
+struct FlasherDome {
+  std::string_view name;
+  float x, y;
+  Rgb colour, neon;
+};
+inline constexpr float kFlasherDomeUnits = 16.0F;
+inline constexpr std::array<FlasherDome, 8> kFlasherDomes{{
+    {"Hangar", 279.0F, 296.0F, {255, 107, 26}, {255, 138, 0}},
+    {"Briefing", 473.0F, 357.0F, {255, 210, 60}, {255, 234, 40}},
+    {"Afterburner", 391.0F, 360.0F, {46, 209, 107}, {157, 255, 30}},
+    {"Runway", 145.0F, 392.0F, {185, 140, 255}, {196, 92, 255}},
+    {"Skyway", 566.0F, 392.0F, {255, 46, 136}, {255, 46, 200}},
+    {"Nest", 324.0F, 168.0F, {255, 244, 214}, {255, 242, 176}},
+    {"SlingLeft", 150.0F, 692.0F, {99, 230, 216}, {30, 235, 255}},
+    {"SlingRight", 561.0F, 692.0F, {99, 230, 216}, {30, 235, 255}},
+}};
+inline constexpr float kDroneSpriteUnits = 44.0F;    // drone.png, drone_dive.png, drone_down.png
+inline constexpr float kCaptiveBallSpriteUnits = 30.0F;
+inline constexpr float kStandupSpriteWidth = 14.0F;  // standup_*.png, upright
+inline constexpr float kStandupSpriteHeight = 30.0F;
 
 }  // namespace pinball::art

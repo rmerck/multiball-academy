@@ -25,6 +25,32 @@ std::uint32_t stepsIn(double seconds) noexcept {
   return static_cast<std::uint32_t>(seconds / Game::kStepSeconds + 0.5);
 }
 
+// Fast at first, slowing to the end.
+float easeOut(float t) noexcept { return 1.0F - (1.0F - t) * (1.0F - t); }
+
+// The point a share of the way along a polyline, by length.
+template <std::size_t N>
+Vec2 alongPolyline(const std::array<Vec2, N>& points, float share) noexcept {
+  float length = 0.0F;
+  for (std::size_t i = 1; i < N; ++i) {
+    length += lengthOf(points[i] - points[i - 1]);
+  }
+  float left = std::clamp(share, 0.0F, 1.0F) * length;
+  for (std::size_t i = 1; i < N; ++i) {
+    const Vec2 run = points[i] - points[i - 1];
+    const float runLength = lengthOf(run);
+    if (left < runLength && runLength > 0.0F) {
+      return points[i - 1] + run * (left / runLength);
+    }
+    left -= runLength;
+  }
+  return points[N - 1];
+}
+
+// The Briefing room's subway, in steps: the wait in the room, then the ride.
+const std::uint32_t kSubwayWaitSteps = stepsIn(table::kScoopHoldSeconds - table::kSubwayRideSeconds);
+const std::uint32_t kSubwayRideSteps = stepsIn(table::kSubwayRideSeconds);
+
 }  // namespace
 
 Game::Game() {
@@ -195,9 +221,11 @@ void Game::startNewGame() {
     ball.stillSteps = 0;
   }
   shake_ = {};
-  // The bays are emptied and the spinner stops where it is.
+  // The bays are emptied and the spinners stop where they are.
   clearLocks();
-  spinsOwed_ = 0;
+  for (SpinnerState& spinner : spinner_) {
+    spinner.owed = 0;
+  }
   serveBall();
 }
 
@@ -474,6 +502,7 @@ void Game::step(const InputState& input) {
 
   rules_.setTable(tableStatus());
   handleEvents();
+  updateDrone();
   // Balls are always dealt with in slot order, so a step has one outcome.
   // Every ball taken during the step is noted before any held ball is
   // returned, so that the order in which a hole returns its balls does not
@@ -493,7 +522,7 @@ void Game::step(const InputState& input) {
       updateBallSearch(slot, playable && input.leftFlipper, playable && input.rightFlipper);
     }
   }
-  updateSpinner();
+  updateSpinners();
   rules_.tick(allBallsHeld());
   applyRules();
 
@@ -586,6 +615,25 @@ void Game::handleEvents() {
         hitSounds |= soundBit(Sound::Target);
         rules_.onDropTarget(index);
         break;
+      case Drone:
+        // A hit reported after the drone went down in this same step is
+        // not one.
+        if (physics_.droneUp()) {
+          hitSounds |= soundBit(Sound::Target);
+          onDroneHit(event.ball);
+        }
+        break;
+      case Standup:
+        hitSounds |= soundBit(Sound::Target);
+        rules_.onStandup(index, event.speed);
+        break;
+      case CaptiveBall:
+        hitSounds |= soundBit(Sound::Target);
+        if (index == table::kCaptiveBallSwitch) {
+          ++captiveSwitchCount_;
+          rules_.onCaptiveBall(event.speed);
+        }
+        break;
       case Rollover:
         ++rolloverCounts_[index];
         hitSounds |= soundBit(Sound::Rollover);
@@ -598,8 +646,11 @@ void Game::handleEvents() {
         break;
       case Sensor:
         rules_.onSensor(index, event.direction, event.speed, event.ball);
-        if (index == table::kSpinnerSensor) {
-          addSpins(event.speed, event.direction);
+        // Revision 3: the circuit mouths have spinners too.
+        if (const std::size_t spinner = table::spinnerOnSensor(index);
+            spinner < kSpinners &&
+            (table::kSpinners[spinner].bothWays || event.direction > 0)) {
+          addSpins(spinner, event.speed, event.direction);
         }
         break;
       case None:
@@ -803,6 +854,9 @@ void Game::updateHeldBall(std::size_t slot) {
   }
   if (!locked) {
     ++ball.heldSteps;
+    if (hole.type == table::HoleType::Subway && ball.heldSteps == kSubwayWaitSteps) {
+      note(GameEvent::Type::SubwayRide, slot, index);
+    }
     if (static_cast<double>(ball.heldSteps) * kStepSeconds < holdSeconds(hole.type)) {
       return;
     }
@@ -816,7 +870,9 @@ void Game::updateHeldBall(std::size_t slot) {
   returnBall(slot, index, hole.exitPosition, velocity);
   ball.ejectStep = stepCount_ + 1;
   ball.ejectFromBay = locked;
-  ball.ejectFrom = locked ? table::kLockBays[ball.lockBay - 1U] : table::holeDropPoint(hole);
+  // Drawn coming up out of its bay, out of the Hangar, or out of the floor
+  // at the subway's set-down.
+  ball.ejectFrom = locked ? table::kLockBays[ball.lockBay - 1U] : table::holeRisePoint(hole);
   note(GameEvent::Type::HoleEject, slot, index);
   if (locked) {
     const std::size_t bay = ball.lockBay - 1U;
@@ -927,28 +983,100 @@ bool Game::ballAwaitingLaunch() const noexcept {
   return false;
 }
 
-void Game::addSpins(float speedAcross, int direction) noexcept {
-  spinsOwed_ = std::min(spinsOwed_ + table::spinsFor(speedAcross), table::kMaxSpinsOwed);
-  spinDirection_ = direction < 0 ? -1 : 1;
+int Game::spinsOwed() const noexcept {
+  int owed = 0;
+  for (const SpinnerState& spinner : spinner_) {
+    owed += spinner.owed;
+  }
+  return owed;
 }
 
-void Game::updateSpinner() {
+void Game::addSpins(std::size_t spinner, float speedAcross, int direction) noexcept {
+  SpinnerState& s = spinner_[spinner];
+  s.owed = std::min(s.owed + table::spinsFor(speedAcross), table::kMaxSpinsOwed);
+  s.direction = direction < 0 ? -1 : 1;
+}
+
+void Game::updateSpinners() {
   constexpr std::uint32_t kTurn = 2U * static_cast<std::uint32_t>(table::kSpinPayoutSteps);
-  if (spinCooldown_ > 0) {
-    // Half a turn for each spin, a step at a time, either way round.
-    --spinCooldown_;
-    spinnerTicks_ = (spinnerTicks_ + (spinDirection_ > 0 ? 1U : kTurn - 1U)) % kTurn;
-  }
-  if (spinsOwed_ > 0 && spinCooldown_ == 0) {
-    --spinsOwed_;
-    spinCooldown_ = table::kSpinPayoutSteps;
-    ++spinCount_;
-    if (!rules_.gameOver() && !rules_.tilted()) {
-      sounds_ |= soundBit(Sound::Spinner);
+  // Each on its own, in the order of table::kSpinners.
+  for (std::size_t i = 0; i < kSpinners; ++i) {
+    SpinnerState& s = spinner_[i];
+    if (s.cooldown > 0) {
+      // Half a turn for each spin, a step at a time, either way round.
+      --s.cooldown;
+      s.ticks = (s.ticks + (s.direction > 0 ? 1U : kTurn - 1U)) % kTurn;
     }
-    note(GameEvent::Type::Spin, 0);
-    rules_.onSpin();
+    if (s.owed > 0 && s.cooldown == 0) {
+      --s.owed;
+      s.cooldown = table::kSpinPayoutSteps;
+      ++s.count;
+      ++spinCount_;
+      if (!rules_.gameOver() && !rules_.tilted()) {
+        sounds_ |= soundBit(Sound::Spinner);
+      }
+      note(GameEvent::Type::Spin, 0, i);
+      rules_.onSpin();
+    }
   }
+}
+
+void Game::onDroneHit(std::size_t slot) {
+  // Thrown back away from the ball: along the line from it to the drone's
+  // centre (straight up the table if they somehow coincide).
+  if (slot < kMaxBalls && physics_.ballActive(slot)) {
+    const Vec2 d = physics_.dronePosition() - physics_.ballPosition(slot);
+    const float length = lengthOf(d);
+    droneRecoilDirection_ = length > 0.5F ? d * (1.0F / length) : Vec2{0.0F, -1.0F};
+  }
+  droneHitStep_ = stepCount_ + 1;
+  ++droneHitCount_;
+  const bool down = rules_.onDrone();
+  note(GameEvent::Type::DroneHit, slot,
+       static_cast<std::size_t>(down ? table::kDroneArmour : rules_.droneHits()));
+  if (down) {
+    physics_.knockDroneDown(static_cast<std::uint32_t>(table::kDroneDownSeconds / kStepSeconds));
+    note(GameEvent::Type::DroneDown, slot);
+  }
+}
+
+void Game::updateDrone() {
+  const bool up = physics_.droneUp();
+  const bool knocked = physics_.droneKnocked();
+  if (up != droneWasUp_) {
+    droneMoveStep_ = stepCount_ + 1;
+    if (up) {
+      note(GameEvent::Type::DroneRise, 0, droneWasKnocked_ ? 1U : 0U);
+    } else if (!knocked) {
+      // Knocked down, it has had its DroneDown with the hit that did it.
+      note(GameEvent::Type::DroneDive, 0);
+    }
+  }
+  droneWasUp_ = up;
+  droneWasKnocked_ = knocked;
+}
+
+DroneView Game::drone() const noexcept {
+  DroneView view;
+  view.position = physics_.dronePosition();
+  view.up = physics_.droneUp();
+  view.knocked = physics_.droneKnocked();
+  if (view.knocked) {
+    view.downLeft = std::clamp(static_cast<float>(physics_.droneDownSteps()) /
+                                   static_cast<float>(stepsIn(table::kDroneDownSeconds)),
+                               0.0F, 1.0F);
+  }
+  // Sinking out of sight, or coming up; at rest either way when its last
+  // move is long past (or it has never moved).
+  view.sink = view.up ? 1.0F - easeOut(progressSince(droneMoveStep_, table::kDroneRiseSeconds))
+                      : easeOut(progressSince(droneMoveStep_, table::kDroneSinkSeconds));
+  // Out over the first half of the recoil and back over the second.
+  const float u = progressSince(droneHitStep_, table::kDroneRecoilSeconds);
+  if (u < 1.0F && view.up) {
+    view.recoil = 4.0F * u * (1.0F - u);
+    view.position = view.position + droneRecoilDirection_ * (table::kDroneRecoil * view.recoil);
+  }
+  return view;
 }
 
 void Game::updateBallSearch(std::size_t slot, bool leftRaised, bool rightRaised) {
@@ -1022,8 +1150,6 @@ BallView Game::ballView(std::size_t slot) const {
   BallView view{physics_.ballPosition(slot), physics_.ballAngle(slot)};
   view.id = static_cast<std::uint8_t>(slot);
   const BallState& state = balls_[slot];
-  // Fast at first, slowing to the end.
-  const auto easeOut = [](float t) noexcept { return 1.0F - (1.0F - t) * (1.0F - t); };
   if (!physics_.ballHeld(slot)) {
     // Just let out of the Briefing room or the Hangar: drawn coming up out
     // of the hole, or its bay, and onto the path it has from the exit.
@@ -1081,6 +1207,21 @@ BallView Game::ballView(std::size_t slot) const {
     // dropping in; then out of sight until it is returned.
     if (in >= 1.0F) {
       view.visible = false;
+      if (hole.type == table::HoleType::Subway) {
+        // Under the playfield: a glow building under the room while the
+        // ball waits its turn and its time there, then running along the
+        // subway to the set-down, fast at first and slowing to it.
+        view.underground = true;
+        if (state.heldSteps < kSubwayWaitSteps) {
+          view.glowAt = table::kBriefingSubway.front();
+          view.glow = static_cast<float>(state.heldSteps) / static_cast<float>(kSubwayWaitSteps);
+        } else {
+          const float ride = static_cast<float>(state.heldSteps - kSubwayWaitSteps) /
+                             static_cast<float>(kSubwayRideSteps);
+          view.glowAt = alongPolyline(table::kBriefingSubway, easeOut(std::min(ride, 1.0F)));
+          view.glow = 1.0F;
+        }
+      }
       return view;
     }
     view.drawOffset = (table::holeDropPoint(hole) - view.position) * easeOut(in);
@@ -1105,7 +1246,12 @@ BallView Game::ballView(std::size_t slot) const {
   // clear is drawn there full size.
   view.scale = t < 1.0F ? kRailScale : 1.0F;
   view.position = rail.back();
-  float left = t * length;
+  // Shaped (revision 3): fast up the ramp, slowest over the top, fast down
+  // the return: the share of the rail covered is t/2 + 2(t - 1/2)^3 + 1/4,
+  // whose rate runs 2, 1/2, 2 times the mean.
+  const float c = t - 0.5F;
+  const float covered = 0.5F * t + 2.0F * c * c * c + 0.25F;
+  float left = covered * length;
   for (std::size_t i = 1; i < rail.size(); ++i) {
     const Vec2 run = point(i) - point(i - 1);
     const float runLength = lengthOf(run);
@@ -1122,7 +1268,14 @@ BallView Game::ballView(std::size_t slot, float alpha) const {
   const BallView now = ballView(slot);
   const BallView& before = balls_[slot].previous;
   const float t = blendFactor(alpha);
-  // A hidden ball has no place to draw from or to.
+  // A hidden ball has no place to draw from or to; its glow under the
+  // playfield, if it has one, moves smoothly too.
+  if (t < 1.0F && now.underground && before.underground) {
+    BallView view = now;
+    view.glowAt = before.glowAt + (now.glowAt - before.glowAt) * t;
+    view.glow = before.glow + (now.glow - before.glow) * t;
+    return view;
+  }
   if (t >= 1.0F || !now.visible || !before.visible) {
     return now;
   }

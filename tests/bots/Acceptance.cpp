@@ -492,7 +492,7 @@ Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bo
 }  // namespace
 
 char touchChar(Touch touch) noexcept {
-  static constexpr char kChars[] = ".OLwDHSPWRQbs^ijxyc*";
+  static constexpr char kChars[] = ".OLwDHSPWRQbs^ijxyc*dTG";
   const auto index = static_cast<std::size_t>(touch);
   return index < sizeof(kChars) - 1 ? kChars[index] : '?';
 }
@@ -828,8 +828,9 @@ ScoopPairResult scoopPairs(int pairs) {
     harness.kickbackOff = true;
     harness.advance();
     const float dx = (static_cast<float>(j % 5) - 2.0F) * 3.0F;
-    harness.put(0, {scoop.center.x + dx, 440.0F},
-                {0.0F, -700.0F - static_cast<float>(j % 4) * 300.0F}, true);
+    // Revision 3: the room takes a ball coming in up and to the right.
+    const float speed = 700.0F + static_cast<float>(j % 4) * 300.0F;
+    harness.put(0, {scoop.center.x - 12.0F + dx * 0.5F, 445.0F}, {0.3F * speed, -speed}, true);
     // The second follows the first by anything from nothing to past the
     // moment the first comes out.
     const int gap = (j * 7) % (hold + 30);
@@ -840,7 +841,7 @@ ScoopPairResult scoopPairs(int pairs) {
     int overlapRun = 0;
     for (int i = 0; i < kStepsPerSecond * 10; ++i) {
       if (i == gap) {
-        second = harness.add({scoop.center.x - dx, 470.0F}, {0.0F, -900.0F});
+        second = harness.add({scoop.center.x - 16.0F - dx * 0.5F, 470.0F}, {270.0F, -900.0F});
       }
       const std::size_t eventsBefore = harness.events.size();
       harness.advance();

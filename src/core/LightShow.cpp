@@ -40,6 +40,12 @@ enum : std::uint8_t {
   kGroupCourses,
   kGroupArrows,
   kGroupApron,
+  kGroupDrone,
+  kGroupGForce,
+  kGroupTaxi,
+  kGroupRank,
+  kGroupCombo,
+  kGroupBonus,
   kGroupCount
 };
 constexpr std::array<Group, kGroupCount> kGroups{{
@@ -54,6 +60,16 @@ constexpr std::array<Group, kGroupCount> kGroups{{
       LampId::ArrowTurbine, LampId::ArrowSkyway, LampId::ArrowCircuitRight},
      7},
     {{LampId::ShootAgain, LampId::ExtraCredit, LampId::ExtraBall}, 3},
+    {{LampId::DroneArmour1, LampId::DroneArmour2, LampId::DroneArmour3, LampId::DroneArmour4,
+      LampId::DroneArmour5},
+     5},
+    {{LampId::GForce1, LampId::GForce2, LampId::GForce3, LampId::GForce4, LampId::GForce5}, 5},
+    {{LampId::TaxiT, LampId::TaxiA, LampId::TaxiX, LampId::TaxiI}, 4},
+    {{LampId::Rank1, LampId::Rank2, LampId::Rank3, LampId::Rank4, LampId::Rank5, LampId::Rank6,
+      LampId::Rank7},
+     7},
+    {{LampId::Combo2X, LampId::Combo3X, LampId::Combo4X, LampId::Combo5X}, 4},
+    {{LampId::Bonus2X, LampId::Bonus3X, LampId::Bonus4X, LampId::Bonus5X}, 4},
 }};
 // Each lamp of a sweep lights this many steps after the one before it.
 constexpr std::uint64_t kSweepStride = 6;
@@ -138,36 +154,57 @@ float bell(float distance, float width) noexcept {
 
 }  // namespace
 
-Vec2 flasherPosition(Flasher flasher) noexcept {
+table::FlasherId domeOf(Flasher flasher) noexcept {
+  using table::FlasherId;
   switch (flasher) {
     case Flasher::Hangar:
-      return table::kHoles[table::kHangarHole].center;
+      return FlasherId::Hangar;
     case Flasher::Briefing:
-      return table::kHoles[table::kScoopHole].center;
+      return FlasherId::Briefing;
     case Flasher::RampLeft:
-      return table::kHoles[table::kRunwayHole].center;
+      return FlasherId::Runway;
     case Flasher::RampRight:
-      return table::kHoles[table::kSkywayHole].center;
-    case Flasher::Nest: {
-      Vec2 sum{};
-      for (const table::Bumper& bumper : table::kBumpers) {
-        sum = sum + bumper.shape.center;
-      }
-      return sum * (1.0F / static_cast<float>(table::kBumpers.size()));
-    }
+      return FlasherId::Skyway;
+    case Flasher::Nest:
+      return FlasherId::Nest;
+    case Flasher::Turbine:
+      return FlasherId::Afterburner;
+    case Flasher::SlingLeft:
+      return FlasherId::SlingLeft;
+    case Flasher::SlingRight:
+      return FlasherId::SlingRight;
+    case Flasher::Academy:
+    case Flasher::TopLanes:
+    case Flasher::Apron:
+    case Flasher::Drone:
+    case Flasher::Captive:
+    case Flasher::Table:
+    case Flasher::Lights:
+    case Flasher::Count:
+      break;
+  }
+  return FlasherId::Count;
+}
+
+Vec2 flasherPosition(Flasher flasher) noexcept {
+  const table::FlasherId dome = domeOf(flasher);
+  if (dome != table::FlasherId::Count) {
+    return table::kFlasherDomes[static_cast<std::size_t>(dome)];
+  }
+  switch (flasher) {
     case Flasher::Academy:
       return table::kLamps[lampIndex(LampId::Graduation)].position;
     case Flasher::TopLanes:
       return centreOf(std::array<Vec2, 3>{table::kRollovers[0].zone.center,
                                           table::kRollovers[1].zone.center,
                                           table::kRollovers[2].zone.center});
-    case Flasher::Turbine:
-      return (table::kSpinner.a + table::kSpinner.b) * 0.5F;
     case Flasher::Apron:
       return table::kLamps[lampIndex(LampId::ShootAgain)].position;
-    case Flasher::Table:
-    case Flasher::Lights:
-    case Flasher::Count:
+    case Flasher::Drone:
+      return {(table::kDroneLeftX + table::kDroneRightX) * 0.5F, table::kDroneY};
+    case Flasher::Captive:
+      return table::kCaptiveHome;
+    default:
       break;
   }
   return {table::kWidth * 0.5F, table::kHeight * 0.5F};
@@ -242,6 +279,9 @@ void LightShow::observe(const Game& game) noexcept {
     wasTilted_ = game.rules().tilted();
     wasGameOver_ = game.rules().gameOver();
     wasMultiball_ = game.rules().multiball();
+    wasRank_ = game.rules().rank();
+    wasCombo_ = game.rules().comboLevel();
+    wasBonus_ = game.rules().bonusMultiplier();
   }
   seen_ = true;
   now_ = step;
@@ -284,6 +324,21 @@ void LightShow::readEvents(const Game& game) noexcept {
           strike(kGateNest, targetHit_[i]);
         } else if (event.element.kind == table::ElementKind::DropTarget && i < doorHit_.size()) {
           strike(kGateDoors, doorHit_[i]);
+        } else if (event.element.kind == table::ElementKind::Drone) {
+          strike(kGateDrone, droneHit_);
+        } else if (event.element.kind == table::ElementKind::Standup &&
+                   i < standupHit_.size()) {
+          strike(static_cast<std::uint8_t>(kGateStandup + i), standupHit_[i]);
+        } else if (event.element.kind == table::ElementKind::CaptiveBall) {
+          // Index 0: the captive ball struck; index 1: driven up its channel
+          // far enough to close the switch behind it (2a).
+          if (i == 0) {
+            strike(kGateGForce, gForceHit_);
+          } else if (gateOpen(kGateGForce)) {
+            strike(kGateGForce, gForceHit_);
+            sweepGroup(kGroupGForce);  // The meter runs up its ladder.
+            burst(Flasher::Captive, Colour::Lime, 0.7F, 56.0F, 28);
+          }
         }
         break;
       case PhysicsEvent::Type::Enter:
@@ -324,8 +379,10 @@ void LightShow::readEvents(const Game& game) noexcept {
         strike(kGateKickback, kickbackHit_);
         break;
       case GameEvent::Type::Spin:
-        spinHit_ = mark;
-        spinEnergy_ = std::min(1.0F, spinEnergy_ + 0.2F);
+        if (event.index < spinHit_.size()) {
+          spinHit_[event.index] = mark;
+          spinEnergy_[event.index] = std::min(1.0F, spinEnergy_[event.index] + 0.2F);
+        }
         break;
       case GameEvent::Type::DoorBankDropped:
       case GameEvent::Type::DoorBankRaised:
@@ -336,9 +393,27 @@ void LightShow::readEvents(const Game& game) noexcept {
         break;
       case GameEvent::Type::EjectSave:
         break;
+      case GameEvent::Type::DroneHit:
+        strike(kGateDrone, droneHit_);
+        break;
+      case GameEvent::Type::DroneDown:
+        // Knocked down: the armour runs up and the lane's dome fires (a
+        // large flash, through the limiter).
+        sweepGroup(kGroupDrone);
+        burst(Flasher::Turbine, Colour::Lime, 0.9F, 110.0F, 40);
+        burst(Flasher::Drone, Colour::Cyan, 0.8F, 70.0F, 36);
+        break;
+      case GameEvent::Type::DroneDive:
+      case GameEvent::Type::DroneRise:
+        break;
+      case GameEvent::Type::SubwayRide:
+        burst(Flasher::Briefing, Colour::Yellow, 0.6F, 60.0F, 30);
+        break;
     }
   }
-  spinEnergy_ *= 0.985F;
+  for (float& energy : spinEnergy_) {
+    energy *= 0.985F;
+  }
 }
 
 void LightShow::readSounds(const Game& game) noexcept {
@@ -459,6 +534,12 @@ float LightShow::slingFlash(std::size_t sling) const noexcept {
   return sling < slingHit_.size() ? flash(slingHit_[sling], kHitFlashSteps) : 0.0F;
 }
 
+float LightShow::droneFlash() const noexcept { return flash(droneHit_, kHitFlashSteps); }
+float LightShow::standupFlash(std::size_t standup) const noexcept {
+  return standup < standupHit_.size() ? flash(standupHit_[standup], kHitFlashSteps) : 0.0F;
+}
+float LightShow::gForceFlash() const noexcept { return flash(gForceHit_, kHitFlashSteps); }
+
 float LightShow::doorLevel(std::size_t door) const noexcept {
   return door < doorLevels_.size() ? doorLevels_[door] : 0.0F;
 }
@@ -479,13 +560,16 @@ float LightShow::bayFlash(std::size_t bay) const noexcept {
 }
 float LightShow::kickbackFlash() const noexcept { return flash(kickbackHit_, 48); }
 
-float LightShow::spinnerLevel() const noexcept {
+float LightShow::spinnerLevel(std::size_t spinner) const noexcept {
+  if (spinner >= spinEnergy_.size()) {
+    return 0.0F;
+  }
   if (reduceMotion_) {
-    return spinEnergy_;
+    return spinEnergy_[spinner];
   }
   // Brighter the faster it spins, with a ripple at each turn too small to be
   // a flash (WCAG 2.3.1: the turns come up to twenty a second).
-  return spinEnergy_ * (0.85F + 0.15F * flash(spinHit_, 4));
+  return spinEnergy_[spinner] * (0.85F + 0.15F * flash(spinHit_[spinner], 4));
 }
 
 // --- Sweeps -----------------------------------------------------------------
@@ -1031,6 +1115,30 @@ float LightShow::ambientLevel(std::size_t lamp) const noexcept {
     // Round the six courses and Graduation in the middle of them.
     return comet(at(140.0F) * 7.0F, static_cast<float>(i - lampIndex(LampId::Course1)), 7.0F, true);
   }
+  // Revision 3's ladders: each runs its own way, up the table or out from
+  // the middle; the T-A-X-I letters go round.
+  const auto ladder = [&](LampId first, std::size_t count, float period) {
+    return comet(at(period) * static_cast<float>(count + 2),
+                 static_cast<float>(i - lampIndex(first)), static_cast<float>(count + 2), true);
+  };
+  if (id >= LampId::DroneArmour1 && id <= LampId::DroneArmour5) {
+    return ladder(LampId::DroneArmour1, 5, 70.0F);
+  }
+  if (id >= LampId::GForce1 && id <= LampId::GForce5) {
+    return ladder(LampId::GForce1, 5, 84.0F);
+  }
+  if (id >= LampId::TaxiT && id <= LampId::TaxiI) {
+    return comet(at(96.0F) * 4.0F, static_cast<float>(i - lampIndex(LampId::TaxiT)), 4.0F, true);
+  }
+  if (id >= LampId::Rank1 && id <= LampId::Rank7) {
+    return ladder(LampId::Rank1, 7, 150.0F);
+  }
+  if (id >= LampId::Combo2X && id <= LampId::Combo5X) {
+    return ladder(LampId::Combo2X, 4, 72.0F);
+  }
+  if (id >= LampId::Bonus2X && id <= LampId::Bonus5X) {
+    return ladder(LampId::Bonus2X, 4, 72.0F);
+  }
   if (id == LampId::Lock1 || id == LampId::Lock2) {
     const bool first = at(80.0F) < 0.5F;
     return (first == (id == LampId::Lock1)) ? 0.5F : kUnlitFloor;
@@ -1101,8 +1209,36 @@ void LightShow::updateLamps(const Game& game) noexcept {
   hits[lampIndex(LampId::Lock1)] = std::max(hits[lampIndex(LampId::Lock1)], bayFlash(0));
   hits[lampIndex(LampId::Lock2)] = std::max(hits[lampIndex(LampId::Lock2)], bayFlash(1));
   hits[lampIndex(LampId::Kickback)] = kickbackFlash();
-  hits[lampIndex(LampId::ArrowTurbine)] =
-      std::max(hits[lampIndex(LampId::ArrowTurbine)], spinnerLevel() * 0.7F);
+  // Revision 3: the armour lamp a hit has just won, the letter beside a
+  // struck stand-up.
+  if (const int won = rules.droneHits(); won > 0 && won <= 5) {
+    const std::size_t k = lampIndex(LampId::DroneArmour1) + static_cast<std::size_t>(won - 1);
+    hits[k] = std::max(hits[k], droneFlash());
+  }
+  for (std::size_t k = 0; k < standupHit_.size(); ++k) {
+    float& level = hits[lampIndex(table::taxiLamp(k))];
+    level = std::max(level, standupFlash(k));
+  }
+  // The ladders fill as they grow.
+  if (rules.rank() > wasRank_) {
+    sweepGroup(kGroupRank);
+  }
+  if (rules.comboLevel() > wasCombo_ && rules.comboLevel() >= 2) {
+    sweepGroup(kGroupCombo);
+  }
+  if (rules.bonusMultiplier() > wasBonus_) {
+    sweepGroup(kGroupBonus);
+  }
+  wasRank_ = rules.rank();
+  wasCombo_ = rules.comboLevel();
+  wasBonus_ = rules.bonusMultiplier();
+  // Each spinner lights its shot's arrow as it turns.
+  for (const auto& [spinner, arrow] :
+       {std::pair{table::kLaneSpinner, LampId::ArrowTurbine},
+        std::pair{table::kCircuitSpinnerLeft, LampId::ArrowCircuitLeft},
+        std::pair{table::kCircuitSpinnerRight, LampId::ArrowCircuitRight}}) {
+    hits[lampIndex(arrow)] = std::max(hits[lampIndex(arrow)], spinnerLevel(spinner) * 0.7F);
+  }
 
   for (std::size_t i = 0; i < kLampCount; ++i) {
     if (!blackout && !rules.tilted() && states_[i] != LampState::On) {

@@ -19,7 +19,7 @@ L = layout()
 W, H = L["width"], L["height"]
 CX = L["fieldCenterX"]
 LAMP_NAMES = [n for n, _ in P.LAMPS]
-LAMP = {LAMP_NAMES[l["id"]]: tuple(l["c"]) for l in L["lamps"]}
+LAMP = {LAMP_NAMES[l["id"]]: tuple(l["c"]) for l in L["lamps"] if l["kind"] != "planned"}  # planned: PLANNED_LAMPS
 LAMP_COL = dict(P.LAMPS)
 SHELL = [tuple(p) for p in L["shell"]]
 ISLAND = [tuple(p) for p in L["laneIsland"]]
@@ -32,6 +32,19 @@ DOORS = [(d["a"], d["b"], d["r"]) for d in L["bayDoors"]]
 BAYS = [tuple(b) for b in L["lockBays"]]
 HOLES = {h["type"]: h for h in L["holes"]}
 SPIN = (tuple(L["spinner"]["a"]), tuple(L["spinner"]["b"]))
+# Revision 3.
+STANDUPS = [((tuple(u["shape"]["a"]), tuple(u["shape"]["b"]), u["shape"]["r"]), u["letter"]) for u in L["standups"]]
+GATE = [tuple(p) for p in L["laneGate"][1:-1]]          # without its ghost points
+GPOST = L.get("gforcePost")      # phase 1's stand-in for the captive ball (gone with task 2a)
+DRONE = L["drone"]
+CAPTIVE = L.get("captiveBall")    # the captive ball's channel, once task 2a puts it in TableLayout.hpp
+SCOOP = HOLES["subway"]   # the Briefing room (HoleType::Subway; "scoop" before task 2c)
+CIRCUIT_MOUTHS = [(tuple(L["sensors"][i]["a"]), tuple(L["sensors"][i]["b"])) for i in (0, 1)]
+# kWalls, in TableLayout.hpp order: four divider runs, the rim straights, the Hangar's four walls, then the
+# centre (lane's right wall, Briefing room's left wall and roof) and the two roll call posts; the rim arcs follow.
+N_WALLS = 15
+for i, at in ((6, (237.0, 318.0)), (9, (321.0, 318.0)), (13, (324.0, 128.0)), (14, (387.0, 128.0))):
+    assert tuple(WALLS[i][0]) == at, ("kWalls changed order: update make_table.py", i, WALLS[i][0])
 ORIGIN_L, ORIGIN_R = (318.0, 843.0), (393.0, 843.0)   # where shots leave the left and right bat
 SPRITES = [os.path.join(ROOT, "assets", "sprites")]   # make_all points this at the tree being written
 SHADOW = "#04030E"
@@ -193,7 +206,7 @@ class Table:
             sign = 1 if x < CX else -1
             self.chevron(x, y, math.degrees(math.atan2(ty * sign, tx * sign)), mix(P.AQUA, P.INK, 0.35))
         for x in (116.5, 594.5):
-            for y in (330, 380, 430):
+            for y in (330, 380):
                 self.chevron(x, y, -90, mix(P.AQUA, P.INK, 0.35))
         # Return lanes and outlanes: darker beds.
         for (x0, x1, y0, y1) in ((45, 78, 604, 960), (88, 141, 606, 742), (633, 671, 588, 960), (570, 623, 606, 742)):
@@ -216,7 +229,7 @@ class Table:
     def taxi_lines(self):
         c = self.c
         shots = [(ORIGIN_R, (118, 530), "ArrowCircuitLeft"), (ORIGIN_R, (192, 438), "ArrowRunway"), (ORIGIN_R, (279, 432), "ArrowHangar"),
-                 (ORIGIN_R, (356, 500), "ArrowBriefing"), (ORIGIN_L, (356, 500), "ArrowBriefing"), (ORIGIN_L, (432, 432), "ArrowTurbine"),
+                 (ORIGIN_R, (356, 476), "ArrowTurbine"), (ORIGIN_L, (356, 476), "ArrowTurbine"), (ORIGIN_L, (432, 488), "ArrowBriefing"),
                  (ORIGIN_L, (519, 438), "ArrowSkyway"), (ORIGIN_L, (593, 530), "ArrowCircuitRight")]
         c.save(); c.clipPath(self.shell, skia.ClipOp.kIntersect, True)
         for o, m, key in shots:
@@ -242,7 +255,6 @@ class Table:
             c.drawPath(arc, stroke(C(tone, 200), 1.0, PathEffect=skia.DashPathEffect.Make([2, 5], 0)))
         # Taxiway: a double centre line from the lamp arc to the flippers, with hold bars across it.
         for dx in (-3.0, 3.0):
-            c.drawLine(x + dx, 628, x + dx, 660, stroke(C(tone2), 1.4, cap=skia.Paint.kButt_Cap))
             c.drawLine(x + dx, 790, x + dx, 900, stroke(C(tone2), 1.4, cap=skia.Paint.kButt_Cap, PathEffect=skia.DashPathEffect.Make([9, 6], 0)))
         for i in range(4):
             yy = 800 + i * 7
@@ -333,23 +345,178 @@ class Table:
             for i in range(2):
                 c.drawLine(x - 10, y + 13 + i * 3, x + 10 - i * 6, y + 13 + i * 3, stroke(C("#5560B0", 200), 0.8, cap=skia.Paint.kButt_Cap))
 
-    def turbine(self):
+    def afterburner(self):
+        """The Afterburner lane (the Turbine shot, moved to the centre): from its mouth up to the one-way gate.
+        A jet pipe painted on the floor in the shot's colour, dark under the ball; the drone armour ladder runs
+        up its middle (baked with the other inserts); the spinner's seat; the shot's name across the mouth."""
         c = self.c
-        cx, cy, R = 432.0, 372.0, 30.0
         col = P.SHOT["turbine"]
-        c.drawCircle(cx, cy, R, shade(rad((cx - 9, cy - 12), R * 1.6, [C("#2C3A7C"), C("#141A4A"), C("#0A0920")], [0, 0.55, 1])))
-        for k in range(12):
-            a = math.radians(k * 30)
-            c.drawPath(poly_path([(cx + 6 * math.cos(a), cy + 6 * math.sin(a)), (cx + (R - 4) * math.cos(a + 0.10), cy + (R - 4) * math.sin(a + 0.10)),
-                                  (cx + (R - 4) * math.cos(a + 0.40), cy + (R - 4) * math.sin(a + 0.40))]), fill(C("#3E4C8E", 210)))
-        c.drawCircle(cx, cy, R, stroke(C(P.INK), 3.4)); c.drawCircle(cx, cy, R, stroke(C("#4A5AA0"), 1.6))
-        c.drawCircle(cx, cy, 6.5, fill(C(P.INK))); c.drawCircle(cx, cy, 5, fill(C("#4A5AA0")))
-        for x in (410, 432, 454):
-            ch = poly_path([(x - 6, 430), (x, 424), (x + 6, 430)], close=False)
-            c.drawPath(ch, stroke(C(P.INK), 4.4, join=skia.Paint.kMiter_Join)); c.drawPath(ch, stroke(C(mix(col, P.INK, 0.3)), 2.2, join=skia.Paint.kMiter_Join))
-        self.label("TURBINE", 432, 338.5, mix(col, P.CREAM, 0.35))
+        x0, x1 = SPIN[0][0], SPIN[1][0]
+        top = min(GATE[0][1], GATE[1][1]) - 2
+        pipe = poly_path([(x0, top), (x1, top), (x1, 432), (x0, 432)])
+        c.save(); c.clipPath(pipe, skia.ClipOp.kIntersect, True)
+        c.drawPaint(shade(lin((0, 432), (0, top), [C("#0A1A2E"), C("#0C2A2A"), C("#0E3326")], [0, 0.6, 1])))
+        mx = (x0 + x1) / 2
+        # The pipe's liner: two rails and rings, like a nozzle seen from above.
+        for xx in (x0 + 7, x1 - 7):
+            c.drawLine(xx, top, xx, 432, stroke(C(mix(col, P.INK, 0.62)), 1.2, cap=skia.Paint.kButt_Cap, PathEffect=skia.DashPathEffect.Make([6, 4], 0)))
+        for y in np.arange(top + 10, 396, 12.5):
+            c.drawLine(x0 + 9, y, x1 - 9, y, stroke(C(mix(col, P.INK, 0.80), 200), 0.8, cap=skia.Paint.kButt_Cap))
+        c.drawPath(pipe, blur(stroke(C(P.INK, 170), 7), 3))
+        c.restore()
+        # Chevrons up the lane's mouth, below the spinner.
+        for i, y in enumerate((426, 418)):
+            ch = poly_path([(mx - 6, y + 4), (mx, y - 2), (mx + 6, y + 4)], close=False)
+            c.drawPath(ch, stroke(C(P.INK), 4.0, join=skia.Paint.kMiter_Join)); c.drawPath(ch, stroke(C(mix(col, P.INK, 0.35 + 0.15 * i)), 2.0, join=skia.Paint.kMiter_Join))
+        self.label("AFTERBURNER", mx, 438.5, mix(col, P.CREAM, 0.35), 7.0, 0.2)
         # Spinner seat: the line the blade turns on.
         c.drawLine(SPIN[0][0], SPIN[0][1] + 3.5, SPIN[1][0], SPIN[1][1] + 3.5, blur(stroke(C(SHADOW, 170), 4), 1.6))
+
+    def drone_bay(self):
+        """The drone's patrol: a recessed track across the top of the lane, hazard-edged, with its dive hatch
+        in the middle. Low tones only: every ball out of the lane crosses it."""
+        c = self.c
+        r, y = DRONE["radius"], DRONE["y"]
+        xl, xr = DRONE["leftX"] - r - 3, DRONE["rightX"] + r + 3
+        bay = rrect(xl, y - r - 2, xr - xl, 2 * r + 4, 7)
+        c.drawRRect(bay, fill(C("#0C1036", 235)))
+        c.save(); c.clipRRect(bay, skia.ClipOp.kIntersect, True)
+        edge = mix(P.YELLOW, P.INK, 0.62)
+        for yy in (y - r - 2, y + r - 1):
+            band = skia.Rect.MakeLTRB(xl, yy, xr, yy + 3)
+            c.save(); c.clipRect(band, skia.ClipOp.kIntersect, True)
+            c.drawRect(band, fill(C(edge)))
+            for xx in np.arange(xl - 4, xr + 4, 6.0):
+                c.drawPath(poly_path([(xx, yy + 3), (xx + 3, yy + 3), (xx + 6, yy), (xx + 3, yy)]), fill(C(P.INK)))
+            c.restore()
+        c.drawLine(xl + 8, y, xr - 8, y, stroke(C("#2A3470"), 1.0, cap=skia.Paint.kButt_Cap, PathEffect=skia.DashPathEffect.Make([4, 4], 0)))
+        mx = (DRONE["leftX"] + DRONE["rightX"]) / 2
+        hatch = rrect(mx - 11, y - 8, 22, 16, 3)
+        c.drawRRect(hatch, stroke(C("#2A3470"), 1.0))
+        for dx in (-5.5, 0, 5.5):
+            c.drawLine(mx + dx, y - 6, mx + dx, y + 6, stroke(C("#1E2660"), 1.0, cap=skia.Paint.kButt_Cap))
+        c.drawRRect(bay, blur(stroke(C(P.INK, 200), 4), 2))
+        c.restore()
+        c.drawRRect(bay, stroke(C("#2A3470"), 0.9))
+        for xx in (xl + 3.5, xr - 3.5):
+            self.bolt(xx, y, 1.6)
+
+    def briefing_room(self):
+        """The Briefing room, off centre (a classroom seen from above): a chalkboard under the roof, the scoop as
+        a dark well with a yellow lip where the game drops the ball (kScoopDropPoint, at the hole's capture box),
+        light from the doorway on the tarmac, and the room's name over the threshold."""
+        c = self.c
+        lw, roof = WALLS[11], WALLS[12]
+        rail_x = DEAD[1][0][0]
+        (ax, ay), (bx, by) = lw[0], lw[1]           # left wall, mouth end then top
+        (rx0, ry0), (rx1, ry1) = roof[0], roof[1]
+
+        def roof_y(x):
+            return ry0 + (ry1 - ry0) * (x - rx0) / (rx1 - rx0)
+        mouth_y = ay
+        room = poly_path([(ax, mouth_y), (bx, by), (bx, roof_y(bx)), (rail_x, roof_y(rail_x)), (rail_x, mouth_y)])
+        c.save(); c.clipPath(room, skia.ClipOp.kIntersect, True)
+        c.drawPaint(shade(lin((bx, by), (rail_x, mouth_y), [C("#0B2F33"), C("#174E4E")])))
+        # Chalkboard along the roof.
+        left = bx + 6
+        board = poly_path([(left, roof_y(left) + 6), (rail_x, roof_y(rail_x) + 6), (rail_x, roof_y(rail_x) + 18), (left, roof_y(left) + 18)])
+        c.drawPath(board, fill(C("#1E6A58"))); c.drawPath(board, stroke(C("#B9AC88"), 1.1, join=skia.Paint.kMiter_Join))
+        c.save(); c.clipPath(board, skia.ClipOp.kIntersect, True)
+        chalk = stroke(C(P.CREAM, 210), 0.8)
+        z = skia.Path(); z.moveTo(left + 4, roof_y(left) + 15); z.cubicTo(left + 12, roof_y(left) + 8, left + 18, roof_y(left) + 18, left + 28, roof_y(left) + 12)
+        c.drawPath(z, chalk)
+        c.drawPath(poly_path([(left + 33, roof_y(left + 33) + 12), (left + 38, roof_y(left + 38) + 9), (left + 38, roof_y(left + 38) + 15)]), chalk)
+        c.restore()
+        # Two desks either side of the well.
+        hx, hy = SCOOP["c"][0], SCOOP["c"][1] + 5
+        for dx in (-17, 17):
+            c.drawRRect(rrect(hx + dx - 4, hy - 21, 8, 4.4, 1), fill(C("#B8955E"))); c.drawRRect(rrect(hx + dx - 4, hy - 21, 8, 4.4, 1), stroke(C(P.INK), 0.7))
+        hr = 13.0
+        c.drawCircle(hx, hy, hr + 1.5, fill(C(P.CH_LO)))
+        c.drawCircle(hx, hy, hr, shade(rad((hx + 3, hy + 5), hr * 1.3, [C("#2A2140"), C("#05030F")])))
+        c.drawCircle(hx, hy, hr + 0.6, stroke(C(mix(P.YELLOW, P.INK, 0.15), 230), 1.2))
+        c.drawPath(room, blur(stroke(C(P.INK, 170), 7), 3))
+        c.restore()
+        # Light from the doorway, and the threshold.
+        c.drawPath(poly_path([(ax + 4, mouth_y), (rail_x, mouth_y), (rail_x + 10, mouth_y + 26), (ax - 6, mouth_y + 26)]),
+                   shade(lin((0, mouth_y), (0, mouth_y + 26), [C(P.YELLOW, 38), C(P.YELLOW, 0)])))
+        c.drawLine(ax + 4, mouth_y - 2.5, rail_x - 4, mouth_y - 2.5, stroke(C(mix(P.YELLOW, P.INK, 0.15), 230), 2.0, cap=skia.Paint.kButt_Cap,
+                                                                          PathEffect=skia.DashPathEffect.Make([5, 3], 0)))
+        self.label("BRIEFING", (ax + rail_x) / 2 - 2, mouth_y + 7.5, mix(P.SHOT["briefing"], P.CREAM, 0.3), 7.0, 0.2)
+
+    def subway_exit(self):
+        """Where the Briefing room's subway sets the ball down (the scoop's exit): a grated hatch in the room's
+        colour, and a chevron pointing the way the ball goes on."""
+        c = self.c
+        ex, ey = SCOOP["exit"]
+        col = mix(P.SHOT["briefing"], P.INK, 0.45)
+        c.drawCircle(ex, ey, 11.5, fill(C("#0A0C2A", 235)))
+        c.drawCircle(ex, ey, 11.5, stroke(C(col), 1.4))
+        c.save(); cp = skia.Path(); cp.addCircle(ex, ey, 9.5); c.clipPath(cp, skia.ClipOp.kIntersect, True)
+        for dx in np.arange(-9, 10, 3.6):
+            c.drawLine(ex + dx, ey - 10, ex + dx, ey + 10, stroke(C("#262E66"), 1.2, cap=skia.Paint.kButt_Cap))
+        c.restore()
+        self.chevron(ex, ey - 17, 90, col, 3.6)
+
+    def gforce(self):
+        """The G-force test: the rubber post that stands in for the captive ball (phase 1), a printed gauge round
+        the G-meter ladder. When the layout has the captive ball's channel ("captiveBall": walls, ball), its
+        walls are drawn instead of the post; the captive ball itself is a sprite (captive_ball.png)."""
+        c = self.c
+        ladder = [pos for name, _, _, pos in P.PLANNED_LAMPS if name.startswith("GForce")]
+        xs = [p[0] for p in ladder]; ys = [p[1] for p in ladder]
+        gauge = rrect(min(xs) - 9, min(ys) - 10, 18, max(ys) - min(ys) + 20, 9)
+        c.drawRRect(gauge, fill(C("#0C1036", 220))); c.drawRRect(gauge, stroke(C("#2A3470"), 1.0))
+        for y in ys:
+            c.drawLine(min(xs) + 8, y, min(xs) + 11.5, y, stroke(C("#3A4690"), 1.0, cap=skia.Paint.kButt_Cap))
+        self.stencil("G", min(xs), min(ys) - 13, mix(P.PINK, P.INK, 0.35), 10, 0, name="RussoOne-Regular.ttf")
+        if CAPTIVE:
+            for w in CAPTIVE["walls"]:
+                self.tube(self.seg(w["a"], w["b"]), w["r"])
+            return
+        a, b, r = GPOST["a"], GPOST["b"], GPOST["r"]
+        x, y = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+        c.drawCircle(x + 4, y + 6, r + 1, blur(fill(C(SHADOW, 170)), 2.4))
+        c.drawCircle(x, y, r + 0.8, fill(C(P.INK)))
+        c.drawCircle(x, y, r, fill(C("#7C7258")))
+        c.drawCircle(x - 0.6, y - 0.7, r - 1.6, stroke(C("#C4B994"), 2.2))
+        c.drawCircle(x, y, r - 4.2, fill(C(P.INK)))
+        c.drawCircle(x, y, r - 5.0, shade(chrome_sweep(x, y)))
+
+    def standups(self):
+        """T-A-X-I: each stand-up is its capsule (a metal post, as the dead posts are) carrying a target face with
+        its letter, baked unlit; the game draws standup_*.png over it, tinted, when it is lit."""
+        for (a, b, r), letter in STANDUPS:
+            self.tube(self.seg(a, b), r, base="#B9C6DA")
+            self.bolt(*a); self.bolt(*b)
+            ang = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) - 90.0
+            w, h = P.STANDUP_SPRITE_UNITS
+            self.sprite("standup_%s.png" % letter.lower(), (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, w, P.YELLOW, P.UNLIT_LEVEL + 0.15, ang, h)
+
+    def circuit_spinners(self):
+        """Seats for the spinners across both circuit mouths; the blades are sprites (spinner_circuit_*.png)."""
+        c = self.c
+        for a, b in CIRCUIT_MOUTHS:
+            c.drawLine(a[0], a[1] + 3.5, b[0], b[1] + 3.5, blur(stroke(C(SHADOW, 170), 4), 1.6))
+
+    def lane_gate(self):
+        """The one-way gate over the lane: its axle on two orange pivots, and the wire flap baked hanging at rest
+        (gate.png; the game draws the flap again, shortened, while it swings)."""
+        (x0, y0), (x1, y1) = GATE[0], GATE[-1]
+        ang = math.degrees(math.atan2(y1 - y0, x1 - x0))
+        ln = math.hypot(x1 - x0, y1 - y0)
+        self.sprite("gate.png", (x0 + x1) / 2, (y0 + y1) / 2, ln + 8.0, angle=ang, h_units=14.0)
+        self.tube(self.seg(GATE[0], GATE[-1]), 1.5, shadow=(3, 4), sblur=1.4)
+        for (x, y) in (GATE[0], GATE[-1]):
+            self.c.drawCircle(x, y, 3.0, fill(C(P.INK))); self.c.drawCircle(x, y, 2.0, fill(C(mix(P.ORANGE, P.INK, 0.1))))
+
+    def flasher_domes(self):
+        """Each flasher dome's base (a dark socket, a cast shadow) with the dome baked unlit over it."""
+        c = self.c
+        for name, col, (x, y) in P.FLASHER_DOMES:
+            c.drawCircle(x + 3, y + 4, 8.4, blur(fill(C(SHADOW, 170)), 2.0))
+            c.drawCircle(x, y, 8.6, fill(C(P.INK)))
+            self.sprite("flasher_dome.png", x, y, P.FLASHER_DOME_UNITS, col, P.UNLIT_LEVEL + 0.1)
 
     def ramp_lip(self, mouth, col, mark):
         c = self.c
@@ -370,7 +537,7 @@ class Table:
 
     def hangar(self):
         c = self.c
-        floor = poly_path([(237, 318), (279, 296), (321, 318), (321, 397), (237, 397)])
+        floor = poly_path([(237, 318), (279, 296), (321, 318), (321, 397), (237, 397)])   # under the X stand-up too
         c.save(); c.clipPath(floor, skia.ClipOp.kIntersect, True)
         c.drawPaint(fill(C("#2E3A78")))
         for i in range(-1, 9):
@@ -411,9 +578,10 @@ class Table:
         c.drawRect(box, stroke(C(line), 1.5, join=skia.Paint.kMiter_Join))
 
     def hangar_walls(self):
-        path = poly_path([(237, 397), (237, 318), (279, 296), (321, 318), (321, 400)], close=False)
+        pts = [tuple(WALLS[6][1]), tuple(WALLS[6][0])] + [tuple(WALLS[i][1]) for i in (7, 8, 9)]
+        path = poly_path(pts, close=False)
         self.tube(path, 5)
-        segs = [((237, 397), (237, 318)), ((237, 318), (279, 296)), ((279, 296), (321, 318)), ((321, 318), (321, 400))]
+        segs = list(zip(pts[:-1], pts[1:]))
         for a, b in segs:
             Ln = math.hypot(b[0] - a[0], b[1] - a[1]); dx, dy = unit((b[0] - a[0], b[1] - a[1]))
             n = int(Ln // 4)
@@ -472,10 +640,13 @@ class Table:
         c.drawRect(skia.Rect.MakeLTRB(lx - pl["width"] / 2 - 2, pl["restTopY"] - 4, lx + pl["width"] / 2 + 2, 960), fill(C(P.INK, 200)))
         # Shoot again, extra awards, labels.
         self.label("SHOOT AGAIN", LAMP["ShootAgain"][0], LAMP["ShootAgain"][1] - 15, mix(P.CREAM, P.INK, 0.25))
-        self.label("CREDIT", 331, 517, mix(P.AQUA, P.INK, 0.25)); self.label("X BALL", 381, 517, mix(P.PINK, P.CREAM, 0.2))
-        self.label("OVERDRIVE", 442, 506, mix(P.YELLOW, P.INK, 0.2))
+        # Labels from the lamps' own positions: CREDIT below-left of its lamp, X BALL above-right of its, OVERDRIVE right.
+        cx_, cy_ = LAMP["ExtraCredit"]; bx_, by_ = LAMP["ExtraBall"]; ox_, oy_ = LAMP["Overdrive"]
+        self.label("CREDIT", cx_ - 14, cy_ + 19, mix(P.AQUA, P.INK, 0.25)); self.label("X BALL", bx_ + 10, by_ - 17, mix(P.PINK, P.CREAM, 0.2))
+        self.label("OVERDRIVE", ox_ + 42, oy_ + 3, mix(P.YELLOW, P.INK, 0.2))
         self.label("RUNWAY", 204, 495, mix(P.SHOT["runway"], P.CREAM, 0.3)); self.label("HANGAR", 283, 466, mix(P.SHOT["hangar"], P.CREAM, 0.3))
-        self.label("BRIEFING", 356, 447.5, mix(P.SHOT["briefing"], P.CREAM, 0.3)); self.label("SKYWAY", 507, 495, mix(P.SHOT["skyway"], P.CREAM, 0.3))
+        self.label("SKYWAY", 507, 495, mix(P.SHOT["skyway"], P.CREAM, 0.3))
+        self.label("COMBO", 286, 662, mix(P.AQUA, P.INK, 0.25), 7.0, 0.2); self.label("BONUS X", 425, 662, mix(P.PINK, P.CREAM, 0.2), 7.0, 0.2)
         self.label("CIRCUIT", 118, 537, mix(P.AQUA, P.INK, 0.15), 7.0, 0.2); self.label("CIRCUIT", 593, 537, mix(P.AQUA, P.INK, 0.15), 7.0, 0.2)
         # Course numbers under the lamp arc, and the flight-plan arc that joins them.
         arc = poly_path([LAMP["Course%d" % i] for i in range(1, 7)], close=False)
@@ -549,7 +720,9 @@ class Table:
         for a, b in ((0, 1), (2, 3)):
             self.tube(poly_path([tuple(WALLS[a][0]), tuple(WALLS[a][1]), tuple(WALLS[b][1])], close=False), 5)
             self.bolt(*WALLS[a][0]); self.bolt(*WALLS[b][1])
-        self.tube(poly_path([(321, 318), (356, 335), (391, 352), (391, 400)], close=False), 5)
+        # The centre: the lane's right wall, the Briefing room's left wall and roof.
+        for w in WALLS[10:13]:
+            self.tube(self.seg(w[0], w[1]), w[2])
         # Dead posts: bare metal with a bolt at each end.
         for d in DEAD:
             self.tube(self.seg(d[0], d[1]), d[2], base="#B9C6DA")
@@ -670,6 +843,14 @@ class Table:
             else:
                 dia = L["lampSizes"]["course"] if kind == "course" else L["lampSizes"]["status"]
                 self.sprite("insert_round.png", pos[0], pos[1], dia * P.INSERT_ROUND_PER_DIAMETER, col, P.UNLIT_LEVEL)
+        # Revision 3's new inserts (palette.PLANNED_LAMPS), unlit, sized as the renderer will draw them lit.
+        for name, col, shape, (x, y) in P.PLANNED_LAMPS:
+            if shape == "hex":
+                self.sprite("insert_hex.png", x, y, 16.0 * P.HEX_DIAMETER / 11.0, col, P.UNLIT_LEVEL)
+            elif shape == "chevron":
+                self.sprite("insert_chevron.png", x, y, P.CHEVRON_SIZE[0] + 6.0, col, P.UNLIT_LEVEL)
+            else:
+                self.sprite("insert_round.png", x, y, P.LADDER_DIAMETER * P.INSERT_ROUND_PER_DIAMETER, col, P.UNLIT_LEVEL)
 
     # ---- everything ------------------------------------------------------------------
     def render(self, dither=True):
@@ -681,13 +862,17 @@ class Table:
         self.taxi_lines()
         self.emblem()
         self.nest_art()
-        self.turbine()
+        self.drone_bay()
+        self.afterburner()
         self.ramp_lip((151, 232), P.SHOT["runway"], "27 L")
         self.ramp_lip((478, 560), P.SHOT["skyway"], "09 R")
         self.hangar()
-        self.briefing()
+        self.briefing_room()
+        self.subway_exit()
+        self.circuit_spinners()
         self.roll_call()
         self.lower_field()
+        self.gforce()
         self.inserts()
         c.restore()
         self.island_body()
@@ -696,8 +881,11 @@ class Table:
         self.gate()
         self.walls()
         self.targets()
+        self.standups()
+        self.lane_gate()
         self.hangar_walls()
         self.slingshots()
+        self.flasher_domes()
         self.rails()
         im = self.st.image()
         return ordered_dither(im, levels=20, cell=2) if dither else im

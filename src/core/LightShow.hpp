@@ -81,21 +81,29 @@ enum class Colour : std::uint8_t { Cyan, Magenta, Lime, Orange, Yellow, Violet, 
 // (TableLayout.hpp), so it follows the element if the layout moves it.
 // Table is the wash over the whole playfield; Lights is the general
 // illumination itself (a dip in it).
+// The first nine are revision 3's flasher domes or stand where one does
+// (table::kFlasherDomes, FlasherId); the rest are lights without a dome.
 enum class Flasher : std::uint8_t {
-  Hangar,     // kHoles[kHangarHole]
-  Briefing,   // kHoles[kScoopHole]
-  RampLeft,   // kHoles[kRunwayHole]
-  RampRight,  // kHoles[kSkywayHole]
-  Nest,       // the middle of kBumpers
-  Academy,    // the Graduation lamp, in the middle of the course lamps
-  TopLanes,   // the middle of the roll call rollovers
-  Turbine,    // the spinner
-  Apron,      // the Shoot Again lamp
-  Table,      // the whole playfield
-  Lights,     // the general illumination dips
+  Hangar,      // dome FlasherId::Hangar, on the Hangar's roof
+  Briefing,    // dome FlasherId::Briefing
+  RampLeft,    // dome FlasherId::Runway, at the Runway's mouth
+  RampRight,   // dome FlasherId::Skyway
+  Nest,        // dome FlasherId::Nest, above the bumpers
+  Academy,     // the Graduation lamp, in the middle of the course lamps
+  TopLanes,    // the middle of the roll call rollovers
+  Turbine,     // dome FlasherId::Afterburner, by the lane's spinner
+  Apron,       // the Shoot Again lamp
+  SlingLeft,   // dome FlasherId::SlingLeft
+  SlingRight,  // dome FlasherId::SlingRight
+  Drone,       // the middle of the training drone's patrol
+  Captive,     // the captive ball, at rest (table::kCaptiveHome)
+  Table,       // the whole playfield
+  Lights,      // the general illumination dips
   Count,
 };
 [[nodiscard]] Vec2 flasherPosition(Flasher flasher) noexcept;
+// The dome a flasher fires, or FlasherId::Count for one without.
+[[nodiscard]] table::FlasherId domeOf(Flasher flasher) noexcept;
 
 // A lamp in this state at this step, 0 to 1. Blinks are square with a short
 // rise and fall, as a bulb warms and cools; with reduce motion they breathe.
@@ -197,13 +205,18 @@ class LightShow {
   // Bumpers and slingshots, from the hits the physics reported.
   [[nodiscard]] float bumperFlash(std::size_t bumper) const noexcept;
   [[nodiscard]] float slingFlash(std::size_t sling) const noexcept;
+  // Revision 3: the drone struck, a stand-up struck (kStandups order), the
+  // The captive ball struck, or its switch closed.
+  [[nodiscard]] float droneFlash() const noexcept;
+  [[nodiscard]] float standupFlash(std::size_t standup) const noexcept;
+  [[nodiscard]] float gForceFlash() const noexcept;
   [[nodiscard]] float rolloverFlash(std::size_t rollover) const noexcept;
   [[nodiscard]] float holeFlash(std::size_t hole) const noexcept;
   [[nodiscard]] float bayFlash(std::size_t bay) const noexcept;
   [[nodiscard]] float kickbackFlash() const noexcept;
-  // The spinner's lamps: brighter the faster it spins, strobing with each
-  // turn (steady with reduce motion).
-  [[nodiscard]] float spinnerLevel() const noexcept;
+  // A spinner's light (table::kSpinners; the lane's by default): brighter
+  // the faster it spins, rippling with each turn (steady with reduce motion).
+  [[nodiscard]] float spinnerLevel(std::size_t spinner = table::kLaneSpinner) const noexcept;
   // The general illumination, 0 (dark) to 1 (full).
   [[nodiscard]] float giLevel() const noexcept { return gi_; }
   // The arrow lamps' chases, in LampId order (the first seven lamps).
@@ -284,6 +297,9 @@ class LightShow {
     kGateHole,  // Four, one a hole.
     kGateBays = kGateHole + 4,
     kGateKickback,
+    kGateDrone,     // The drone and its armour lamps.
+    kGateStandup,   // Four, one a stand-up (and its T-A-X-I lamp).
+    kGateGForce = kGateStandup + 4,
     kGateCount
   };
   [[nodiscard]] bool gateOpen(std::uint8_t gate) const noexcept;
@@ -313,12 +329,19 @@ class LightShow {
   std::array<std::uint64_t, table::kTargets.size()> targetHit_{};
   std::array<std::uint64_t, table::kBumpers.size()> bumperHit_{};
   std::array<std::uint64_t, table::kSlingshots.size()> slingHit_{};
+  std::uint64_t droneHit_ = 0;
+  std::array<std::uint64_t, table::kStandups.size()> standupHit_{};
+  std::uint64_t gForceHit_ = 0;
+  // The ladders as last seen, for their fills.
+  std::size_t wasRank_ = 0;
+  int wasCombo_ = 0;
+  int wasBonus_ = 1;
   std::array<std::uint64_t, table::kRollovers.size()> rolloverHit_{};
   std::array<std::uint64_t, table::kHoles.size()> holeHit_{};
   std::array<std::uint64_t, table::kLockBays.size()> bayHit_{};
   std::uint64_t kickbackHit_ = 0;
-  std::uint64_t spinHit_ = 0;
-  float spinEnergy_ = 0.0F;
+  std::array<std::uint64_t, table::kSpinners.size()> spinHit_{};
+  std::array<float, table::kSpinners.size()> spinEnergy_{};
 
   std::array<Burst, kMaxBursts> bursts_{};
   // One more than the step of each gate's latest flash; 0 for never.

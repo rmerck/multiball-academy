@@ -17,8 +17,13 @@
 //          scoop-in, hangar-in, lock-in (a ball shot into the Briefing
 //          room, through the Hangar, into a lock bay; the steps count from
 //          the step that took it, so a few show it going in and about 110
-//          show it let out), lock-out (a locked ball let go; the steps
-//          count from the step that let it out),
+//          show it let out; between about 50 and 110 it rides the
+//          Briefing room's subway under the playfield), lock-out (a locked
+//          ball let go; the steps count from the step that let it out),
+//          drone-hit (a ball shot up the lane into the training drone; the
+//          steps count from the hit: a few show it thrown back), drone-down
+//          (five such hits, DRONE DOWN; the steps count from the knock-down:
+//          a few show it sinking),
 //          the front screens: title, title-intro (part-way through its
 //          animation), title-still (Reduce Motion), scores (the front
 //          page), howto, settings, settings-confirm, guide (the touch
@@ -176,6 +181,8 @@ enum class State : std::uint8_t {
   BankDown,
   Spinning,
   ScoopIn,
+  DroneHit,
+  DroneDown,
   HangarIn,
   LockIn,
   LockOut,
@@ -195,7 +202,7 @@ struct StateName {
   std::string_view name;
   State state;
 };
-constexpr std::array<StateName, 33> kStates{{
+constexpr std::array<StateName, 35> kStates{{
     {"play", State::Play},
     {"launch", State::Launch},
     {"pause", State::Pause},
@@ -216,6 +223,8 @@ constexpr std::array<StateName, 33> kStates{{
     {"bankdown", State::BankDown},
     {"spinning", State::Spinning},
     {"scoop-in", State::ScoopIn},
+    {"drone-hit", State::DroneHit},
+    {"drone-down", State::DroneDown},
     {"hangar-in", State::HangarIn},
     {"lock-in", State::LockIn},
     {"lock-out", State::LockOut},
@@ -252,7 +261,8 @@ constexpr const char* kUsage =
     "Usage: pinball_snapshot <steps 1..1000000> <name.png> [state] [options]\n"
     "  state: play launch pause interrupted confirm about about-info licences\n"
     "         initials gameover longest table course multiball hangar graduation\n"
-    "         locked bankdown spinning scoop-in hangar-in lock-in lock-out title\n"
+    "         locked bankdown spinning scoop-in hangar-in lock-in lock-out drone-hit\n"
+    "         drone-down title\n"
     "         title-intro title-still scores howto settings settings-confirm guide\n"
     "         mainmenu-confirm check\n"
     "  --layout <preset | WxH[@scale][+top,bottom,left,right]>   points, 100..4096; scale 1..4,\n"
@@ -645,6 +655,8 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
     case State::BankDown:
     case State::Spinning:
     case State::ScoopIn:
+    case State::DroneHit:
+    case State::DroneDown:
     case State::HangarIn:
     case State::LockIn:
     case State::LockOut:
@@ -1261,7 +1273,10 @@ int run(const Request& request) {
       }
       const std::size_t slot = game.ball().id;
       if (request.state == State::ScoopIn) {
-        Seam::placeBall(game, slot, {350.0F, 450.0F}, {20.0F, -900.0F});
+        // Up the Briefing room's channel (revision 3: off centre).
+        const pinball::table::Hole& room = pinball::table::kHoles[pinball::table::kScoopHole];
+        // Up and to the right, as the room takes a ball (kScoopMinRightward).
+        Seam::placeBall(game, slot, {room.center.x - 12.0F, 445.0F}, {270.0F, -900.0F});
       } else {
         Seam::placeBall(game, slot, {279.0F, 440.0F}, {0.0F, -900.0F});
       }
@@ -1285,8 +1300,46 @@ int run(const Request& request) {
         return EXIT_FAILURE;
       }
     }
+    // The drone hit from below, once or until it is knocked down, by a ball
+    // shot up the lane when the drone is over its middle; the ball is then
+    // put out of the way. The steps asked for follow.
+    const bool atDrone = request.state == State::DroneHit || request.state == State::DroneDown;
+    if (atDrone) {
+      using Seam = pinball::GameTestAccess;
+      const pinball::InputState none;
+      const std::size_t slot = game.ball().id;
+      const pinball::Vec2 away{300.0F, 560.0F};
+      bool reached = false;
+      for (int shot = 0; shot < 40 && !reached; ++shot) {
+        for (int i = 0; i < 2000 && !(game.drone().up && game.drone().sink == 0.0F &&
+                                      std::fabs(game.drone().position.x - 356.0F) < 12.0F);
+             ++i) {
+          Seam::placeBall(game, slot, away, {0.0F, 0.0F});
+          game.step(none);
+        }
+        Seam::placeBall(game, slot, {game.drone().position.x, 350.0F}, {0.0F, -900.0F});
+        Seam::putInPlay(game, slot);
+        bool hit = false;
+        for (int i = 0; i < 30 && !hit; ++i) {
+          game.step(none);
+          for (const pinball::GameEvent& e : game.gameEvents()) {
+            hit = hit || e.type == pinball::GameEvent::Type::DroneHit;
+          }
+        }
+        Seam::placeBall(game, slot, away, {0.0F, 0.0F});
+        reached = hit && (request.state == State::DroneHit || game.drone().knocked);
+        for (int i = 0; i < 30 && !reached; ++i) {
+          Seam::placeBall(game, slot, away, {0.0F, 0.0F});
+          game.step(none);
+        }
+      }
+      if (!reached) {
+        std::fputs("the scene could not be set up\n", stderr);
+        return EXIT_FAILURE;
+      }
+    }
     const bool idle = request.state == State::GameOver || request.state == State::Launch ||
-                      staged.has_value() || intoHole;
+                      staged.has_value() || intoHole || atDrone;
     for (std::uint32_t i = 0; i < request.steps; ++i) {
       game.step(idle ? pinball::InputState{} : scriptedInput(step++));
     }

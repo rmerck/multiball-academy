@@ -120,6 +120,7 @@ class TableRenderer {
     TexturePtr ring;   // And its shock rings.
     TexturePtr gi;     // And the general illumination's light map.
     TexturePtr pool;   // And the dark pool round each ball.
+    TexturePtr flasherDome;  // Revision 3's flasher domes, lit (unlit, they are in the art).
     TexturePtr bar;
     TexturePtr door;
     TexturePtr plunger;
@@ -127,6 +128,8 @@ class TableRenderer {
     // Over the table art only: the layout drawing has its own.
     TexturePtr insertArrow;
     TexturePtr insertRound;
+    TexturePtr insertHex;      // Revision 3's drone armour.
+    TexturePtr insertChevron;  // And its rank ladder.
     std::array<TexturePtr, 2> spinner;  // Edge-on, flat.
     TexturePtr kickback;
     // The rest may be null: see TextureSet.
@@ -154,8 +157,27 @@ class TableRenderer {
   // The lit lamps over the art's unlit inserts, each with its glow. With a
   // light show, each at its own level, in neon.
   void drawLamps(SDL_Renderer* renderer, const TableLights& lights, const LightShow* show) const;
-  // The spinner's blade by its phase, and the kickback's spring.
+  // The insert sprites by InsertKind (arrow, round, hex, chevron).
+  [[nodiscard]] std::array<SDL_Texture*, 4> insertTextures() const noexcept {
+    return {textures_.insertArrow.get(), textures_.insertRound.get(), textures_.insertHex.get(),
+            textures_.insertChevron.get()};
+  }
+  // Each spinner's blade by its own phase, and the kickback's spring.
   void drawSpinnerAndKickback(SDL_Renderer* renderer, const Game& game) const;
+  // Table revision 3's moving parts: the glow of a ball riding the Briefing
+  // room's subway under the playfield, and the lit tube it runs in; the
+  // training drone, patrolling, recoiling from a hit, sinking and coming up;
+  // the lane's one-way gate, its flap lifting as a ball goes up through it.
+  void drawSubway(SDL_Renderer* renderer, std::span<const BallView> balls) const;
+  void drawDrone(SDL_Renderer* renderer, const Game& game, const LightShow* show) const;
+  void drawSpinnerAndKickback(SDL_Renderer* renderer, const Game& game) const;
+  // Table revision 3's moving parts: the glow of a ball riding the Briefing
+  // room's subway under the playfield, and the lit tube it runs in; the
+  // training drone, patrolling, recoiling from a hit, sinking and coming up;
+  // the lane's one-way gate, its flap lifting as a ball goes up through it.
+  void drawSubway(SDL_Renderer* renderer, std::span<const BallView> balls) const;
+  void drawDrone(SDL_Renderer* renderer, const Game& game, const LightShow* show) const;
+  void drawLaneGate(SDL_Renderer* renderer, std::span<const BallView> balls) const;
   void drawBumpers(SDL_Renderer* renderer, const Game& game, const LightShow* show) const;
   void drawTargets(SDL_Renderer* renderer, const Game& game, const TableLights& lights) const;
   // What moves or lights among the table's own elements, for the layout
@@ -186,6 +208,8 @@ class TableRenderer {
   // Triangles for drawElements, kept between frames so that drawing one
   // allocates nothing.
   mutable std::vector<SDL_Vertex> elements_;
+  // The same for revision 3's pieces (drawDrone, drawLaneGate).
+  mutable std::vector<SDL_Vertex> motion_;
 };
 
 }  // namespace pinball

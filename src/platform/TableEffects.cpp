@@ -250,11 +250,42 @@ void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const L
                 top ? art::kFxYellow : art::kFxCyan, 0.8F * f);
     }
   }
-  // The spinner strobes with its turns.
-  if (const float s = show.spinnerLevel(); s > 0.0F) {
+  // Revision 3. The training drone: its armour lights as it is struck,
+  // through the drone's gate (the drone draws its own body; this is the
+  // light off it).
+  if (const float f = show.droneFlash(); f > 0.0F) {
+    const DroneView drone = game.drone();
+    glow_.add(r, glow, drone.position, 84.0F, art::kFxCyan, 0.8F * f);
+    glow_.add(r, glow, drone.position, 26.0F, art::kFxWhite, 0.7F * f);
+    ring_.add(r, ring, drone.position, 18.0F + 40.0F * (1.0F - f), art::kFxCyan, 0.7F * f);
+  }
+  // The T-A-X-I stand-ups and the captive ball.
+  for (std::size_t i = 0; i < table::kStandups.size(); ++i) {
+    if (const float f = show.standupFlash(i); f > 0.0F) {
+      const table::Capsule& shape = table::kStandups[i];
+      const Vec2 mid = (shape.a + shape.b) * 0.5F;
+      glow_.add(r, glow, mid, 50.0F, art::kFxYellow, 0.8F * f);
+      glow_.add(r, glow, mid, 14.0F, art::kFxWhite, 0.6F * f);
+    }
+  }
+  if (const float f = show.gForceFlash(); f > 0.0F) {
+    const Vec2 mid = table::kCaptiveHome;
+    glow_.add(r, glow, mid, 60.0F, art::kFxLime, 0.8F * f);
+    ring_.add(r, ring, mid, 12.0F + 30.0F * (1.0F - f), art::kFxWhite, 0.6F * f);
+  }
+  // The spinners glow with their turns: the lane's lime, the circuits'
+  // (revision 3) cyan, at their mouths.
+  if (const float s = show.spinnerLevel(table::kLaneSpinner); s > 0.0F) {
     const Vec2 mid = (table::kSpinner.a + table::kSpinner.b) * 0.5F;
     glow_.add(r, glow, mid, {80.0F, 44.0F}, art::kFxLime, 0.8F * s);
     glow_.add(r, glow, mid, {36.0F, 12.0F}, art::kFxWhite, 0.6F * s);
+  }
+  for (const std::size_t k : {table::kCircuitSpinnerLeft, table::kCircuitSpinnerRight}) {
+    if (const float s = show.spinnerLevel(k); s > 0.0F) {
+      const Vec2 mid = (table::kSpinners[k].a + table::kSpinners[k].b) * 0.5F;
+      glow_.add(r, glow, mid, 44.0F, art::kFxCyan, 0.75F * s);
+      glow_.add(r, glow, mid, 14.0F, art::kFxWhite, 0.5F * s);
+    }
   }
   // Chases: three chevrons behind each blinking arrow, running toward it.
   for (std::size_t i = 0; i < table::kLamps.size(); ++i) {
@@ -294,7 +325,27 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
     glow_.add(r, glow, {table::kWidth * 0.5F, table::kHeight * 0.5F},
               {table::kWidth * 0.75F, table::kHeight * 0.75F}, fxColour(b.colour), 0.85F * b.level);
   }
-  // The flasher domes.
+  // The domes themselves, lit in their colour (their unlit bases are in
+  // the art), under their light.
+  if (textures_.dome != nullptr) {
+    for (const fx::BurstView& b : bursts.span()) {
+      const table::FlasherId dome = fx::domeOf(b.where);
+      if (dome == table::FlasherId::Count) {
+        continue;
+      }
+      const auto k = static_cast<std::size_t>(dome);
+      const art::Rgb c = art::kFlasherDomes[k].neon;
+      SDL_SetTextureColorMod(textures_.dome, c.r, c.g, c.b);
+      SDL_SetTextureAlphaModFloat(textures_.dome, std::min(1.0F, b.level * 1.4F));
+      const float half = art::kFlasherDomeUnits * 0.5F;
+      const Vec2 at = table::kFlasherDomes[k];
+      const SDL_FRect dst{at.x - half, at.y - half, half * 2.0F, half * 2.0F};
+      SDL_RenderTexture(r, textures_.dome, nullptr, &dst);
+    }
+    SDL_SetTextureAlphaMod(textures_.dome, 255);
+    SDL_SetTextureColorMod(textures_.dome, 255, 255, 255);
+  }
+  // The flasher domes' light.
   for (const fx::BurstView& b : bursts.span()) {
     if (b.where == fx::Flasher::Table) {
       continue;

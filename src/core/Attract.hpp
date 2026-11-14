@@ -31,6 +31,10 @@ class AttractPilot {
   static constexpr float kReachFrom = 30.0F;
   static constexpr float kReachTo = 104.0F;
   static constexpr int kHoldSteps = 14;
+  // A demo game ends: after this many steps of play the pilot stops
+  // flipping and lets its balls go. (On table revision 3 its steady timing
+  // otherwise kept one ball alive for over twenty minutes.)
+  static constexpr int kDemoSteps = 120 * 240;
   static constexpr int kRestSteps = 10;
 
   // The input for the game's next step.
@@ -47,6 +51,7 @@ class AttractPilot {
   int overSteps_ = 0;    // Steps since the game ended.
   std::size_t pulls_ = 0;
   bool newGame_ = false;
+  int playSteps_ = 0;    // Steps of the current demo game.
 };
 
 }  // namespace pinball

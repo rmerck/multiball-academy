@@ -310,7 +310,7 @@ void testAcceptance() {
     StressOptions options;
     options.balls = 3;
     options.bot = BotKind::Reflex;
-    options.steps = 12000;  // Long enough for balls to be locked and to drain.
+    options.steps = 30000;  // Long enough for balls to be locked and to drain (revision 3: 12,000 steps of three balls could pass without a drain).
     options.seed = 9;
     const StressResult a = stress(options);
     const StressResult b = stress(options);

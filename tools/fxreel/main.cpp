@@ -20,6 +20,15 @@
 //                     Academy, Briefing) one every 8 steps (each place 3.75
 //                     times a second), the nest struck
 //                     every 20
+//          rev3storm  revision 3's worst case: the storm (multiball, a jackpot
+//                     every 30 steps, the nest every 20), with a second ball
+//                     shot into the drone every 24 steps (knocked down every
+//                     fifth hit), a third at the stand-ups and the G-force
+//                     post in turn every 24 and into the Briefing room's
+//                     subway every 240, and the eight flasher domes fired in
+//                     turn every 10. (Five hits a second at each: far more
+//                     than a ball can make, and over the hit gates; more
+//                     would measure the ball jumping, not the lights.)
 // options  --plain           draw without the light show (the look before it)
 //          --reduce-motion   the light show with reduce motion on
 //          --every N         a frame every N steps (default 4: 30 a second)
@@ -135,7 +144,7 @@ class Script {
     if (s == "multiball") {
       return pinball::stageScene(game, pinball::Scene::Hangar);
     }
-    if (s == "jackpot" || s == "storm" || s == "domes" || s == "mix") {
+    if (s == "jackpot" || s == "storm" || s == "domes" || s == "mix" || s == "rev3storm") {
       return pinball::stageScene(game, pinball::Scene::Multiball);
     }
     if (s == "drain") {
@@ -233,6 +242,59 @@ class Script {
       }
       if (t % 30 == 0 && !jackpot(game, slot)) {
         jackpotWanted = true;
+      }
+      return InputState{};
+    }
+    if (s == "rev3storm") {
+      // The served ball works the nest, as in the storm; the other two
+      // work revision 3's toys.
+      std::array<std::size_t, 2> others{Game::kMaxBalls, Game::kMaxBalls};
+      std::size_t found = 0;
+      for (std::size_t b = 0; b < Game::kMaxBalls && found < others.size(); ++b) {
+        if (b != slot && Seam::live(game, b) && !Seam::held(game, b)) {
+          others[found++] = b;
+        }
+      }
+      if (t % 20 == 0) {
+        Seam::placeBall(game, slot, {262.0F, 165.0F}, {20.0F, 700.0F});
+      }
+      if (t % 30 == 0 && !jackpot(game, slot)) {
+        jackpotWanted = true;
+      }
+      const pinball::DroneView drone = game.drone();
+      if (t % 24 == 0 && others[0] < Game::kMaxBalls && drone.up && drone.sink == 0.0F) {
+        // Up the lane into the drone from below.
+        Seam::placeBall(game, others[0], {drone.position.x, 350.0F}, {0.0F, -900.0F});
+      }
+      if (t % 24 == 12 && others[1] < Game::kMaxBalls) {
+        if (t % 240 == 132) {
+          // Into the Briefing room, as it takes a ball: up and to the right.
+          const table::Hole& room = table::kHoles[table::kScoopHole];
+          Seam::placeBall(game, others[1], {room.center.x - 12.0F, 445.0F}, {270.0F, -900.0F});
+        } else {
+          // At a stand-up's face, hard, from the side the field is on; the
+          // captive ball fifth, struck up its channel.
+          const std::size_t k = (t / 24) % (table::kStandups.size() + 1);
+          if (k == table::kStandups.size()) {
+            const Vec2 up{-0.3F, -0.954F};
+            Seam::placeBall(game, others[1], table::kCaptiveHome - up * 40.0F, up * 1500.0F);
+          } else {
+            const table::Capsule& c = table::kStandups[k];
+            const Vec2 mid = (c.a + c.b) * 0.5F;
+            const Vec2 d = c.b - c.a;
+            Vec2 n{-d.y, d.x};
+            const float len = std::sqrt(n.x * n.x + n.y * n.y);
+            n = len > 0.0F ? Vec2{n.x / len, n.y / len} : Vec2{0.0F, 1.0F};
+            if ((table::kFieldCenterX - mid.x) * n.x + (600.0F - mid.y) * n.y < 0.0F) {
+              n = Vec2{-n.x, -n.y};
+            }
+            const float off = c.radius + table::kBallRadius + 14.0F;
+            Seam::placeBall(game, others[1], mid + n * off, n * -900.0F);
+          }
+        }
+      }
+      if (t % 10 == 0) {
+        domeWanted = true;  // The caller fires the next of the eight domes.
       }
       return InputState{};
     }
@@ -425,6 +487,16 @@ int run(const Options& o) {
     }
     for (std::uint32_t frameIndex = 0; t < steps; ++t) {
       game.step(script.before(game, t));
+      if (script.domeWanted && o.scene == "rev3storm") {
+        script.domeWanted = false;
+        // Every flasher that has a dome, in FlasherId order.
+        constexpr std::array<pinball::fx::Flasher, 8> kDomes{
+            pinball::fx::Flasher::Hangar,    pinball::fx::Flasher::Briefing,
+            pinball::fx::Flasher::Turbine,   pinball::fx::Flasher::RampLeft,
+            pinball::fx::Flasher::RampRight, pinball::fx::Flasher::Nest,
+            pinball::fx::Flasher::SlingLeft, pinball::fx::Flasher::SlingRight};
+        show.burst(kDomes[(t / 10) % kDomes.size()], pinball::fx::Colour::Yellow, 0.8F, 70.0F, 30);
+      }
       if (script.domeWanted) {
         script.domeWanted = false;
         constexpr std::array<pinball::fx::Flasher, 4> kRotation{
@@ -552,7 +624,7 @@ int run(const Options& o) {
 int main(int argc, char* argv[]) {
   Options options;
   if (!parse(argc, argv, options)) {
-    std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt|storm|domes|mix> <out_prefix>"
+    std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt|storm|domes|mix|rev3storm> <out_prefix>"
                " [--plain] [--reduce-motion] [--every N] [--frames N] [--skip N] [--time] [--gpu]\n",
                stderr);
     return EXIT_FAILURE;

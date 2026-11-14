@@ -262,6 +262,13 @@ class Rules {
   void onSlingshot(std::size_t index) noexcept;
   void onTarget(std::size_t index) noexcept;
   void onDropTarget(std::size_t index) noexcept;
+  // Revision 3, phase 1 stubs. The training drone was hit: returns true when
+  // that hit knocks it down. A stand-up (T-A-X-I 0 to 3) was hit at a speed.
+  // The captive ball reached its switch (the G-meter), moving at a speed.
+  bool onDrone() noexcept;
+  void onStandup(std::size_t index, float speed) noexcept;
+  void onCaptiveBall(float speed) noexcept;
+  int droneHits() const noexcept { return droneHits_; }
   void onRollover(std::size_t index, std::size_t ball = 0) noexcept;
   // A ball was taken by a hole (Game tells it from the physics state, once
   // per capture). The answer matters for the Hangar only; any other hole
@@ -523,6 +530,8 @@ class Rules {
   void noteSwitch() noexcept;
   void rotateLanes(bool right) noexcept;
   void addTurbo(int amount) noexcept;
+  // One more live ball, but never past the table's three in all.
+  void addLiveBall() noexcept;
   void turboFull() noexcept;
   // The table's answer to a full meter's ball.
   void turboBallServed() noexcept;
@@ -585,6 +594,7 @@ class Rules {
   LockCommand lockCommand_ = LockCommand::None;
   bool multiballEnabled_ = true;
   bool ballSaveEnabled_ = true;
+  int droneHits_ = 0;
 
   // Ball saver, grace, extra balls.
   // The ball on the plunger has not had its saver yet: it starts when the

@@ -48,7 +48,16 @@ float distance(Vec2 a, Vec2 b) {
 // (-ffp-contract=off, as Box2D is), the physics uses only exactly rounded
 // arithmetic, and the table's curves are point tables written out in
 // TableLayout.hpp, not computed with the C library.
-constexpr std::uint64_t kSoakTrajectory = 0x9dfaf92d8104927dULL;
+// (Table revision 3, integrated (table/rev3-int): re-recorded once for the
+// two changes that move it, each recorded on its own branch first. 2a puts
+// the captive ball (a new body) where the G-force post stood:
+// 0xc31b6c8b27321eed on table/rev3-captive. 2b makes a knocked-down drone
+// come up when its 20 s are out, as TABLE_REV3 3.3 says, and not at the end
+// of the patrol cycle after them: 0x70d54ca980541b8e on table/rev3-motion.
+// Checked: this tree with 2b's old rise gives 2a's value exactly, so
+// nothing else here moves it; the three spinners' payouts, the subway's
+// drawing, the drone's look and the light show do not.)
+constexpr std::uint64_t kSoakTrajectory = 0xb4240991f33e56a4ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {
@@ -77,7 +86,7 @@ void testHoles() {
   {  // Layout: every exit is inside the table, below the box that took the
      // ball or at the far end of a rail, and no hole returns the ball
      // straight into another hole's box.
-    CHECK(table::kHoles[table::kScoopHole].type == table::HoleType::Scoop);
+    CHECK(table::kHoles[table::kScoopHole].type == table::HoleType::Subway);
     CHECK(table::kHoles[table::kHangarHole].type == table::HoleType::Hangar);
     CHECK(table::kHoles[table::kRunwayHole].type == table::HoleType::RampLeft);
     CHECK(table::kHoles[table::kSkywayHole].type == table::HoleType::RampRight);
@@ -145,16 +154,17 @@ void testHoles() {
     }
   }
 
-  {  // The Briefing room is reached from below, straight up the middle, at
-     // any speed that gets there; its exit is below its flares.
+  {  // The Briefing room (revision 3) is reached from below along its
+     // slanted channel, up and to the right, at any speed that gets there;
+     // its subway sets the ball down far below its mouth.
     const table::Hole& scoop = table::kHoles[table::kScoopHole];
-    for (const float speed : {500.0F, 1200.0F, 2400.0F}) {
+    for (const float speed : {900.0F, 1500.0F, 2400.0F}) {
       PhysicsWorld world;
-      world.resetBall({scoop.center.x, 520.0F}, {0.0F, -speed});
+      world.resetBall({410.0F, 520.0F}, {0.28F * speed, -0.96F * speed});
       const table::ElementRef captured = stepUntil(world, PhysicsEvent::Type::Capture, 60);
       CHECK(captured.kind == table::ElementKind::Hole && captured.index == table::kScoopHole);
     }
-    CHECK(scoop.exitPosition.y > table::kScoopFlareLeft.b.y + table::kBallRadius);
+    CHECK(scoop.exitPosition.y > table::kBriefingLeft.a.y + table::kBallRadius);
   }
 
   // A ramp takes only a ball moving up the table fast enough, anywhere
@@ -267,7 +277,7 @@ void testHoles() {
   {  // The game's hold times and counters.
     const double holdSteps = table::kScoopHoldSeconds / Game::kStepSeconds;
     CHECK(holdSteps > 30.0 && holdSteps < 600.0);
-    CHECK(Game::holdSeconds(table::HoleType::Scoop) == table::kScoopHoldSeconds);
+    CHECK(Game::holdSeconds(table::HoleType::Subway) == table::kScoopHoldSeconds);
     CHECK(Game::holdSeconds(table::HoleType::Hangar) == table::kHangarHoldSeconds);
     CHECK(Game::holdSeconds(table::HoleType::RampLeft) == table::kRampRideSeconds);
     CHECK(Game::holdSeconds(table::HoleType::RampRight) == table::kRampRideSeconds);

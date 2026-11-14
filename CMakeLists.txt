@@ -804,8 +804,10 @@ if(BUILD_TESTING)
     add_test(NAME asset_integrity
       COMMAND Python3::Interpreter -I ${CMAKE_SOURCE_DIR}/tools/test_asset_integrity.py
               $<TARGET_FILE:pinball> ${PINBALL_TEST_DIR}/asset_integrity_scratch)
+    # (One start of the game per asset, 2 to 3 s each under the sanitizers:
+    # table revision 3's sprites took it past two minutes on two cores.)
     set_tests_properties(asset_integrity PROPERTIES
-      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 120)
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 300)
 
     # The check a signed iOS build gets before upload refuses every
     # signature, entitlement and provisioning profile it should, tried
@@ -839,8 +841,10 @@ if(BUILD_TESTING)
     # second, in a general flash or a red one; with reduce motion, 5. storm:
     # multiball, a jackpot every 30 steps, the bumper nest every 20; domes:
     # small domes in turn every 8 steps and the nest; mix: the review's
-    # domes every 10 steps, the nest and a jackpot every 30.
-    foreach(scene storm domes mix)
+    # domes every 10 steps, the nest and a jackpot every 30; rev3storm: the
+    # storm with the drone hit every 24 steps, the stand-ups and the captive
+    # ball every 24, the subway, and the eight flasher domes.
+    foreach(scene storm domes mix rev3storm)
       add_test(NAME fx_wcag_${scene}
         COMMAND pinball_fxreel ${scene} - --wcag 0.15 --frames 360)
       add_test(NAME fx_wcag_${scene}_reduce_motion
@@ -882,8 +886,20 @@ if(BUILD_TESTING)
     add_test(NAME render_lock_out
       COMMAND pinball_snapshot 4 render_lock_out.png lock-out
       WORKING_DIRECTORY ${PINBALL_TEST_DIR})
+    # Table revision 3: a ball under the playfield in the Briefing room's
+    # subway (its glow), the drone thrown back by a hit, and sinking when
+    # it is knocked down.
+    add_test(NAME render_subway
+      COMMAND pinball_snapshot 80 render_subway.png scoop-in
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
+    add_test(NAME render_drone_hit
+      COMMAND pinball_snapshot 6 render_drone_hit.png drone-hit
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
+    add_test(NAME render_drone_down
+      COMMAND pinball_snapshot 10 render_drone_down.png drone-down
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
     set_tests_properties(render_locked render_bank_down render_spinning render_scoop_in
-                         render_lock_out PROPERTIES
+                         render_lock_out render_subway render_drone_hit render_drone_down PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
     # The tool must replace a link at its output name, never write through
     # it, even one that points nowhere. (Not on Windows, where making a link

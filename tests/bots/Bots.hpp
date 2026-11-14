@@ -109,8 +109,8 @@ inline SegmentReach reachOf(Vec2 p, Vec2 a, Vec2 b) noexcept {
 inline Vec2 restingTip(std::size_t flipper) noexcept {
   const float side = flipper == table::kLeftFlipperIndex ? 1.0F : -1.0F;
   const Vec2 pivot = table::kFlippers[flipper].pivot;
-  return {pivot.x + side * table::kFlipperLength * 0.8660254F,
-          pivot.y + table::kFlipperLength * 0.5F};
+  const float length = table::kFlippers[flipper].length;
+  return {pivot.x + side * length * 0.8660254F, pivot.y + length * 0.5F};
 }
 
 // P2, the reflex bot: the stand-in for an average player. It does not aim at
@@ -195,6 +195,9 @@ class ReflexBot final : public Bot {
     const Vec2 pivot = table::kFlippers[flipper].pivot;
     const Vec2 tip = restingTip(flipper);
     const float mirror = flipper == table::kLeftFlipperIndex ? 1.0F : -1.0F;
+    // A shorter bat (the upper flipper) is judged in proportion: its feet
+    // are scaled to the lower bats' length.
+    const float scale = table::kFlipperLength / table::kFlippers[flipper].length;
     float best = -1.0F;
     for (std::size_t b = 0; b < sense.count; ++b) {
       const Vec2 p = sense.balls[b].position;
@@ -203,8 +206,8 @@ class ReflexBot final : public Bot {
       const float above =
           ((p.x - pivot.x) * (tip.y - pivot.y) - (p.y - pivot.y) * (tip.x - pivot.x)) * mirror;
       if (above > 0.0F && reach.distance < kNear && reach.along >= 0.0F &&
-          reach.along <= kZoneLength && sense.balls[b].velocity.y > -kRisingSpeed) {
-        best = std::max(best, reach.along);
+          reach.along * scale <= kZoneLength && sense.balls[b].velocity.y > -kRisingSpeed) {
+        best = std::max(best, reach.along * scale);
       }
     }
     return best;

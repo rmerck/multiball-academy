@@ -93,9 +93,24 @@ constexpr float kDoorSpriteHeight = 16.0F;
 // zone's centre (the art's well is drawn for it there).
 constexpr float kKickbackSpriteWidth = 28.0F;
 constexpr float kKickbackSpriteHeight = 44.0F;
-// spinner_0/1.png: 80 x 24 units, centred between the spinner's posts.
+// spinner_0/1.png: 80 x 24 units, centred between the spinner's posts, drawn
+// for a spinner kSpinnerSpriteLength long (revision 2's Turbine lane) and
+// stretched along each of revision 3's three to its own length (60 and 57):
+// a stand-in until the art has a sprite for each size.
 constexpr float kSpinnerSpriteWidth = 80.0F;
 constexpr float kSpinnerSpriteHeight = 24.0F;
+constexpr float kSpinnerSpriteLength = 72.0F;
+// The subway's glow under the playfield: the ball's light, and the faint
+// tube it runs in while any ball rides it, lit every kSubwayTubeSpacing.
+constexpr float kSubwayGlowRadius = 30.0F;
+constexpr float kSubwayTubeRadius = 14.0F;
+constexpr float kSubwayTubeSpacing = 18.0F;
+constexpr float kSubwayTubeStrength = 0.2F;
+// The lane's one-way gate: the flap over the Afterburner lane (the part of
+// table::kLaneGate between the lane's walls), shut, and how far a ball's
+// centre may be past its line, up the table, for the flap still to be lifted.
+constexpr float kGateWidth = 5.0F;
+constexpr float kGateLiftReach = 0.6F * table::kBallRadius;
 // The marked doors' own light.
 constexpr float kDoorGlowRadius = 14.0F;
 constexpr float kDoorGlowStrength = 0.30F;
@@ -107,11 +122,38 @@ constexpr float kBumperGlowStrength = 0.40F;
 constexpr float kTargetLevel = 1.0F;
 
 // A lit lamp: its insert sprite, tinted, and its glow.
+// Which insert sprite a lamp is drawn with.
+enum class InsertKind : std::uint8_t { Arrow, Round, Hex, Chevron };
 struct LampSprite {
   Placed insert;
-  bool arrow;
+  InsertKind kind;
   float glowRadius;
 };
+
+// Revision 3's ladders and letters take the inserts the art bakes for
+// them, in LampId order from DroneArmour1 (generated/ArtPalette.hpp).
+constexpr std::size_t kFirstLadderLamp = static_cast<std::size_t>(table::LampId::DroneArmour1);
+static_assert(art::kPlannedLamps.size() == table::kLamps.size() - kFirstLadderLamp);
+constexpr bool laddersWhereTheArtHasThem() noexcept {
+  for (std::size_t k = 0; k < art::kPlannedLamps.size(); ++k) {
+    const Vec2 at = table::kLamps[kFirstLadderLamp + k].position;
+    if (at.x != art::kPlannedLamps[k].x || at.y != art::kPlannedLamps[k].y) {
+      return false;
+    }
+  }
+  return true;
+}
+static_assert(laddersWhereTheArtHasThem(), "a lamp and its baked insert must agree");
+constexpr bool domesWhereTheArtHasThem() noexcept {
+  for (std::size_t k = 0; k < table::kFlasherDomes.size(); ++k) {
+    if (table::kFlasherDomes[k].x != art::kFlasherDomes[k].x ||
+        table::kFlasherDomes[k].y != art::kFlasherDomes[k].y) {
+      return false;
+    }
+  }
+  return table::kFlasherDomes.size() == art::kFlasherDomes.size();
+}
+static_assert(domesWhereTheArtHasThem(), "a flasher dome and its baked base must agree");
 
 std::array<LampSprite, table::kLamps.size()> makeLampSprites() noexcept {
   std::array<LampSprite, table::kLamps.size()> sprites{};
@@ -127,14 +169,41 @@ std::array<LampSprite, table::kLamps.size()> makeLampSprites() noexcept {
           std::atan2(aimY - lamp.position.y, aimX - lamp.position.x) * kRadiansToDegrees) +
                            90.0;
       sprites[i] = {.insert = {centred(lamp.position, size, size), angle},
-                    .arrow = true,
+                    .kind = InsertKind::Arrow,
                     .glowRadius = size * art::kArrowGlowRadiusPerSize};
+    } else if (table::isLadderLamp(lamp.id)) {
+      // As tools/art/make_table.py bakes them.
+      const art::PlannedLamp& planned = art::kPlannedLamps[i - kFirstLadderLamp];
+      switch (planned.shape) {
+        case art::InsertShape::Hex: {
+          const float size = 16.0F * art::kHexDiameter / 11.0F;
+          sprites[i] = {.insert = {centred(lamp.position, size, size), 0.0},
+                        .kind = InsertKind::Hex,
+                        .glowRadius = art::kHexDiameter * art::kRoundGlowRadiusPerDiameter};
+          break;
+        }
+        case art::InsertShape::Chevron: {
+          const float w = art::kChevronWidth + 6.0F;
+          const float h = w * 56.0F / 96.0F;  // insert_chevron.png is 96 x 56.
+          sprites[i] = {.insert = {centred(lamp.position, w, h), 0.0},
+                        .kind = InsertKind::Chevron,
+                        .glowRadius = art::kChevronWidth * 0.6F};
+          break;
+        }
+        case art::InsertShape::Round: {
+          const float size = art::kLadderDiameter * art::kInsertRoundPerDiameter;
+          sprites[i] = {.insert = {centred(lamp.position, size, size), 0.0},
+                        .kind = InsertKind::Round,
+                        .glowRadius = art::kLadderDiameter * art::kRoundGlowRadiusPerDiameter};
+          break;
+        }
+      }
     } else {
       const float diameter = table::isCourseLamp(lamp.id) ? table::kCourseLampDiameter
                                                           : table::kStatusLampDiameter;
       const float size = diameter * art::kInsertRoundPerDiameter;
       sprites[i] = {.insert = {centred(lamp.position, size, size), 0.0},
-                    .arrow = false,
+                    .kind = InsertKind::Round,
                     .glowRadius = diameter * art::kRoundGlowRadiusPerDiameter};
     }
   }
@@ -311,8 +380,21 @@ std::vector<SDL_Vertex> makePlayfieldMesh() {
     // Where the ball comes back.
     mesh.ring(hole.exitPosition, 5.0F, 2.0F, ramp ? kRampColor : kHoleColor);
   }
-  mesh.line(table::kSpinner.a, table::kSpinner.b, 3.0F, kMarkColor);
+  for (const table::Spinner& spinner : table::kSpinners) {
+    mesh.line(spinner.a, spinner.b, 3.0F, kMarkColor);
+  }
   mesh.ring(table::kKickbackZone.center, table::kKickbackZone.radius, 2.0F, kMarkColor);
+  // Revision 3: the Briefing room's subway, faint, under everything; the
+  // lane's gate and the slopes either side of it (the flap over the lane is
+  // drawn each frame, drawLaneGate); the stand-ups and the captive ball's
+  // switch (its channel walls are among the walls, the ball is drawn each
+  // frame).
+  mesh.polyline(table::kBriefingSubway, 2.0F, kMarkColor, false);
+  mesh.polyline(table::kLaneGate, kChainWidth, kDeadColor, false);
+  for (const table::Capsule& standup : table::kStandups) {
+    mesh.capsule(standup, kSwitchColor);
+  }
+  mesh.capsule(table::kCaptiveSwitch, kSwitchColor);
 
   for (const table::Capsule& wall : table::kAllWalls) {
     mesh.capsule(wall, kWallColor);
@@ -407,21 +489,23 @@ TexturePtr resampled(SDL_Renderer* r, SDL_Texture* source, SDL_BlendMode mode) {
 
 // The lamps of a light show: each insert at its level in the neon of its
 // colour, a halo, and a hot core.
-void drawLitLamps(SDL_Renderer* r, SDL_Texture* arrow, SDL_Texture* round, TableEffects& effects,
-                  const LightShow& show, std::span<const LampSprite> sprites) {
+void drawLitLamps(SDL_Renderer* r, const std::array<SDL_Texture*, 4>& inserts,
+                  TableEffects& effects, const LightShow& show,
+                  std::span<const LampSprite> sprites) {
   for (std::size_t i = 0; i < sprites.size(); ++i) {
     const float level = show.lampLevel(table::kLamps[i].id);
     if (level < 0.01F) {
       continue;
     }
-    SDL_Texture* const insert = sprites[i].arrow ? arrow : round;
+    SDL_Texture* const insert = inserts[static_cast<std::size_t>(sprites[i].kind)];
     setTint(insert, art::kLampNeon[i], art::kLampNeonLevels[i]);
     SDL_SetTextureAlphaMod(insert, toByte(level));
     SDL_RenderTextureRotated(r, insert, nullptr, &sprites[i].insert.dst,
                              sprites[i].insert.angleDegrees, nullptr, SDL_FLIP_NONE);
   }
-  SDL_SetTextureAlphaMod(arrow, SDL_ALPHA_OPAQUE);
-  SDL_SetTextureAlphaMod(round, SDL_ALPHA_OPAQUE);
+  for (SDL_Texture* const insert : inserts) {
+    SDL_SetTextureAlphaMod(insert, SDL_ALPHA_OPAQUE);
+  }
   for (std::size_t i = 0; i < sprites.size(); ++i) {
     const float level = show.lampLevel(table::kLamps[i].id);
     if (level <= fx::kUnlitFloor + 0.02F && !show.lampLit(table::kLamps[i].id)) {
@@ -501,6 +585,7 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   t.ring = required("sprites/ring.png");
   t.gi = required("sprites/gi.png");
   t.pool = required("sprites/pool.png");
+  t.flasherDome = required("sprites/flasher_dome.png");
   t.bar = required("sprites/bar.png");
   t.door = required("sprites/door.png");
   t.plunger = required("sprites/plunger.png");
@@ -510,6 +595,8 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
     // and kickback.
     t.insertArrow = required("sprites/insert_arrow.png");
     t.insertRound = required("sprites/insert_round.png");
+    t.insertHex = required("sprites/insert_hex.png");
+    t.insertChevron = required("sprites/insert_chevron.png");
     t.spinner[0] = required("sprites/spinner_0.png");
     t.spinner[1] = required("sprites/spinner_1.png");
     t.kickback = required("sprites/kickback.png");
@@ -578,7 +665,8 @@ TableRenderer::TableRenderer(Textures textures, std::vector<SDL_Vertex> outside)
                         .flare = textures_.flare.get(),
                         .ring = textures_.ring.get(),
                         .gi = textures_.gi.get(),
-                        .pool = textures_.pool.get()});
+                        .pool = textures_.pool.get(),
+                        .dome = textures_.flasherDome.get()});
 }
 
 OverlayArt TableRenderer::overlayArt() const noexcept {
@@ -629,8 +717,7 @@ void TableRenderer::drawLamps(SDL_Renderer* r, const TableLights& lights,
                               const LightShow* show) const {
   static const std::array<LampSprite, table::kLamps.size()> kSprites = makeLampSprites();
   if (show != nullptr) {
-    drawLitLamps(r, textures_.insertArrow.get(), textures_.insertRound.get(), effects_, *show,
-                 kSprites);
+    drawLitLamps(r, insertTextures(), effects_, *show, kSprites);
     return;
   }
   // Inserts first, then every glow, so a glow is never cut by the next lamp.
@@ -638,8 +725,7 @@ void TableRenderer::drawLamps(SDL_Renderer* r, const TableLights& lights,
     if (!lights.lamps[i]) {
       continue;
     }
-    SDL_Texture* const insert =
-        kSprites[i].arrow ? textures_.insertArrow.get() : textures_.insertRound.get();
+    SDL_Texture* const insert = insertTextures()[static_cast<std::size_t>(kSprites[i].kind)];
     setTint(insert, art::kLampColours[i], art::kLampLitLevels[i]);
     SDL_RenderTextureRotated(r, insert, nullptr, &kSprites[i].insert.dst,
                              kSprites[i].insert.angleDegrees, nullptr, SDL_FLIP_NONE);
@@ -654,13 +740,20 @@ void TableRenderer::drawLamps(SDL_Renderer* r, const TableLights& lights,
 
 void TableRenderer::drawSpinnerAndKickback(SDL_Renderer* r, const Game& game) const {
   // The art's blade hangs edge-on at rest (phase 0 and 0.5) and shows its
-  // flat face for the middle half of each half turn.
-  const float phase = game.spinnerPhase();
-  const float quarter = std::fmod(phase * 2.0F + 0.25F, 1.0F);
-  SDL_Texture* const blade = textures_.spinner[quarter < 0.5F ? 0 : 1].get();
-  const Vec2 middle = (table::kSpinner.a + table::kSpinner.b) * 0.5F;
-  const SDL_FRect spinner = centred(middle, kSpinnerSpriteWidth, kSpinnerSpriteHeight);
-  SDL_RenderTexture(r, blade, nullptr, &spinner);
+  // flat face for the middle half of each half turn. Each spinner by its own
+  // phase; the sprite turned to lie along it and stretched to its length.
+  for (std::size_t i = 0; i < table::kSpinners.size(); ++i) {
+    const table::Spinner& s = table::kSpinners[i];
+    const float quarter = std::fmod(game.spinnerPhase(i) * 2.0F + 0.25F, 1.0F);
+    SDL_Texture* const blade = textures_.spinner[quarter < 0.5F ? 0 : 1].get();
+    const Vec2 run = s.b - s.a;
+    const float length = std::sqrt(run.x * run.x + run.y * run.y);
+    const SDL_FRect spinner = centred((s.a + s.b) * 0.5F,
+                                      kSpinnerSpriteWidth * length / kSpinnerSpriteLength,
+                                      kSpinnerSpriteHeight);
+    const double angle = static_cast<double>(std::atan2(run.y, run.x) * kRadiansToDegrees);
+    SDL_RenderTextureRotated(r, blade, nullptr, &spinner, angle, nullptr, SDL_FLIP_NONE);
+  }
 
   const SDL_FRect kickback = centred(
       {table::kKickbackZone.center.x, table::kKickbackZone.center.y + 1.0F},
@@ -685,13 +778,130 @@ void TableRenderer::drawElements(SDL_Renderer* r, const Game& game,
       mesh.disc(table::kLamps[i].position, table::kStatusLampDiameter * 0.5F, kLitColor);
     }
   }
-  // The spinner's blade seen from above: full depth when it lies flat, an
+  // Each spinner's blade seen from above: full depth when it lies flat, an
   // edge when it stands, twice a turn.
-  const float turn = 2.0F * table::kPi * game.spinnerPhase();
   constexpr float kBladeDepth = 16.0F;
-  mesh.line(table::kSpinner.a, table::kSpinner.b,
-            2.0F + (kBladeDepth - 2.0F) * std::fabs(std::cos(turn)), kBladeColor);
+  for (std::size_t i = 0; i < table::kSpinners.size(); ++i) {
+    const float turn = 2.0F * table::kPi * game.spinnerPhase(i);
+    mesh.line(table::kSpinners[i].a, table::kSpinners[i].b,
+              2.0F + (kBladeDepth - 2.0F) * std::fabs(std::cos(turn)), kBladeColor);
+  }
   SDL_RenderGeometry(r, nullptr, elements_.data(), static_cast<int>(elements_.size()), nullptr, 0);
+}
+
+void TableRenderer::drawSubway(SDL_Renderer* r, std::span<const BallView> balls) const {
+  float tube = 0.0F;
+  for (const BallView& ball : balls) {
+    if (ball.underground) {
+      tube = std::max(tube, std::clamp(ball.glow, 0.0F, 1.0F));
+    }
+  }
+  if (!(tube > 0.0F)) {
+    return;
+  }
+  // The tube: soft lights along the path, as bright as the brightest ball
+  // in it allows.
+  const auto& path = table::kBriefingSubway;
+  for (std::size_t i = 1; i < path.size(); ++i) {
+    const Vec2 run = path[i] - path[i - 1];
+    const float length = std::sqrt(run.x * run.x + run.y * run.y);
+    const int lights = std::max(1, static_cast<int>(length / kSubwayTubeSpacing));
+    for (int k = 0; k < lights; ++k) {
+      const Vec2 at = path[i - 1] + run * (static_cast<float>(k) / static_cast<float>(lights));
+      drawGlow(r, at, kSubwayTubeRadius, art::kAqua, kSubwayTubeStrength * tube);
+    }
+  }
+  // Each ball's own light, where it is.
+  for (const BallView& ball : balls) {
+    if (ball.underground && ball.glow > 0.0F) {
+      drawGlow(r, ball.glowAt, kSubwayGlowRadius, art::kAqua,
+               art::kMaxGlowStrength * std::clamp(ball.glow, 0.0F, 1.0F));
+      drawGlow(r, ball.glowAt, kSubwayGlowRadius * 0.4F, art::kCream,
+               art::kMaxGlowStrength * std::clamp(ball.glow, 0.0F, 1.0F));
+    }
+  }
+}
+
+void TableRenderer::drawDrone(SDL_Renderer* r, const Game& game, const LightShow* show) const {
+  const DroneView drone = game.drone();
+  const float sink = std::clamp(drone.sink, 0.0F, 1.0F);
+  if (sink >= 1.0F) {
+    return;  // Down out of sight.
+  }
+  // Smaller and darker the further down it is, as a ball in a hole.
+  const float radius = table::kDroneRadius * (1.0F - table::kHoleSinkShrink * sink);
+  const float light = 1.0F - table::kHoleSinkDarken * sink;
+  const auto shade = [light](art::Rgb c, float extra = 1.0F) noexcept {
+    return SDL_FColor{static_cast<float>(c.r) / 255.0F * light * extra,
+                      static_cast<float>(c.g) / 255.0F * light * extra,
+                      static_cast<float>(c.b) / 255.0F * light * extra, 1.0F};
+  };
+  motion_.clear();
+  Mesh mesh(motion_);
+  // A hexagon, a corner down the table, as the physics has it.
+  std::array<Vec2, 6> corners{};
+  for (std::size_t k = 0; k < corners.size(); ++k) {
+    const float angle = table::kPi * (0.5F + static_cast<float>(k) / 3.0F);
+    corners[k] = {drone.position.x + radius * std::cos(angle),
+                  drone.position.y + radius * std::sin(angle)};
+  }
+  mesh.polygon(corners, shade(art::kChLo));
+  mesh.polyline(corners, 3.0F, shade(art::kChMid), true);
+  // Its eye: dim on patrol, hot when struck (with the light show, as its
+  // flash is, through the drone's gate: not at every hit).
+  const float struck = show != nullptr ? show->droneFlash() : drone.recoil;
+  const float eye = 0.35F + 0.65F * std::clamp(struck, 0.0F, 1.0F);
+  mesh.disc(drone.position, radius * 0.35F, shade(art::kOrange, eye));
+  SDL_RenderGeometry(r, nullptr, motion_.data(), static_cast<int>(motion_.size()), nullptr, 0);
+  // Its light when struck is the light show's (TableEffects, through the
+  // drone's flash gate); without a show, a small glow with the recoil.
+  if (show == nullptr && drone.recoil > 0.0F) {
+    drawGlow(r, drone.position, radius * 3.0F, art::kOrange,
+             art::kMaxGlowStrength * std::clamp(drone.recoil, 0.0F, 1.0F));
+  }
+}
+
+void TableRenderer::drawLaneGate(SDL_Renderer* r, std::span<const BallView> balls) const {
+  // The flap is the gate's run between the lane's walls.
+  const Vec2 a = table::kLaneGate[1];
+  const Vec2 b = table::kLaneGate[2];
+  const Vec2 run = b - a;
+  const float length = std::sqrt(run.x * run.x + run.y * run.y);
+  if (!(length > 0.0F)) {
+    return;
+  }
+  // Lifted by a ball pushing up through it: a ball whose centre is below the
+  // line (or only just past it) and within reach of it, along its length.
+  float lift = 0.0F;
+  for (const BallView& ball : balls) {
+    if (!ball.visible || ball.raised || ball.locked) {
+      continue;
+    }
+    const Vec2 p = ball.drawnAt() - a;
+    const float along = (p.x * run.x + p.y * run.y) / length;
+    if (along < 0.0F || along > length) {
+      continue;
+    }
+    // Below the line (down the table) is positive.
+    const float below = (run.x * p.y - run.y * p.x) / length;
+    // Full lift from the moment the ball touches it until its centre is
+    // kGateLiftReach past it; easing in over the last few units below.
+    constexpr float kTouch = table::kBallRadius + kGateWidth * 0.5F;
+    constexpr float kEase = 6.0F;
+    if (below > -kGateLiftReach) {
+      lift = std::max(lift, std::clamp((kTouch + kEase - below) / kEase, 0.0F, 1.0F));
+    }
+  }
+  // Seen from above, a flap swung up shows less of its depth and catches
+  // the light.
+  motion_.clear();
+  Mesh mesh(motion_);
+  const SDL_FColor steel = rgb(art::kChMid.r, art::kChMid.g, art::kChMid.b);
+  const SDL_FColor bright = rgb(art::kChHi.r, art::kChHi.g, art::kChHi.b);
+  mesh.line(a, b, kGateWidth * (1.0F - 0.7F * lift) + 1.0F, lift > 0.0F ? bright : steel);
+  mesh.disc(a, 3.0F, steel);
+  mesh.disc(b, 3.0F, steel);
+  SDL_RenderGeometry(r, nullptr, motion_.data(), static_cast<int>(motion_.size()), nullptr, 0);
 }
 
 void TableRenderer::drawTargets(SDL_Renderer* r, const Game& game,
@@ -1024,11 +1234,16 @@ void TableRenderer::drawTable(SDL_Renderer* r, const Game& game, float alpha, in
   const SDL_Rect clip{-shakeX, -shakeY, view.w, view.h};
   SDL_SetRenderClipRect(r, &clip);
 
+  // The shadows, the gate and the subway's glow follow the same in-between
+  // positions as the balls.
+  const DrawnBalls balls = ballsToDraw(game, alpha, options.extraBalls);
   SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
   const LightShow* const show = options.lightShow;
   if (show != nullptr) {
     effects_.drawUnderlay(r, *show, !economy_);
   }
+  // Under the playfield: what rides the subway shows through it.
+  drawSubway(r, balls.span());
   if (textures_.backgroundFromLayout) {
     drawElements(r, game, lights);
   } else {
@@ -1040,24 +1255,22 @@ void TableRenderer::drawTable(SDL_Renderer* r, const Game& game, float alpha, in
     effects_.drawElementFlashes(r, game, *show);
   }
   drawBumpers(r, game, show);
+  drawDrone(r, game, show);
+  drawLaneGate(r, balls.span());
   drawSlingshotFlashes(r, game, show);
   drawPlunger(r, game);
   drawFlippers(r, game, alpha, options.flippersAtRest);
-  {
-    // The shadows follow the same in-between positions as the balls.
-    const DrawnBalls balls = ballsToDraw(game, alpha, options.extraBalls);
-    if (show != nullptr) {
-      effects_.drawShow(r, game, balls.span(), alpha, *show);
-      // Every glow stops at the cabinet: what lies outside the shell is
-      // drawn back over them, from the background itself.
-      SDL_RenderGeometry(r, textures_.background.get(), outsideMesh_.data(),
-                         static_cast<int>(outsideMesh_.size()), nullptr, 0);
-      effects_.drawBallPools(r, balls.span(), *show);
-    }
-    drawBalls(r, balls.span());
-    if (show != nullptr) {
-      effects_.drawBallGlints(r, game, balls.span(), *show);
-    }
+  if (show != nullptr) {
+    effects_.drawShow(r, game, balls.span(), alpha, *show);
+    // Every glow stops at the cabinet: what lies outside the shell is
+    // drawn back over them, from the background itself.
+    SDL_RenderGeometry(r, textures_.background.get(), outsideMesh_.data(),
+                       static_cast<int>(outsideMesh_.size()), nullptr, 0);
+    effects_.drawBallPools(r, balls.span(), *show);
+  }
+  drawBalls(r, balls.span());
+  if (show != nullptr) {
+    effects_.drawBallGlints(r, game, balls.span(), *show);
   }
 
   if (options.dimmed) {

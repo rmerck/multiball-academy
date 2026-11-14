@@ -72,6 +72,7 @@ class TableEffects {
     SDL_Texture* ring = nullptr;   // Additive (ring.png).
     SDL_Texture* gi = nullptr;     // Additive (gi.png): the general illumination's light map.
     SDL_Texture* pool = nullptr;   // Blended (pool.png): the dark pool round a ball.
+    SDL_Texture* dome = nullptr;   // Blended (flasher_dome.png): a flasher dome, lit.
   };
 
   void setTextures(Textures textures) noexcept { textures_ = textures; }

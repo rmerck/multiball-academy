@@ -9,8 +9,8 @@ import numpy as np
 import skia
 
 import palette as P
-from common import (C, ROOT, Stage, blur, chrome_sweep, fill, layout, lin, mix, plus, poly_path, rad, rrect,
-                    save_png, shade, stroke)
+from common import (C, ROOT, Stage, blur, chrome_sweep, fill, font, layout, lin, mix, plus, poly_path, rad, rrect,
+                    save_png, shade, stroke, text_path)
 
 L = layout()
 BALL_R = L["ballRadius"]
@@ -377,26 +377,32 @@ def door():
     return st.image()
 
 
-def spinner(frame):
-    """Turbine spinner between its posts, 72 units long in a 80 by 24 sprite. Frame 0 edge-on, frame 1 flat."""
-    st = Stage(80, 24, 4, 2, transparent=True)
+def spinner(frame, between=72.0, inset=7.0, colour=None):
+    """Spinner between its posts, `between` units apart, in a (between + 8) by 24 sprite. Frame 0 edge-on,
+    frame 1 flat. The Afterburner lane's is 72 apart (posts on the lane's walls); the circuit mouths' 57, in
+    the circuits' colour. The blade starts `inset` units inside each post."""
+    w = between + 8.0
+    st = Stage(w, 24, 4, 2, transparent=True)
     c = st.c
     y = 12.0
-    c.drawLine(4, y, 76, y, stroke(C(P.INK, 250), 2.6)); c.drawLine(4, y, 76, y, stroke(C(P.CH_HI), 1.0))
+    x0, x1 = 4.0, 4.0 + between
+    hi, mid, lo = (P.WHITE, "#7FE0A8", "#0F6A3A") if colour is None else (P.WHITE, mix(colour, P.WHITE, 0.4), mix(colour, P.INK, 0.6))
+    flat = ("#C8FFE0", P.GREEN, "#0F6A3A") if colour is None else (mix(colour, P.WHITE, 0.7), colour, mix(colour, P.INK, 0.6))
+    c.drawLine(x0, y, x1, y, stroke(C(P.INK, 250), 2.6)); c.drawLine(x0, y, x1, y, stroke(C(P.CH_HI), 1.0))
     half = 1.9 if frame == 0 else 8.2
-    blade = skia.Rect.MakeLTRB(11, y - half, 69, y + half)
-    c.drawRect(skia.Rect.MakeLTRB(9.8, y - half - 1.2, 70.2, y + half + 1.2), fill(C(P.INK, 250)))
+    blade = skia.Rect.MakeLTRB(x0 + inset, y - half, x1 - inset, y + half)
+    c.drawRect(skia.Rect.MakeLTRB(x0 + inset - 1.2, y - half - 1.2, x1 - inset + 1.2, y + half + 1.2), fill(C(P.INK, 250)))
     if frame == 0:
-        c.drawRect(blade, shade(lin((0, y - half), (0, y + half), [C(P.WHITE), C("#7FE0A8"), C("#0F6A3A")])))
+        c.drawRect(blade, shade(lin((0, y - half), (0, y + half), [C(hi), C(mid), C(lo)])))
     else:
-        c.drawRect(blade, shade(lin((0, y - half), (0, y + half), [C("#C8FFE0"), C(P.GREEN), C("#0F6A3A")], [0, 0.35, 1])))
+        c.drawRect(blade, shade(lin((0, y - half), (0, y + half), [C(flat[0]), C(flat[1]), C(flat[2])], [0, 0.35, 1])))
         c.save(); c.clipRect(blade, skia.ClipOp.kIntersect, True)
-        for i in range(8):
-            xx = 9 + i * 8.4
+        for i in range(int((between - 2 * inset) / 8.4) + 2):
+            xx = x0 + inset - 2 + i * 8.4
             c.drawPath(poly_path([(xx, y + half), (xx + 4.2, y + half), (xx + 10, y - half), (xx + 5.8, y - half)]), fill(C(P.CREAM, 235)))
-        c.drawLine(11, y - half + 1.5, 69, y - half + 1.5, blur(stroke(C(P.WHITE, 220), 1.0), 0.4))
+        c.drawLine(x0 + inset, y - half + 1.5, x1 - inset, y - half + 1.5, blur(stroke(C(P.WHITE, 220), 1.0), 0.4))
         c.restore()
-    for xx in (4, 76):
+    for xx in (x0, x1):
         c.drawCircle(xx, y, 4.0, fill(C(P.INK, 250)))
         c.drawCircle(xx, y, 3.0, shade(chrome_sweep(xx, y)))
         c.drawCircle(xx - 0.8, y - 0.9, 0.9, fill(C(P.WHITE)))
@@ -448,12 +454,208 @@ def dot():
     return st.image()
 
 
+# ---- revision 3 ------------------------------------------------------------------------------------------
+def _hexagon(cx, cy, r, rot=90.0):
+    """A hexagon of corner radius r; rot 90 puts a corner straight down the table (the drone's)."""
+    return poly_path([(cx + r * math.cos(math.radians(rot + 60 * k)), cy + r * math.sin(math.radians(rot + 60 * k))) for k in range(6)])
+
+
+def drone(state):
+    """The training drone seen from above, DRONE_SPRITE_UNITS square, the hexagon (the physics' own, radius
+    L["drone"]["radius"], a corner down the table) in the middle. Its own cast shadow to the lower right,
+    since it hovers. 'patrol': glossy blue shell, chrome rim, a hazard band on its two lower faces (the faces
+    that throw the ball aside), a sensor eye. 'dive': the same, sinking: smaller shadow, darker, the eye shut.
+    'down': knocked down, lying flat in its bay: scorched, no shadow, a warning flag. Not tinted."""
+    u = P.DRONE_SPRITE_UNITS
+    st = Stage(u, u, 4, 4, transparent=True)
+    c = st.c
+    x = y = u / 2
+    r = L["drone"]["radius"]
+    dark = 0.0 if state == "patrol" else 0.35 if state == "dive" else 0.6
+    if state != "down":
+        off = (4.5, 6.0) if state == "patrol" else (2.0, 2.6)
+        c.save(); c.translate(*off); c.drawPath(_hexagon(x, y, r + 0.5), blur(fill(C(P.INK, 170 if state == "patrol" else 130)), 1.6)); c.restore()
+    body = _hexagon(x, y, r)
+    c.drawPath(_hexagon(x, y, r + 1.4), fill(C(P.INK, 250)))
+    c.drawPath(body, shade(chrome_sweep(x, y)))
+    shell = _hexagon(x, y, r - 2.6)
+    top = [C(mix("#B8DCFF", P.INK, dark)), C(mix(P.BLUE, P.INK, dark)), C(mix("#14306E", P.INK, dark))]
+    c.drawPath(shell, shade(lin((x - r, y - r), (x + r, y + r), top, [0, 0.45, 1])))
+    c.save(); c.clipPath(shell, skia.ClipOp.kIntersect, True)
+    # Hazard band across the two lower faces.
+    band = poly_path([(x - r, y + r * 0.30), (x + r, y + r * 0.30), (x + r, y + r), (x - r, y + r)])
+    c.drawPath(band, fill(C(mix(P.YELLOW, P.INK, 0.15 + dark))))
+    c.save(); c.clipPath(band, skia.ClipOp.kIntersect, True)
+    for i in range(-6, 7):
+        xx = x + i * 4.2
+        c.drawPath(poly_path([(xx, y + r * 0.30), (xx + 2.1, y + r * 0.30), (xx - 2.9, y + r), (xx - 5.0, y + r)]), fill(C(P.INK, 235)))
+    c.restore()
+    # Panel lines (the armour plates) and the glint along the upper left faces.
+    for k in range(3):
+        a = math.radians(-90 + 120 * k)
+        c.drawLine(x + 5.2 * math.cos(a), y + 5.2 * math.sin(a), x + (r - 2.6) * math.cos(a), y + (r - 2.6) * math.sin(a),
+                   stroke(C(P.INK, 150), 0.6, cap=skia.Paint.kButt_Cap))
+    if state != "down":
+        c.drawLine(x - r * 0.75, y - r * 0.20, x - r * 0.15, y - r * 0.62, blur(stroke(C(P.WHITE, 200), 1.2), 0.4))
+    c.restore()
+    c.drawPath(shell, stroke(C(P.INK, 200), 0.7))
+    # The sensor eye.
+    c.drawCircle(x, y - 1.0, 5.4, fill(C(P.INK)))
+    c.drawCircle(x, y - 1.0, 4.4, shade(chrome_sweep(x, y - 1.0)))
+    if state == "patrol":
+        c.drawCircle(x, y - 1.0, 3.0, shade(rad((x - 0.8, y - 2.0), 3.6, [C("#FFE6F0"), C(P.PINK), C("#5A0830")], [0, 0.4, 1])))
+        c.drawCircle(x - 1.0, y - 2.1, 0.9, fill(C(P.WHITE)))
+    else:
+        c.drawCircle(x, y - 1.0, 3.0, fill(C("#14102A")))
+        c.drawLine(x - 2.4, y - 1.0, x + 2.4, y - 1.0, stroke(C(mix(P.CH_MID, P.INK, 0.4)), 0.8, cap=skia.Paint.kButt_Cap))
+    if state == "down":
+        # Scorch over the shell and a small chequered flag: hit enough, out of the fight.
+        c.drawPath(shell, shade(rad((x + 3, y + 2), r, [C(P.INK, 170), C(P.INK, 60), C(P.INK, 0)], [0, 0.5, 1])))
+        fx, fy = x + r * 0.42, y - r * 0.80
+        c.drawLine(fx, fy, fx, fy + 9.0, stroke(C(P.INK), 1.6, cap=skia.Paint.kButt_Cap)); c.drawLine(fx, fy, fx, fy + 9.0, stroke(C(P.CH_MID), 0.8, cap=skia.Paint.kButt_Cap))
+        flag = skia.Rect.MakeXYWH(fx + 0.4, fy - 0.2, 7.0, 4.8)
+        c.drawRect(flag, fill(C(P.CREAM)))
+        for i in range(4):
+            for j in range(2):
+                if (i + j) % 2 == 0:
+                    c.drawRect(skia.Rect.MakeXYWH(fx + 0.4 + i * 1.75, fy - 0.2 + j * 2.4, 1.75, 2.4), fill(C(P.INK)))
+        c.drawRect(flag, stroke(C(P.INK), 0.5))
+    return st.image()
+
+
+def captive_ball():
+    """The G-force test's captive ball: steel, 22 across (TABLE_REV3 3.5), in a CAPTIVE_BALL_SPRITE_UNITS
+    sprite. Darker and cooler than the ball in play, with no cream rim, so it is never taken for it."""
+    u = P.CAPTIVE_BALL_SPRITE_UNITS
+    st = Stage(u, u, 4, 4, transparent=True)
+    c = st.c
+    x = y = u / 2
+    r = 11.0
+    c.drawCircle(x, y, r + 2.6, blur(fill(C(P.INK, 160)), 0.9))
+    c.drawCircle(x, y, r + 1.4, fill(C(P.INK, 250)))
+    c.save()
+    cp = skia.Path(); cp.addCircle(x, y, r); c.clipPath(cp, skia.ClipOp.kIntersect, True)
+    c.drawPaint(shade(lin((x, y - r), (x, y + 2), [C("#E4ECF6"), C("#A7B6CC"), C("#6C7C98")], [0, 0.5, 1])))
+    hz = skia.Path(); hz.moveTo(x - r - 1, y + 0.5); hz.quadTo(x, y + 4.6, x + r + 1, y + 0.5)
+    below = skia.Path(hz); below.lineTo(x + r + 1, y + r + 1); below.lineTo(x - r - 1, y + r + 1); below.close()
+    c.save(); c.clipPath(below, skia.ClipOp.kIntersect, True)
+    c.drawPaint(shade(lin((x, y + 2), (x, y + r), [C("#2A3360"), C("#4A5888"), C("#7E8CB4")], [0, 0.5, 1])))
+    c.restore()
+    c.drawPath(hz, stroke(C("#1C2450", 230), 0.8))
+    c.drawCircle(x, y, r, shade(rad((x, y), r, [C("#000000", 0), C("#000000", 0), C("#0A0E30", 70)], [0, 0.8, 1])))
+    c.restore()
+    c.drawCircle(x - 3.6, y - 4.4, 2.2, blur(fill(C(P.WHITE, 235)), 0.3))
+    return st.image()
+
+
+def standup(letter):
+    """A stand-up target's face, upright, STANDUP_SPRITE_UNITS: a neutral glossy plate in a dark bezel with its
+    letter in ink. The renderer tints it (dim when unlit, the lamp colour when lit) and rotates it by the
+    stand-up's angle minus 90 degrees about its centre, the middle of the capsule."""
+    w, h = P.STANDUP_SPRITE_UNITS
+    st = Stage(w, h, 4, 4, transparent=True)
+    c = st.c
+    x, y = w / 2, h / 2
+    c.drawRRect(rrect(x - 6.2, y - 13.6, 12.4, 27.2, 4.0), blur(fill(C(P.INK, 160)), 0.8))
+    c.drawRRect(rrect(x - 5.6, y - 13.0, 11.2, 26.0, 3.6), fill(C(P.INK, 252)))
+    face = rrect(x - 4.4, y - 11.8, 8.8, 23.6, 2.8)
+    c.drawRRect(face, shade(lin((x - 4.4, 0), (x + 4.4, 0), [C(P.WHITE), C("#E2E2E2"), C("#9A9A9A")], [0, 0.4, 1])))
+    c.save(); c.clipRRect(face, skia.ClipOp.kIntersect, True)
+    c.drawLine(x - 2.6, y - 10.4, x - 2.6, y + 10.4, blur(stroke(C(P.WHITE, 230), 1.0), 0.3))
+    c.restore()
+    f = font("RussoOne-Regular.ttf", 10.5)
+    p, _ = text_path(letter, f, x + 0.2, y + 3.9, 0, "center")
+    c.drawPath(p, fill(C(P.INK)))
+    return st.image()
+
+
+def flasher_dome():
+    """A flasher dome, FLASHER_DOME_UNITS across: clear glossy plastic over a chrome collar, neutral, tinted by
+    the renderer (dim at rest, the flasher's colour when it fires, its flare added over it)."""
+    u = P.FLASHER_DOME_UNITS
+    st = Stage(u, u, 4, 4, transparent=True)
+    c = st.c
+    x = y = u / 2
+    c.drawCircle(x, y, 7.6, fill(C(P.INK, 250)))
+    c.drawCircle(x, y, 6.9, shade(chrome_sweep(x, y)))
+    c.drawCircle(x, y, 5.6, fill(C(P.INK, 230)))
+    c.drawCircle(x, y, 5.0, shade(rad((x - 1.6, y - 2.0), 7.0, [C(P.WHITE), C("#E0E0E0"), C("#A0A0A0"), C("#5A5A5A")], [0, 0.25, 0.7, 1])))
+    for a in range(0, 360, 45):
+        t = math.radians(a)
+        c.drawLine(x + 1.4 * math.cos(t), y + 1.4 * math.sin(t), x + 4.6 * math.cos(t), y + 4.6 * math.sin(t), stroke(C("#8A8A8A", 110), 0.4))
+    c.drawCircle(x - 1.9, y - 2.2, 1.3, blur(fill(C(P.WHITE)), 0.3))
+    return st.image()
+
+
+def gate():
+    """The Afterburner lane's one-way gate: a wire flap hanging from its axle, seen from above, as long as the
+    gate (laneGate, without its ghost points) plus the pivots, 14 high. The axle is the sprite's middle row and
+    the flap hangs below it (down the table); the renderer rotates it along the gate and shortens it toward the
+    axle as the flap swings up. The axle and its pivots are also baked into the background."""
+    g = L["laneGate"][1:-1]
+    ln = math.hypot(g[-1][0] - g[0][0], g[-1][1] - g[0][1])
+    w, h = ln + 8.0, 14.0
+    st = Stage(w, h, 4, 4, transparent=True)
+    c = st.c
+    y = h / 2
+    x0, x1 = 4.0, w - 4.0
+    flap = poly_path([(x0 + 3, y), (x0 + 3, y + 5.2), (x1 - 3, y + 5.2), (x1 - 3, y)], close=False)
+    c.drawPath(flap, stroke(C(P.INK, 240), 2.2))
+    c.drawPath(flap, stroke(C(P.CH_MID), 1.0))
+    c.save(); c.translate(-0.2, -0.3); c.drawPath(flap, stroke(C(P.CH_HI), 0.4)); c.restore()
+    for xx in np.arange(x0 + 12, x1 - 6, 10.0):
+        c.drawLine(xx, y, xx, y + 5.2, stroke(C(P.INK, 220), 1.4, cap=skia.Paint.kButt_Cap))
+        c.drawLine(xx, y, xx, y + 5.2, stroke(C(P.CH_MID), 0.6, cap=skia.Paint.kButt_Cap))
+    return st.image()
+
+
+def insert_shape(kind):
+    """Lamp inserts of revision 3, like insert('round'): a neutral lens in a dark bezel, tinted by the renderer.
+    'hex': drone armour, 16 units for an 11-unit hexagon (a flat side up). 'chevron': a rank stripe pointing up,
+    24 by 14 units for an 18 by 9 chevron."""
+    if kind == "hex":
+        w = h = 16.0
+        st = Stage(w, h, 4, 4, transparent=True)
+        x, y = w / 2, h / 2
+        shape = _hexagon(x, y, P.HEX_DIAMETER / 2, rot=0.0)
+    else:
+        cw, ch = P.CHEVRON_SIZE
+        w, h = cw + 6.0, ch + 5.0
+        st = Stage(w, h, 4, 4, transparent=True)
+        x, y = w / 2, h / 2
+        t = 3.6
+        shape = poly_path([(x, y - ch / 2), (x + cw / 2, y + ch / 2 - t * 0.2), (x + cw / 2, y + ch / 2), (x + cw / 2 - t * 1.3, y + ch / 2),
+                           (x, y - ch / 2 + t), (x - cw / 2 + t * 1.3, y + ch / 2), (x - cw / 2, y + ch / 2), (x - cw / 2, y + ch / 2 - t * 0.2)])
+    c = st.c
+    c.drawPath(shape, blur(stroke(C(P.INK, 170), 4.0, join=skia.Paint.kRound_Join), 0.6))
+    c.drawPath(shape, stroke(C(P.INK, 252), 3.0, join=skia.Paint.kRound_Join))
+    c.drawPath(shape, stroke(C("#7C7C7C"), 1.0, join=skia.Paint.kRound_Join))
+    c.drawPath(shape, shade(rad((x - 2.0, y - 2.5), w * 0.6, [C(P.WHITE), C("#E8E8E8"), C("#A8A8A8")], [0, 0.5, 1])))
+    c.save(); c.clipPath(shape, skia.ClipOp.kIntersect, True)
+    c.drawCircle(x - 1.8, y - 2.0, 1.1, blur(fill(C(P.WHITE)), 0.3))
+    c.restore()
+    return st.image()
+
+
+def _circuit_between():
+    a, b = L["sensors"][0]["a"], L["sensors"][0]["b"]
+    return math.hypot(b[0] - a[0], b[1] - a[1])
+
+
 SPRITES = {
     "ball.png": ball, "glow.png": glow, "flipper.png": flipper, "bumper.png": lambda: bumper("body"),
     "bumper_cap.png": lambda: bumper("cap"), "bar.png": bar, "plunger.png": plunger, "button.png": button, "button_gloss.png": button_gloss,
     "insert_round.png": lambda: insert("round"), "insert_arrow.png": lambda: insert("arrow"), "door.png": door,
     "spinner_0.png": lambda: spinner(0), "spinner_1.png": lambda: spinner(1), "kickback.png": kickback,
     "flare.png": flare, "ring.png": ring, "gi.png": gi, "pool.png": pool, "dot.png": dot,
+    # Revision 3.
+    "drone.png": lambda: drone("patrol"), "drone_dive.png": lambda: drone("dive"), "drone_down.png": lambda: drone("down"),
+    "captive_ball.png": captive_ball, "flasher_dome.png": flasher_dome, "gate.png": gate,
+    "standup_t.png": lambda: standup("T"), "standup_a.png": lambda: standup("A"), "standup_x.png": lambda: standup("X"),
+    "standup_i.png": lambda: standup("I"), "insert_hex.png": lambda: insert_shape("hex"),
+    "insert_chevron.png": lambda: insert_shape("chevron"),
+    "spinner_circuit_0.png": lambda: spinner(0, _circuit_between(), 6.0, P.AQUA),
+    "spinner_circuit_1.png": lambda: spinner(1, _circuit_between(), 6.0, P.AQUA),
 }
 
 

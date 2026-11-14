@@ -28,7 +28,8 @@ const char* touchName(Touch touch) noexcept {
       "none",          "left circuit", "Runway",        "left target",  "bay door",
       "Hangar",        "Briefing",     "Turbine",       "right target", "Skyway",
       "right circuit", "bumper",       "slingshot",     "roll call",    "left inlane",
-      "right inlane",  "left outlane", "right outlane", "centre drain", "flipper"};
+      "right inlane",  "left outlane", "right outlane", "centre drain", "flipper",     "drone",         "TAXI",
+      "G-force"};
   const auto index = static_cast<std::size_t>(touch);
   return index < kNames.size() ? kNames[index] : "?";
 }
@@ -89,10 +90,10 @@ bool TableHarness::nearFlipper(Vec2 p, std::size_t i, float slack) const {
   const FlipperView flipper = game_.flipper(i);
   // Box2D's own cosine and sine: the same on every platform.
   const b2CosSin turn = b2ComputeCosSin(flipper.angle);
-  const Vec2 tip{flipper.pivot.x + table::kFlipperLength * turn.cosine,
-                 flipper.pivot.y + table::kFlipperLength * turn.sine};
+  const float length = table::kFlippers[i].length;
+  const Vec2 tip{flipper.pivot.x + length * turn.cosine, flipper.pivot.y + length * turn.sine};
   const SegmentReach reach = reachOf(p, flipper.pivot, tip);
-  const float u = std::clamp(reach.along / table::kFlipperLength, 0.0F, 1.0F);
+  const float u = std::clamp(reach.along / length, 0.0F, 1.0F);
   const float batRadius =
       table::kFlipperBaseRadius + (table::kFlipperTipRadius - table::kFlipperBaseRadius) * u;
   return reach.distance < table::kBallRadius + batRadius + slack;
@@ -213,7 +214,7 @@ Touch TableHarness::advance() {
         ++holeHits[i];
         Touch touch = Touch::Briefing;
         switch (table::kHoles[i].type) {
-          case table::HoleType::Scoop:
+          case table::HoleType::Subway:
             break;
           case table::HoleType::Hangar:
             touch = Touch::Hangar;
@@ -266,6 +267,22 @@ Touch TableHarness::advance() {
       case Kickback:
         ++kickbacks;
         break;
+      case Drone:
+        log(Touch::Drone, event.speed, ball);
+        break;
+      case Standup:
+        ++standupHits[i];
+        log(Touch::Standup, event.speed, ball);
+        break;
+      case CaptiveBall:
+        // Struck: a G-force touch, as the post's hits were. The switch
+        // closing is counted in standupHits' last place.
+        if (i == table::kCaptiveBallSwitch) {
+          ++standupHits[table::kStandups.size()];
+        } else {
+          log(Touch::GForce, event.speed, ball);
+        }
+        break;
       case None:
         break;
     }
@@ -300,6 +317,11 @@ Touch TableHarness::advance() {
         break;
       case HoleEject:
       case KickbackFired:
+      case DroneHit:
+      case DroneDown:
+      case DroneDive:
+      case DroneRise:
+      case SubwayRide:
         break;
     }
   }
@@ -392,7 +414,7 @@ void TableHarness::watchBall(std::size_t slot) {
       state.circuitRight = false;
       state.flipperStep = step_ + 1;
     }
-    const bool raised = f == table::kLeftFlipperIndex ? left : right;
+    const bool raised = f == table::kLeftFlipperIndex ? left : right;  // Right drives the upper too.
     cradled = cradled || (raised && nearFlipper(p, f, 6.0F));
   }
   if (inPlay) {

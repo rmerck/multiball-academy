@@ -51,7 +51,7 @@ static_assert(table::kAllWalls.size() == table::kWalls.size() + 20);
 static_assert(table::kAllWalls[table::kWalls.size() + 1].a.x ==
               2.0F * table::kFieldCenterX - table::kRimLeftArc[0].x);
 static_assert(table::kSkywayRail[8].x == 604.0F && table::kSkywayRail[0].x == 519.0F);
-static_assert(table::kLamps.size() == 29);
+static_assert(table::kLamps.size() == 58);  // 29 from revision 2, 29 ladder and letter lamps.
 // The shell and the island are wound opposite ways: the table is inside the
 // one and outside the other.
 static_assert(signedArea(table::kShell) * signedArea(table::kLaneIsland) < 0.0F);
@@ -65,8 +65,8 @@ constexpr std::array<Mouth, 7> kMouths{{
     {table::LampId::ArrowCircuitLeft, {121.0F, 480.0F}},
     {table::LampId::ArrowRunway, {table::kHoles[table::kRunwayHole].center.x, 425.0F}},
     {table::LampId::ArrowHangar, {279.0F, table::kDoorY}},
-    {table::LampId::ArrowBriefing, {356.0F, 428.0F}},
-    {table::LampId::ArrowTurbine, {432.0F, table::kSpinner.a.y}},
+    {table::LampId::ArrowBriefing, {437.0F, 436.0F}},
+    {table::LampId::ArrowTurbine, {356.0F, table::kSpinner.a.y}},
     {table::LampId::ArrowSkyway, {table::kHoles[table::kSkywayHole].center.x, 425.0F}},
     {table::LampId::ArrowCircuitRight, {590.0F, 480.0F}},
 }};
@@ -146,6 +146,8 @@ std::vector<Solid> solids(bool doorsUp) {
       all.push_back({sling.points[e], sling.points[(e + 1) % 3], sling.cornerRadius});
     }
   }
+  // The captive ball at rest, standing in its channel's mouth.
+  all.push_back({table::kCaptiveHome, table::kCaptiveHome, table::kCaptiveBallRadius});
   return all;
 }
 
@@ -196,25 +198,19 @@ constexpr std::array kOpenings{
     mirroredOpening(kInlane),
     kNestSide,
     mirroredOpening(kNestSide),
-    kTargetNotch,
+    // (On the left the captive ball's channel closes the notch.)
     mirroredOpening(kTargetNotch),
+    Opening{"under the captive ball's channel",
+            "Not a passage: the corner between the captive ball channel's lower wall and the "
+            "rim. It opens down the table, so a ball that enters it rolls out again.",
+            {150.0F, 290.0F},
+            {180.0F, 325.0F},
+            24.0F},
     Opening{"launch channel's end",
             "Behind the one-way arch, where it closes on the shell. The arch is not solid "
             "from this side: a ball here passes through it into the field.",
             {540.0F, 100.0F},
             {610.0F, 170.0F},
-            24.0F},
-    Opening{"Briefing room roof corner",
-            "Not a passage: the corner under the Briefing room's sloping roof, inside the "
-            "scoop. It opens down the table, onto the scoop's capture box.",
-            {325.0F, 325.0F},
-            {365.0F, 365.0F},
-            24.0F},
-    Opening{"under the bay doors",
-            "Not a passage: the corner between the raised bay doors and the Briefing room's "
-            "left flare. It opens down the table. (Gone when the doors are down.)",
-            {270.0F, 395.0F},
-            {320.0F, 430.0F},
             24.0F},
 };
 
@@ -343,7 +339,14 @@ void testTableGeometry() {
           CHECK(distance(lamp.position, other.position) >= 34.0F);
         }
         // No two lamps share a place, except a lane's lamp and its switch.
-        CHECK(distance(lamp.position, other.position) >= table::kStatusLampDiameter);
+        // Revision 3's ladders are of small inserts, 11 to 12 across (the
+        // rank's chevrons 9 high), stacked closer.
+        const bool ladders = table::isLadderLamp(lamp.id) && table::isLadderLamp(other.id);
+        const bool ladder = table::isLadderLamp(lamp.id) || table::isLadderLamp(other.id);
+        const float apart = ladders  ? 11.0F
+                            : ladder ? (table::kStatusLampDiameter + 12.0F) * 0.5F
+                                     : table::kStatusLampDiameter;
+        CHECK(distance(lamp.position, other.position) >= apart);
       }
     }
     CHECK(table::isArrowLamp(table::LampId::ArrowCircuitRight) &&
@@ -431,7 +434,7 @@ void testTableGeometry() {
         const table::Circle& b = table::kBumpers[j].shape;
         CHECK(distance(a.center, b.center) - a.radius - b.radius > ball + 8.0F);
       }
-      for (const Vec2 peak : {table::kHangarRoofLeft.b, table::kScoopRoofLeft.a,
+      for (const Vec2 peak : {table::kHangarRoofLeft.b, table::kHangarRoofRight.b,
                               table::kLanePostLeft.b, table::kLanePostRight.b}) {
         CHECK(distance(a.center, peak) - a.radius - table::kWallRadius > ball + 8.0F);
       }
@@ -487,9 +490,10 @@ void testTableGeometry() {
     CHECK(table::kBallStart.x < table::kWallRight - table::kBallRadius);
   }
 
-  {  // The dead posts are the two rim feet, the Turbine rail and the two
-     // flares of the Briefing room, and none of them is also a plain wall.
-    CHECK(table::kDeadPosts.size() == 5);
+  {  // Revision 3: the dead posts are the lane's right flare and the
+     // Briefing room's rail, the T-A-X-I stand-ups keep their bounce, and
+     // none of them is also a plain wall.
+    CHECK(table::kDeadPosts.size() == 2 && table::kStandups.size() == 4);
     for (const table::Capsule& post : table::kDeadPosts) {
       for (const table::Capsule& wall : table::kAllWalls) {
         CHECK(distance(midpoint(post), midpoint(wall)) > 1.0F);
@@ -506,6 +510,6 @@ void testTableGeometry() {
     CHECK(table::elementCount(ElementKind::DropTarget) == 3);
     CHECK(table::elementCount(ElementKind::None) == 0);
     CHECK(table::isRamp(table::HoleType::RampLeft) && table::isRamp(table::HoleType::RampRight));
-    CHECK(!table::isRamp(table::HoleType::Scoop) && !table::isRamp(table::HoleType::Hangar));
+    CHECK(!table::isRamp(table::HoleType::Subway) && !table::isRamp(table::HoleType::Hangar));
   }
 }
