@@ -165,7 +165,8 @@ void setAccessibilityElements(std::span<const AccessibleElement> elements, std::
                                                          length:element.label.size()
                                                        encoding:NSUTF8StringEncoding];
       item.accessibilityFrameInContainerSpace =
-          CGRectMake(element.frame.x, element.frame.y, element.frame.w, element.frame.h);
+          CGRectMake(static_cast<CGFloat>(element.frame.x), static_cast<CGFloat>(element.frame.y),
+                     static_cast<CGFloat>(element.frame.w), static_cast<CGFloat>(element.frame.h));
       item.accessibilityTraits =
           element.header ? UIAccessibilityTraitHeader : UIAccessibilityTraitButton;
       item.eventType = element.header ? 0 : eventType;
