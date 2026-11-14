@@ -238,7 +238,11 @@ undefined=$(nm -u "$exe")
 [ -n "$undefined" ] || fail "nm lists no undefined symbol for the executable"
 all_strings=$(strings -a "$exe")
 [ -n "$all_strings" ] || fail "strings finds nothing in the executable"
-if grep -E 'AVCapture|CMMotionManager|CBCentralManager|CBPeripheral|CLLocation|CoreLocation' <<<"$undefined"; then
+# The Swift overlays' load markers (__swift_FORCE_LOAD_$_swiftCoreLocation)
+# name a module and use nothing in it: any real use of a location API, in
+# C, Objective-C or Swift's mangled names, is what is looked for.
+api_undefined=$(grep -v -E '^__swift_FORCE_LOAD_\$_swift' <<<"$undefined" || true)
+if grep -E 'AVCapture|CMMotionManager|CBCentralManager|CBPeripheral|CLLocation|CoreLocation' <<<"$api_undefined"; then
   fail "the executable refers to a camera, motion, Bluetooth or location class"
 fi
 if grep -E '^(AVCaptureDevice|CMMotionManager|CBCentralManager)$' <<<"$all_strings"; then
