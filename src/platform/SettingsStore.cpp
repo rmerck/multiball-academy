@@ -31,10 +31,14 @@ std::string settingsFilePath() {
 
 }  // namespace
 
+std::string SettingsStore::filePath() const {
+  return directory_.empty() ? settingsFilePath() : directory_ + kFileName;
+}
+
 Settings SettingsStore::load() {
   Settings settings;
   saveBlocked_ = false;
-  const std::string path = settingsFilePath();
+  const std::string path = filePath();
   if (path.empty()) {
     return settings;
   }
@@ -74,7 +78,7 @@ bool SettingsStore::save(const Settings& settings) const {
   if (saveBlocked_) {
     return false;
   }
-  const std::string path = settingsFilePath();
+  const std::string path = filePath();
   if (path.empty()) {
     return false;
   }

@@ -16,6 +16,15 @@
 namespace pinball {
 
 static_assert(save::kPixelsPerMeter == PhysicsWorld::kPixelsPerMeter);
+// The longest waits a ball's own counters can reach (Game::updateAutoLaunch,
+// Game::updateBallSearch): the records refuse anything longer.
+static_assert(save::kMaxLaunchSteps ==
+              static_cast<std::uint32_t>(
+                  std::max(Game::kAutoLaunchDelaySeconds, Game::kAutoRelaunchSeconds) /
+                      Game::kStepSeconds +
+                  0.5));
+static_assert(save::kMaxStillSteps ==
+              static_cast<std::uint32_t>(Game::kBallSearchSeconds / Game::kStepSeconds + 0.5));
 static_assert(save::kMaxBallSpeedPixels ==
               PhysicsWorld::kMaxBallSpeed * PhysicsWorld::kPixelsPerMeter);
 static_assert(save::kMaxPlungerSpeedPixels ==

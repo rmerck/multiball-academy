@@ -275,6 +275,15 @@ inline constexpr std::size_t kMaxFileBytes = 8192;
 inline constexpr std::uint32_t kMaxTimerSteps = 120U * 600U;
 // Counters of things done in a game (jackpots, courses, ...).
 inline constexpr std::int32_t kMaxCounter = 1'000'000;
+// Per ball: steps waiting on the plunger to be launched or launched again
+// (Game::kAutoRelaunchSeconds, the longer of the two waits), steps without
+// moving before the ball search shoves it (Game::kBallSearchSeconds), and
+// steps in a hold, its wait for a clear exit included (two minutes: the
+// ball search clears an exit within seconds). GameSave.cpp checks the first
+// two against Game's own at compile time.
+inline constexpr std::uint32_t kMaxLaunchSteps = 60U;
+inline constexpr std::uint32_t kMaxStillSteps = 480U;
+inline constexpr std::uint32_t kMaxHeldSteps = 120U * 120U;
 // Steps in a game: far more than any game lasts, and far from overflowing.
 inline constexpr std::uint64_t kMaxStepCount = 1ULL << 40U;
 // Box2D's scale, and the physics' speed caps in pixels per second (PhysicsWorld checks these

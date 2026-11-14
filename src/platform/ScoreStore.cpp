@@ -18,8 +18,9 @@ namespace {
 
 constexpr const char* kFileName = "highscores.txt";
 
-// Full path of the score file, or empty if there is no preferences directory.
-std::string scoreFilePath() {
+// Full path of the score file in the preferences directory, or empty if
+// there is none.
+std::string prefsScoreFilePath() {
   // Created if missing; the returned string is ours to free.
   const std::unique_ptr<char, decltype([](char* text) { SDL_free(text); })> directory(
       SDL_GetPrefPath(kDataOrganisation, kDataDirectory));
@@ -32,10 +33,14 @@ std::string scoreFilePath() {
 
 }  // namespace
 
+std::string ScoreStore::filePath() const {
+  return directory_.empty() ? prefsScoreFilePath() : directory_ + kFileName;
+}
+
 HighScores ScoreStore::load() {
   HighScores scores;
   saveBlocked_ = false;
-  const std::string path = scoreFilePath();
+  const std::string path = filePath();
   if (path.empty()) {
     return scores;
   }
@@ -87,7 +92,7 @@ bool ScoreStore::save(const HighScores& scores) const {
   if (saveBlocked_) {
     return false;
   }
-  const std::string path = scoreFilePath();
+  const std::string path = filePath();
   if (path.empty()) {
     return false;
   }

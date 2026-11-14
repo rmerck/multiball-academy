@@ -97,7 +97,7 @@ is never a second copy of a game to go back to:
 | --- | --- |
 | will / did enter background, terminating, quit (`App::finish`) | write, if a game is in progress (once per state) |
 | did enter foreground | delete the file this run wrote: the game is in memory again |
-| CONTINUE (`resumeSavedGame`) | delete first; resume only if the delete worked |
+| CONTINUE (`resumeSavedGame`) | delete first; resume only if this call deleted it (not if another copy of the game, such as a second window on a Mac, took it first) |
 | a new game begun (F2, NEW GAME, the table's own game played) | delete |
 | game over | delete; a game that is over is never written |
 | launch, file damaged or from another build or table | delete, offer nothing |
@@ -120,7 +120,10 @@ nothing is gained by signing the save.
 `savedgame.bin` in the SDL preferences directory, beside `highscores.txt`.
 Written to a uniquely named owner-only temporary file, flushed and renamed
 into place (`replaceFile`, as for the scores); a crash leaves the old file
-or the new one. Little-endian:
+or the new one. The flush is a plain `fsync` (`Durability::System`): the
+file must outlive the application being ended, not a power cut, and on
+Apple systems `F_FULLFSYNC`, which the score file keeps, can take far
+longer than the moment before suspension. Little-endian:
 
 | Bytes | Field |
 | --- | --- |
@@ -144,7 +147,8 @@ writes, so another magic, version, build, layout or element count is
 refused. Then the checksum, then every field against its range (integers,
 enums and indices strictly; floats must be finite and within range: places
 on the table, speeds under the physics' cap, a unit rotation, flipper angles
-between their stops), then the records against each other (at least one
+between their stops; a ball's launch wait, stillness count and hold no
+longer than play reaches: 60 steps, 480 steps, two minutes), then the records against each other (at least one
 ball and never more than three with those waiting, one ball per bay, only
 the Hangar holds a locked ball, a held ball names a hole or the kickback,
 empty slots carry nothing, remembered steps not in the future). Anything

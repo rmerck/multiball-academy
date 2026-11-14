@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "core/AboutPages.hpp"
@@ -65,6 +66,12 @@ struct AppOptions {
   // does. Never for a timed run or a staged scene, which go straight to
   // the game. Off for tests that start with the game itself.
   bool showTitle = true;
+  // Where the high scores and the saved game are kept (a separator is
+  // added at the end if missing); empty for the player's preferences
+  // directory. For tests,
+  // which give a scratch directory so that the player's files are never
+  // touched; no command line sets it.
+  std::string dataDirectory;
 };
 
 enum class FrameResult : std::uint8_t { Continue, Quit };

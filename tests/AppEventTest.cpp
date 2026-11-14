@@ -320,45 +320,56 @@ void testQuitAtThePromptKeepsTheScore() {
   CHECK(!app->status().entryOpen);
 }
 
+// A scratch directory for the game's files (AppOptions::dataDirectory), so
+// that no test reads or writes the player's own. Removed at the end.
+class ScratchDir {
+ public:
+  explicit ScratchDir(const char* name) {
+    namespace fs = std::filesystem;
+    std::error_code error;
+    const fs::path base = fs::temp_directory_path(error);
+    if (error) {
+      return;
+    }
+    path_ = base / (std::string(name) + "-" + std::to_string(SDL_GetTicksNS()));
+    if (!fs::create_directory(path_, error) || error) {
+      path_.clear();
+    }
+  }
+  ~ScratchDir() {
+    if (!path_.empty()) {
+      std::error_code ignored;
+      std::filesystem::remove_all(path_, ignored);
+    }
+  }
+  ScratchDir(const ScratchDir&) = delete;
+  ScratchDir& operator=(const ScratchDir&) = delete;
+  [[nodiscard]] bool usable() const { return !path_.empty(); }
+  // With a trailing separator, as AppOptions::dataDirectory wants it.
+  [[nodiscard]] std::string directory() const { return (path_ / "").string(); }
+  [[nodiscard]] std::string file(const char* name) const { return (path_ / name).string(); }
+
+ private:
+  std::filesystem::path path_;
+};
+
 // A run given a scene is not the player's game: when it ends with a score
 // that makes the table, nothing is written to the score file, even with
 // scores kept (in a build that stages scenes the game is the staged one; in
 // any other the scene is ignored but the score is still not kept). The same
 // game without a scene does write it, which shows the test sees the file.
-// Only where the preferences directory can be sent to a scratch place
-// (Linux: XDG_DATA_HOME); elsewhere it would be the player's own file.
 void testStagedSceneKeepsNoScore() {
-  namespace fs = std::filesystem;
-  std::error_code error;
-  const fs::path base = fs::temp_directory_path(error);
-  const fs::path scratchPath =
-      base / ("pinball-app-scores-" + std::to_string(SDL_GetTicksNS()));
-  if (error || !fs::create_directory(scratchPath, error)) {
-    CHECK(false);
+  const ScratchDir scratch("pinball-app-scores");
+  CHECK(scratch.usable());
+  if (!scratch.usable()) {
     return;
   }
-  const std::string scratch = scratchPath.string();
-  struct Cleanup {
-    fs::path path;
-    ~Cleanup() {
-      std::error_code ignored;
-      fs::remove_all(path, ignored);
-    }
-  } const cleanup{scratchPath};
-  SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME", scratch.c_str(), true);
-  char* const pref = SDL_GetPrefPath(pinball::kDataOrganisation, pinball::kDataDirectory);
-  const std::string directory = pref != nullptr ? pref : "";
-  SDL_free(pref);
-  if (directory.rfind(scratch, 0) != 0) {
-    SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME");
-    std::puts("app_tests: staged-scene score check skipped (no scratch preferences directory)");
-    return;
-  }
-  const std::string file = directory + "highscores.txt";
+  const std::string file = scratch.file("highscores.txt");
   const auto playOut = [&](bool staged) {
     std::remove(file.c_str());
     AppOptions options = playerOptions(pinball::screen::Idiom::Desktop);
     options.keepScores = true;
+    options.dataDirectory = scratch.directory();
     if (staged) {
       options.scene = pinball::Scene::Course;
     }
@@ -379,50 +390,9 @@ void testStagedSceneKeepsNoScore() {
   CHECK(SDL_GetPathInfo(file.c_str(), nullptr));
   playOut(true);
   CHECK(!SDL_GetPathInfo(file.c_str(), nullptr));
-  std::remove(file.c_str());
-  SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME");
 }
 
-// The saved game (docs/RESUME.md), with the player's preferences directory
-// sent to a scratch place (Linux: XDG_DATA_HOME; skipped elsewhere, where it
-// would be the player's own).
-class ScratchPrefs {
- public:
-  ScratchPrefs() {
-    namespace fs = std::filesystem;
-    std::error_code error;
-    const fs::path base = fs::temp_directory_path(error);
-    path_ = base / ("pinball-app-save-" + std::to_string(SDL_GetTicksNS()));
-    if (error || !fs::create_directory(path_, error)) {
-      path_.clear();
-      return;
-    }
-    const std::string scratch = path_.string();
-    SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME", scratch.c_str(), true);
-    char* const pref = SDL_GetPrefPath(pinball::kDataOrganisation, pinball::kDataDirectory);
-    directory_ = pref != nullptr ? pref : "";
-    SDL_free(pref);
-    if (directory_.rfind(scratch, 0) != 0) {
-      directory_.clear();
-    }
-  }
-  ~ScratchPrefs() {
-    SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME");
-    if (!path_.empty()) {
-      std::error_code ignored;
-      std::filesystem::remove_all(path_, ignored);
-    }
-  }
-  ScratchPrefs(const ScratchPrefs&) = delete;
-  ScratchPrefs& operator=(const ScratchPrefs&) = delete;
-  [[nodiscard]] bool usable() const { return !directory_.empty(); }
-  [[nodiscard]] std::string file(const char* name) const { return directory_ + name; }
-
- private:
-  std::filesystem::path path_;
-  std::string directory_;
-};
-
+// The saved game (docs/RESUME.md), kept in a scratch directory.
 bool exists(const std::string& file) { return SDL_GetPathInfo(file.c_str(), nullptr); }
 
 // Launches the ball and plays a few seconds without flipping.
@@ -435,14 +405,15 @@ void launchAndPlay(App& app) {
 }
 
 void testSavedGame() {
-  const ScratchPrefs prefs;
-  if (!prefs.usable()) {
-    std::puts("app_tests: saved-game checks skipped (no scratch preferences directory)");
+  const ScratchDir scratch("pinball-app-save");
+  CHECK(scratch.usable());
+  if (!scratch.usable()) {
     return;
   }
-  const std::string file = prefs.file("savedgame.bin");
+  const std::string file = scratch.file("savedgame.bin");
   AppOptions options = playerOptions(pinball::screen::Idiom::Desktop);
   options.keepScores = true;
+  options.dataDirectory = scratch.directory();
 
   std::uint64_t savedSteps = 0;
   {
@@ -500,6 +471,26 @@ void testSavedGame() {
     CHECK(frames(*app, 10));
     CHECK(app->status().steps > savedSteps);
     CHECK(app->finish() == 0);
+    CHECK(exists(file));
+  }
+  {
+    // Two copies of the game started on the same save (two windows on a
+    // Mac): the one that resumes it first has it; the other is refused.
+    const std::unique_ptr<App> first = App::create(options);
+    const std::unique_ptr<App> second = App::create(options);
+    CHECK(first != nullptr && second != nullptr);
+    if (!first || !second) {
+      return;
+    }
+    CHECK(first->hasSavedGame() && second->hasSavedGame());
+    CHECK(first->resumeSavedGame());
+    CHECK(!second->resumeSavedGame());
+    CHECK(!second->hasSavedGame());
+    CHECK(second->status().steps != first->status().steps);
+    // The first quits in the middle of its game: kept for next time.
+    key(*first, SDLK_F3, SDL_SCANCODE_F3);
+    CHECK(frames(*first, 5));
+    CHECK(first->finish() == 0);
     CHECK(exists(file));
   }
   {
@@ -569,6 +560,32 @@ void testSavedGame() {
     system(*app, SDL_EVENT_DID_ENTER_BACKGROUND);
     CHECK(!exists(file));
     system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
+    CHECK(app->finish() == 0);
+    CHECK(!exists(file));
+  }
+  {
+    // A game that goes on after its save was written, with no word that the
+    // application is in front again (here: the player ends the touch
+    // screen's pause), and ends: the save goes with the game.
+    AppOptions touch = options;
+    touch.idiom = pinball::screen::Idiom::Touch;
+    const std::unique_ptr<App> app = App::create(touch);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(!exists(file));
+    launchAndPlay(*app);
+    system(*app, SDL_EVENT_WILL_ENTER_BACKGROUND);
+    CHECK(exists(file));
+    CHECK(app->status().paused);
+    key(*app, SDLK_F3, SDL_SCANCODE_F3);
+    CHECK(!app->status().paused);
+    CHECK(frames(*app, 5));
+    CHECK(exists(file));
+    CHECK(playToGameOver(
+        *app, [&app] { key(*app, SDLK_SPACE, SDL_SCANCODE_SPACE); }, [] {}));
+    CHECK(!exists(file));
     CHECK(app->finish() == 0);
     CHECK(!exists(file));
   }

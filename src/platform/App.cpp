@@ -230,6 +230,9 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
       previousNs_(SDL_GetTicksNS()),
       vsync_(vsync),
       audio_(options.backgroundAudioOpen ? nullptr : AudioOutput::open()),
+      scoreStore_(options.dataDirectory),
+      saveStore_(options.dataDirectory),
+      settingsStore_(options.dataDirectory),
       // A timed automated run leaves the player's score file alone: it is
       // neither read (which can also set a bad file aside) nor written.
       highScores_(options.frameLimit || options.scene || !options.keepScores ? HighScores{}
