@@ -384,6 +384,15 @@ elseif(PINBALL_IOS)
   # A library of its own, so that none of the C++ flags (warnings,
   # hardening, sanitizers) reach the Swift compiler.
   enable_language(Swift)
+  # A target that links Swift code is linked as Swift, and CMake then adds
+  # the runtime libraries of the other languages in it itself: -lc++ for
+  # C++, -lobjc and -lc++ again for Objective-C++. Xcode's link adds what a
+  # target needs already, and the copies make ld warn about duplicate
+  # libraries, which -fatal_warnings makes an error. CMake's lists are left
+  # empty.
+  set(CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
+  set(CMAKE_OBJCXX_IMPLICIT_LINK_LIBRARIES "")
+  set(CMAKE_OBJC_IMPLICIT_LINK_LIBRARIES "")
   # (cmake/Hardening.cmake scopes every flag it adds to the C languages, so
   # none reaches the Swift compiler.)
   add_library(pinball_review STATIC src/platform/ios/Review.swift)
