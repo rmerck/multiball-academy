@@ -467,6 +467,24 @@ inline constexpr double kHangarHoldSeconds = 0.9;
 inline constexpr int kScoopExitJitterLeft = 15;
 inline constexpr int kScoopExitJitterRight = 15;
 inline constexpr int kScoopExitJitterDown = 20;
+// For the eye only: a ball the Briefing room or the Hangar takes is drawn
+// rolling on from where it was taken to the hole's centre and dropping in
+// (or, locked, to its bay) over kHoleSinkSeconds; one either returns is
+// drawn coming up out of the hole (or its bay) and onto its path from the
+// exit over kHoleRiseSeconds. Neither moves the ball in the game or changes
+// when anything happens: the hole takes and returns the ball when it did.
+// Where a ball is seen to drop: the Briefing room's hole as the art draws
+// it (tools/art/make_table.py, briefing()), a little below the middle of
+// the box that takes the ball; the Hangar's own centre, under its roof.
+inline constexpr Vec2 kScoopDropPoint{356.0F, 400.0F};
+[[nodiscard]] constexpr Vec2 holeDropPoint(const Hole& hole) noexcept {
+  return hole.type == HoleType::Scoop ? kScoopDropPoint : hole.center;
+}
+inline constexpr double kHoleSinkSeconds = 0.15;
+inline constexpr double kHoleRiseSeconds = 0.15;
+// How much smaller and darker a ball is drawn when it is all the way down.
+inline constexpr float kHoleSinkShrink = 0.45F;
+inline constexpr float kHoleSinkDarken = 0.7F;
 // A ball that drains this soon after the Briefing room or the Hangar
 // returned it is owed back to the player: the rules are told so.
 inline constexpr double kEjectSaveSeconds = 2.5;

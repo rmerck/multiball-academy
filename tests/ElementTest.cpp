@@ -757,7 +757,8 @@ void testScoop() {
         game.step(idle);
         if (takenAt < 0 && Seam::held(game, 0)) {
           takenAt = i;
-          CHECK(!game.ball().visible);
+          // Drawn going down into it (testHoleViews), not gone at once.
+          CHECK(game.ball().visible && game.ball().sink > 0.0F);
         }
         if (const GameEvent* out = findEvent(game, GameEvent::Type::HoleEject)) {
           returnedAt = i;
@@ -1536,6 +1537,223 @@ void testNothingTunnels() {
                through, shots, doorHits, violations, transitions, taken, kicked, outlaneRuns);
 }
 
+
+// --- How a hole is seen to take a ball and give it back. ---------------------------
+
+// How far a point is from the segment a to b.
+float distanceToSegment(Vec2 p, Vec2 a, Vec2 b) {
+  const Vec2 ab = b - a;
+  const float lengthSquared = ab.x * ab.x + ab.y * ab.y;
+  float t = 0.0F;
+  if (lengthSquared > 0.0F) {
+    t = std::clamp(((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / lengthSquared, 0.0F, 1.0F);
+  }
+  return distance(p, a + ab * t);
+}
+
+const int kSinkSteps = static_cast<int>(table::kHoleSinkSeconds * kSecond + 0.5);
+const int kRiseSteps = static_cast<int>(table::kHoleRiseSeconds * kSecond + 0.5);
+
+// The curve the drawing follows on the way in and out: fast, then slowing.
+float easeOut(float t) { return 1.0F - (1.0F - t) * (1.0F - t); }
+
+// The drawn ball of a slot, blended alpha of the way from the last step.
+BallView drawnView(const Game& game, std::size_t slot, float alpha) {
+  for (const BallView& ball : game.balls(alpha)) {
+    if (ball.id == slot) {
+      return ball;
+    }
+  }
+  BallView gone;
+  gone.visible = false;
+  return gone;
+}
+
+// Follows a ball the Briefing room or the Hangar has just taken from where
+// it was taken (from) to where it goes (to): drawn on that line, moving
+// along it and sinking, never back, and where the game has it untouched.
+// sinks: it goes down out of sight (a hole) rather than into a bay. Returns
+// whether it arrived in time.
+bool followIn(Game& game, std::size_t slot, Vec2 from, Vec2 to, bool sinks) {
+  const InputState idle;
+  const float length = distance(from, to);
+  float lastAlong = -1.0F;
+  float lastSink = -1.0F;
+  for (int step = 1; step <= kSinkSteps + 2; ++step) {
+    if (step >= 2 && step < kSinkSteps) {
+      // Drawn between steps, the offset is blended too: half way between
+      // the last step's and this one's, which differ.
+      const BallView before = drawnView(game, slot, 0.0F);
+      const BallView half = drawnView(game, slot, 0.5F);
+      const BallView now = drawnView(game, slot, 1.0F);
+      CHECK(before.visible && half.visible && now.visible);
+      CHECK(distance(before.drawOffset, now.drawOffset) > 0.005F * length);
+      CHECK(distance(half.drawOffset, (before.drawOffset + now.drawOffset) * 0.5F) < 0.001F);
+    }
+    for (const float alpha : {0.5F, 1.0F}) {
+      // Between the step that took it and the one before, it is drawn
+      // between where it was free and where it was taken.
+      if (step == 1 && alpha < 1.0F) {
+        continue;
+      }
+      const BallView view = drawnView(game, slot, alpha);
+      if (!view.visible) {
+        // Gone only once all the way down, and only into a hole: all but
+        // at the hole when last seen.
+        CHECK(sinks && step > kSinkSteps - 1);
+        CHECK(lastAlong > 0.95F * length);
+        return sinks && step > kSinkSteps - 1;
+      }
+      const Vec2 at = view.drawnAt();
+      CHECK(distanceToSegment(at, from, to) < 0.05F);
+      const float along = distance(at, from);
+      if (alpha == 1.0F) {
+        // Each step a step further along the curve from where it was taken:
+        // drawn first next to that spot, not at the hole or in the bay.
+        const float expected =
+            length * easeOut(std::min(1.0F, static_cast<float>(step) / static_cast<float>(kSinkSteps)));
+        CHECK(std::fabs(along - expected) < 0.01F * length + 0.05F);
+      }
+      CHECK(along >= lastAlong - 0.001F);
+      lastAlong = along;
+      CHECK(view.sink >= lastSink && view.sink >= 0.0F && view.sink < 1.0F);
+      lastSink = view.sink;
+      if (!sinks) {
+        CHECK(view.sink == 0.0F && view.locked);
+      }
+      // The game's own place for the ball is not moved: only the drawing.
+      if (alpha == 1.0F) {
+        CHECK(near(view.position, sinks ? Seam::position(game, slot) : to));
+      }
+      if (!sinks && step > kSinkSteps) {
+        // In its bay, exactly.
+        CHECK(at.x == to.x && at.y == to.y);
+        return true;
+      }
+    }
+    game.step(idle);
+  }
+  CHECK(false);
+  return false;
+}
+
+// Follows a ball the scoop or the hangar has just let out, from where it is
+// drawn coming out (from): it starts there, sunk as deep as sunk says, and
+// lands on its own path within the rise. Call in the step that returned it.
+void followOut(Game& game, std::size_t slot, Vec2 from, Vec2 exit, float sunk) {
+  const InputState idle;
+  BallView view = viewOf(game, slot);
+  CHECK(view.visible);
+  // Drawn in the hole, or the bay, still: at most a step's rise from it.
+  CHECK(distance(view.drawnAt(), from) < 0.15F * distance(from, view.position) + 0.5F);
+  // From there to the exit, the drawing's lead over the ball's own path
+  // closes step by step on the curve, and the ball brightens with it: no
+  // offset held and then dropped at the end.
+  const float length = distance(from, exit);
+  CHECK(length > 10.0F);
+  float lastOffset = 1.0e9F;
+  for (int step = 1; step < kRiseSteps; ++step) {
+    view = viewOf(game, slot);
+    const float left = 1.0F - easeOut(static_cast<float>(step) / static_cast<float>(kRiseSteps));
+    const float offset = distance(view.drawnAt(), view.position);
+    CHECK(std::fabs(offset - length * left) < 0.01F * length);
+    CHECK(offset < lastOffset - 0.002F * length);
+    CHECK(std::fabs(view.sink - sunk * left) < 0.01F);
+    lastOffset = offset;
+    CHECK(near(view.position, Seam::position(game, slot)));
+    game.step(idle);
+  }
+  // Within a hair of its path on the last step before it lands on it.
+  CHECK(lastOffset < 0.01F * length);
+  game.step(idle);
+  view = viewOf(game, slot);
+  CHECK(view.visible && view.sink == 0.0F);
+  CHECK(view.drawOffset.x == 0.0F && view.drawOffset.y == 0.0F);
+  CHECK(near(view.drawnAt(), Seam::position(game, slot)));
+}
+
+void testHoleViews() {
+  const InputState idle;
+  {  // The Briefing room: the ball is drawn rolling on into the hole and
+     // dropping in, not lost from sight where it crossed into the box; out
+     // of sight while held; and drawn coming up out of the hole when let go.
+    Game game;
+    run(game, 2);
+    putBall(game, 0, {kScoop.center.x - 6.0F, 450.0F}, {20.0F, -900.0F});
+    for (int i = 0; i < kSecond && !Seam::held(game, 0); ++i) {
+      game.step(idle);
+    }
+    CHECK(Seam::held(game, 0));
+    const Vec2 takenAt = Seam::position(game, 0);
+    // Taken at the box's lower edge, well short of the hole's centre: what
+    // a player saw vanish.
+    // It is seen to drop where the art draws the hole, below the middle of
+    // the box that takes it.
+    const Vec2 drop{356.0F, 400.0F};
+    CHECK(near(table::holeDropPoint(kScoop), drop) && !near(kScoop.center, drop));
+    CHECK(distance(takenAt, drop) > 15.0F);
+    CHECK(followIn(game, 0, takenAt, drop, true));
+    int returned = -1;
+    for (int i = 0; i < 2 * kSecond && returned < 0; ++i) {
+      CHECK(!viewOf(game, 0).visible);
+      game.step(idle);
+      if (findEvent(game, GameEvent::Type::HoleEject) != nullptr) {
+        returned = i;
+      }
+    }
+    CHECK(returned >= 0);
+    followOut(game, 0, drop, kScoop.exitPosition, 1.0F);
+  }
+
+  {  // The Hangar, when it only passes the ball through: the same.
+    Game game;
+    Seam::rules(game).setMultiballEnabled(false);
+    run(game, 2);
+    markDoors(game);
+    run(game, 2);
+    CHECK(!game.doorBankUp());
+    putBall(game, 0, kBelowDoors, {0.0F, -900.0F});
+    for (int i = 0; i < kSecond && !Seam::held(game, 0); ++i) {
+      game.step(idle);
+    }
+    CHECK(Seam::held(game, 0) && !game.ballLocked(0));
+    const Vec2 takenAt = Seam::position(game, 0);
+    CHECK(distance(takenAt, kHangar.center) > 10.0F);
+    CHECK(followIn(game, 0, takenAt, kHangar.center, true));
+    int returned = -1;
+    for (int i = 0; i < 2 * kSecond && returned < 0; ++i) {
+      game.step(idle);
+      if (findEvent(game, GameEvent::Type::HoleEject) != nullptr) {
+        returned = i;
+      }
+    }
+    CHECK(returned >= 0);
+    followOut(game, 0, kHangar.center, kHangar.exitPosition, 1.0F);
+  }
+
+  {  // A lock: drawn rolling from where it was taken into its bay, and,
+     // let go, drawn leaving the bay, not appearing at the exit.
+    Game game;
+    run(game, 2);
+    markDoors(game);
+    run(game, 2);
+    CHECK(shootHangar(game, 0));
+    CHECK(game.ballLocked(0));
+    const Vec2 takenAt = Seam::position(game, 0);
+    CHECK(followIn(game, 0, takenAt, table::kLockBays[0], false));
+    run(game, 30);
+    Seam::releaseLocks(game);
+    int returned = -1;
+    for (int i = 0; i < kSecond && returned < 0; ++i) {
+      game.step(idle);
+      if (findEvent(game, GameEvent::Type::LockReleased) != nullptr) {
+        returned = i;
+      }
+    }
+    CHECK(returned >= 0);
+    followOut(game, 0, table::kLockBays[0], kHangar.exitPosition, 0.0F);
+  }
+}
 }  // namespace
 
 void testElements() {
@@ -1543,6 +1761,7 @@ void testElements() {
   testDoorBank();
   testLock();
   testScoop();
+  testHoleViews();
   testSensors();
   testSpinner();
   testKickback();

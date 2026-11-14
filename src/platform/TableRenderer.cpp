@@ -395,6 +395,11 @@ TexturePtr makePlayfieldTexture(SDL_Renderer* r) {
   return texture;
 }
 
+// The size a ball is drawn at: smaller the further down into a hole it is.
+float drawnScale(const BallView& ball) noexcept {
+  return ball.scale * (1.0F - table::kHoleSinkShrink * std::clamp(ball.sink, 0.0F, 1.0F));
+}
+
 }  // namespace
 
 std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
@@ -662,32 +667,40 @@ void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls) 
     // them, and back.
     SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_BLEND);
     SDL_SetTextureColorMod(glow, art::kInk.r, art::kInk.g, art::kInk.b);
-    SDL_SetTextureAlphaMod(glow, toByte(art::kBallShadowAlpha));
     for (const BallView& ball : balls) {
       if (!inRound(ball)) {
         continue;
       }
-      const float radius = table::kBallRadius * ball.scale;
+      // A ball going down into a hole leaves its shadow behind on the table.
+      const float sink = std::clamp(ball.sink, 0.0F, 1.0F);
+      const float radius = table::kBallRadius * drawnScale(ball);
       const float lift = (ball.scale - 1.0F) * 40.0F;
       const float shadowRadius = radius * 1.55F;
-      const SDL_FRect shadow = centred(
-          {ball.position.x + art::kBallShadowOffsetX + lift,
-           ball.position.y + art::kBallShadowOffsetY + lift},
-          shadowRadius * 2.0F, shadowRadius * 2.0F);
+      const Vec2 at = ball.drawnAt();
+      const SDL_FRect shadow =
+          centred({at.x + art::kBallShadowOffsetX + lift, at.y + art::kBallShadowOffsetY + lift},
+                  shadowRadius * 2.0F, shadowRadius * 2.0F);
+      SDL_SetTextureAlphaMod(glow, toByte(art::kBallShadowAlpha * (1.0F - sink)));
       SDL_RenderTexture(r, glow, nullptr, &shadow);
     }
     SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_ADD);
 
+    SDL_Texture* const sprite = textures_.ball.get();
     for (const BallView& ball : balls) {
       if (!inRound(ball)) {
         continue;
       }
       // The sprite is larger than the ball: its disc is two radii of the
-      // art::kBallSpriteUnits it covers.
-      const float size = art::kBallSpriteUnits * ball.scale;
-      const SDL_FRect dst = centred(ball.position, size, size);
-      SDL_RenderTexture(r, textures_.ball.get(), nullptr, &dst);
+      // art::kBallSpriteUnits it covers. Going down into a hole it is drawn
+      // smaller and darker.
+      const float size = art::kBallSpriteUnits * drawnScale(ball);
+      const SDL_FRect dst = centred(ball.drawnAt(), size, size);
+      const auto shade = static_cast<Uint8>(std::lround(
+          255.0F * (1.0F - table::kHoleSinkDarken * std::clamp(ball.sink, 0.0F, 1.0F))));
+      SDL_SetTextureColorMod(sprite, shade, shade, shade);
+      SDL_RenderTexture(r, sprite, nullptr, &dst);
     }
+    SDL_SetTextureColorMod(sprite, 255, 255, 255);
   }
 }
 
