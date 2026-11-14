@@ -6,7 +6,8 @@
 #   <build>/product.env, the privacy manifest, the assets, the icon, and the
 #   executable (architecture, libraries, the frameworks SDL was built
 #   without, no network calls, every required-reason API declared). With
-#   --release also: a .dSYM beside the bundle and no build path inside it.
+#   --release also: a .dSYM beside the bundle, no build path inside it, and
+#   no launch-argument handling unless the build was configured for tests.
 #
 # Usage: check_bundle.sh --resources <repository>
 #   The part every build runs as its last step (cmake/Ios.cmake): the assets
@@ -102,6 +103,7 @@ PINBALL_VERSION=$(product_value PINBALL_VERSION)
 PINBALL_BUILD_NUMBER=$(product_value PINBALL_BUILD_NUMBER)
 PINBALL_DEPLOYMENT_TARGET=$(product_value PINBALL_DEPLOYMENT_TARGET)
 PINBALL_ASSET_MANIFEST=$(product_value PINBALL_ASSET_MANIFEST)
+PINBALL_IOS_TEST_EXIT=$(product_value PINBALL_IOS_TEST_EXIT)
 for required in "$PINBALL_APP_NAME" "$PINBALL_HOME_NAME" "$PINBALL_BUNDLE_ID" "$PINBALL_VERSION" \
                 "$PINBALL_BUILD_NUMBER" "$PINBALL_DEPLOYMENT_TARGET" "$PINBALL_ASSET_MANIFEST"; do
   [ -n "$required" ] || fail "a value is empty in $product"
@@ -163,10 +165,15 @@ expect CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconName AppIcon
 
 # Keys that must stay out: see cmake/Info-iOS.plist.in.
 # (Top-level keys, as they appear in the XML form.)
+# The URL, document and activity keys would each open a way into the game
+# from outside: SDL's application delegate turns any URL or document the
+# system hands it into a drop event, which the game does not expect.
 for key in UIRequiresFullScreen UIApplicationSceneManifest UIBackgroundModes \
            UIFileSharingEnabled LSSupportsOpeningDocumentsInPlace NSAppTransportSecurity \
            GCSupportsControllerUserInteraction GCSupportedGameControllers \
-           UIDesignRequiresCompatibility; do
+           UIDesignRequiresCompatibility CFBundleURLTypes CFBundleDocumentTypes \
+           UTExportedTypeDeclarations UTImportedTypeDeclarations NSUserActivityTypes \
+           UISupportsDocumentBrowser LSApplicationQueriesSchemes NSBonjourServices; do
   if grep -q "<key>$key</key>" <<<"$plist_xml"; then
     fail "Info.plist has $key"
   fi
@@ -252,6 +259,12 @@ fi
 if [ "$release" = yes ]; then
   if grep -E '/Users/|/home/|/private/var/|/Volumes/' <<<"$all_strings"; then
     fail "build paths found in the executable"
+  fi
+  # A Release application ignores its launch arguments (src/main_ios.cpp):
+  # the code that reads them is compiled out, and with it the option's
+  # name. Only a build configured for tests (PINBALL_IOS_TEST_EXIT) keeps it.
+  if [ "$PINBALL_IOS_TEST_EXIT" != ON ] && grep -q -e '--frames' <<<"$all_strings"; then
+    fail "the executable reads launch arguments, but the build was not configured for tests"
   fi
   # The debug symbols are beside the bundle and are this executable's.
   [ -d "$app.dSYM" ] || fail "no debug symbols beside the bundle: $app.dSYM"
