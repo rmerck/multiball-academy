@@ -85,6 +85,7 @@ FLASHER_STRENGTH_MAX = 0.95    # strongest flasher burst (flare.png / glow.png);
 # The general illumination's colours (gi.png): amber walls, orange slingshots, the bumpers in turn.
 GI_COLOURS = {"walls": "#FF9A3C", "slings": "#FF7A1E", "bumpers": ["#FF3CC8", "#3CE6FF", "#FF3CC8"]}
 GI_STRENGTH = 0.75             # gi.png, drawn additively in its own colours, at full illumination
+POOL = "#04040F"                # the pool's colour: darker than INK, so it is never taken for lettering
 BALL_POOL_ALPHA = 0.70        # the dark pool (pool.png) drawn round each ball under the light show
 BALL_POOL_RADII = 2.4         # its radius, in ball radii
 FLARE_UNITS = 64.0             # flare.png and ring.png cover this many units at scale 1

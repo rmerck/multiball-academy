@@ -730,7 +730,11 @@ struct Checker {
   // The share of the rectangle in the colours captions, arrows and body
   // text are drawn in: light on a plain face and in body text, ink on a
   // button of art (platform/TouchOverlay.hpp).
-  [[nodiscard]] double captionInk(const Pixels& a, const pinball::screen::Rect& rect) const {
+  // With a baseline: only the ink pixels that differ from it there, so a
+  // dark pixel of the lit table behind that happens to be the ink's colour
+  // is not taken for lettering.
+  [[nodiscard]] double captionInk(const Pixels& a, const pinball::screen::Rect& rect,
+                                  const Pixels* baseline = nullptr) const {
     const SDL_PixelFormatDetails* const format = SDL_GetPixelFormatDetails(surface->format);
     const auto mapped = [format](SDL_Color c) {
       return SDL_MapRGBA(format, nullptr, c.r, c.g, c.b, c.a);
@@ -743,7 +747,9 @@ struct Checker {
       const std::size_t row = static_cast<std::size_t>(y) * static_cast<std::size_t>(surface->w);
       for (int x = left; x < right; ++x) {
         const std::uint32_t pixel = a[row + static_cast<std::size_t>(x)];
-        count += pixel == light || pixel == ink ? 1U : 0U;
+        const bool behind =
+            baseline != nullptr && (*baseline)[row + static_cast<std::size_t>(x)] == pixel;
+        count += (pixel == light || pixel == ink) && !behind ? 1U : 0U;
       }
     }
     const double area = static_cast<double>(right - left) * static_cast<double>(bottom - top);
@@ -1072,7 +1078,7 @@ int checkLayout(Checker& check, const pinball::Game& game, const pinball::Game& 
     const Pixels intro = check.picture(game, {.state = State::TitleIntro});
     const Pixels still = check.picture(game, {.state = State::TitleStill});
     check.differs(intro, built, title.items[1], "title: the intro builds the menu");
-    check.expect(check.captionInk(intro, title.items[5]) == 0.0,
+    check.expect(check.captionInk(intro, title.items[5], &behind) == 0.0,
                  "title: the last item comes last");
     check.differs(behind, still, title.items[5], "title: Reduce Motion shows the menu at once");
     check.differs(behind, still, title.logo, "title: Reduce Motion shows the logo at once");

@@ -187,7 +187,7 @@ def pool():
     t = np.clip((d - 0.55) / 0.45, 0, 1)
     a = 1 - t * t * (3 - 2 * t)
     out = np.empty((n, n, 4), np.float64)
-    out[..., :3] = P.rgb(P.INK)
+    out[..., :3] = P.rgb(P.POOL)
     out[..., 3] = np.round(a * 255)
     return Image.fromarray(out.astype(np.uint8), "RGBA")
 
