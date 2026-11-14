@@ -140,7 +140,7 @@ class TableRenderer {
     TexturePtr buttonGloss;
   };
 
-  explicit TableRenderer(Textures textures);
+  TableRenderer(Textures textures, std::vector<SDL_Vertex> outside);
 
   // The table and what moves on it, with its top left corner at left, top
   // on the current target, lit as lights says.
@@ -175,6 +175,9 @@ class TableRenderer {
   Textures textures_;
   // The light show's drawing, with its fixed batches.
   mutable TableEffects effects_;
+  // What lies outside the shell and the lane island, textured from the
+  // background (makeOutsideMesh): drawn over the light show.
+  std::vector<SDL_Vertex> outsideMesh_;
   bool economy_ = false;
   // What attract mode draws the table into before scaling it; made on first
   // use. Its picture is drawn again every frame, so a reset of the render

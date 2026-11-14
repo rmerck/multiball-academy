@@ -383,11 +383,43 @@ void TableEffects::drawBallPools(SDL_Renderer* r, std::span<const BallView> ball
         light = std::max(light, b.level * (1.0F - d / reach) * 1.5F);
       }
     }
-    for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
-      const float d = length(table::kBumpers[i].shape.center - at);
-      if (d < 110.0F) {
-        light = std::max(light, show.bumperFlash(i) * (1.0F - d / 110.0F) * 1.5F);
+    // A flash at an element near the ball: its strength, falling off over
+    // its reach.
+    const auto near = [&light, at](Vec2 where, float reach, float flash) {
+      const float d = length(where - at);
+      if (d < reach) {
+        light = std::max(light, flash * (1.0F - d / reach) * 1.5F);
       }
+    };
+    for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
+      near(table::kBumpers[i].shape.center, 110.0F, show.bumperFlash(i));
+    }
+    for (std::size_t i = 0; i < table::kSlingshots.size(); ++i) {
+      const auto& p = table::kSlingshots[i].points;
+      near((p[0] + p[2]) * 0.5F, 110.0F, show.slingFlash(i));
+    }
+    for (std::size_t i = 0; i < table::kTargets.size(); ++i) {
+      const table::Capsule& shape = table::kTargets[i].shape;
+      near((shape.a + shape.b) * 0.5F, 80.0F, show.targetFlash(i));
+    }
+    for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
+      near(table::kHoles[i].center, 100.0F, show.holeFlash(i));
+    }
+    // The general illumination is brightest along the walls (gi.png).
+    float wall = 1e9F;
+    const auto& shell = table::kShell;
+    for (std::size_t k = 0; k < shell.size(); ++k) {
+      const Vec2 a = shell[k];
+      const Vec2 b = shell[(k + 1) % shell.size()];
+      const Vec2 ab = b - a;
+      const float len2 = ab.x * ab.x + ab.y * ab.y;
+      const float t = len2 > 0.0F
+                          ? std::clamp(((at - a).x * ab.x + (at - a).y * ab.y) / len2, 0.0F, 1.0F)
+                          : 0.0F;
+      wall = std::min(wall, length(a + ab * t - at));
+    }
+    if (wall < 60.0F) {
+      light = std::max(light, 0.6F * show.giLevel() * (1.0F - wall / 60.0F));
     }
     const float alpha = art::kBallPoolAlpha * std::min(light, 1.0F) * shown(ball);
     if (alpha < 0.02F) {

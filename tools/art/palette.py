@@ -76,6 +76,9 @@ LUM_LIT_LENS = 0.42   # a lit lens is tinted no lighter than this, whatever its 
 # the ball's LUM_BALL_MIN.
 NEON = {AQUA: "#1EEBFF", ORCHID: "#C45CFF", ORANGE: "#FF8A00", YELLOW: "#FFEA28", GREEN: "#9DFF1E", PINK: "#FF2EC8",
         CREAM: "#FFF2B0"}
+# WCAG 2.3.1's red flash counts a colour as saturated red when R / (R + G + B) is 0.8 or more. The reddest colour
+# the light show flashes is ORANGE's neon (#FF8A00, 0.65) and PINK's (#FF2EC8, 0.51): none is saturated red, and
+# pinball_fxreel --wcag measures the red flash anyway (0 in every scene).
 LUM_NEON_LENS = 0.45
 # The effect colours the renderer uses for bursts, sweeps and the general illumination.
 FX = {"cyan": "#1EEBFF", "magenta": "#FF2EC8", "lime": "#9DFF1E", "orange": "#FF8A00", "yellow": "#FFEA28",

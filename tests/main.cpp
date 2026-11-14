@@ -26,6 +26,7 @@ void runSuites() {
   testNudge();
   testPhysics();
   testPlunger();
+  testPolygon();
   testPngHeader();
   testRuleFuzz();
   testRules();
