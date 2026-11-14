@@ -220,11 +220,15 @@ class Rules {
 
   enum class DrainResult : std::uint8_t { BallSaved, NextBall, ShootAgain, GameOver };
   // What the Hangar does with a ball that has entered it. Eject: returns it
-  // after the usual hold. Lock: keeps it in a bay, in view. StartMultiball:
+  // after the usual hold. Lock: keeps it in a bay, in view (Game answers
+  // with onBallLocked, or onLockRefused if it cannot). StartMultiball:
   // returns it and lets every locked ball go after it.
   enum class HoleResult : std::uint8_t { Eject, Lock, StartMultiball };
   // What the rules want done with the bay doors.
   enum class DoorCommand : std::uint8_t { None, Drop, Raise };
+  // What the rules want done with the balls in the bays. Release: every
+  // locked ball leaves, bay by bay, by the Hangar's exit.
+  enum class LockCommand : std::uint8_t { None, Release };
   using DrainInfo = pinball::DrainInfo;
 
   explicit Rules(double stepSeconds) noexcept;
@@ -247,9 +251,10 @@ class Rules {
   void onTarget(std::size_t index) noexcept;
   void onDropTarget(std::size_t index) noexcept;
   void onRollover(std::size_t index, std::size_t ball = 0) noexcept;
-  // A ball dropped into a hole. The answer matters for the Hangar only; any
-  // other hole returns its ball whatever is said.
-  HoleResult onHole(std::size_t index) noexcept;
+  // A ball was taken by a hole (Game tells it from the physics state, once
+  // per capture). The answer matters for the Hangar only; any other hole
+  // returns its ball whatever is said.
+  HoleResult onHole(std::size_t index, std::size_t ball = 0) noexcept;
   // A hole returned a ball to the table.
   void onEject(std::size_t index) noexcept;
   // A ball crossed a sensor line (table::kSensors). The spinner's line is
@@ -259,9 +264,15 @@ class Rules {
   void onSpin() noexcept;
   // The kickback took a ball and is spent.
   void onKickback() noexcept;
+  // The kickback has set its ball down on the table again. While it carries
+  // one its lamp flashes.
+  void onKickbackReturned() noexcept;
   // A ball was locked in a bay (0 or 1). served: no other ball was in play,
   // so a new one has been put on the plunger for the player.
   void onBallLocked(std::size_t bay, bool served) noexcept;
+  // The Hangar was told to lock a ball (HoleResult::Lock) and could not:
+  // both bays are taken. The ball is returned like any other.
+  void onLockRefused() noexcept;
   // A locked ball has left its bay and is back on the table.
   void onLockReleased(std::size_t bay) noexcept;
   // The bay doors dropped, or came back up.
@@ -282,8 +293,10 @@ class Rules {
   // The player shoved the table. Returns true if the shove should move the
   // ball: false once tilted or when the game is over.
   bool onNudge() noexcept;
-  // Once per simulation step.
-  void tick() noexcept;
+  // Once per simulation step. allBallsHeld: every ball in play is in a
+  // timed hold (a hole, a ramp's rail, the kickback), none free or waiting
+  // on the plunger; overdrive's clock stands still for it.
+  void tick(bool allBallsHeld = false) noexcept;
 
   // --- What the rules want of the table. Game asks every step. ---------------
   // The command is given once: asking clears it.
@@ -293,9 +306,16 @@ class Rules {
     return kickbackLit_ && kickbackArmSteps_ == 0 && !gameOver_ && !tilted_;
   }
   // Balls to launch from the lane without the player. Asking clears it.
+  // Game asks for each one in turn and reports each it cannot have (the
+  // table holds three already) with onBallRefused, in the same step: the
+  // ones not refused by the next setTable() are taken as served. A full
+  // turbo meter learns this way whether it is TURBO MULTIBALL or TURBO
+  // BONUS.
   int takeBallRequests() noexcept;
-  // Whether every locked ball is to be let go. Asking clears it.
-  bool takeLockRelease() noexcept;
+  void onBallRefused() noexcept;
+  // What to do with the locked balls. The command is given once: asking
+  // clears it.
+  LockCommand takeLockCommand() noexcept;
 
   // --- For the bench ---------------------------------------------------------
   // Lights the kickback, or puts it out.
@@ -342,6 +362,8 @@ class Rules {
   }
   // The kickback's lamp (kickbackLit() is whether it would fire this step).
   bool kickbackLamp() const noexcept { return kickbackLit_ && !gameOver_; }
+  // The kickback is carrying a ball back to the table.
+  bool kickbackFiring() const noexcept { return kickbackRides_ > 0 && !gameOver_; }
 
   // Bay doors and the lock.
   bool doorMarked(std::size_t index) const noexcept {
@@ -482,6 +504,9 @@ class Rules {
   void rotateLanes(bool right) noexcept;
   void addTurbo(int amount) noexcept;
   void turboFull() noexcept;
+  // The table's answer to a full meter's ball.
+  void turboBallServed() noexcept;
+  void turboBallRefused() noexcept;
   void lightOverdrive() noexcept;
   void startOverdrive() noexcept;
   void lightKickback(bool fromLeftOutlane) noexcept;
@@ -531,10 +556,13 @@ class Rules {
   bool ballInPlay_ = false;
   std::size_t rank_ = 0;
   TableStatus status_{};
-  // Ball requests not yet taken by Game, and taken but not yet in a status.
+  // Ball requests not yet taken by Game, and taken but not yet in a status;
+  // of each, how many a full turbo meter made.
   int ballRequests_ = 0;
   int requestsInFlight_ = 0;
-  bool lockRelease_ = false;
+  int turboRequests_ = 0;
+  int turboRequestsInFlight_ = 0;
+  LockCommand lockCommand_ = LockCommand::None;
   bool multiballEnabled_ = true;
   bool ballSaveEnabled_ = true;
 
@@ -559,6 +587,8 @@ class Rules {
   std::array<bool, table::kTargets.size()> turboTargetLit_{};
   bool kickbackLit_ = true;
   std::uint32_t kickbackArmSteps_ = 0;
+  // Balls the kickback is carrying.
+  int kickbackRides_ = 0;
   bool extraCreditLit_ = false;
 
   // Turbo meter.

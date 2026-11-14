@@ -316,6 +316,11 @@ class Game {
   [[nodiscard]] bool doorMouthClear() const;
   // The balls, as the rules count them.
   [[nodiscard]] TableStatus tableStatus() const noexcept;
+  // Every ball in play is in a timed hold: none free, none on the plunger.
+  [[nodiscard]] bool allBallsHeld() const noexcept;
+  // A ball has just been taken by a hole or the kickback: the rules hear of
+  // it and the Hangar's answer is carried out.
+  void tellRulesOfCapture(std::size_t slot);
   void updateSpinner();
   void addSpins(float speedAcross, int direction) noexcept;
   // How the ball in a slot is leaving.
@@ -353,8 +358,6 @@ class Game {
     bool wasHeld = false;
     // The order in which held balls were taken: lower came first.
     std::uint64_t arrival = 0;
-    // The rules' answer for a ball the Hangar took this step.
-    bool lockAsked = false;
     // One more than the bay it is locked in; 0 if it is not locked.
     std::uint8_t lockBay = 0;
     // Locked, and told to leave.

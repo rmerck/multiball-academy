@@ -38,8 +38,8 @@ using Seam = pinball::GameTestAccess;
 // What must hold for the rules on the bench after a step.
 const char* brokenOnBench(const RulesBench& bench, std::uint64_t& lastScore) {
   const Rules& rules = bench.rules;
-  if (bench.total() > 3 || bench.refused != 0) {
-    return "a ball was asked for past the three-ball limit";
+  if (bench.total() > 3) {
+    return "more than three balls";
   }
   if (rules.score() < lastScore || rules.score() > points::kMaxScore) {
     return "the score went down or over its limit";
@@ -140,11 +140,15 @@ void fuzzRulesAlone(std::uint64_t seed, int operations) {
       const int free = bench.balls.free;
       if (rng.range(0, 4) == 0) {
         bench.balls.free = 0;
+        bench.allHeld = rng.range(0, 1) == 0;
       }
       bench.step(rng.range(1, 600));
       bench.balls.free = free;
+      bench.allHeld = false;
     }
-    bench.step();
+    // Two steps: a ball asked for is served in the first, and the rules
+    // hear it was in the second (as with Game).
+    bench.step(2);
     const char* broken = brokenOnBench(bench, lastScore);
     if (broken != nullptr) {
       std::fprintf(stderr, "rules fuzz, seed %llu, operation %d: %s\n",
@@ -153,7 +157,8 @@ void fuzzRulesAlone(std::uint64_t seed, int operations) {
       return;
     }
   }
-  CHECK(bench.refused == 0);
+  // The table refuses what it has no room for, and the rules live with it.
+  CHECK(bench.total() <= 3);
 }
 
 // Places where a ball does something when it is put there moving up.

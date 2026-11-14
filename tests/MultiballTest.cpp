@@ -49,10 +49,17 @@ void startAcademy(RulesBench& bench) {
   CHECK(bench.rules.multiball() == Multiball::Academy);
 }
 
-// Fills the turbo meter with spins.
-void fillTurbo(RulesBench& bench) {
+// Fills the turbo meter with spins, without the table's answer yet.
+void spinTurboFull(RulesBench& bench) {
   const int goal = bench.rules.turboGoal();
   bench.spin(goal - bench.rules.turboMeter());
+}
+
+// Fills it and lets the table answer: in one step the ball is asked for
+// and served or refused, and the next tells the rules it was served.
+void fillTurbo(RulesBench& bench) {
+  spinTurboFull(bench);
+  bench.step(2);
 }
 
 }  // namespace
@@ -133,6 +140,24 @@ void testMultiball() {
     CHECK(bench.message() == std::string_view("BAY DOORS OPEN") && !rules.lockLit());
     CHECK(bench.hangar() == Rules::HoleResult::Eject);
     CHECK(bench.balls.locked == 0 && rules.multiball() == Multiball::Academy);
+  }
+
+  {  // The Hangar told to lock could not (both bays taken): no lock, no lock
+     // message, the lock still lit.
+    RulesBench bench = unsaved();
+    const Rules& rules = bench.rules;
+    bench.doors();
+    CHECK(rules.lockLit());
+    CHECK(bench.rules.onHole(table::kHangarHole) == Rules::HoleResult::Lock);
+    bench.rules.onLockRefused();
+    bench.step();
+    CHECK(rules.locksHeld() == 0 && bench.message() == std::string_view("LOCK IS LIT"));
+    CHECK(rules.lampState(LampId::Lock1) == LampState::Off && rules.lockLit());
+    // The ball comes out; the Hangar is still open for the next.
+    bench.rules.onEject(table::kHangarHole);
+    bench.wait(Rules::kDoorRaiseSeconds);
+    CHECK(!bench.doorsUp && rules.lockLit());
+    CHECK(bench.hangar() == Rules::HoleResult::Lock && rules.locksHeld() == 1);
   }
 
   {  // 4.7 Jackpots on both ramps and both circuits: 50, 75, 100, 150, 150
@@ -314,13 +339,17 @@ void testMultiball() {
     bench.spin(7);
     CHECK(rules.turboMeter() == first - 1 && rules.multiball() == Multiball::None);
     bench.spin();
-    // Full: a second ball is launched from the lane.
+    // Full: a second ball is asked for, and the multiball starts when the
+    // table has served it.
     CHECK(rules.turboMeter() == 0 && rules.turboGoal() == second);
+    CHECK(rules.multiball() == Multiball::None && rules.ballsLive() == 2);
+    bench.step();
+    CHECK(bench.launched == 1 && bench.balls.live == 2 && rules.ballsLive() == 2);
+    CHECK(rules.multiball() == Multiball::None);
+    bench.step();
     CHECK(bench.message() == std::string_view("TURBO MULTIBALL"));
     CHECK(rules.multiball() == Multiball::Turbo && rules.turboMultiballs() == 1);
     CHECK(rules.ballsLive() == 2);
-    bench.step();
-    CHECK(bench.launched == 1 && bench.balls.live == 2 && rules.ballsLive() == 2);
     CHECK(rules.lampState(LampId::TurboCharge) == LampState::On);
     // Jackpots on the two ramps only, on the same ladder; no super jackpot.
     CHECK(rules.jackpotLit(Shot::Runway) && rules.jackpotLit(Shot::Skyway));
@@ -346,13 +375,15 @@ void testMultiball() {
     bench.spin(second - 1);
     CHECK(rules.multiball() == Multiball::None);
     bench.spin();
+    bench.step(2);
     CHECK(rules.multiball() == Multiball::Turbo &&
           rules.turboGoal() == second + tuning::kTurboMeterStep);
     CHECK(rules.jackpotValue() == 50'000);
   }
 
   {  // 4.7 The three-ball limit counts free, held, waiting, queued and locked
-     // balls. A ball is never asked for past it.
+     // balls. The table refuses a ball past it, and a full meter whose ball
+     // is refused pays its bonus instead.
     // Two locked and one in play: a full meter pays its bonus.
     RulesBench bench = unsaved();
     const Rules& rules = bench.rules;
@@ -363,9 +394,8 @@ void testMultiball() {
     CHECK(bench.total() == 3 && rules.locksHeld() == 2);
     std::uint64_t before = bench.score();
     fillTurbo(bench);
-    bench.step();
     CHECK(bench.message() == std::string_view("TURBO BONUS"));
-    CHECK(rules.multiball() == Multiball::None && bench.launched == 0 && bench.refused == 0);
+    CHECK(rules.multiball() == Multiball::None && bench.launched == 0 && bench.refused == 1);
     CHECK(rules.scoreFrom(Feature::TurboBonus) == points::kTurboBonus);
     CHECK(bench.score() - before ==
           static_cast<std::uint64_t>(tuning::kTurboMeterFirst) * points::kSpin + points::kTurboBonus);
@@ -379,7 +409,6 @@ void testMultiball() {
     one.hangar();
     one.wait(Rules::kBallSaveSeconds);  // The served ball's saver.
     fillTurbo(one);
-    one.step();
     CHECK(one.rules.multiball() == Multiball::Turbo && one.launched == 1 && one.total() == 3);
     CHECK(!one.rules.lockLit());
     CHECK(one.hangar() == Rules::HoleResult::Eject);
@@ -391,25 +420,25 @@ void testMultiball() {
     CHECK(one.rules.multiball() == Multiball::None && !one.doorsUp && one.rules.lockLit());
     // A full meter again with one locked and one in play: a new multiball.
     fillTurbo(one);
-    one.step();
     CHECK(one.rules.multiball() == Multiball::Turbo && one.total() == 3);
-    // And again with three there already: the bonus, and nothing asked for.
+    // And again with three there already: refused, and the bonus.
     fillTurbo(one);
-    one.step();
-    CHECK(one.total() == 3 && one.refused == 0 && one.launched == 2);
+    CHECK(one.total() == 3 && one.refused == 1 && one.launched == 2);
+    CHECK(one.message() == std::string_view("TURBO BONUS"));
     CHECK(one.rules.scoreFrom(Feature::TurboBonus) == points::kTurboBonus);
 
-    // A ball still waiting to be served counts: two fills before the first
-    // ball has been launched cannot make four.
+    // Two fills before the table has answered the first cannot make four:
+    // the second ball is refused and paid for.
     RulesBench queued = unsaved();
     queued.doors();
     queued.hangar();
     queued.step();
-    fillTurbo(queued);  // Asked for, not yet taken by the table.
+    spinTurboFull(queued);  // Asked for, not yet taken by the table.
     CHECK(queued.rules.ballsLive() == 2);
-    fillTurbo(queued);
-    queued.step();
-    CHECK(queued.launched == 1 && queued.refused == 0 && queued.total() == 3);
+    spinTurboFull(queued);
+    queued.step(2);
+    CHECK(queued.launched == 1 && queued.refused == 1 && queued.total() == 3);
+    CHECK(queued.rules.multiball() == Multiball::Turbo && queued.rules.turboMultiballs() == 1);
     CHECK(queued.rules.scoreFrom(Feature::TurboBonus) == points::kTurboBonus);
 
     // 4.7 Add a ball: during an Academy multiball with fewer than three
@@ -421,14 +450,12 @@ void testMultiball() {
     academy.step();
     CHECK(academy.rules.ballsLive() == 2);
     fillTurbo(academy);
-    academy.step();
     CHECK(academy.launched == 1 && academy.total() == 3);
     CHECK(academy.rules.multiball() == Multiball::Academy && academy.rules.turboMultiballs() == 0);
     before = academy.rules.scoreFrom(Feature::TurboBonus);
     fillTurbo(academy);
-    academy.step();
     CHECK(academy.rules.scoreFrom(Feature::TurboBonus) - before == points::kTurboBonus);
-    CHECK(academy.launched == 1 && academy.refused == 0);
+    CHECK(academy.launched == 1 && academy.refused == 1);
   }
 
   {  // Stacking: a course runs through a multiball and its shots count for

@@ -24,6 +24,9 @@ struct RulesBench {
   bool doorsUp = true;
   int launched = 0;  // Balls asked for and put on the table.
   int refused = 0;   // Asked for with three already there.
+  int locksRefused = 0;  // Told to lock with both bays taken.
+  // Every ball is in a timed hold (Game's allBallsHeld).
+  bool allHeld = false;
   int dropped = 0;
   int raised = 0;
   // Whether a locked ball gets its served ball (Game: only with no other).
@@ -56,7 +59,7 @@ struct RulesBench {
       case pinball::Rules::DoorCommand::None:
         break;
     }
-    if (rules.takeLockRelease()) {
+    if (rules.takeLockCommand() == pinball::Rules::LockCommand::Release) {
       releaseLocks();
     }
     for (int n = rules.takeBallRequests(); n > 0; --n) {
@@ -66,6 +69,7 @@ struct RulesBench {
         ++launched;
       } else {
         ++refused;
+        rules.onBallRefused();
       }
     }
   }
@@ -80,7 +84,7 @@ struct RulesBench {
   void step(int steps = 1) {
     for (int i = 0; i < steps; ++i) {
       rules.setTable(balls);
-      rules.tick();
+      rules.tick(allHeld);
       apply();
     }
   }
@@ -125,6 +129,14 @@ struct RulesBench {
     const pinball::Rules::HoleResult result = rules.onHole(table::kHangarHole);
     switch (result) {
       case pinball::Rules::HoleResult::Lock: {
+        if (balls.locked >= pinball::Rules::kLocksNeeded) {
+          // Both bays taken: returned like any other.
+          ++locksRefused;
+          rules.onLockRefused();
+          step();
+          rules.onEject(table::kHangarHole);
+          break;
+        }
         --balls.live;
         ++balls.locked;
         const bool served = balls.live == 0 && balls.queued == 0;

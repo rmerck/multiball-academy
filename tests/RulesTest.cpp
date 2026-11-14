@@ -208,8 +208,8 @@ void testRules() {
   }
 
   {  // 4.9 Overdrive: started at the Turbine, doubles the playfield for 20 s;
-     // roll call again makes it 3X and starts the time over; it stops while
-     // no ball is free.
+     // roll call again makes it 3X and starts the time over; it stops only
+     // while every ball is held.
     RulesBench bench = started();
     for (std::size_t lane = 0; lane < 3; ++lane) {
       bench.rollCall(lane);
@@ -225,8 +225,14 @@ void testRules() {
     CHECK(bench.rules.overdrive() == 2);
     // Every ball held: the clock stands.
     bench.balls.free = 0;
+    bench.allHeld = true;
     bench.wait(30.0);
     CHECK(bench.rules.overdrive() == 2);
+    bench.allHeld = false;
+    // A ball waiting on the plunger (not free, not held): it runs.
+    const double running = bench.rules.overdriveSecondsLeft();
+    bench.wait(1.0);
+    CHECK(bench.rules.overdriveSecondsLeft() < running - 0.9);
     bench.balls.free = 1;
     for (std::size_t lane = 0; lane < 3; ++lane) {
       bench.rollCall(lane);
@@ -451,6 +457,19 @@ void testRules() {
     bench.rollCall(1, 1);
     CHECK(gained() == points::kRollCallLane);
     CHECK(rules.scoreFrom(Feature::Circuits) == 3 * points::kCircuit);
+    // A ball taken by a hole is off the arch: its try is over. Another
+    // ball's capture leaves it alone.
+    bench.wait(tuning::kCircuitSeconds);
+    bench.wait(tuning::kComboSeconds);
+    bench.rules.onSensor(0, 1, 1500.0F, 2);
+    bench.rules.onHole(table::kRunwayHole, 1);
+    bench.rules.onSensor(2, 1, 800.0F, 2);
+    CHECK(rules.scoreFrom(Feature::Circuits) == 4 * points::kCircuit);
+    bench.wait(tuning::kComboSeconds);
+    bench.rules.onSensor(0, 1, 1500.0F, 2);
+    bench.rules.onHole(table::kScoopHole, 2);
+    bench.rules.onSensor(2, 1, 800.0F, 2);
+    CHECK(rules.scoreFrom(Feature::Circuits) == 4 * points::kCircuit);
   }
 
   {  // 4.4 Combos: a different flow shot within four seconds extends the
@@ -693,7 +712,7 @@ void testRules() {
     CHECK(!rules.courseRunning() && rules.multiball() == pinball::Multiball::None);
     CHECK(!rules.ballSaveActive() && !rules.kickbackLit() && !rules.lockLit());
     CHECK(!rules.skillShotOffered() && !rules.briefingLit() && !rules.graduationLit());
-    CHECK(bench.rules.takeBallRequests() == 0 && !bench.rules.takeLockRelease());
+    CHECK(bench.rules.takeBallRequests() == 0 && bench.rules.takeLockCommand() == Rules::LockCommand::None);
     for (std::size_t lamp = 0; lamp < std::to_underlying(LampId::Count); ++lamp) {
       CHECK(rules.lampState(static_cast<LampId>(lamp)) == LampState::Off);
     }

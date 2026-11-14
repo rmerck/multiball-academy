@@ -100,7 +100,6 @@ void Game::serveBall() {
   ball.autoLaunch = false;
   ball.launched = false;
   ball.ejectStep = 0;
-  ball.lockAsked = false;
   ball.placed = true;
 }
 
@@ -146,6 +145,7 @@ void Game::lockBall(std::size_t slot) {
     return;
   }
   // Both bays full: the ball is returned like any other.
+  rules_.onLockRefused();
 }
 
 void Game::releaseLocks() noexcept {
@@ -482,7 +482,7 @@ void Game::step(const InputState& input) {
     }
   }
   updateSpinner();
-  rules_.tick();
+  rules_.tick(allBallsHeld());
   applyRules();
 
   handleLostBalls();
@@ -572,31 +572,16 @@ void Game::handleEvents() {
         hitSounds |= soundBit(Sound::Rollover);
         rules_.onRollover(index, event.ball);
         break;
-      case Hole: {
-        ++holeCounts_[index];
-        hitSounds |= soundBit(Sound::HoleIn);
-        const Rules::HoleResult result = rules_.onHole(index);
-        if (table::kHoles[index].type != table::HoleType::Hangar) {
-          break;  // Only the Hangar can do anything but return the ball.
-        }
-        if (result == Rules::HoleResult::Lock) {
-          balls_[event.ball].lockAsked = true;
-        } else if (result == Rules::HoleResult::StartMultiball) {
-          releaseLocks();
-        }
+      case Hole:
+      case Kickback:
+        // Told to the rules from the physics state itself (noteHeldBall),
+        // not from this list, which can drop entries in a very busy step.
         break;
-      }
       case Sensor:
         rules_.onSensor(index, event.direction, event.speed, event.ball);
         if (index == table::kSpinnerSensor) {
           addSpins(event.speed, event.direction);
         }
-        break;
-      case Kickback:
-        ++kickbackCount_;
-        hitSounds |= soundBit(Sound::Launch);
-        note(GameEvent::Type::KickbackFired, event.ball);
-        rules_.onKickback();
         break;
       case None:
         break;
@@ -703,13 +688,43 @@ void Game::noteHeldBall(std::size_t slot) {
     ball.releasing = false;
     // The held body stays where it was taken.
     ball.takenAt = physics_.ballPosition(slot);
-    if (ball.lockAsked && ball.holder.kind == table::ElementKind::Hole &&
-        table::kHoles[ball.holder.index].type == table::HoleType::Hangar) {
-      lockBall(slot);
-    }
+    tellRulesOfCapture(slot);
   }
-  ball.lockAsked = false;
   ball.wasHeld = held;
+}
+
+void Game::tellRulesOfCapture(std::size_t slot) {
+  const table::ElementRef by = physics_.heldBy(slot);
+  if (!table::isValid(by)) {
+    return;
+  }
+  // A dead table makes no sound for what does not score.
+  const bool live = !rules_.gameOver() && !rules_.tilted();
+  if (by.kind == table::ElementKind::Kickback) {
+    ++kickbackCount_;
+    if (live) {
+      sounds_ |= soundBit(Sound::Launch);
+    }
+    note(GameEvent::Type::KickbackFired, slot);
+    rules_.onKickback();
+    return;
+  }
+  if (by.kind != table::ElementKind::Hole || by.index >= table::kHoles.size()) {
+    return;
+  }
+  ++holeCounts_[by.index];
+  if (live) {
+    sounds_ |= soundBit(Sound::HoleIn);
+  }
+  const Rules::HoleResult result = rules_.onHole(by.index, slot);
+  if (table::kHoles[by.index].type != table::HoleType::Hangar) {
+    return;  // Only the Hangar can do anything but return the ball.
+  }
+  if (result == Rules::HoleResult::Lock) {
+    lockBall(slot);
+  } else if (result == Rules::HoleResult::StartMultiball) {
+    releaseLocks();
+  }
 }
 
 void Game::updateHeldBall(std::size_t slot) {
@@ -735,6 +750,7 @@ void Game::updateHeldBall(std::size_t slot) {
       returnBall(slot, table::kRunwayHole, runway.exitPosition,
                  jittered(table::kKickbackExitVelocity));
       note(GameEvent::Type::KickbackReturned, slot);
+      rules_.onKickbackReturned();
     }
     return;
   }
@@ -835,12 +851,28 @@ void Game::applyRules() {
   // Locked balls the rules let go without a ball entering the Hangar, and
   // balls they want launched. A request past the three-ball limit is
   // refused, never kept.
-  if (rules_.takeLockRelease()) {
+  if (rules_.takeLockCommand() == Rules::LockCommand::Release) {
     releaseLocks();
   }
   for (int request = rules_.takeBallRequests(); request > 0; --request) {
-    requestBall();
+    if (!requestBall()) {
+      rules_.onBallRefused();
+    }
   }
+}
+
+bool Game::allBallsHeld() const noexcept {
+  bool any = false;
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    if (!ballLive(slot)) {
+      continue;
+    }
+    if (!physics_.ballHeld(slot)) {
+      return false;
+    }
+    any = true;
+  }
+  return any;
 }
 
 TableStatus Game::tableStatus() const noexcept {

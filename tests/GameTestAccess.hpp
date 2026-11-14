@@ -45,6 +45,8 @@ struct pinball::GameTestAccess {
   static void raiseDoorBank(Game& game) { game.doorRaisePending_ = !game.physics_.doorBankUp(); }
   // Lets every locked ball go.
   static void releaseLocks(Game& game) { game.releaseLocks(); }
+  // Locks the ball a hole holds, as the Hangar does when the rules say so.
+  static void lockBall(Game& game, std::size_t ball) { game.lockBall(ball); }
   // Adds to a free ball's velocity, as a nudge does.
   static void pushBall(Game& game, std::size_t ball, Vec2 velocityChange) {
     game.physics_.pushBall(ball, velocityChange);

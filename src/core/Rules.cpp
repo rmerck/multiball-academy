@@ -118,7 +118,9 @@ void Rules::clearModes() noexcept {
   graceSteps_ = 0;
   ballRequests_ = 0;
   requestsInFlight_ = 0;
-  lockRelease_ = false;
+  turboRequests_ = 0;
+  turboRequestsInFlight_ = 0;
+  lockCommand_ = LockCommand::None;
   releasesPending_ = 0;
   locksHeld_ = 0;
   hangarHolding_ = 0;
@@ -145,6 +147,7 @@ void Rules::startGame() noexcept {
   wingLit_.fill(false);
   turboTargetLit_.fill(false);
   kickbackLit_ = true;
+  kickbackRides_ = 0;
   extraCreditLit_ = false;
   turboMeter_ = 0;
   turboGoal_ = tuning::kTurboMeterFirst;
@@ -200,7 +203,10 @@ void Rules::setTable(const TableStatus& status) noexcept {
   status_.free = std::clamp(status.free, 0, status_.live);
   status_.queued = std::clamp(status.queued, 0, static_cast<int>(table::kMaxBalls));
   status_.locked = std::clamp(status.locked, 0, kLocksNeeded);
-  // What Game took last step is in these numbers now.
+  // What Game took last step and did not refuse is in these numbers now.
+  for (; turboRequestsInFlight_ > 0; --turboRequestsInFlight_) {
+    turboBallServed();
+  }
   requestsInFlight_ = 0;
   // The bays are the truth about the locks.
   releasesPending_ = std::min(releasesPending_, status_.locked);
@@ -225,13 +231,24 @@ int Rules::takeBallRequests() noexcept {
   const int requests = ballRequests_;
   ballRequests_ = 0;
   requestsInFlight_ += requests;
+  turboRequestsInFlight_ += turboRequests_;
+  turboRequests_ = 0;
   return requests;
 }
 
-bool Rules::takeLockRelease() noexcept {
-  const bool release = lockRelease_;
-  lockRelease_ = false;
-  return release;
+void Rules::onBallRefused() noexcept {
+  requestsInFlight_ = std::max(requestsInFlight_ - 1, 0);
+  // Only a full meter's ball has something else to give instead.
+  if (turboRequestsInFlight_ > 0) {
+    --turboRequestsInFlight_;
+    turboBallRefused();
+  }
+}
+
+Rules::LockCommand Rules::takeLockCommand() noexcept {
+  const LockCommand command = lockCommand_;
+  lockCommand_ = LockCommand::None;
+  return command;
 }
 
 // --- The display ---------------------------------------------------------------
@@ -497,6 +514,7 @@ void Rules::onKickback() noexcept {
   }
   // Spent, whether or not the table is live.
   kickbackLit_ = false;
+  kickbackRides_ = std::min(kickbackRides_ + 1, static_cast<int>(table::kMaxBalls));
   if (tilted_) {
     return;
   }
@@ -504,6 +522,8 @@ void Rules::onKickback() noexcept {
   award(points::kKickback, Feature::ReturnLanes);
   say(display::Message("KICKBACK"));
 }
+
+void Rules::onKickbackReturned() noexcept { kickbackRides_ = std::max(kickbackRides_ - 1, 0); }
 
 void Rules::onSensor(std::size_t index, int direction, float speed, std::size_t ball) noexcept {
   if (index >= table::kSensors.size() || dead()) {
@@ -580,8 +600,15 @@ void Rules::rampMade(Shot shot) noexcept {
   flowShot(shot);
 }
 
-Rules::HoleResult Rules::onHole(std::size_t index) noexcept {
-  if (index >= table::kHoles.size() || dead()) {
+Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
+  if (index >= table::kHoles.size()) {
+    return HoleResult::Eject;
+  }
+  // A ball in a hole is not on its way round an arch.
+  if (ball < circuits_.size()) {
+    circuits_[ball].steps = 0;
+  }
+  if (dead()) {
     return HoleResult::Eject;
   }
   noteSwitch();
@@ -713,6 +740,14 @@ void Rules::onBallLocked(std::size_t bay, bool served) noexcept {
   }
 }
 
+void Rules::onLockRefused() noexcept {
+  if (gameOver_) {
+    return;
+  }
+  // It is returned by the Hangar like a ball that was never to be locked.
+  ++hangarHolding_;
+}
+
 void Rules::onLockReleased(std::size_t bay) noexcept {
   static_cast<void>(bay);
   if (releasesPending_ > 0) {
@@ -767,16 +802,27 @@ void Rules::addTurbo(int amount) noexcept {
 void Rules::turboFull() noexcept {
   turboMeter_ = 0;
   turboGoal_ = std::min(turboGoal_ + tuning::kTurboMeterStep, 10'000);
-  if (!multiballEnabled_ || graduationRunning() ||
-      ballsInGame() >= static_cast<int>(table::kMaxBalls)) {
-    // No room for another ball: the three-ball limit counts every ball
-    // there is, locked and waiting ones too. Graduation Day suspends Turbo
-    // multiball.
-    award(points::kTurboBonus, Feature::TurboBonus);
-    say(display::Message("TURBO BONUS"));
+  if (!multiballEnabled_ || graduationRunning()) {
+    // Graduation Day suspends Turbo multiball.
+    turboBallRefused();
     return;
   }
+  // A ball is asked for; the table says whether there is room for it (the
+  // three-ball limit counts every ball there is, locked and waiting ones
+  // too), and the multiball starts when it has been given.
   ++ballRequests_;
+  ++turboRequests_;
+}
+
+void Rules::turboBallRefused() noexcept {
+  award(points::kTurboBonus, Feature::TurboBonus);
+  say(display::Message("TURBO BONUS"));
+}
+
+void Rules::turboBallServed() noexcept {
+  if (gameOver_) {
+    return;
+  }
   if (!multiballRunning()) {
     turboMultiball_ = true;
     ++turboMultiballs_;
@@ -1067,7 +1113,7 @@ void Rules::startGraduation() noexcept {
   if (locksHeld_ > 0) {
     releasesPending_ += locksHeld_;
     locksHeld_ = 0;
-    lockRelease_ = true;
+    lockCommand_ = LockCommand::Release;
   }
   ballRequests_ += std::max(static_cast<int>(table::kMaxBalls) - ballsInGame(), 0);
   graceSteps_ = stepsFor(tuning::kGraduationGraceSeconds);
@@ -1465,7 +1511,7 @@ bool Rules::onNudge() noexcept {
   return true;
 }
 
-void Rules::tick() noexcept {
+void Rules::tick(bool allBallsHeld) noexcept {
   if (!tilted_) {
     tiltHeat_ = std::max(0.0, tiltHeat_ - stepSeconds_ / kTiltCoolSeconds);
   }
@@ -1489,10 +1535,12 @@ void Rules::tick() noexcept {
           failCourse();
         }
       }
-      if (overdriveSteps_ > 0 && --overdriveSteps_ == 0) {
-        overdrive_ = 1;
-        say(display::Message("OVERDRIVE OVER"));
-      }
+    }
+    // Overdrive runs on while a ball waits on the plunger; it stands still
+    // only while every ball is held.
+    if (!allBallsHeld && overdriveSteps_ > 0 && --overdriveSteps_ == 0) {
+      overdrive_ = 1;
+      say(display::Message("OVERDRIVE OVER"));
     }
     if (graceSteps_ > 0) {
       --graceSteps_;
@@ -1693,7 +1741,7 @@ LampState Rules::lampState(table::LampId lamp) const noexcept {
       // Faster as it fills.
       return 5 * turboMeter_ >= 4 * turboGoal_ ? LampState::FastBlink : LampState::Blink;
     case Kickback:
-      return lit(kickbackLit_);
+      return kickbackRides_ > 0 ? LampState::FastBlink : lit(kickbackLit_);
     case ShootAgain:
       if (tilted_) {
         return LampState::Off;
