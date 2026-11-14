@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "Check.hpp"
+#include "GameTestAccess.hpp"
 #include "Suites.hpp"
 #include "core/AboutPages.hpp"
 #include "core/OverlayLayout.hpp"
@@ -18,6 +19,7 @@
 #include "core/SurfaceSpec.hpp"
 #include "core/TableLayout.hpp"
 #include "platform/GameViews.hpp"
+#include "platform/TableLights.hpp"
 
 namespace {
 
@@ -774,6 +776,45 @@ void testGameViews() {
   }
 }
 
+// The one adapter between the rules and the table's lamps
+// (platform/TableLights.hpp): what it reads, and the lock lamps by bay.
+void testTableLights() {
+  using namespace pinball;
+  using table::LampId;
+  CHECK(lockBayOf(table::kLockBays[0]) == 0 && lockBayOf(table::kLockBays[1]) == 1);
+  CHECK(lockBayOf({table::kLockBays[1].x - 1.0F, table::kLockBays[1].y + 2.0F}) == 1);
+  Game game;
+  TableLights lights = tableLights(game);
+  CHECK(lights.lit(LampId::Kickback) == game.kickbackArmed());
+  CHECK(lights.lit(LampId::ShootAgain) == game.rules().ballSaveActive());
+  CHECK(!lights.lit(LampId::Lock1) && !lights.lit(LampId::Lock2));
+  CHECK(!lights.lit(LampId::Count));
+  for (const bool marked : lights.doorsMarked) {
+    CHECK(!marked);
+  }
+  // Every door hit, as three hits would; then a ball sent into the Hangar.
+  using Seam = GameTestAccess;
+  for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
+    Seam::rules(game).onDropTarget(door);
+  }
+  lights = tableLights(game);
+  for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
+    CHECK(lights.doorsMarked[door] == game.rules().doorMarked(door));
+  }
+  CHECK(lights.lit(LampId::ArrowHangar) == game.rules().lockLit());
+  game.step(InputState{});
+  const std::size_t slot = game.ball().id;
+  Seam::placeBall(game, slot, {279.0F, 440.0F}, {0.0F, -900.0F});
+  Seam::putInPlay(game, slot);
+  for (int i = 0; i < 240 && game.lockedBalls() == 0; ++i) {
+    game.step(InputState{});
+  }
+  CHECK(game.lockedBalls() == 1);
+  lights = tableLights(game);
+  // The first ball takes the first bay.
+  CHECK(lights.lit(LampId::Lock1) && !lights.lit(LampId::Lock2));
+}
+
 // The About screen's pages in a row: scores, about, each licence page.
 void testAboutPages() {
   using namespace pinball;
@@ -841,6 +882,7 @@ void testScreenLayout() {
   testExactFit();
   testSurfaceSpec();
   testGameViews();
+  testTableLights();
   testAboutPages();
   testContains();
 }

@@ -2,15 +2,20 @@
 
 #include <SDL3/SDL.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <vector>
 
 #include "core/Game.hpp"
 #include "core/ScreenLayout.hpp"
 #include "core/TouchControls.hpp"
+#include "generated/ArtPalette.hpp"
 #include "platform/Assets.hpp"
 #include "platform/Hud.hpp"
+#include "platform/TableLights.hpp"
+#include "platform/TouchOverlay.hpp"
 
 namespace pinball {
 
@@ -24,12 +29,12 @@ struct DrawOptions {
   std::span<const BallView> extraBalls{};
 };
 
-// Which textures to load. Desktop: what the Classic composition draws with.
+// Which textures to load. Desktop: what the Classic composition draws with,
+// the title (ui/title.png) and the dialog card (ui/dialog.png) included.
 // All: the art of the touch layouts as well (ui/strip.png, ui/deck.png,
-// ui/backdrop.png, sprites/button.png) and the title (ui/title.png). Each of
+// ui/backdrop.png, sprites/button.png, sprites/button_gloss.png). Each of
 // those is used if the build's asset manifest lists it; where it does not,
-// plain windows, buttons and lettering are drawn in its place, so the art
-// can arrive file by file.
+// plain windows, buttons and lettering are drawn in its place.
 enum class TextureSet : std::uint8_t { Desktop, All };
 
 // Draws the game onto the logical canvas. Owns every texture.
@@ -74,6 +79,10 @@ class TableRenderer {
   void drawTouchOverlay(SDL_Renderer* renderer, const screen::Layout& layout,
                         const TouchControls::View& view) const;
 
+  // The art the dialogs (pause, About, initials) draw with. Valid for as
+  // long as this renderer.
+  [[nodiscard]] OverlayArt overlayArt() const noexcept;
+
  private:
   struct Textures {
     TexturePtr background;  // The art, or the table drawn from its layout.
@@ -83,33 +92,42 @@ class TableRenderer {
     TexturePtr ball;
     TexturePtr flipper;
     TexturePtr bumper;
+    TexturePtr bumperCap;
     TexturePtr glow;
     TexturePtr bar;
+    TexturePtr door;
     TexturePtr plunger;
     TexturePtr panel;
+    // Over the table art only: the layout drawing has its own.
+    TexturePtr insertArrow;
+    TexturePtr insertRound;
+    std::array<TexturePtr, 2> spinner;  // Edge-on, flat.
+    TexturePtr kickback;
     // The rest may be null: see TextureSet.
+    TexturePtr title;
+    TexturePtr dialog;
     TexturePtr strip;
     TexturePtr deck;
     TexturePtr backdrop;
-    TexturePtr title;
     TexturePtr button;
-  };
-  struct Rgb {
-    Uint8 r;
-    Uint8 g;
-    Uint8 b;
+    TexturePtr buttonGloss;
   };
 
   explicit TableRenderer(Textures textures);
 
-  // A soft additive light of the given colour and strength (0 to 1).
-  void drawGlow(SDL_Renderer* renderer, Vec2 center, float radius, Rgb color,
+  // A soft additive light of the given colour and strength (0 to 1, held
+  // to art::kMaxGlowStrength so that no light outshines the ball).
+  void drawGlow(SDL_Renderer* renderer, Vec2 center, float radius, art::Rgb color,
                 float strength) const;
+  // The lit lamps over the art's unlit inserts, each with its glow.
+  void drawLamps(SDL_Renderer* renderer, const TableLights& lights) const;
+  // The spinner's blade by its phase, and the kickback's spring.
+  void drawSpinnerAndKickback(SDL_Renderer* renderer, const Game& game) const;
   void drawBumpers(SDL_Renderer* renderer, const Game& game) const;
-  void drawTargets(SDL_Renderer* renderer, const Game& game) const;
+  void drawTargets(SDL_Renderer* renderer, const Game& game, const TableLights& lights) const;
   // What moves or lights among the table's own elements, for the layout
   // drawing: doors lying down, the lock and kickback lamps, the spinner.
-  void drawElements(SDL_Renderer* renderer, const Game& game) const;
+  void drawElements(SDL_Renderer* renderer, const Game& game, const TableLights& lights) const;
   void drawSlingshotFlashes(SDL_Renderer* renderer, const Game& game) const;
   void drawPlunger(SDL_Renderer* renderer, const Game& game) const;
   void drawFlippers(SDL_Renderer* renderer, const Game& game, float alpha) const;

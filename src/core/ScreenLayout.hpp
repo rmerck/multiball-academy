@@ -76,9 +76,12 @@ inline constexpr float kStackWidth = kPlayfieldWidth;
 inline constexpr float kStackMinHeight = kStripHeight + kPlayfieldHeight + kDeckMinHeight;
 
 // The flat colour behind the composition on a touch screen (red, green,
-// blue): gutters, the bands outside the safe area. The backdrop art tiles
-// over it and must end in it.
-inline constexpr std::array<std::uint8_t, 3> kBackdropRgb{10, 0, 26};
+// blue): gutters, the bands outside the safe area, the desktop's letterbox
+// and the dimming behind the dialogs. The backdrop art tiles over it and
+// must end in it. It is the art's NIGHT (tools/art/palette.py; the renderer
+// asserts the two agree) and the iOS launch screen's colour
+// (packaging/ios/Assets.xcassets/LaunchBackground.colorset).
+inline constexpr std::array<std::uint8_t, 3> kBackdropRgb{18, 18, 58};
 
 // The smallest side of what a touch on a control may land in, in units, in
 // both compositions and in the overlays.

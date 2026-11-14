@@ -9,6 +9,7 @@
 #include "core/AboutPages.hpp"
 #include "core/HighScores.hpp"
 #include "core/ScreenLayout.hpp"
+#include "platform/TouchOverlay.hpp"
 
 namespace pinball {
 
@@ -26,8 +27,10 @@ namespace pinball {
 // with a line saying that the arrow keys turn the pages: left and right
 // step through scores, about and each licence page in turn
 // (turnAboutPage in core/AboutPages.hpp).
+// The dialog is drawn on the card of art, with the title and buttons of art,
+// where there is any (TableRenderer::overlayArt).
 void drawAbout(SDL_Renderer* renderer, const HighScores& scores, const screen::Layout& layout,
-               const AboutState& state);
+               const AboutState& state, const OverlayArt& art = {});
 
 // How many pages the licence text takes in this layout. At least 1.
 [[nodiscard]] std::size_t licencePageCount(const screen::Layout& layout) noexcept;

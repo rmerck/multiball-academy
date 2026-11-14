@@ -1,3 +1,0 @@
-The icon in Assets.xcassets/AppIcon.appiconset is a placeholder made by
-tools/ios/make_placeholder_icon.py. A build that could be shipped is refused
-while this file exists. Delete it together with replacing the icon.

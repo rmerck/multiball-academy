@@ -6,6 +6,7 @@
 
 #include "core/Format.hpp"
 #include "core/OverlayLayout.hpp"
+#include "generated/ArtPalette.hpp"
 #include "platform/Text.hpp"
 #include "platform/TouchOverlay.hpp"
 
@@ -13,28 +14,30 @@ namespace pinball {
 
 namespace {
 
-// Neon palette shared with the panel: laser yellow, cyan, hot pink.
-constexpr SDL_Color kAmber{255, 225, 70, 255};
-constexpr SDL_Color kCyan{70, 235, 255, 255};
-constexpr SDL_Color kWhite{248, 240, 255, 255};
-constexpr SDL_Color kDim{176, 150, 226, 255};
-constexpr SDL_Color kPink{255, 60, 170, 255};
-constexpr SDL_Color kGreen{90, 255, 180, 255};
-constexpr SDL_Color kViolet{150, 90, 255, 255};
+// The art's palette (tools/art/palette.py).
+constexpr SDL_Color sdl(art::Rgb c) noexcept { return {c.r, c.g, c.b, 255}; }
+constexpr SDL_Color kYellow = sdl(art::kYellow);
+constexpr SDL_Color kAqua = sdl(art::kAqua);
+constexpr SDL_Color kCream = sdl(art::kCream);
+constexpr SDL_Color kDim = sdl(art::kOrchid);
+constexpr SDL_Color kPink = sdl(art::kPink);
+constexpr SDL_Color kTeal = sdl(art::kTeal);
+constexpr SDL_Color kViolet = sdl(art::kViolet);
 
 constexpr float kLetterSize = 14.0F;    // Canvas pixels per font pixel.
 constexpr float kLetterPitch = 120.0F;  // Distance between letter centres.
 
 // An arrow button: a plain face with a stepped triangle on it, pointing up
 // or down.
-void drawArrowButton(SDL_Renderer* r, const screen::Rect& face, bool up) {
-  drawPlainButton(r, face, kViolet, false);
+void drawArrowButton(SDL_Renderer* r, const ButtonArt& art, const screen::Rect& face, bool up) {
+  drawButtonFace(r, art, face, kButtonOrchid, false);
+  const SDL_Color ink = captionColor(art);
   constexpr int kRows = 6;
   constexpr float kRowHeight = 6.0F;
   const float middle = face.x + face.w * 0.5F;
   const float top = face.y + (face.h - kRows * kRowHeight) * 0.5F;
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-  SDL_SetRenderDrawColor(r, kWhite.r, kWhite.g, kWhite.b, SDL_ALPHA_OPAQUE);
+  SDL_SetRenderDrawColor(r, ink.r, ink.g, ink.b, SDL_ALPHA_OPAQUE);
   for (int row = 0; row < kRows; ++row) {
     // The narrow end is at the top of an up arrow, the bottom of a down one.
     const int rank = up ? row : kRows - 1 - row;
@@ -48,13 +51,14 @@ void drawArrowButton(SDL_Renderer* r, const screen::Rect& face, bool up) {
 }  // namespace
 
 void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_t score,
-                       bool cursorLit, const screen::Layout& layout) {
+                       bool cursorLit, const screen::Layout& layout, const OverlayArt& art) {
   if (r == nullptr) {
     return;
   }
   // Dim everything behind.
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  SDL_SetRenderDrawColor(r, 10, 0, 26, 205);
+  SDL_SetRenderDrawColor(r, screen::kBackdropRgb[0], screen::kBackdropRgb[1],
+                         screen::kBackdropRgb[2], 205);
   const SDL_FRect whole{0.0F, 0.0F, layout.canvasWidth, layout.canvasHeight};
   SDL_RenderFillRect(r, &whole);
   // Only the dimming needs blending; the dialog's own fills are opaque.
@@ -64,15 +68,17 @@ void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_
   const bool touch = layout.idiom == screen::Idiom::Touch;
   const screen::Rect& dialog = prompt.box;
   const SDL_FRect box{dialog.x, dialog.y, dialog.w, dialog.h};
-  drawNeonFrame(r, box);
-  drawNeonZigzag(r, box.x + 40.0F, box.y + 110.0F, box.y + box.h - 110.0F, kPink);
-  drawNeonZigzag(r, box.x + box.w - 40.0F, box.y + 110.0F, box.y + box.h - 110.0F, kCyan);
+  drawDialogCard(r, art, box);
+  if (art.dialog == nullptr) {
+    drawNeonZigzag(r, box.x + 40.0F, box.y + 110.0F, box.y + box.h - 110.0F, kPink);
+    drawNeonZigzag(r, box.x + box.w - 40.0F, box.y + 110.0F, box.y + box.h - 110.0F, kAqua);
+  }
 
   const float middle = box.x + box.w * 0.5F;
-  drawNeonText(r, "NEW HIGH SCORE", middle, box.y + 36.0F, 5.0F, kAmber, kPink,
-               {120, 30, 200, 255}, TextAlign::Center);
+  drawNeonText(r, "NEW HIGH SCORE", middle, box.y + 36.0F, 5.0F, kYellow, kPink, kViolet,
+               TextAlign::Center);
   ScoreText scoreBuffer{};
-  drawText(r, formatScore(score, scoreBuffer), middle, box.y + 96.0F, 4.0F, kWhite,
+  drawText(r, formatScore(score, scoreBuffer), middle, box.y + 96.0F, 4.0F, kCream,
            TextAlign::Center);
   if (touch) {
     // Short enough for the box at either size.
@@ -83,7 +89,7 @@ void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_
     drawText(r, "ENTER YOUR INITIALS", middle, box.y + 150.0F, 2.0F, kDim, TextAlign::Center);
   }
 
-  drawNeonRule(r, middle, box.y + 174.0F, 200.0F);
+  drawDialogRule(r, art, middle, box.y + 174.0F, 200.0F);
 
   const Initials& letters = entry.letters();
   // A touch screen has an arrow above and below each letter, which moves
@@ -93,26 +99,26 @@ void drawInitialsEntry(SDL_Renderer* r, const InitialsEntry& entry, std::uint64_
     const float centre = middle + (static_cast<float>(i) - 1.0F) * kLetterPitch;
     const bool current = i == entry.cursor();
     if (current) {
-      drawNeonText(r, std::string_view(&letters[i], 1), centre, lettersTop, kLetterSize, kWhite,
-                   kAmber, kPink, TextAlign::Center);
+      drawNeonText(r, std::string_view(&letters[i], 1), centre, lettersTop, kLetterSize, kCream,
+                   kYellow, kPink, TextAlign::Center);
     } else {
-      drawNeonText(r, std::string_view(&letters[i], 1), centre, lettersTop, kLetterSize, kWhite,
-                   kCyan, {60, 40, 160, 255}, TextAlign::Center);
+      drawNeonText(r, std::string_view(&letters[i], 1), centre, lettersTop, kLetterSize, kCream,
+                   kAqua, kViolet, TextAlign::Center);
     }
     if (current && cursorLit) {
       const SDL_FRect marker{centre - 40.0F, lettersTop + 7.0F * kLetterSize + 12.0F, 80.0F, 8.0F};
       SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-      SDL_SetRenderDrawColor(r, kAmber.r, kAmber.g, kAmber.b, 255);
+      SDL_SetRenderDrawColor(r, kYellow.r, kYellow.g, kYellow.b, 255);
       SDL_RenderFillRect(r, &marker);
     }
   }
 
   if (touch) {
     for (std::size_t i = 0; i < prompt.up.size(); ++i) {
-      drawArrowButton(r, prompt.up[i], true);
-      drawArrowButton(r, prompt.down[i], false);
+      drawArrowButton(r, art.button, prompt.up[i], true);
+      drawArrowButton(r, art.button, prompt.down[i], false);
     }
-    drawCaptionButton(r, prompt.ok, "OK", kGreen, false);
+    drawCaptionButton(r, prompt.ok, "OK", kTeal, false, 4.0F, 3.0F, art.button);
     return;
   }
   drawText(r, "TYPE A LETTER, OR UP AND DOWN TO CHANGE IT", middle, box.y + box.h - 84.0F, 2.0F,

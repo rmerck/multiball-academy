@@ -657,16 +657,11 @@ void App::render(double alpha, bool cursorLit) {
   SDL_Renderer* r = renderer_.get();
   const bool touch = layout_.idiom == screen::Idiom::Touch;
 
-  // On the desktop: the letterbox bars, and whatever shows at the table's
-  // edge when a nudge jolts it, which are black. On a touch screen: the
-  // backdrop's own colour, so that nothing the canvas leaves uncovered at
-  // an edge can show as a dark line.
-  if (touch) {
-    SDL_SetRenderDrawColor(r, screen::kBackdropRgb[0], screen::kBackdropRgb[1],
-                           screen::kBackdropRgb[2], SDL_ALPHA_OPAQUE);
-  } else {
-    SDL_SetRenderDrawColor(r, 0, 0, 0, SDL_ALPHA_OPAQUE);
-  }
+  // The backdrop's own colour everywhere: the desktop's letterbox bars and
+  // what shows at the table's edge when a nudge jolts it, and on a touch
+  // screen anything the canvas leaves uncovered at an edge.
+  SDL_SetRenderDrawColor(r, screen::kBackdropRgb[0], screen::kBackdropRgb[1],
+                         screen::kBackdropRgb[2], SDL_ALPHA_OPAQUE);
   if (!SDL_RenderClear(r)) {
     noteRenderFailure("SDL_RenderClear");
   }
@@ -680,17 +675,19 @@ void App::render(double alpha, bool cursorLit) {
   if (touch) {
     table_->drawTouchOverlay(r, layout_, touch_.view(touchContext()));
   }
+  const OverlayArt art = table_->overlayArt();
   if (showPaused && !aboutOpen_ && !entry_) {
     drawPauseMenu(r, layout_,
                   MenuState{.muted = mixer_.muted(),
                             .musicOn = musicOn_,
                             .confirmNewGame = confirmNewGame_,
-                            .afterInterruption = touch ? interrupted_ : !paused_});
+                            .afterInterruption = touch ? interrupted_ : !paused_},
+                  art);
   }
   if (aboutOpen_) {
-    drawAbout(r, highScores_, layout_, aboutPage_);
+    drawAbout(r, highScores_, layout_, aboutPage_, art);
   } else if (entry_) {
-    drawInitialsEntry(r, *entry_, pending_.score, cursorLit, layout_);
+    drawInitialsEntry(r, *entry_, pending_.score, cursorLit, layout_, art);
   }
 
   presented_ = SDL_RenderPresent(r);
