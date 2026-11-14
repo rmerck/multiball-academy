@@ -315,7 +315,7 @@ void testPresets() {
       {"phone-pro", Composition::Stack, 1.910F, 768.0F, 1670.0F, 294.0F},
       {"pad-portrait-11", Composition::Stack, 1.141F, 951.5F, 1362.0F, 120.0F},
       {"phone-max", Composition::Stack, 1.745F, 768.0F, 1669.0F, 309.0F},
-      {"duo-outer", Composition::Stack, 1.935F, 902.0F, 1312.0F, 120.0F},
+      {"duo-outer", Composition::Stack, 2.0373F, 949.4F, 1381.3F, 120.0F},
       {"duo-inner", Composition::Stack, 1.380F, 923.0F, 1312.0F, 120.0F},
       {"pad-portrait", Composition::Stack, 0.992F, 1016.0F, 1356.0F, 120.0F},
       // The deck is what the safe area leaves under the table: the 24 and
@@ -417,12 +417,23 @@ void testStackGeometry() {
     CHECK(near(l.flipperLeftZone.y + l.flipperLeftZone.h, l.canvasHeight));
     checkTouchLayout(l);
   }
-  {  // Insets on one side only: the column is centred in the safe area,
-     // and the zones still reach the edges of the window.
+  {  // Insets on one side only: the column is centred on the screen when
+     // the safe area leaves room, and the zones still reach the edges of
+     // the window.
     const Layout l = touch(900.0F, 1000.0F, 0.0F, 0.0F, 120.0F, 0.0F);
     CHECK(l.composition == Composition::Stack);
-    CHECK(near(l.playfield.x + 384.0F, l.safe.x + l.safe.w * 0.5F, 0.5F));
-    CHECK(l.flipperLeftZone.w > l.flipperRightZone.w);
+    CHECK(near(l.playfield.x + 384.0F, l.canvasWidth * 0.5F, 0.5F));
+    CHECK(l.playfield.x >= l.safe.x);
+    CHECK(near(l.flipperLeftZone.w, l.flipperRightZone.w, 1.0F));
+    checkTouchLayout(l);
+  }
+  {  // Where it does not (the iPhone Duo's outer display, inset on the right
+     // only), as near the centre as the safe area allows: against its far
+     // edge, never past it.
+    const Layout l = computeLayout(findPreset("duo-outer")->surface, Idiom::Touch);
+    CHECK(l.composition == Composition::Stack);
+    CHECK(l.playfield.x + kPlayfieldWidth <= l.safe.x + l.safe.w);
+    CHECK(l.safe.x + l.safe.w - (l.playfield.x + kPlayfieldWidth) < 1.0F);
     checkTouchLayout(l);
   }
 }
