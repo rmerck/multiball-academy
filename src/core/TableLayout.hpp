@@ -326,8 +326,10 @@ inline constexpr std::array<Target, 2> kTargets{{
 }};
 
 // --- Bay doors -------------------------------------------------------------------
-// Three drop targets across the Hangar's mouth. They are one bank: the mouth
-// is either closed or wholly open, never open by one door.
+// Three drop targets across the Hangar's mouth. They are one bank: each
+// reports its own hits, and they drop and come back up together, so the mouth
+// is either closed or wholly open, never open by one door. Standing, they
+// and the Hangar's walls leave no way in.
 inline constexpr float kDoorY = 392.0F;
 inline constexpr std::array<Capsule, 3> kDropTargets{{
     {{247.5F, kDoorY}, {261.0F, kDoorY}, 5.0F},
@@ -335,13 +337,21 @@ inline constexpr std::array<Capsule, 3> kDropTargets{{
     {{297.0F, kDoorY}, {310.5F, kDoorY}, 5.0F},
 }};
 
+// The bank does not come up onto a ball: it waits until no free ball's centre
+// is inside this box in front of and behind the door line.
+inline constexpr Vec2 kDoorMouthCenter{279.0F, kDoorY};
+inline constexpr Vec2 kDoorMouthHalfSize{54.0F, 32.0F};
+
 // --- Rollovers -------------------------------------------------------------------
 // Switches in the playfield that register a ball passing over: the three
 // roll call lanes at the top and the four return lanes at the bottom.
 enum class RolloverGroup : std::uint8_t { TopLane, Inlane, Outlane };
+// Which switch it is: the rules light a lamp for each.
+enum class RolloverId : std::uint8_t { RollCall1, RollCall2, RollCall3, WingW, WingI, WingN, WingG };
 struct Rollover {
   Circle zone;
   RolloverGroup group;
+  RolloverId id;
 };
 inline constexpr float kRolloverRadius = 10.0F;
 inline constexpr float kTopLaneY = 150.0F;
@@ -349,13 +359,13 @@ inline constexpr float kReturnLaneY = 705.0F;
 inline constexpr Vec2 kLeftOutlane{59.0F, kReturnLaneY};
 inline constexpr Vec2 kLeftInlane{107.0F, kReturnLaneY};
 inline constexpr std::array<Rollover, 7> kRollovers{{
-    {{{293.0F, kTopLaneY}, kRolloverRadius}, RolloverGroup::TopLane},
-    {{{355.5F, kTopLaneY}, kRolloverRadius}, RolloverGroup::TopLane},
-    {{{418.0F, kTopLaneY}, kRolloverRadius}, RolloverGroup::TopLane},
-    {{kLeftOutlane, kRolloverRadius}, RolloverGroup::Outlane},
-    {{kLeftInlane, kRolloverRadius}, RolloverGroup::Inlane},
-    {{mirrored(kLeftInlane), kRolloverRadius}, RolloverGroup::Inlane},
-    {{mirrored(kLeftOutlane), kRolloverRadius}, RolloverGroup::Outlane},
+    {{{293.0F, kTopLaneY}, kRolloverRadius}, RolloverGroup::TopLane, RolloverId::RollCall1},
+    {{{355.5F, kTopLaneY}, kRolloverRadius}, RolloverGroup::TopLane, RolloverId::RollCall2},
+    {{{418.0F, kTopLaneY}, kRolloverRadius}, RolloverGroup::TopLane, RolloverId::RollCall3},
+    {{kLeftOutlane, kRolloverRadius}, RolloverGroup::Outlane, RolloverId::WingW},
+    {{kLeftInlane, kRolloverRadius}, RolloverGroup::Inlane, RolloverId::WingI},
+    {{mirrored(kLeftInlane), kRolloverRadius}, RolloverGroup::Inlane, RolloverId::WingN},
+    {{mirrored(kLeftOutlane), kRolloverRadius}, RolloverGroup::Outlane, RolloverId::WingG},
 }};
 // A rollover is a switch across its lane, a strip and not the drawn circle.
 // Its half width is the lane's half width less the ball's edge, so a ball
@@ -393,8 +403,11 @@ inline constexpr std::size_t kHangarHole = 1;
 inline constexpr std::size_t kRunwayHole = 2;
 inline constexpr std::size_t kSkywayHole = 3;
 inline constexpr std::array<Hole, 4> kHoles{{
-    // Briefing room: kicked down to the left flipper from below its flares.
-    {{356.0F, 390.0F}, {19.0F, 30.0F}, HoleType::Scoop, {356.0F, 456.0F}, {-95.0F, 200.0F}},
+    // Briefing room: dropped to the left flipper from below its flares. It is
+    // let go sideways and not thrown down: thrown down at 200 px/s it reached
+    // the bat so fast that the reflex player lost one ball in eleven within
+    // six seconds of it; let fall, one in twenty.
+    {{356.0F, 390.0F}, {19.0F, 30.0F}, HoleType::Scoop, {356.0F, 456.0F}, {-95.0F, 0.0F}},
     // Hangar: lobbed from below the door line to the left inlane.
     {{279.0F, 349.0F}, {27.0F, 23.0F}, HoleType::Hangar, {279.0F, 420.0F}, {-211.0F, -60.0F}},
     // Runway and Skyway: set down at the far end of the rail, above an inlane.
@@ -433,21 +446,114 @@ inline constexpr std::array<Vec2, 9> kSkywayRail = [] {
 [[nodiscard]] constexpr const std::array<Vec2, 9>& rampRail(HoleType type) noexcept {
   return type == HoleType::RampRight ? kSkywayRail : kRunwayRail;
 }
-// The second ball out of the hangar at a multiball start goes to the right flipper.
-inline constexpr Vec2 kHangarEjectRight{160.0F, 150.0F};
-// Where locked balls are shown in the hangar.
-inline constexpr std::array<Vec2, 2> kLockBays{{{258.0F, 334.0F}, {300.0F, 334.0F}}};
+// How long the Briefing room and the Hangar keep a ball before returning
+// it, in seconds. One ball at a time: a second ball that arrives meanwhile
+// is taken too and waits its turn behind the first.
+inline constexpr double kScoopHoldSeconds = 0.9;
+inline constexpr double kHangarHoldSeconds = 0.9;
+[[nodiscard]] constexpr double holdSeconds(HoleType type) noexcept {
+  return isRamp(type) ? kRampRideSeconds
+                      : (type == HoleType::Hangar ? kHangarHoldSeconds : kScoopHoldSeconds);
+}
+// The Briefing room does not kick the ball out the same way twice. Its
+// exit velocity is the hole's, with a whole number of pixels per second
+// added to each part, drawn by the game's own seeded generator: across from
+// -kScoopExitJitterLeft to +kScoopExitJitterRight, down from
+// -kScoopExitJitterDown to +kScoopExitJitterDown. With one fixed kick the
+// ball lands on the same spot of the left flipper every time, and a player
+// with steady timing can then repeat one safe round of shots for ever
+// (left inlane, Briefing room, right flipper, slingshots, Runway, and
+// round again: the reflex player's balls that ran to the 20 minute cap).
+inline constexpr int kScoopExitJitterLeft = 15;
+inline constexpr int kScoopExitJitterRight = 15;
+inline constexpr int kScoopExitJitterDown = 20;
+// A ball that drains this soon after the Briefing room or the Hangar
+// returned it is owed back to the player: the rules are told so.
+inline constexpr double kEjectSaveSeconds = 2.5;
 
-// --- Spinner: a gate across the Turbine lane, counted, never collided with ------------
+// --- The lock: two balls held in view in the Hangar --------------------------------------
+// Where locked balls sit.
+inline constexpr std::array<Vec2, 2> kLockBays{{{258.0F, 334.0F}, {300.0F, 334.0F}}};
+// Balls leave the Hangar one at a time by its exit, at least this far apart.
+inline constexpr double kLockReleaseSpacingSeconds = 0.4;
+// Balls leaving close together go different ways: the first is lobbed to the
+// left inlane (the hole's exit velocity), the next kicked down to the right
+// flipper, the third lobbed left again. A ball follows "close" if it leaves
+// within kHangarBurstSeconds of the one before.
+inline constexpr Vec2 kHangarEjectRight{160.0F, 150.0F};
+inline constexpr double kHangarBurstSeconds = 1.0;
+
+// --- Sensor lines: crossed, never collided with -------------------------------------------
+// A crossing is reported once, with the ball, its speed across the line and
+// the direction: +1 towards the side that is on the left hand when looking
+// from a to b on the screen (y down), -1 the other way. For the two circuit
+// mouths and the spinner, drawn left to right, +1 is up the table; for the
+// top of the arch, drawn downwards, +1 is to the right (the way a ball that
+// went up the left circuit travels).
+enum class SensorId : std::uint8_t { CircuitMouthLeft, CircuitMouthRight, ArchTop, Spinner };
+struct SensorLine {
+  Vec2 a;
+  Vec2 b;
+  SensorId id;
+};
+// The spinner: a gate across the Turbine lane that a passing ball sets
+// spinning. It is counted, never collided with, and does not slow the ball.
 struct Spinner {
   Vec2 a;
   Vec2 b;
 };
 inline constexpr Spinner kSpinner{{396.0F, 415.0F}, {468.0F, 415.0F}};
+inline constexpr std::array<SensorLine, 4> kSensors{{
+    {{88.0F, 440.0F}, {145.0F, 440.0F}, SensorId::CircuitMouthLeft},
+    {mirrored(Vec2{145.0F, 440.0F}), mirrored(Vec2{88.0F, 440.0F}), SensorId::CircuitMouthRight},
+    {{kFieldCenterX, 65.0F}, {kFieldCenterX, 125.0F}, SensorId::ArchTop},
+    {kSpinner.a, kSpinner.b, SensorId::Spinner},
+}};
+inline constexpr std::size_t kSpinnerSensor = 3;
+// A ball crossing the spinner at speed v across it (pixels per second) sets
+// it spinning v / kSpinSpeedPerSpin times, rounded down, at least once and at
+// most kMaxSpinsPerPass. The spins are counted out one every
+// kSpinPayoutSteps steps. A ball crossing while spins are still owed adds
+// its own to them, up to kMaxSpinsOwed owed at once.
+inline constexpr float kSpinSpeedPerSpin = 150.0F;
+inline constexpr int kMaxSpinsPerPass = 12;
+inline constexpr int kMaxSpinsOwed = 24;
+inline constexpr int kSpinPayoutSteps = 6;
+[[nodiscard]] constexpr int spinsFor(float speedAcross) noexcept {
+  // Written so that a speed that is not a number gives one spin.
+  if (!(speedAcross >= 2.0F * kSpinSpeedPerSpin)) {
+    return 1;
+  }
+  if (speedAcross >= static_cast<float>(kMaxSpinsPerPass) * kSpinSpeedPerSpin) {
+    return kMaxSpinsPerPass;
+  }
+  return static_cast<int>(speedAcross / kSpinSpeedPerSpin);
+}
 
 // --- Kickback in the left outlane ------------------------------------------------------
+// When it is armed, a ball whose centre comes inside the zone is taken and
+// the kickback goes out. The ball is not thrown and left to chance: it is
+// carried along kKickbackPath, up the outlane and over the top of the
+// divider, fast at first (about 950 px/s) and slowing to a stop over
+// kKickbackSeconds, and is set down above the left inlane where the Runway's
+// rail sets its balls down, moving down at kKickbackExitVelocity (with the
+// rails' variation, kRampExitJitter). Whatever speed the ball arrived with,
+// it comes back the same way, to the left flipper. The path starts from
+// where the ball was taken and joins the table at its second point.
+// The set-down speed is the one the reflex player loses fewest balls from
+// (measured from 0 to 300 px/s: about 1 percent lost within three seconds
+// at 150, about 2 percent at the rails' 80).
 inline constexpr Circle kKickbackZone{{59.0F, 740.0F}, 12.0F};
-inline constexpr Vec2 kKickbackVelocity{0.0F, -900.0F};
+inline constexpr std::array<Vec2, 6> kKickbackPath{{
+    {59.0F, 740.0F},
+    {59.0F, 630.0F},
+    {68.0F, 604.0F},
+    {90.0F, 600.0F},
+    {107.0F, 628.0F},
+    kHoles[kRunwayHole].exitPosition,
+}};
+inline constexpr double kKickbackSeconds = 0.5;
+inline constexpr Vec2 kKickbackExitVelocity{0.0F, 150.0F};
 
 // --- Lamps -----------------------------------------------------------------------------
 // Positions are centres. Drawn sizes: shot arrows kArrowLampLength long,
@@ -513,7 +619,7 @@ inline constexpr std::array<Lamp, 29> kLamps{{
     {LampId::ExtraBall, {378.0F, 498.0F}},
     {LampId::Overdrive, {430.0F, 488.0F}},
     {LampId::TurboCharge, {452.0F, 444.0F}},
-    {LampId::Kickback, {59.0F, 672.0F}},
+    {LampId::Kickback, {59.0F, 662.0F}},
     {LampId::ShootAgain, {355.5F, 930.0F}},
     {LampId::RollCall1, {293.0F, 150.0F}},
     {LampId::RollCall2, {355.5F, 150.0F}},
@@ -542,6 +648,8 @@ enum class ElementKind : std::uint8_t {
   Rollover,
   Hole,
   DropTarget,
+  Sensor,
+  Kickback,
 };
 struct ElementRef {
   ElementKind kind = ElementKind::None;
@@ -566,6 +674,10 @@ struct ElementRef {
       return kHoles.size();
     case DropTarget:
       return kDropTargets.size();
+    case Sensor:
+      return kSensors.size();
+    case Kickback:
+      return 1;
     case None:
       break;
   }

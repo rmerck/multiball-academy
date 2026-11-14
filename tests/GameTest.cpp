@@ -621,9 +621,9 @@ void testSeveralBalls() {
     }
   }
 
-  {  // Three balls into one hole. Each is scored as it arrives and held its
-     // own 0.9 s; they leave one at a time, 0.3 s apart, and of two that are
-     // both waiting the lower id goes first.
+  {  // Three balls into one hole. Each is scored as it arrives; the scoop
+     // holds one at a time, so they leave a full hold apart, in the order
+     // they came.
     Game game;
     const InputState input;
     const std::size_t hole = holeOfType(table::HoleType::Scoop);
@@ -670,10 +670,12 @@ void testSeveralBalls() {
     CHECK(sound);
     CHECK(game.holeCount(hole) == 3);
     CHECK(captured[2] == 0 && captured[1] == 5 && captured[0] == 10);
-    // 0.9 s is 108 steps, 0.3 s is 36.
+    // 0.9 s is 108 steps. The scoop holds one ball at a time: the others
+    // wait behind the first, and each one's hold starts when the ball ahead
+    // of it has left. They leave in the order they came.
     CHECK(released[2] == captured[2] + 107);
-    CHECK(released[0] >= released[2] + 36 && released[0] <= released[2] + 37);
-    CHECK(released[1] >= released[0] + 36 && released[1] <= released[0] + 37);
+    CHECK(released[1] == released[2] + 108);
+    CHECK(released[0] == released[1] + 108);
     CHECK(deepest <= 2.0F);
   }
 

@@ -12,6 +12,7 @@ void runSuites() {
   testArgs();
   testAssetName();
   testBumpers();
+  testElements();
   testFixedTimestep();
   testFlippers();
   testFormat();

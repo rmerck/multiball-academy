@@ -7,6 +7,7 @@ void testAcceptance();
 void testArgs();
 void testAssetName();
 void testBumpers();
+void testElements();
 void testFixedTimestep();
 void testFlippers();
 void testFormat();

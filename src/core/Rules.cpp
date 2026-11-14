@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <utility>
 
 namespace pinball {
 
@@ -31,6 +32,14 @@ void Rules::startGame() noexcept {
   gameOver_ = false;
   sounds_ = 0;
   ballInPlay_ = false;
+  // The bank stands, nothing is locked, the kickback is lit.
+  doorMarked_.fill(false);
+  doorCommand_ = DoorCommand::Raise;
+  doorRaiseSteps_ = 0;
+  lockLit_ = false;
+  locksHeld_ = 0;
+  kickbackLit_ = true;
+  wingLit_.fill(false);
   resetBall();
   say("LAUNCH THE BALL");
 }
@@ -80,8 +89,22 @@ void Rules::onTarget(std::size_t index) noexcept {
 }
 
 void Rules::onDropTarget(std::size_t index) noexcept {
-  if (index < table::kDropTargets.size()) {
-    award(points::kBayDoor);
+  if (index >= table::kDropTargets.size() || gameOver_ || tilted_) {
+    return;
+  }
+  if (doorMarked_[index]) {
+    award(points::kBayDoorAgain);
+    return;
+  }
+  award(points::kBayDoor);
+  doorMarked_[index] = true;
+  if (std::ranges::all_of(doorMarked_, [](bool marked) { return marked; })) {
+    // All three: the bank drops as one.
+    award(points::kBayDoorsOpen);
+    doorCommand_ = DoorCommand::Drop;
+    doorRaiseSteps_ = 0;
+    lockLit_ = locksEnabled_;
+    say(lockLit_ ? display::Message("LOCK IS LIT") : display::Message("BAY DOORS OPEN"));
   }
 }
 
@@ -89,13 +112,23 @@ void Rules::onRollover(std::size_t index) noexcept {
   if (index >= table::kRollovers.size()) {
     return;
   }
-  award(table::kRollovers[index].group == table::RolloverGroup::TopLane ? points::kRollCallLane
-                                                                        : points::kReturnLane);
+  const table::Rollover& rollover = table::kRollovers[index];
+  award(rollover.group == table::RolloverGroup::TopLane ? points::kRollCallLane
+                                                        : points::kReturnLane);
+  if (rollover.id >= table::RolloverId::WingW && !gameOver_ && !tilted_) {
+    // The four return lanes together relight the kickback.
+    wingLit_[std::to_underlying(rollover.id) - std::to_underlying(table::RolloverId::WingW)] =
+        true;
+    if (std::ranges::all_of(wingLit_, [](bool lit) { return lit; })) {
+      wingLit_.fill(false);
+      kickbackLit_ = true;
+    }
+  }
 }
 
-void Rules::onHole(std::size_t index) noexcept {
+Rules::HoleResult Rules::onHole(std::size_t index) noexcept {
   if (index >= table::kHoles.size() || gameOver_ || tilted_) {
-    return;
+    return HoleResult::Eject;
   }
   switch (table::kHoles[index].type) {
     using enum table::HoleType;
@@ -105,8 +138,23 @@ void Rules::onHole(std::size_t index) noexcept {
       break;
     case Hangar:
       award(points::kHangar);
-      say("HANGAR");
-      break;
+      if (!lockLit_ || !locksEnabled_) {
+        say("HANGAR");
+        break;
+      }
+      if (locksHeld_ < static_cast<int>(table::kLockBays.size())) {
+        ++locksHeld_;
+        say(locksHeld_ == 1 ? display::Message("BALL 1 LOCKED")
+                            : display::Message("BALL 2 LOCKED"));
+        return HoleResult::Lock;
+      }
+      // The third ball in: all three go, and the doors come back up.
+      locksHeld_ = 0;
+      lockLit_ = false;
+      doorMarked_.fill(false);
+      doorCommand_ = DoorCommand::Raise;
+      say("MULTIBALL");
+      return HoleResult::StartMultiball;
     case RampLeft:
       award(points::kRamp);
       say("RUNWAY");
@@ -116,6 +164,58 @@ void Rules::onHole(std::size_t index) noexcept {
       say("SKYWAY");
       break;
   }
+  return HoleResult::Eject;
+}
+
+void Rules::onEject(std::size_t index) noexcept {
+  if (index >= table::kHoles.size() || table::kHoles[index].type != table::HoleType::Hangar) {
+    return;
+  }
+  // A ball came back out of the Hangar with no lock lit: shut it again.
+  if (!lockLit_) {
+    doorRaiseSteps_ = stepsFor(kDoorRaiseSeconds);
+  }
+}
+
+void Rules::onSensor(std::size_t index, int direction, float speed) noexcept {
+  // Nothing scores on a line yet: circuits and the Turbine's shot are for
+  // the table's own rules. The spinner's turns arrive through onSpin().
+  static_cast<void>(index);
+  static_cast<void>(direction);
+  static_cast<void>(speed);
+}
+
+void Rules::onSpin() noexcept { award(points::kSpin); }
+
+void Rules::onKickback() noexcept {
+  kickbackLit_ = false;
+  award(points::kKickback);
+  say("KICKBACK");
+}
+
+void Rules::onBallLocked(std::size_t bay, bool served) noexcept {
+  static_cast<void>(bay);
+  if (served && !gameOver_) {
+    // The player has a new ball to launch.
+    ballInPlay_ = false;
+  }
+}
+
+void Rules::onLockReleased(std::size_t bay) noexcept { static_cast<void>(bay); }
+
+void Rules::onDoorBank(bool up) noexcept {
+  if (up) {
+    doorMarked_.fill(false);
+  }
+}
+
+bool Rules::onBallLost(const DrainInfo& info) noexcept {
+  if (gameOver_ || tilted_ || !info.afterEject) {
+    return false;
+  }
+  say("BALL SAVED");
+  cue(Sound::BallSaved);
+  return true;
 }
 
 void Rules::onBallInPlay() noexcept {
@@ -140,7 +240,7 @@ void Rules::onBallReturned() noexcept {
   say("BALL SAVED");
 }
 
-Rules::DrainResult Rules::onDrain() noexcept {
+Rules::DrainResult Rules::onDrain(const DrainInfo& info) noexcept {
   ballInPlay_ = false;
   if (gameOver_) {
     return DrainResult::GameOver;
@@ -149,6 +249,12 @@ Rules::DrainResult Rules::onDrain() noexcept {
   const bool wasTilted = tilted_;
   tilted_ = false;
   tiltHeat_ = 0.0;
+  if (info.afterEject && !wasTilted) {
+    // The short save after an eject. It does not use up the ball save.
+    say("BALL SAVED");
+    cue(Sound::BallSaved);
+    return DrainResult::BallSaved;
+  }
   if (ballSaveSteps_ > 0 && !wasTilted) {
     ballSaveSteps_ = 0;
     ballSaveUsed_ = true;
@@ -160,6 +266,9 @@ Rules::DrainResult Rules::onDrain() noexcept {
 
   if (ball_ >= kBallsPerGame) {
     gameOver_ = true;
+    // The bays are emptied (Game does that) and the lock is off.
+    lockLit_ = false;
+    locksHeld_ = 0;
     // No word on how to start again: that depends on the device (a key, a
     // button, a tap), so the platform draws the prompt.
     say(kGameOverMessage);
@@ -201,6 +310,9 @@ void Rules::tick() noexcept {
   }
   if (!tilted_) {
     tiltHeat_ = std::max(0.0, tiltHeat_ - stepSeconds_ / kTiltCoolSeconds);
+  }
+  if (doorRaiseSteps_ > 0 && --doorRaiseSteps_ == 0) {
+    doorCommand_ = DoorCommand::Raise;
   }
   if (messageSteps_ > 0 && --messageSteps_ == 0 && !gameOver_ && !tilted_) {
     message_ = {};

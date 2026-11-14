@@ -5,6 +5,7 @@
 #include <memory>
 #include <span>
 
+#include "GameTestAccess.hpp"
 #include "bots/Bots.hpp"
 #include "core/Game.hpp"
 #include "core/TableLayout.hpp"
@@ -429,9 +430,13 @@ void setUpFeed(TableHarness& harness, const Feed& feed, bool rightSide, int vari
 
 // One go: the scripted bot presses at step pressStep after the feed is set
 // up (never, for a dry run).
-Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep) {
+Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bool bankDown) {
   const bool dry = pressStep < 0;
   TableHarness harness;
+  if (bankDown) {
+    harness.setLocks(false);
+    GameTestAccess::dropDoorBank(harness.game());
+  }
   setUpFeed(harness, feed, rightSide, variant);
   const std::size_t flipper = rightSide ? table::kRightFlipperIndex : table::kLeftFlipperIndex;
   ScriptedBot bot(flipper, pressStep);
@@ -492,13 +497,13 @@ char touchChar(Touch touch) noexcept {
   return index < sizeof(kChars) - 1 ? kChars[index] : '?';
 }
 
-ShotMap shotSweep(int variants) {
+ShotMap shotSweep(int variants, bool bankDown) {
   ShotMap map;
   for (int variant = 0; variant < std::max(variants, 1); ++variant) {
     for (int side = 0; side < 2; ++side) {
       for (std::size_t f = 0; f < kFeeds.size(); ++f) {
         const Feed& feed = kFeeds[f];
-        const Attempt dry = attempt(feed, side == 1, variant, -1);
+        const Attempt dry = attempt(feed, side == 1, variant, -1, bankDown);
         if (dry.contactFirst < 0) {
           continue;  // Never reaches the flipper.
         }
@@ -509,7 +514,7 @@ ShotMap shotSweep(int variants) {
         Touch previous = Touch::Count;
         int run = 0;
         for (int k = first; k <= last; ++k) {
-          const Attempt made = attempt(feed, side == 1, variant, k);
+          const Attempt made = attempt(feed, side == 1, variant, k, bankDown);
           Touch shot = made.shot;
           ShotWindow& window = map.shots[static_cast<std::size_t>(shot)];
           ++window.firstHits;
@@ -606,18 +611,13 @@ LaneResult rampAt(bool rightSide, int speed) {
   return result;
 }
 
-ExitResult exitOf(std::size_t hole, int releases) {
+ExitResult exitAt(Vec2 position, Vec2 velocity, int releases) {
   ExitResult result;
-  if (hole >= table::kHoles.size()) {
-    return result;
-  }
-  const table::Hole& from = table::kHoles[hole];
   for (int j = 0; j < releases; ++j) {
     TableHarness harness;
     const float jx = (static_cast<float>(j % 20) - 9.5F) * 0.05F;
     const float jv = (static_cast<float>(j / 20 % 10) - 4.5F) * 2.0F;
-    harness.put(0, {from.exitPosition.x + jx, from.exitPosition.y},
-                {from.exitVelocity.x + jv, from.exitVelocity.y}, true);
+    harness.put(0, {position.x + jx, position.y}, {velocity.x + jv, velocity.y}, true);
     const FirstTouch touch = firstTouch(harness, kStepsPerSecond * 10);
     ++result.releases;
     ++result.first[static_cast<std::size_t>(touch.touch)];
@@ -629,35 +629,349 @@ ExitResult exitOf(std::size_t hole, int releases) {
   return result;
 }
 
-ExitResult kickbackAt(int speed, int kicks) {
+ExitResult scoopKicks(int releases) {
   ExitResult result;
-  for (int j = 0; j < kicks; ++j) {
+  const table::Hole& scoop = table::kHoles[table::kScoopHole];
+  const int across = table::kScoopExitJitterLeft + table::kScoopExitJitterRight + 1;
+  const int along = 2 * table::kScoopExitJitterDown + 1;
+  for (int j = 0; j < releases; ++j) {
     TableHarness harness;
-    const float x = table::kKickbackZone.center.x - 6.0F + static_cast<float>(j % 6) * 2.5F;
-    const float vx = (static_cast<float>(j / 6 % 10) - 4.5F) * 6.0F;
-    harness.put(0, {x, table::kKickbackZone.center.y + 2.0F}, {vx, -static_cast<float>(speed)},
+    // Every corner of the range, then through it both ways at once.
+    const int ix = j < 4 ? (j % 2) * (across - 1) : (j * 7) % across;
+    const int iy = j < 4 ? (j / 2) * (along - 1) : (j * 11) % along;
+    harness.put(0, scoop.exitPosition,
+                {scoop.exitVelocity.x + static_cast<float>(ix - table::kScoopExitJitterLeft),
+                 scoop.exitVelocity.y + static_cast<float>(iy - table::kScoopExitJitterDown)},
                 true);
-    // The outlane's own switch is passed on the way up; it is not a touch.
-    for (int i = 0; i < 20; ++i) {
-      harness.advance();
+    const FirstTouch touch = firstTouch(harness, kStepsPerSecond * 10);
+    ++result.releases;
+    ++result.first[static_cast<std::size_t>(touch.touch)];
+    result.safe += touch.touch == Touch::Flipper || touch.touch == Touch::InlaneLeft ||
+                           touch.touch == Touch::InlaneRight
+                       ? 1
+                       : 0;
+  }
+  return result;
+}
+
+ExitResult exitOf(std::size_t hole, int releases) {
+  if (hole >= table::kHoles.size()) {
+    return {};
+  }
+  const table::Hole& from = table::kHoles[hole];
+  return exitAt(from.exitPosition, from.exitVelocity, releases);
+}
+
+namespace {
+
+// Follows every ball that the game returns from a hole to the first thing
+// it meets: per ball, since several are on the table.
+struct Followed {
+  bool following = false;
+  bool decided = false;
+  Touch first = Touch::None;
+  std::uint64_t flipperStepAtStart = 0;
+  // Another ball struck it before it had met anything.
+  bool struck = false;
+};
+
+// Sends the ball in a slot up the middle of the open Hangar.
+void shootHangar(TableHarness& harness, std::size_t slot, float dx, float speed) {
+  harness.put(slot, {279.0F + dx, 440.0F}, {0.0F, -speed}, true);
+}
+
+std::size_t freeSlot(const TableHarness& harness) {
+  for (std::size_t slot = 0; slot < table::kMaxBalls; ++slot) {
+    if (harness.live(slot) && !harness.held(slot)) {
+      return slot;
     }
-    std::erase_if(harness.events,
-                  [](const TouchEvent& event) { return event.touch == Touch::OutlaneLeft; });
-    Touch first = Touch::None;
-    for (const TouchEvent& event : harness.events) {
-      if (!isPassedThrough(event.touch)) {
-        first = event.touch;
+  }
+  return table::kMaxBalls;
+}
+
+}  // namespace
+
+LockBurstResult lockBursts(int bursts) {
+  LockBurstResult result;
+  const int spacing = static_cast<int>(table::kLockReleaseSpacingSeconds * kStepsPerSecond + 0.5);
+  for (int j = 0; j < bursts; ++j) {
+    TableHarness harness;
+    Game& game = harness.game();
+    harness.kickbackOff = true;
+    harness.advance();
+    // Open the Hangar with the lock lit, as three door hits do.
+    for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
+      GameTestAccess::rules(game).onDropTarget(door);
+    }
+    harness.advance();
+    const float dx = (static_cast<float>(j % 9) - 4.0F) * 3.0F;
+    const float speed = 700.0F + static_cast<float>(j % 7) * 250.0F;
+    // Two locks, then the third ball in.
+    bool ready = true;
+    for (int n = 0; n < 3 && ready; ++n) {
+      const std::size_t slot = freeSlot(harness);
+      ready = slot < table::kMaxBalls;
+      if (!ready) {
+        break;
+      }
+      shootHangar(harness, slot, dx, speed);
+      for (int i = 0; i < kStepsPerSecond && !harness.held(slot); ++i) {
+        harness.advance();
+      }
+      ready = harness.held(slot);
+      // A different wait before the next each time.
+      for (int i = 0; i < (n < 2 ? 10 + j % 50 : 0); ++i) {
+        harness.advance();
+      }
+    }
+    if (!ready || game.lockedBalls() != 2) {
+      continue;
+    }
+    ++result.bursts;
+    harness.events.clear();
+    std::array<Followed, table::kMaxBalls> followed{};
+    std::array<std::size_t, 3> order{table::kMaxBalls, table::kMaxBalls, table::kMaxBalls};
+    std::array<int, 3> leftAt{};
+    std::size_t left = 0;
+    // The bays' balls, by bay, before they go.
+    std::array<std::size_t, 2> inBay{table::kMaxBalls, table::kMaxBalls};
+    for (const BallView& view : game.balls()) {
+      for (std::size_t bay = 0; bay < table::kLockBays.size(); ++bay) {
+        if (view.locked && view.position.x == table::kLockBays[bay].x) {
+          inBay[bay] = view.id;
+        }
+      }
+    }
+    const std::size_t arriving = 3U - inBay[0] - inBay[1];
+    const std::uint64_t astrayBefore = harness.lockedAstray;
+    for (int i = 0; i < kStepsPerSecond * 12; ++i) {
+      const std::size_t eventsBefore = harness.events.size();
+      harness.advance();
+      for (const GameEvent& event : game.gameEvents()) {
+        if (event.type != GameEvent::Type::HoleEject || left >= order.size()) {
+          continue;
+        }
+        const std::size_t slot = event.ball;
+        order[left] = slot;
+        leftAt[left] = i;
+        ++left;
+        // A little off the exact release, as a real kick is.
+        const int k = j * 3 + static_cast<int>(left);
+        const Vec2 jitterPosition{(static_cast<float>(k % 20) - 9.5F) * 0.05F, 0.0F};
+        const Vec2 jitterVelocity{(static_cast<float>(k / 20 % 10) - 4.5F) * 2.0F, 0.0F};
+        GameTestAccess::placeBall(game, slot, harness.position(slot) + jitterPosition,
+                                  harness.velocity(slot) + jitterVelocity);
+        followed[slot] = {true, false, Touch::None, harness.lastFlipperStep(slot)};
+      }
+      for (const PhysicsEvent& event : game.events()) {
+        if (event.type == PhysicsEvent::Type::BallHit &&
+            (!followed[event.ball].decided || !followed[event.otherBall].decided)) {
+          ++result.ballHits;
+        }
+      }
+      for (const TouchEvent& event : std::span(harness.events).subspan(eventsBefore)) {
+        Followed& ball = followed[event.ball];
+        if (ball.following && !ball.decided && !isPassedThrough(event.touch)) {
+          ball.decided = true;
+          ball.first = event.touch;
+        }
+      }
+      for (std::size_t slot = 0; slot < table::kMaxBalls; ++slot) {
+        Followed& ball = followed[slot];
+        if (ball.following && !ball.decided &&
+            harness.lastFlipperStep(slot) != ball.flipperStepAtStart) {
+          ball.decided = true;
+          ball.first = Touch::Flipper;
+        }
+        if (ball.following && !ball.decided && !harness.live(slot)) {
+          ball.decided = true;
+          ball.first = Touch::DrainCentre;
+        }
+      }
+      if (harness.events.size() > 4096) {
+        harness.events.clear();
+      }
+    }
+    result.heldMoved += static_cast<int>(harness.lockedAstray - astrayBefore);
+    result.released += static_cast<int>(left);
+    if (left != 3 || order[0] != arriving || order[1] != inBay[0] || order[2] != inBay[1]) {
+      ++result.outOfOrder;
+    }
+    for (std::size_t n = 1; n < left; ++n) {
+      result.badSpacing += leftAt[n] - leftAt[n - 1] == spacing ? 0 : 1;
+    }
+    for (std::size_t n = 0; n < left; ++n) {
+      const Touch first = followed[order[n]].first;
+      ++result.first[static_cast<std::size_t>(first)];
+      result.safe +=
+          first == Touch::Flipper || first == Touch::InlaneLeft || first == Touch::InlaneRight ? 1
+                                                                                               : 0;
+    }
+  }
+  return result;
+}
+
+ScoopPairResult scoopPairs(int pairs) {
+  ScoopPairResult result;
+  const table::Hole& scoop = table::kHoles[table::kScoopHole];
+  const int hold = static_cast<int>(table::kScoopHoldSeconds * kStepsPerSecond + 0.5);
+  for (int j = 0; j < pairs; ++j) {
+    TableHarness harness;
+    Game& game = harness.game();
+    harness.kickbackOff = true;
+    harness.advance();
+    const float dx = (static_cast<float>(j % 5) - 2.0F) * 3.0F;
+    harness.put(0, {scoop.center.x + dx, 440.0F},
+                {0.0F, -700.0F - static_cast<float>(j % 4) * 300.0F}, true);
+    // The second follows the first by anything from nothing to past the
+    // moment the first comes out.
+    const int gap = (j * 7) % (hold + 30);
+    std::size_t second = table::kMaxBalls;
+    std::array<Followed, table::kMaxBalls> followed{};
+    std::array<int, 2> outAt{-1, -1};
+    std::size_t out = 0;
+    int overlapRun = 0;
+    for (int i = 0; i < kStepsPerSecond * 10; ++i) {
+      if (i == gap) {
+        second = harness.add({scoop.center.x - dx, 470.0F}, {0.0F, -900.0F});
+      }
+      const std::size_t eventsBefore = harness.events.size();
+      harness.advance();
+      for (const GameEvent& event : game.gameEvents()) {
+        if (event.type == GameEvent::Type::HoleEject && event.index == table::kScoopHole &&
+            out < outAt.size()) {
+          outAt[out++] = i;
+          followed[event.ball] = {true, false, Touch::None, harness.lastFlipperStep(event.ball)};
+        }
+      }
+      for (const PhysicsEvent& event : game.events()) {
+        if (event.type == PhysicsEvent::Type::BallHit) {
+          for (const std::size_t slot : {std::size_t{event.ball}, std::size_t{event.otherBall}}) {
+            followed[slot].struck = followed[slot].struck ||
+                                    (followed[slot].following && !followed[slot].decided);
+          }
+        }
+      }
+      for (const TouchEvent& event : std::span(harness.events).subspan(eventsBefore)) {
+        Followed& ball = followed[event.ball];
+        if (ball.following && !ball.decided && !isPassedThrough(event.touch)) {
+          ball.decided = true;
+          ball.first = event.touch;
+        }
+      }
+      for (std::size_t slot = 0; slot < table::kMaxBalls; ++slot) {
+        Followed& ball = followed[slot];
+        if (ball.following && !ball.decided &&
+            harness.lastFlipperStep(slot) != ball.flipperStepAtStart) {
+          ball.decided = true;
+          ball.first = Touch::Flipper;
+        }
+      }
+      bool overlap = false;
+      if (second < table::kMaxBalls && harness.live(0) && harness.live(second) &&
+          !harness.held(0) && !harness.held(second)) {
+        const Vec2 d = harness.position(0) - harness.position(second);
+        constexpr float kDeepest = 2.0F * table::kBallRadius - 2.0F;
+        overlap = d.x * d.x + d.y * d.y < kDeepest * kDeepest;
+      }
+      overlapRun = overlap ? overlapRun + 1 : 0;
+      result.longestOverlap = std::max(result.longestOverlap, overlapRun);
+      if (out == 2 && followed[0].decided && followed[1].decided) {
+        break;
+      }
+      if (out == 1 && harness.holeHits[table::kScoopHole] == 1 && i > gap + 3 * kStepsPerSecond) {
+        break;  // The second never got in.
+      }
+    }
+    if (harness.holeHits[table::kScoopHole] < 2) {
+      // It met the first ball coming out, as any ball in play may.
+      ++result.turnedAway;
+    } else {
+      ++result.pairs;
+      result.bothOut += out == 2 ? 1 : 0;
+      result.tooClose += out == 2 && outAt[1] - outAt[0] < hold ? 1 : 0;
+    }
+    for (const Followed& ball : followed) {
+      const bool safe = ball.decided &&
+                        (ball.first == Touch::Flipper || ball.first == Touch::InlaneLeft ||
+                         ball.first == Touch::InlaneRight);
+      if (ball.struck && !safe) {
+        // The other ball ran into it on its way down and knocked it
+        // elsewhere: that says nothing about the kick.
+        result.struck += ball.following ? 1 : 0;
+        continue;
+      }
+      result.returned += ball.following ? 1 : 0;
+      result.safe += safe ? 1 : 0;
+    }
+  }
+  return result;
+}
+
+KickbackResult kickbackSweep(int balls) {
+  KickbackResult result;
+  for (int j = 0; j < balls; ++j) {
+    TableHarness harness;
+    harness.lightKickback();
+    harness.advance();
+    // Down the outlane from above its switch, or thrown in under the
+    // pocket's roof from the circuit lane's foot, at every speed.
+    const float x = 52.0F + static_cast<float>(j % 8) * 2.0F;
+    const float speed = static_cast<float>(j / 8 % 15) * 200.0F;
+    const float vx = (static_cast<float>(j / 120 % 5) - 2.0F) * 50.0F;
+    if (j % 3 == 2) {
+      harness.put(0, {92.0F, 585.0F}, {-180.0F - vx, 60.0F + speed * 0.3F}, true);
+    } else {
+      harness.put(0, {x, 660.0F}, {vx, speed}, true);
+    }
+    // Followed until the kickback has set it down and it has met something,
+    // or it has left the table.
+    Touch drain = Touch::None;
+    for (int i = 0; i < kStepsPerSecond * 8 && drain == Touch::None; ++i) {
+      drain = harness.advance();
+      if (harness.kickbackReturns > 0 && harness.kickbackSafe > 0) {
         break;
       }
     }
-    if (first == Touch::None) {
-      first = firstTouch(harness, kStepsPerSecond * 6).touch;
+    // Only a ball that went down the left outlane is part of this.
+    if (harness.count[static_cast<std::size_t>(Touch::OutlaneLeft)] == 0) {
+      continue;
     }
-    ++result.releases;
-    ++result.first[static_cast<std::size_t>(first)];
-    result.safe +=
-        first == Touch::Flipper || first == Touch::InlaneLeft || first == Touch::InlaneRight ? 1
-                                                                                             : 0;
+    ++result.balls;
+    result.fired += harness.kickbacks > 0 ? 1 : 0;
+    result.returned += harness.kickbackReturns > 0 ? 1 : 0;
+    result.safe += harness.kickbackSafe > 0 ? 1 : 0;
+    result.lostByOutlane += harness.kickbacks == 0 ? 1 : 0;
+  }
+  return result;
+}
+
+KickbackPlayResult kickbackUnderBot(int reflexError, int balls) {
+  KickbackPlayResult result;
+  for (int j = 0; j < balls; ++j) {
+    TableHarness harness;
+    harness.setLocks(false);
+    harness.lightKickback();
+    harness.advance();
+    ReflexBot bot(4000U + static_cast<std::uint64_t>(j), reflexError);
+    harness.put(0, {53.0F + static_cast<float>(j % 13), 660.0F},
+                {0.0F, 100.0F + static_cast<float>(j % 7) * 100.0F}, true);
+    // Until it is set down, then three seconds of play.
+    int since = -1;
+    for (int i = 0; i < kStepsPerSecond * 6 && since < kStepsPerSecond * 3; ++i) {
+      harness.act(bot);
+      const Touch drain = harness.advance();
+      if (since < 0 && harness.kickbackReturns > 0) {
+        since = 0;
+        ++result.kicks;
+      } else if (since >= 0) {
+        ++since;
+      }
+      if (drain != Touch::None) {
+        result.lostAgain += since >= 0 ? 1 : 0;
+        break;
+      }
+    }
   }
   return result;
 }
@@ -711,6 +1025,8 @@ WedgeResult inlaneWedge(int stride) {
               continue;
             }
             TableHarness harness;
+            // The lanes as they are, with no kickback to take a ball away.
+            harness.kickbackOff = true;
             // The outer ball against the divider's side of the lane and the
             // inner one beside it, a little apart, level or one a little ahead.
             const Vec2 outer{100.0F + static_cast<float>(ix) * 1.5F, startY};
@@ -768,6 +1084,9 @@ double SoakResult::drainShare(std::size_t way) const {
 SoakResult soak(const SoakOptions& options) {
   SoakResult result;
   TableHarness harness;
+  // One ball at a time: the Hangar returns the ball, it does not lock it.
+  harness.setLocks(false);
+  harness.kickbackOff = !options.kickback;
   const std::unique_ptr<Bot> bot = makeBot(options.bot, options.seed, options.reflexError);
   Rng rng(options.seed ^ 0xABCDEFULL);
   const auto advance = [&harness, &result] {
@@ -787,6 +1106,9 @@ SoakResult soak(const SoakOptions& options) {
     // The game has a ball on the plunger: at the start, and after every drain.
     harness.left = false;
     harness.right = false;
+    if (options.kickback) {
+      harness.lightKickback();
+    }
     for (int i = 0; i < 20; ++i) {
       advance();
     }
@@ -805,12 +1127,6 @@ SoakResult soak(const SoakOptions& options) {
         harness.right = false;
       }
       const Touch drain = advance();
-      if (start != kNotStarted) {
-        // Since the later of entering play and the last flipper contact.
-        const std::uint64_t flipper = harness.lastFlipperStep(0);
-        const std::uint64_t since = flipper > start ? flipper - 1 : start;
-        result.longestNoFlipper = std::max(result.longestNoFlipper, harness.step() - since);
-      }
       const double played = start == kNotStarted
                                 ? 0.0
                                 : static_cast<double>(harness.step() - start) / kStepsPerSecond;
@@ -872,6 +1188,17 @@ SoakResult soak(const SoakOptions& options) {
   result.circuitEntered = harness.circuitEntered;
   result.circuitTop = harness.circuitTop;
   result.circuitDone = harness.circuitDone;
+  result.longestNoFlipper = harness.longestNoFlipper;
+  result.hangarEntries = harness.hangarEntries;
+  result.hangarEntriesDoorsUp = harness.hangarEntriesDoorsUp;
+  result.bankDrops = harness.bankDrops;
+  result.bankRaises = harness.bankRaises;
+  result.spins = harness.spins;
+  result.kickbacks = harness.kickbacks;
+  result.kickbackReturns = harness.kickbackReturns;
+  result.kickbackSafe = harness.kickbackSafe;
+  result.kickbackLostAgain = harness.kickbackLostAgain;
+  result.ejectSaves = harness.ejectSaves;
   return result;
 }
 
@@ -951,6 +1278,19 @@ StressResult stress(const StressOptions& options) {
   result.laneIntrusions = harness.laneIntrusions;
   result.lostBalls = harness.lostBalls;
   result.overSpeed = harness.overSpeed;
+  result.hangarEntries = harness.hangarEntries;
+  result.hangarEntriesDoorsUp = harness.hangarEntriesDoorsUp;
+  result.bankDrops = harness.bankDrops;
+  result.bankRaises = harness.bankRaises;
+  result.locks = harness.locks;
+  result.lockReleases = harness.lockReleases;
+  result.locksEmptied = harness.locksEmptied;
+  result.lockedAstray = harness.lockedAstray;
+  result.spins = harness.spins;
+  result.kickbacks = harness.kickbacks;
+  result.kickbackReturns = harness.kickbackReturns;
+  result.kickbackSafe = harness.kickbackSafe;
+  result.kickbackLostAgain = harness.kickbackLostAgain;
   return result;
 }
 

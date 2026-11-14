@@ -98,8 +98,43 @@ class TableHarness {
   std::array<std::uint64_t, 2> circuitEntered{};
   std::array<std::uint64_t, 2> circuitTop{};
   std::array<std::uint64_t, 2> circuitDone{};
+  // Hangar: entries, and of those the ones made while the door bank stood
+  // (there must be none); times the bank dropped and came back up.
+  std::uint64_t hangarEntries = 0;
+  std::uint64_t hangarEntriesDoorsUp = 0;
+  std::uint64_t bankDrops = 0;
+  std::uint64_t bankRaises = 0;
+  // Balls locked and let go again, and steps on which a locked ball was not
+  // exactly in its bay.
+  std::uint64_t locks = 0;
+  std::uint64_t lockReleases = 0;
+  // Locked balls taken out of their bays when a game ended.
+  std::uint64_t locksEmptied = 0;
+  std::uint64_t lockedAstray = 0;
+  // Spinner turns counted.
+  std::uint64_t spins = 0;
+  // Kickback: times it took a ball; times it set one down; of those, the
+  // ones whose next touch was the left inlane's switch or a flipper, and
+  // the ones that drained within three seconds of being set down.
+  std::uint64_t kickbacks = 0;
+  std::uint64_t kickbackReturns = 0;
+  std::uint64_t kickbackSafe = 0;
+  std::uint64_t kickbackLostAgain = 0;
+  // Balls that drained within the short save after an eject.
+  std::uint64_t ejectSaves = 0;
+  // Keeps the kickback out, whatever the rules say (the table "before the
+  // kickback"). Applied before every step.
+  bool kickbackOff = false;
+  // Lights the kickback now.
+  void lightKickback();
+  // Whether the Hangar may lock balls (the provisional rules' switch).
+  void setLocks(bool enabled);
   // Steps on which a ball was against a flipper.
   std::uint64_t flipperTouches = 0;
+  // The longest any free ball in play went without being against a flipper,
+  // in steps, counted from the later of its entering play and its last
+  // flipper contact, and while it was on the table (not as it left).
+  std::uint64_t longestNoFlipper = 0;
   // Drains of every ball, by way out: centre, left outlane, right outlane.
   std::array<std::uint64_t, 3> drains{};
   // Balls that left the table any other way (the game's fail-safe).
@@ -140,7 +175,12 @@ class TableHarness {
     std::uint64_t outlaneStep = 0;  // One more than the step; 0 if never.
     Touch outlane = Touch::None;
     std::uint64_t flipperStep = 0;  // One more than the step; 0 if never.
+    std::uint64_t playStep = 0;     // One more than the step it was first seen in play.
+    // One more than the step at which the kickback set it down; 0 if never.
+    std::uint64_t kickStep = 0;
+    bool kickTouchPending = false;
   };
+  void settleKick(std::size_t slot, bool safe);
 
   Game game_;
   std::array<Ball, table::kMaxBalls> balls_{};

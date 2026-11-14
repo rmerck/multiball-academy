@@ -77,6 +77,9 @@ class TableRenderer {
  private:
   struct Textures {
     TexturePtr background;  // The art, or the table drawn from its layout.
+    // The background is the layout drawing, so the table's moving parts are
+    // drawn the same plain way over it.
+    bool backgroundFromLayout = false;
     TexturePtr ball;
     TexturePtr flipper;
     TexturePtr bumper;
@@ -103,7 +106,10 @@ class TableRenderer {
   void drawGlow(SDL_Renderer* renderer, Vec2 center, float radius, Rgb color,
                 float strength) const;
   void drawBumpers(SDL_Renderer* renderer, const Game& game) const;
-  void drawTargets(SDL_Renderer* renderer) const;
+  void drawTargets(SDL_Renderer* renderer, const Game& game) const;
+  // What moves or lights among the table's own elements, for the layout
+  // drawing: doors lying down, the lock and kickback lamps, the spinner.
+  void drawElements(SDL_Renderer* renderer, const Game& game) const;
   void drawSlingshotFlashes(SDL_Renderer* renderer, const Game& game) const;
   void drawPlunger(SDL_Renderer* renderer, const Game& game) const;
   void drawFlippers(SDL_Renderer* renderer, const Game& game, float alpha) const;
@@ -112,6 +118,9 @@ class TableRenderer {
   void drawBalls(SDL_Renderer* renderer, std::span<const BallView> balls) const;
 
   Textures textures_;
+  // Triangles for drawElements, kept between frames so that drawing one
+  // allocates nothing.
+  mutable std::vector<SDL_Vertex> elements_;
 };
 
 }  // namespace pinball

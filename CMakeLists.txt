@@ -510,6 +510,8 @@ endif()
 if(PINBALL_BUILD_TOOLS)
   add_executable(pinball_snapshot tools/snapshot/main.cpp)
   target_link_libraries(pinball_snapshot PRIVATE pinball_platform)
+  # It sets up scenes that play does not reach through the tests' seam.
+  target_include_directories(pinball_snapshot PRIVATE tests)
   # It sits beside the game and reads an assets directory next to itself,
   # through the same verifying loader. Off macOS that is the game's own
   # directory. On macOS the tools stay out of the bundle and get a copy of
@@ -540,6 +542,7 @@ if(BUILD_TESTING)
     tests/ArgsTest.cpp
     tests/AssetNameTest.cpp
     tests/BumperTest.cpp
+    tests/ElementTest.cpp
     tests/FixedTimestepTest.cpp
     tests/FlipperTest.cpp
     tests/FormatTest.cpp
@@ -694,6 +697,16 @@ if(BUILD_TESTING)
     set_tests_properties(render_initials PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
     set_tests_properties(render_snapshot PROPERTIES
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
+    # The table's own moving parts: a ball locked in the Hangar, and the
+    # bay doors down.
+    add_test(NAME render_locked
+      COMMAND pinball_snapshot 60 render_locked.png locked
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
+    add_test(NAME render_bank_down
+      COMMAND pinball_snapshot 60 render_bank_down.png bankdown
+      WORKING_DIRECTORY ${PINBALL_TEST_DIR})
+    set_tests_properties(render_locked render_bank_down PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 60)
     # The tool must replace a link at its output name, never write through
     # it, even one that points nowhere. (Not on Windows, where making a link

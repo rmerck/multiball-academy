@@ -213,6 +213,32 @@ void testAcceptance() {
     CHECK(exitOf(table::kSkywayHole, 3).first[static_cast<std::size_t>(Touch::InlaneRight)] == 3);
   }
 
+  {  // The table's own elements, a few of each (the full counts are in the
+     // acceptance program). The Hangar's kick to the right reaches a
+     // flipper. Two balls locked and a third sent in: all three are let go
+     // in order, 0.4 s apart, and each meets a flipper or an inlane first.
+    CHECK(exitAt(table::kHoles[table::kHangarHole].exitPosition, table::kHangarEjectRight, 10)
+              .safe == 10);
+    // The Briefing room's kick, at the corners of its range and inside it.
+    const ExitResult kicks = scoopKicks(12);
+    CHECK(kicks.safe == 12);
+    const LockBurstResult lock = lockBursts(6);
+    CHECK(lock.bursts == 6 && lock.released == 18);
+    CHECK(lock.outOfOrder == 0 && lock.badSpacing == 0 && lock.heldMoved == 0);
+    CHECK(lock.safe == 18);
+    // A second ball into the Briefing room while it holds one: both come
+    // out, a full hold apart, to a flipper or an inlane.
+    const ScoopPairResult pairs = scoopPairs(8);
+    CHECK(pairs.pairs >= 6 && pairs.bothOut == pairs.pairs && pairs.tooClose == 0);
+    CHECK(pairs.safe == pairs.returned && pairs.longestOverlap <= 4);
+    // The kickback takes every ball that comes down the lit left outlane
+    // and sets it down where it rolls over the inlane's switch.
+    const KickbackResult kick = kickbackSweep(60);
+    CHECK(kick.balls >= 30);
+    CHECK(kick.fired == kick.balls && kick.returned == kick.balls && kick.safe == kick.balls);
+    CHECK(kick.lostByOutlane == 0);
+  }
+
   {  // The wedge: two balls arriving together at the mouth of an inlane
      // do not arch across it and stay. (With any grip between two balls
      // they did: PhysicsWorld::kBallBallFriction.)
@@ -245,6 +271,11 @@ void testAcceptance() {
       CHECK(result.longestOverlap <= 4);
       // No ball is left waiting in the lane.
       CHECK(result.longestInLane <= 10U * 120U);
+      // The Hangar is never entered past a standing door, and a locked
+      // ball is never anywhere but in its bay.
+      CHECK(result.hangarEntriesDoorsUp == 0 && result.lockedAstray == 0);
+      CHECK(result.kickbackReturns <= result.kickbacks &&
+            result.kickbacks - result.kickbackReturns <= 1);
       if (run.balls > 1) {
         CHECK(result.autoLaunches >= run.balls - 1);
         CHECK(result.stepsWithAllFree > 0);
@@ -257,12 +288,14 @@ void testAcceptance() {
     StressOptions options;
     options.balls = 3;
     options.bot = BotKind::Reflex;
-    options.steps = 5000;
+    options.steps = 12000;  // Long enough for balls to be locked and to drain.
     options.seed = 9;
     const StressResult a = stress(options);
     const StressResult b = stress(options);
     CHECK(a.fingerprint == b.fingerprint && a.drains == b.drains && a.drains > 0);
     CHECK(a.stepsWithAllFree == b.stepsWithAllFree && a.autoLaunches == b.autoLaunches);
+    CHECK(a.locks == b.locks && a.lockReleases == b.lockReleases && a.spins == b.spins);
+    CHECK(a.locks > 0 && a.spins > 0);
     options.seed = 10;
     CHECK(stress(options).fingerprint != a.fingerprint);
 

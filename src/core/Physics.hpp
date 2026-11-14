@@ -16,15 +16,19 @@ namespace pinball {
 struct PhysicsEvent {
   // Hit: touched a bumper, slingshot face, target or bay door.
   // Enter: rolled onto a rollover.
-  // Capture: dropped into a hole. The ball is held until releaseBall().
+  // Capture: dropped into a hole, or taken by the kickback. The ball is held
+  // until releaseBall().
   // BallHit: two balls touched. There is no element; ball is the lower slot
   // of the pair, otherBall the higher, and speed is their closing speed.
-  enum class Type : std::uint8_t { Hit, Enter, Capture, BallHit };
+  // Cross: passed over a sensor line. speed is the ball's speed across the
+  // line, and direction says which way (table::SensorLine).
+  enum class Type : std::uint8_t { Hit, Enter, Capture, BallHit, Cross };
   Type type = Type::Hit;
   table::ElementRef element;
   float speed = 0.0F;          // Ball speed when the event was recorded, pixels per second.
   std::uint8_t ball = 0;       // Slot of the ball it happened to.
   std::uint8_t otherBall = 0;  // BallHit only.
+  std::int8_t direction = 0;   // Cross only: +1 or -1.
 };
 
 // The events of one step, in the order they happened. Each ball has its own
@@ -160,16 +164,36 @@ class PhysicsWorld {
   [[nodiscard]] Vec2 ballVelocity() const { return ballVelocity(0); }
   [[nodiscard]] float ballAngle() const { return ballAngle(0); }
 
-  // True while a hole is holding the ball off the playfield.
+  // True while a hole or the kickback is holding the ball off the playfield.
   [[nodiscard]] bool ballHeld(std::size_t ball) const noexcept {
     return ball < balls_.size() && balls_[ball].held;
   }
   [[nodiscard]] bool ballHeld() const noexcept { return ballHeld(0); }
-  // Index of the hole holding the ball. Meaningful only while ballHeld().
+  // What is holding the ball: a hole, or the kickback. No element (kind
+  // None) unless ballHeld().
+  [[nodiscard]] table::ElementRef heldBy(std::size_t ball) const noexcept {
+    return ballHeld(ball) ? balls_[ball].heldBy : table::ElementRef{};
+  }
+  // Index of the hole holding the ball. Meaningful only while a hole holds it.
   [[nodiscard]] std::size_t heldHole(std::size_t ball) const noexcept {
-    return ball < balls_.size() ? balls_[ball].heldHole : 0;
+    return ball < balls_.size() ? balls_[ball].heldBy.index : 0;
   }
   [[nodiscard]] std::size_t heldHole() const noexcept { return heldHole(0); }
+
+  // The bay doors, the Hangar's drop targets, stand or lie down as one
+  // bank. Standing, each reports its hits and together they shut the Hangar;
+  // down, they are not there at all. The caller keeps the bank from coming
+  // up onto a ball (Game waits for table::kDoorMouthCenter's box to clear).
+  void setDoorBank(bool up);
+  [[nodiscard]] bool doorBankUp() const noexcept { return doorBankUp_; }
+
+  // The kickback in the left outlane. While it is armed, the first ball
+  // whose centre is inside table::kKickbackZone is taken (a Capture event
+  // for the kickback; the ball is held until releaseBall()) and the kickback
+  // disarms itself. Two balls arriving in the same slice: the lower slot is
+  // taken, the other falls through.
+  void setKickbackArmed(bool armed) noexcept { kickbackArmed_ = armed; }
+  [[nodiscard]] bool kickbackArmed() const noexcept { return kickbackArmed_; }
   // Returns a held ball to play at position with velocity. The hole it was
   // in, and the hole at the exit, ignore that ball until it has moved clear;
   // they still take any other ball.
@@ -205,6 +229,10 @@ class PhysicsWorld {
   void checkBumpers(std::size_t slot);
   void kickFromBumper(std::size_t slot, const table::Bumper& bumper);
   void buildTargets();
+  void buildDoorBank();
+  void checkSensors(std::size_t slot, Vec2 position, Vec2 velocity);
+  // Takes a free ball off the table for whatever element it is.
+  void holdBall(std::size_t slot, table::ElementRef by, float speed);
   void checkZones(std::size_t slot);
   void pushEvent(PhysicsEvent::Type type, table::ElementRef element, float speed, std::size_t slot,
                  std::size_t otherSlot = 0);
@@ -242,7 +270,11 @@ class PhysicsWorld {
     b2ShapeId shape{};
     bool active = false;
     bool held = false;
-    std::size_t heldHole = 0;
+    table::ElementRef heldBy{};
+    // Where the ball was a slice ago, for the sensor lines. Not known for a
+    // ball that has just been put somewhere by hand.
+    Vec2 sensorFrom{};
+    bool sensorFromKnown = false;
     // Bumpers the ball is touching, so each touch kicks once.
     std::array<bool, table::kBumpers.size()> touchingBumper{};
     // Rollovers the ball is currently on, so each pass reports once.
@@ -254,6 +286,11 @@ class PhysicsWorld {
 
   PhysicsEventList events_;
 
+  // The bay doors are a body of their own, so that all three leave and
+  // return to the table as one.
+  b2BodyId doorBank_{};
+  bool doorBankUp_ = true;
+  bool kickbackArmed_ = false;
 };
 
 }  // namespace pinball
