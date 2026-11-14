@@ -30,7 +30,7 @@ constexpr float kLetterPitch = 120.0F;  // Distance between letter centres.
 // An arrow button: a plain face with a stepped triangle on it, pointing up
 // or down.
 void drawArrowButton(SDL_Renderer* r, const ButtonArt& art, const screen::Rect& face, bool up) {
-  drawButtonFace(r, art, face, kViolet, false);
+  drawButtonFace(r, art, face, kButtonOrchid, false);
   const SDL_Color ink = captionColor(art);
   constexpr int kRows = 6;
   constexpr float kRowHeight = 6.0F;

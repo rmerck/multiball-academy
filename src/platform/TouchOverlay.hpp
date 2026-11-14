@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "core/ScreenLayout.hpp"
+#include "generated/ArtPalette.hpp"
 
 // The on-screen controls of the touch idiom: the buttons and the flipper
 // pads, drawn from the rectangles in screen::Layout. They are drawn by
@@ -37,6 +38,13 @@ inline constexpr SDL_Color kCaptionOnArt{12, 10, 38, 255};
 [[nodiscard]] constexpr SDL_Color captionColor(const ButtonArt& art) noexcept {
   return art.face != nullptr ? kCaptionOnArt : kCaptionPlain;
 }
+// The tints for keys that take ink captions: every face light enough for
+// 3:1 against kCaptionOnArt, held down too (tools/art/palette.py). Off: a
+// setting that is off, or a key that leads nowhere.
+inline constexpr SDL_Color kButtonOrchid{art::kTintButtonNudge.r, art::kTintButtonNudge.g,
+                                         art::kTintButtonNudge.b, 255};
+inline constexpr SDL_Color kButtonOff{art::kTintButtonOff.r, art::kTintButtonOff.g,
+                                      art::kTintButtonOff.b, 255};
 
 // A button face drawn without art: a chunky bordered slab in the given
 // colour with a drop shadow, pushed in and filled when pressed.

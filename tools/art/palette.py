@@ -45,9 +45,11 @@ LAMP_AIM = {"ArrowCircuitLeft": (118.0, 440.0), "ArrowRunway": (192.0, 425.0), "
 INSERT_ARROW_UNITS = 36.0     # drawn size of insert_arrow.png (the arrow itself is 28 long with its bezel)
 INSERT_ARROW_BRIEFING = 1.2   # the Briefing arrow is the largest on the table
 INSERT_ROUND_PER_DIAMETER = 24.0 / 22.0   # insert_round.png is drawn this many times the lamp's diameter
+# Buttons take ink captions, so every face is light enough for 3:1 against INK, pressed (level 0.8) too:
+# ORCHID, not VIOLET, for the nudge and menu keys; a light grey-violet for a key that is off or leads nowhere.
 TINT = {"flipper": PINK, "bumper": ORANGE, "bumper_flash": YELLOW, "turbo_target": GREEN, "door": CH_MID,
-        "door_marked": ORANGE, "button_centre": TEAL, "button_nudge": VIOLET, "button_pause": PINK,
-        "button_launch": YELLOW, "pad": AQUA}
+        "door_marked": ORANGE, "button_centre": TEAL, "button_nudge": ORCHID, "button_pause": PINK,
+        "button_launch": YELLOW, "button_off": "#8C84AA", "pad": AQUA}
 
 # ---- visibility rule (see STATUS.md, review/visibility.png) ------------------
 # Relative luminance (linear, 0..1) ceilings and floors the art and the renderer keep to.

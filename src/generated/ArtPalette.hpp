@@ -90,9 +90,10 @@ inline constexpr Rgb kTintTurboTarget{46, 209, 107};
 inline constexpr Rgb kTintDoor{159, 180, 204};
 inline constexpr Rgb kTintDoorMarked{255, 107, 26};
 inline constexpr Rgb kTintButtonCentre{0, 167, 165};
-inline constexpr Rgb kTintButtonNudge{106, 53, 201};
+inline constexpr Rgb kTintButtonNudge{185, 140, 255};
 inline constexpr Rgb kTintButtonPause{255, 46, 136};
 inline constexpr Rgb kTintButtonLaunch{255, 210, 60};
+inline constexpr Rgb kTintButtonOff{140, 132, 170};
 inline constexpr Rgb kTintPad{99, 230, 216};
 
 // Visibility rule (docs/ASSETS.md): the ball is the lightest thing on the table.

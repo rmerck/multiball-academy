@@ -69,12 +69,13 @@ void drawPauseMenu(SDL_Renderer* r, const screen::Layout& layout, const MenuStat
     drawCaptionButton(r, menu.newGame, "TAP AGAIN TO CONFIRM", kOrange, true, 4.0F, 3.0F,
                       button);
   } else {
-    drawCaptionButton(r, menu.newGame, "NEW GAME", kViolet, false, 4.0F, 3.0F, button);
+    drawCaptionButton(r, menu.newGame, "NEW GAME", kButtonOrchid, false, 4.0F, 3.0F, button);
   }
-  drawCaptionButton(r, menu.sound, state.muted ? "SOUND OFF" : "SOUND ON", kViolet, false, 4.0F,
-                    3.0F, button);
-  drawCaptionButton(r, menu.music, state.musicOn ? "MUSIC ON" : "MUSIC OFF", kViolet, false,
-                    4.0F, 3.0F, button);
+  // A setting that is on is a coloured key, one that is off a grey one.
+  drawCaptionButton(r, menu.sound, state.muted ? "SOUND OFF" : "SOUND ON",
+                    state.muted ? kButtonOff : kButtonOrchid, false, 4.0F, 3.0F, button);
+  drawCaptionButton(r, menu.music, state.musicOn ? "MUSIC ON" : "MUSIC OFF",
+                    state.musicOn ? kButtonOrchid : kButtonOff, false, 4.0F, 3.0F, button);
   drawCaptionButton(r, menu.about, "SCORES & ABOUT", kPink, false, 4.0F, 3.0F, button);
 }
 

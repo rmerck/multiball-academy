@@ -53,7 +53,8 @@ screen::Rect sunk(const screen::Rect& face, bool pressed) noexcept {
 // room for.
 void drawSpriteButton(SDL_Renderer* r, const ButtonArt& art, const screen::Rect& face,
                       SDL_Color tint, bool pressed) {
-  const float level = pressed ? 0.6F : 1.0F;
+  // Held down: sunk and darker, still light enough for its ink caption.
+  const float level = pressed ? 0.8F : 1.0F;
   SDL_SetTextureColorMod(art.face, scaled(tint.r, level), scaled(tint.g, level),
                          scaled(tint.b, level));
   const screen::Rect at = sunk(face, pressed);

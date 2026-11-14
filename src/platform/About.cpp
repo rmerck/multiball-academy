@@ -280,7 +280,9 @@ void drawDesktop(SDL_Renderer* r, const HighScores& scores, const screen::Layout
 void drawTurnButton(SDL_Renderer* r, const ButtonArt& art, const screen::Rect& face,
                     std::string_view arrow, bool enabled) {
   if (enabled) {
-    drawCaptionButton(r, face, arrow, kViolet, false, 5.0F, 3.0F, art);
+    drawCaptionButton(r, face, arrow, kButtonOrchid, false, 5.0F, 3.0F, art);
+  } else if (art.face != nullptr) {
+    drawCaptionButton(r, face, arrow, kButtonOff, false, 5.0F, 3.0F, art);
   } else {
     drawCaptionButton(r, face, arrow, kGreyed, true, 5.0F, 3.0F, art);
   }
@@ -297,8 +299,8 @@ void drawTouch(SDL_Renderer* r, const HighScores& scores, const screen::Layout& 
   constexpr std::array<std::string_view, 3> kTabs{"SCORES", "ABOUT", "LICENCES"};
   for (std::size_t i = 0; i < kTabs.size(); ++i) {
     const bool current = static_cast<std::size_t>(state.page) == i;
-    drawCaptionButton(r, about.tabs[i], kTabs[i], current ? kAmber : kViolet, current, 3.0F, 3.0F,
-                      art.button);
+    drawCaptionButton(r, about.tabs[i], kTabs[i], current ? kAmber : kButtonOrchid, current, 3.0F,
+                      3.0F, art.button);
   }
 
   const screen::Rect& body = about.body;
