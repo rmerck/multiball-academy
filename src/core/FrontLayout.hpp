@@ -56,6 +56,11 @@ struct GuideLayout {
   Rect pauseLabel;
 };
 
+// Where attract mode's table goes behind the front screens: the whole table,
+// as large as the safe area holds it (its own shape, 4:5), centred on it.
+// The status display and the controls are not drawn there.
+[[nodiscard]] Rect attractArea(const Layout& layout) noexcept;
+
 // The composition's whole area: Stack's column or Classic's 1280 x 960.
 [[nodiscard]] Rect compositionArea(const Layout& layout) noexcept;
 [[nodiscard]] TitleLayout titleLayout(const Layout& layout, const FrontConfig& config) noexcept;

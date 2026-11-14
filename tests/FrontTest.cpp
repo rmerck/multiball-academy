@@ -359,6 +359,13 @@ void checkFront(const Layout& l, const char* name) {
   const float size = screen::smallestTextSize(l);
   CHECK(inside(area, canvas));
   int before = pinball_test::failures();
+  // Attract mode's table: whole, in its own shape, in the safe area, and
+  // touching two of its sides.
+  const Rect attract = screen::attractArea(l);
+  CHECK(wellFormed(attract) && inside(attract, l.safe));
+  CHECK(std::fabs(attract.w * screen::kPlayfieldHeight - attract.h * screen::kPlayfieldWidth) <
+        0.5F);
+  CHECK(std::fabs(attract.w - l.safe.w) < 0.01F || std::fabs(attract.h - l.safe.h) < 0.01F);
   for (const bool continueShown : {false, true}) {
     const FrontConfig config{.continueShown = continueShown, .hapticsShown = touch,
                              .guideShown = touch};
@@ -373,7 +380,11 @@ void checkFront(const Layout& l, const char* name) {
       parts.push_back(title.items[i]);
     }
     for (const Rect& r : parts) {
-      CHECK(wellFormed(r) && inside(r, area) && inside(r, l.safe));
+      CHECK(wellFormed(r) && inside(r, l.safe));
+    }
+    // The menu is over the table.
+    for (std::size_t i = 1; i < title.items.size(); ++i) {
+      CHECK(inside(title.items[i], attract));
     }
     CHECK(noneOverlap(parts));
     // Every item is found where it is, and nothing between them.

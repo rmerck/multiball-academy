@@ -125,6 +125,13 @@ void App::handleTouch(const SDL_Event& event) {
       }
       break;
     case Screen::Play:
+      // A finished game, standing: a tap goes back to the title.
+      if (gameOverStanding()) {
+        if (phase == TouchPhase::Down && gameOverIdle_ >= kGameOverGuardSeconds) {
+          openFront();
+        }
+        break;
+      }
       touch_.handle({.id = id, .phase = phase, .x = at.x, .y = at.y}, layout_, touchContext());
       if (touch_.takePauseRequest()) {
         paused_ = true;

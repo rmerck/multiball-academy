@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
 
 #include "core/FrontMenu.hpp"
@@ -21,6 +22,11 @@ namespace pinball {
 // How long the title takes to build itself: the logo scans in, flashes,
 // the dot display lights and the menu comes up. Any key or tap skips it.
 inline constexpr double kTitleIntroSeconds = 1.6;
+// How strongly attract mode's table is veiled behind the title (enough for
+// the menu to stand clear, little enough that the machine reads as lit),
+// and behind the other pages, which are on cards of their own.
+inline constexpr std::uint8_t kTitleVeil = 70;
+inline constexpr std::uint8_t kPageVeil = 120;
 
 struct FrontView {
   FrontState state;

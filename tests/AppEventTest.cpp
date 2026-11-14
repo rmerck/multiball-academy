@@ -1518,6 +1518,43 @@ void testTitleTouch() {
   }
 }
 
+// A finished game goes back to the title: not while the initials prompt is
+// up, not for a key in the first moment, and by itself after a while.
+void testGameOverReturnsToTitle() {
+  const std::unique_ptr<App> app = App::create(titleOptions(pinball::screen::Idiom::Desktop));
+  CHECK(app != nullptr);
+  if (!app) {
+    return;
+  }
+  CHECK(frames(*app, 2));
+  key(*app, SDLK_F2, SDL_SCANCODE_F2);
+  CHECK(!app->status().frontOpen);
+  CHECK(playToGameOver(
+      *app, [&app] { key(*app, SDLK_SPACE, SDL_SCANCODE_SPACE); }, [] {}));
+  // An empty table: the score makes it, so the prompt is up and the game
+  // stays until it is answered.
+  CHECK(app->status().entryOpen);
+  CHECK(frames(*app, 5));
+  CHECK(!app->status().frontOpen);
+  SDL_Delay(750);
+  key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+  CHECK(!app->status().entryOpen && app->status().gameOver);
+  // A key at once (a finger still on a flipper) does nothing.
+  CHECK(frames(*app, 1));
+  key(*app, SDLK_Z, SDL_SCANCODE_Z);
+  CHECK(!app->status().frontOpen);
+  // Eight seconds later the title is back, with attract mode.
+  const int frameLimit = static_cast<int>(App::kGameOverIdleSeconds / kFastFrame) + 4;
+  for (int i = 0; i < frameLimit && !app->status().frontOpen; ++i) {
+    CHECK(frames(*app, 1));
+  }
+  App::Status status = app->status();
+  CHECK(status.frontOpen && status.front.page == FrontPage::Title);
+  CHECK(status.scores.size() == 1);
+  CHECK(frames(*app, 3));
+  CHECK(app->status().attractSteps > 0);
+}
+
 // Attract mode plays games of its own, and none of it is the player's: no
 // initials, no score file. Watching the title writes no settings either;
 // a setting changed is written, and read back by the next run. Only where
@@ -1668,6 +1705,7 @@ void runAll() {
   testNoAudioRetriesOnReturn();
   testTitleKeys();
   testTitleTouch();
+  testGameOverReturnsToTitle();
   testAttractKeepsNoScore();
 }
 

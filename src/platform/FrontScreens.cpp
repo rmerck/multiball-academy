@@ -332,9 +332,6 @@ std::string_view captionOf(TitleItem item) noexcept {
 void drawTitle(SDL_Renderer* r, const screen::Layout& layout, const FrontView& view,
                const OverlayArt& art) {
   const screen::TitleLayout title = screen::titleLayout(layout, view.config);
-  // A veil over the whole of it, so the menu stands clear of the status
-  // display and the controls; attract mode still shows through.
-  fillRect(r, {0.0F, 0.0F, layout.canvasWidth, layout.canvasHeight}, sdl(art::kNight, 96));
   drawLogo(r, title.logo, view, art);
   drawMarquee(r, title.marquee, view, art);
   const double t = view.reduceMotion ? kTitleIntroSeconds : view.introSeconds;

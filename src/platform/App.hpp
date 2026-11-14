@@ -168,6 +168,11 @@ class App {
   [[nodiscard]] Status status() const;
   // How many frames a standing picture is drawn for after each event.
   static constexpr std::uint32_t kRedrawsAfterEvent = 3;
+  // A finished game goes back to the title after this long with nothing
+  // touched, or on a touch or key after the guard (fingers still on the
+  // flippers when the last ball drains are not a request).
+  static constexpr double kGameOverIdleSeconds = 8.0;
+  static constexpr double kGameOverGuardSeconds = 0.8;
 
   // The system's Reduce Motion setting as the game last read it (at start
   // and on every return to the foreground): the one place everything that
@@ -256,9 +261,15 @@ class App {
   void handleAccessibilityAction(std::int32_t code);
   // CONTINUE on the title: the saved game, paused, in place of the title.
   void continueSavedGame();
-  // Attract mode's light show (fx/lightshow plugs its sequence in here):
-  // called once a frame while the title is up, after the table is drawn.
-  void attractLights(SDL_Renderer* renderer, const Game& attract) const;
+  // A finished game is on the table with nothing over it (no initials
+  // prompt, pause or About) in a run that has the title: it goes back to
+  // the title after kGameOverIdleSeconds, or at once on a tap or a key
+  // once kGameOverGuardSeconds have passed.
+  [[nodiscard]] bool gameOverStanding() const noexcept;
+  // Attract mode's light show: how the attract table is lit this frame. The
+  // one place the title asks (fx/lightshow plugs its sequence in here);
+  // until then a chase over the game's own lamps (attractChase).
+  [[nodiscard]] TableLights attractLights(const Game& attract) const;
   // The window changed size or safe area: the touch layout follows it.
   void handleLayoutChange();
   // In AppLifecycle.cpp: the window gained or lost focus, or was minimised
@@ -445,6 +456,11 @@ class App {
   // The touch guide before the player's first game.
   bool guideOpen_ = false;
   bool confirmMainMenu_ = false;
+  // This run has the title (AppOptions::showTitle, and not a timed run or
+  // a staged scene); and how long a finished game has stood with nothing
+  // over it, after which the title comes back.
+  bool titleRun_ = false;
+  double gameOverIdle_ = 0.0;
   // The player's settings, and whether this run reads and writes them.
   Settings settings_;
   SettingsStore settingsStore_;

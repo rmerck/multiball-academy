@@ -53,6 +53,7 @@ void App::skipIntro() { introSeconds_ = std::max(introSeconds_, kTitleIntroSecon
 
 void App::openFront() {
   frontOpen_ = true;
+  gameOverIdle_ = 0.0;
   front_.configure(frontConfig());
   front_.reset();
   introSeconds_ = 0.0;
@@ -91,6 +92,11 @@ void App::startGame() {
   latched_.newGame = true;
   mixer_.trigger(kPlaySound);
   redrawsDue_ = kRedrawsAfterEvent;
+}
+
+bool App::gameOverStanding() const noexcept {
+  return titleRun_ && !frontOpen_ && !guideOpen_ && game_.gameOver() && !entry_ && !aboutOpen_ &&
+         !paused_ && !autoPaused_;
 }
 
 void App::continueSavedGame() {
@@ -151,8 +157,8 @@ void App::stepAttract(double seconds) {
   // Its sounds are not played: attract mode is silent but for the tune.
 }
 
-void App::attractLights(SDL_Renderer* /*renderer*/, const Game& /*attract*/) const {
-  // Nothing yet: the table's own lamps light as the attract game plays.
+TableLights App::attractLights(const Game& attract) const {
+  return attractChase(attract, reduceMotion_);
 }
 
 void App::frontAct(FrontAction action) {

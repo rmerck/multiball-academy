@@ -780,17 +780,11 @@ void TableRenderer::drawBackdrop(SDL_Renderer* r, const screen::Layout& layout) 
   flush();
 }
 
-void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
-                         const screen::Layout& layout, const DrawOptions& options,
-                         const HudExtras& extras) const {
-  if (r == nullptr) {
-    return;
-  }
+void TableRenderer::drawTable(SDL_Renderer* r, const Game& game, float alpha, int left, int top,
+                              const DrawOptions& options, const TableLights& lights) const {
   // In the playfield's own coordinates: everything on the table is drawn
   // inside a viewport placed at the layout's playfield.
   const SDL_FRect playfield{0.0F, 0.0F, table::kWidth, table::kHeight};
-  const int left = static_cast<int>(std::lround(layout.playfield.x));
-  const int top = static_cast<int>(std::lround(layout.playfield.y));
 
   // The viewport also clips the table so that nothing spills onto the rest
   // of the canvas. A nudge shifts the viewport a few pixels, unless the
@@ -809,7 +803,6 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
   SDL_SetRenderClipRect(r, &clip);
 
   SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
-  const TableLights lights = tableLights(game);
   if (textures_.backgroundFromLayout) {
     drawElements(r, game, lights);
   } else {
@@ -836,12 +829,66 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
   }
   SDL_SetRenderClipRect(r, nullptr);
   SDL_SetRenderViewport(r, nullptr);
+}
 
+void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
+                         const screen::Layout& layout, const DrawOptions& options,
+                         const HudExtras& extras) const {
+  if (r == nullptr) {
+    return;
+  }
+  drawTable(r, game, alpha, static_cast<int>(std::lround(layout.playfield.x)),
+            static_cast<int>(std::lround(layout.playfield.y)), options, tableLights(game));
   drawHud(r,
           HudArt{.panel = textures_.panel.get(),
                  .strip = textures_.strip.get(),
                  .title = textures_.title.get()},
           game, layout, extras);
+}
+
+void TableRenderer::drawAttract(SDL_Renderer* r, const Game& game, float alpha,
+                                const screen::Rect& area, const TableLights& lights,
+                                std::uint8_t veil, bool reduceMotion) const {
+  if (r == nullptr || area.w <= 0.0F || area.h <= 0.0F) {
+    return;
+  }
+  // The table is drawn as in play into a picture of its own, twice its size
+  // in units so that it stays sharp when scaled up, and that picture is
+  // scaled into the area.
+  constexpr int kScale = 2;
+  if (!attractTarget_) {
+    attractTarget_.reset(SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET,
+                                           static_cast<int>(table::kWidth) * kScale,
+                                           static_cast<int>(table::kHeight) * kScale));
+    if (!attractTarget_) {
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No texture for attract mode: %s", SDL_GetError());
+      return;
+    }
+    SDL_SetTextureScaleMode(attractTarget_.get(), SDL_SCALEMODE_LINEAR);
+    SDL_SetTextureBlendMode(attractTarget_.get(), SDL_BLENDMODE_NONE);
+  }
+  SDL_Texture* const before = SDL_GetRenderTarget(r);
+  float scaleX = 1.0F;
+  float scaleY = 1.0F;
+  SDL_GetRenderScale(r, &scaleX, &scaleY);
+  if (SDL_SetRenderTarget(r, attractTarget_.get())) {
+    SDL_SetRenderScale(r, static_cast<float>(kScale), static_cast<float>(kScale));
+    SDL_SetRenderDrawColor(r, screen::kBackdropRgb[0], screen::kBackdropRgb[1],
+                           screen::kBackdropRgb[2], SDL_ALPHA_OPAQUE);
+    SDL_RenderClear(r);
+    drawTable(r, game, alpha, 0, 0, DrawOptions{.reduceMotion = reduceMotion}, lights);
+    SDL_SetRenderScale(r, scaleX, scaleY);
+    SDL_SetRenderTarget(r, before);
+  }
+  const SDL_FRect to{area.x, area.y, area.w, area.h};
+  SDL_RenderTexture(r, attractTarget_.get(), nullptr, &to);
+  if (veil > 0) {
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r, screen::kBackdropRgb[0], screen::kBackdropRgb[1],
+                           screen::kBackdropRgb[2], veil);
+    SDL_RenderFillRect(r, &to);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+  }
 }
 
 }  // namespace pinball

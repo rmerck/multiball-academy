@@ -53,6 +53,15 @@ void App::handleKeyDown(const SDL_KeyboardEvent& key) {
     handleFrontKey(key);
     return;
   }
+  // A finished game, standing: any key but the game's own (F2 plays again,
+  // F1, F4, M and N do what they always do) goes back to the title.
+  if (gameOverStanding() && key.key != SDLK_F2 && key.key != SDLK_F1 && key.key != SDLK_F4 &&
+      key.scancode != SDL_SCANCODE_M && key.scancode != SDL_SCANCODE_N) {
+    if (gameOverIdle_ >= kGameOverGuardSeconds) {
+      openFront();
+    }
+    return;
+  }
   if (guideOpen_) {
     // Any key goes on from the touch guide, except a shortcut.
     if ((key.mod & (SDL_KMOD_GUI | SDL_KMOD_CTRL | SDL_KMOD_ALT)) == 0) {

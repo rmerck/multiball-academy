@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "core/LoopPolicy.hpp"
+#include "core/FrontLayout.hpp"
 #include "core/OverlayLayout.hpp"
 #if !defined(NDEBUG) || defined(PINBALL_IOS_TEST_EXIT)
 #include "core/Scenes.hpp"
@@ -284,7 +285,8 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
     musicOn_ = false;
   }
   front_.configure(frontConfig());
-  if (options.showTitle && !options.frameLimit && !options.scene) {
+  titleRun_ = options.showTitle && !options.frameLimit && !options.scene;
+  if (titleRun_) {
     openFront();
   }
   audioRouteChangesSeen_ = ios::audioRouteChanges();
@@ -409,6 +411,16 @@ FrameResult App::iterate(bool restWhenStill) {
 
   // The initials prompt may have opened under the player's fingers.
   syncScreen();
+
+  // A finished game left standing goes back to the title and attract mode.
+  if (gameOverStanding()) {
+    gameOverIdle_ += std::clamp(frameSeconds, 0.0, 0.25);
+    if (gameOverIdle_ >= kGameOverIdleSeconds) {
+      openFront();
+    }
+  } else {
+    gameOverIdle_ = 0.0;
+  }
 
   // The tune plays while the game runs and on the title, and rests while
   // the game stands still.
@@ -755,24 +767,27 @@ void App::render(double alpha, bool cursorLit) {
   }
 
   if (frontOpen_) {
-    // The title and its pages over attract mode: the attract game, dimmed,
-    // with its status display, under the front screen. The touch guide,
-    // from HOW TO PLAY, is drawn over the table as it is played.
+    // The title and its pages over attract mode: the attract game's table
+    // alone, as large as the screen holds it, lit by its light show, under
+    // a light veil. The touch guide, from HOW TO PLAY, is drawn over the
+    // table as it is played, with its controls.
     const Game& shown = attract_ ? *attract_ : game_;
     const bool guide = front_.state().page == FrontPage::Guide;
     table_->drawBackdrop(r, layout_);
-    table_->draw(r, shown, static_cast<float>(attractTimestep_.alpha()), layout_,
-                 DrawOptions{.dimmed = !guide, .reduceMotion = reduceMotion_},
-                 HudExtras{highScores_.best(), false});
-    attractLights(r, shown);
-    if (touch) {
-      table_->drawTouchOverlay(r, layout_,
-                               TouchControls().view(pinball::touchContext(shown)));
+    if (guide) {
+      table_->draw(r, shown, static_cast<float>(attractTimestep_.alpha()), layout_,
+                   DrawOptions{.reduceMotion = reduceMotion_}, HudExtras{highScores_.best(), false});
+      if (touch) {
+        table_->drawTouchOverlay(r, layout_,
+                                 TouchControls().view(pinball::touchContext(shown)));
+      }
+    } else {
+      table_->drawAttract(r, shown, static_cast<float>(attractTimestep_.alpha()),
+                          screen::attractArea(layout_), attractLights(shown),
+                          front_.state().page == FrontPage::Title ? kTitleVeil : kPageVeil,
+                          reduceMotion_);
     }
     const OverlayArt art = table_->overlayArt();
-    if (!guide) {
-      dimAround(r, layout_);
-    }
     FrontTarget pressed{};
     if (frontFinger_ && frontOnTarget_) {
       pressed = frontDown_;

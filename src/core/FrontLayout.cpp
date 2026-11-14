@@ -31,6 +31,45 @@ bool classic(const Layout& layout) noexcept {
 
 }  // namespace
 
+namespace {
+
+// The title's sizes: the logo (4:1), the dot display and the gaps between
+// them and the menu. Smaller in the Classic shape, whose height is less.
+struct TitleSizes {
+  float logoW;
+  float logoH;
+  float gap;  // Between the logo and the dot display.
+  float marqueeH;
+  float menuGap;  // Between the dot display and the menu.
+};
+
+TitleSizes titleSizes(const Layout& layout) noexcept {
+  const float logoW = classic(layout) ? 528.0F : 672.0F;
+  return {logoW, logoW * 0.25F, 20.0F, 64.0F, 28.0F};
+}
+
+// The logo and the dot display together: what goes above the table when
+// there is room.
+float headerHeight(const TitleSizes& t) noexcept { return t.logoH + t.gap + t.marqueeH + 24.0F; }
+
+}  // namespace
+
+Rect attractArea(const Layout& layout) noexcept {
+  const Rect& safe = layout.safe;
+  const float scale = std::min(safe.w / kPlayfieldWidth, safe.h / kPlayfieldHeight);
+  const float w = kPlayfieldWidth * scale;
+  const float h = kPlayfieldHeight * scale;
+  // A tall screen has room above the table for the title's logo and dot
+  // display, like a backglass over the playfield: the table goes below them
+  // and the rest of the room is shared above and below. Otherwise it is
+  // centred and the title is drawn over its top.
+  const float spare = safe.h - h;
+  const float header = headerHeight(titleSizes(layout));
+  const float y = spare >= header ? safe.y + header + (spare - header) * 0.5F
+                                  : safe.y + spare * 0.5F;
+  return {safe.x + (safe.w - w) * 0.5F, y, w, h};
+}
+
 Rect compositionArea(const Layout& layout) noexcept {
   if (classic(layout)) {
     return {layout.playfield.x, layout.playfield.y, kClassicWidth, kClassicHeight};
@@ -41,22 +80,32 @@ Rect compositionArea(const Layout& layout) noexcept {
 
 TitleLayout titleLayout(const Layout& layout, const FrontConfig& config) noexcept {
   TitleLayout title{};
-  title.area = compositionArea(layout);
-  const Rect& area = title.area;
-  const float cx = area.x + area.w * 0.5F;
+  // Laid out on attract mode's table: the logo and the dot display above it
+  // where there is room, else over its top; the menu over the table below.
+  const Rect table = attractArea(layout);
+  title.area = layout.safe;
+  const TitleSizes t = titleSizes(layout);
+  const float cx = table.x + table.w * 0.5F;
   const bool wide = classic(layout);
   const std::size_t shown = config.continueShown ? kTitleItemCount : kTitleItemCount - 1;
   const float gap = wide ? (config.continueShown ? 12.0F : 16.0F) : 18.0F;
-  const float logoW = wide ? 528.0F : 672.0F;
-  const float logoH = logoW * 0.25F;
   const float itemsH =
       static_cast<float>(shown) * kButton + static_cast<float>(shown - 1) * gap;
-  const float content = logoH + 20.0F + 64.0F + 28.0F + itemsH + 16.0F + 30.0F;
-  // The spare height goes a third above and two thirds below.
-  const float top = area.y + std::max((area.h - content) / 3.0F, wide ? 20.0F : 40.0F);
-  title.logo = centredAt(cx, top, logoW, logoH);
-  title.marquee = centredAt(cx, bottomOf(title.logo) + 20.0F, 640.0F, 64.0F);
-  float y = bottomOf(title.marquee) + 28.0F;
+  const float header = headerHeight(t);
+  float top = table.y - header;
+  if (top < layout.safe.y) {
+    top = table.y + (wide ? 16.0F : 32.0F);
+  }
+  title.logo = centredAt(cx, top, t.logoW, t.logoH);
+  title.marquee = centredAt(cx, bottomOf(title.logo) + t.gap, 640.0F, t.marqueeH);
+  // The menu: below the dot display, and in the table's upper part where
+  // the header stands above it, so it is not pushed to the flippers.
+  float y = bottomOf(title.marquee) + t.menuGap;
+  const float content = itemsH + 16.0F + 30.0F;
+  const float room = bottomOf(table) - y;
+  if (room > content) {
+    y += std::min((room - content) * 0.25F, 80.0F);
+  }
   for (std::size_t i = 0; i < kTitleItemCount; ++i) {
     if (i == static_cast<std::size_t>(TitleItem::Continue) && !config.continueShown) {
       title.items[i] = {cx, y, kNone, kNone};
@@ -65,7 +114,8 @@ TitleLayout titleLayout(const Layout& layout, const FrontConfig& config) noexcep
     title.items[i] = centredAt(cx, y, 520.0F, kButton);
     y += kButton + gap;
   }
-  title.footer = centredAt(cx, y - gap + 16.0F, area.w - 2.0F * kMargin, 30.0F);
+  title.footer = centredAt(cx, y - gap + 16.0F, std::min(table.w, layout.safe.w) - 2.0F * kMargin,
+                           30.0F);
   return title;
 }
 

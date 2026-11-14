@@ -524,8 +524,7 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
   preview.course = scene.state == State::Longest;
   pinball::DrawOptions options;
   options.dimmed = scene.state == State::Pause || scene.state == State::Interrupted ||
-                   scene.state == State::Confirm || scene.state == State::MainMenuConfirm ||
-                   isFront(scene.state);
+                   scene.state == State::Confirm || scene.state == State::MainMenuConfirm;
   options.flippersAtRest = options.dimmed;
 
   SDL_SetRenderDrawColor(r, pinball::screen::kBackdropRgb[0], pinball::screen::kBackdropRgb[1],
@@ -534,22 +533,30 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
   // Alpha 1: the latest step exactly, so the picture depends only on the
   // step count.
   table.drawBackdrop(r, layout);
-  table.draw(r, game, 1.0F, layout, options,
-             pinball::HudExtras{.bestScore = 0, .newHighScore = false, .preview = &preview});
-  if (!scene.withoutControls) {
-    pinball::TouchControls::View view = scene.pressed;
-    view.centreRole = pinball::TouchControls().view(pinball::touchContext(game)).centreRole;
-    table.drawTouchOverlay(r, layout, view);
+  if (isFront(scene.state)) {
+    // As the game draws the front screens: attract mode's table alone, lit
+    // by its light show, under its veil.
+    const bool still = scene.state == State::TitleStill;
+    table.drawAttract(r, game, 1.0F, pinball::screen::attractArea(layout),
+                      pinball::attractChase(game, still),
+                      scene.state == State::Title || scene.state == State::TitleIntro || still
+                          ? pinball::kTitleVeil
+                          : pinball::kPageVeil,
+                      still);
+  } else {
+    table.draw(r, game, 1.0F, layout, options,
+               pinball::HudExtras{.bestScore = 0, .newHighScore = false, .preview = &preview});
+    if (!scene.withoutControls) {
+      pinball::TouchControls::View view = scene.pressed;
+      view.centreRole = pinball::TouchControls().view(pinball::touchContext(game)).centreRole;
+      table.drawTouchOverlay(r, layout, view);
+    }
   }
   if (scene.zones) {
     drawZones(r, layout);
   }
 
   const pinball::OverlayArt art = table.overlayArt();
-  if (scene.withoutDialog && isFront(scene.state)) {
-    // What the front screens are drawn over.
-    pinball::dimAround(r, layout);
-  }
   switch (scene.withoutDialog ? State::Play : scene.state) {
     case State::Pause:
     case State::Interrupted:
@@ -571,8 +578,6 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
     case State::HowTo:
     case State::Settings:
     case State::SettingsConfirm: {
-      // As the game draws them: the table dimmed all round, then the screen.
-      pinball::dimAround(r, layout);
       pinball::Settings settings;
       settings.volume = 6;
       settings.music = false;
