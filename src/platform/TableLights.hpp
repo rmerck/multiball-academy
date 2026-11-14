@@ -2,14 +2,15 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 #include "core/Game.hpp"
+#include "core/Rules.hpp"
 #include "core/TableLayout.hpp"
 
 // What the table's lights show: which lamps are lit and which bay doors are
-// marked. The drawing asks nothing else about lamps, and asks it only here,
-// so that when the table's real rules arrive this one function is rewired
-// and the renderer is not touched. No SDL: unit tested in core_tests.
+// marked. The drawing asks nothing else about lamps, and asks it only here.
+// No SDL: unit tested in core_tests.
 namespace pinball {
 
 struct TableLights {
@@ -30,35 +31,38 @@ struct TableLights {
   }
 };
 
-// The bay a locked ball sits in: the nearer of the two.
-[[nodiscard]] inline std::size_t lockBayOf(Vec2 position) noexcept {
-  const auto distance = [position](Vec2 bay) noexcept {
-    const Vec2 d = bay - position;
-    return d.x * d.x + d.y * d.y;
-  };
-  return distance(table::kLockBays[1]) < distance(table::kLockBays[0]) ? 1 : 0;
+// Blinking lamps, in steps of the game's clock: on for half of each period.
+inline constexpr std::uint64_t kBlinkSteps = 60;      // Twice a second.
+inline constexpr std::uint64_t kFastBlinkSteps = 24;  // Five times a second.
+
+// Whether a lamp in this state is lit at this step of the game.
+[[nodiscard]] constexpr bool lampLit(LampState state, std::uint64_t step) noexcept {
+  switch (state) {
+    case LampState::On:
+      return true;
+    case LampState::Blink:
+      return step % kBlinkSteps < kBlinkSteps / 2;
+    case LampState::FastBlink:
+      return step % kFastBlinkSteps < kFastBlinkSteps / 2;
+    case LampState::Off:
+      break;
+  }
+  return false;
 }
 
-// PROVISIONAL mapping, for the stub rules on main (Rules.hpp says which of
-// its parts are provisional). What they can say is shown; every other lamp
-// stays unlit, as baked into the table art, until the rules light it:
-//   Lock1, Lock2  a ball in that bay (by bay, not by count)
-//   Kickback      the kickback is armed
-//   ShootAgain    the ball saver is on
-//   ArrowHangar   the lock is lit
-//   doors         Rules::doorMarked
+// The rules say what every lamp does (Rules::lampState, one answer for each
+// LampId); the lock lamps follow the bays themselves, which empty one after
+// the other as a multiball starts; a door's lamp is its mark.
 [[nodiscard]] inline TableLights tableLights(const Game& game) noexcept {
   using table::LampId;
   TableLights lights;
   const Rules& rules = game.rules();
-  for (const BallView& ball : game.balls()) {
-    if (ball.locked) {
-      lights.light(lockBayOf(ball.position) == 0 ? LampId::Lock1 : LampId::Lock2, true);
-    }
+  const std::uint64_t step = game.stepCount();
+  for (const table::Lamp& lamp : table::kLamps) {
+    lights.light(lamp.id, lampLit(rules.lampState(lamp.id), step));
   }
-  lights.light(LampId::Kickback, game.kickbackArmed());
-  lights.light(LampId::ShootAgain, rules.ballSaveActive());
-  lights.light(LampId::ArrowHangar, rules.lockLit());
+  lights.light(LampId::Lock1, game.bayTaken(0));
+  lights.light(LampId::Lock2, game.bayTaken(1));
   for (std::size_t i = 0; i < lights.doorsMarked.size(); ++i) {
     lights.doorsMarked[i] = rules.doorMarked(i);
   }

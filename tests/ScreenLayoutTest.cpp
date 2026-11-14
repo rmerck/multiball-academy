@@ -777,37 +777,58 @@ void testGameViews() {
 }
 
 // The one adapter between the rules and the table's lamps
-// (platform/TableLights.hpp): what it reads, and the lock lamps by bay.
+// (platform/TableLights.hpp): every lamp as the rules say, blinking on the
+// game's clock, and the lock lamps by bay.
 void testTableLights() {
   using namespace pinball;
   using table::LampId;
-  CHECK(lockBayOf(table::kLockBays[0]) == 0 && lockBayOf(table::kLockBays[1]) == 1);
-  CHECK(lockBayOf({table::kLockBays[1].x - 1.0F, table::kLockBays[1].y + 2.0F}) == 1);
+  static_assert(lampLit(LampState::On, 7) && !lampLit(LampState::Off, 0));
+  static_assert(lampLit(LampState::Blink, 0) && !lampLit(LampState::Blink, kBlinkSteps / 2));
+  static_assert(lampLit(LampState::FastBlink, kFastBlinkSteps) &&
+                !lampLit(LampState::FastBlink, kFastBlinkSteps / 2));
   Game game;
+  const auto agrees = [&game] {
+    const TableLights lights = tableLights(game);
+    bool same = true;
+    for (const table::Lamp& lamp : table::kLamps) {
+      if (lamp.id == LampId::Lock1 || lamp.id == LampId::Lock2) {
+        continue;
+      }
+      same = same &&
+             lights.lit(lamp.id) == lampLit(game.rules().lampState(lamp.id), game.stepCount());
+    }
+    for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
+      same = same && lights.doorsMarked[door] == game.rules().doorMarked(door);
+    }
+    return same && lights.lit(LampId::Lock1) == game.bayTaken(0) &&
+           lights.lit(LampId::Lock2) == game.bayTaken(1);
+  };
+  // A new game: the kickback is lit, the skill shot's lane and the course
+  // on offer blink, and a blinking lamp goes on and off with the clock.
   TableLights lights = tableLights(game);
-  CHECK(lights.lit(LampId::Kickback) == game.kickbackArmed());
-  CHECK(lights.lit(LampId::ShootAgain) == game.rules().ballSaveActive());
+  CHECK(lights.lit(LampId::Kickback) && !lights.lit(LampId::Count));
   CHECK(!lights.lit(LampId::Lock1) && !lights.lit(LampId::Lock2));
-  CHECK(!lights.lit(LampId::Count));
-  for (const bool marked : lights.doorsMarked) {
-    CHECK(!marked);
+  bool on = false;
+  bool off = false;
+  for (std::uint64_t i = 0; i < kBlinkSteps; ++i) {
+    CHECK(agrees());
+    (tableLights(game).lit(LampId::RollCall2) ? on : off) = true;
+    game.step(InputState{});
   }
+  CHECK(on && off);
   // Every door hit, as three hits would; then a ball sent into the Hangar.
   using Seam = GameTestAccess;
   for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
     Seam::rules(game).onDropTarget(door);
   }
-  lights = tableLights(game);
-  for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
-    CHECK(lights.doorsMarked[door] == game.rules().doorMarked(door));
-  }
-  CHECK(lights.lit(LampId::ArrowHangar) == game.rules().lockLit());
+  CHECK(agrees());
   game.step(InputState{});
   const std::size_t slot = game.ball().id;
   Seam::placeBall(game, slot, {279.0F, 440.0F}, {0.0F, -900.0F});
   Seam::putInPlay(game, slot);
   for (int i = 0; i < 240 && game.lockedBalls() == 0; ++i) {
     game.step(InputState{});
+    CHECK(agrees());
   }
   CHECK(game.lockedBalls() == 1);
   lights = tableLights(game);
