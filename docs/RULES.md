@@ -61,7 +61,7 @@ The turbo meter counts thruster bumper hits (+1), spins (+1) and turbo targets (
 ## Academy multiball (three balls)
 
 1. Hit all three bay doors. Each hit marks a door (2,000); marks stay from ball to ball. With all three marked the doors drop together: `LOCK IS LIT`.
-2. Shoot the Hangar: `BALL 1 LOCKED`. The ball stays in its bay, in view, and you get a new ball to plunge, with a skill shot.
+2. Shoot the Hangar: `BALL 1 LOCKED`. The ball stays in its bay, in view, and if no other ball is in play you get a new ball to plunge, with a skill shot.
 3. Lock a second ball the same way. For the first multiball of a game the doors stay down after the first lock; after the second they come back up and must be opened again.
 4. A third ball into the Hangar starts `ACADEMY MULTIBALL`: all three balls are let go.
 
@@ -94,7 +94,7 @@ Light all three roll call lanes, then shoot the Turbine lane: `OVERDRIVE 2X` dou
 
 ## Saves
 
-- Ball saver: a ball that drains within 15 seconds of entering play is given back, as often as it happens (`BALL SAVED`). The shoot-again lamp blinks while it runs, quickly for its last 3 seconds.
+- Ball saver: a ball that drains within its first 15 seconds of play is given back, as often as it happens (`BALL SAVED`). The 15 seconds start when the ball leaves the launch lane and stand still while it is held in the Briefing room, the Hangar or on a ramp. The shoot-again lamp blinks while it runs, quickly for its last 3 seconds.
 - A ball that drains within 2.5 seconds of being returned by the Briefing room or the Hangar is given back.
 - Kickback: lit at the start of the game. It returns one ball from the left outlane and goes out. All four W-I-N-G letters relight it; with it already lit they raise the bonus multiplier instead.
 
