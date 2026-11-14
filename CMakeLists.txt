@@ -76,12 +76,12 @@ set(PINBALL_DATA_DIR "${pinball_name_hyphens}")
 # Where the privacy policy is published: docs/PRIVACY.md, as GitHub shows it.
 set(PINBALL_PRIVACY_URL "https://github.com/rmerck/multiball-academy/blob/main/docs/PRIVACY.md")
 # It goes into the source as a string and, on a touch screen, to the system's
-# browser: an https address of plain characters only (cmake/ProductUrl.cmake).
+# browser: a plain page of this repository on GitHub (cmake/ProductUrl.cmake).
 include(cmake/ProductUrl.cmake)
 pinball_check_url("${PINBALL_PRIVACY_URL}" pinball_privacy_url_ok)
 if(NOT pinball_privacy_url_ok)
-  message(FATAL_ERROR "PINBALL_PRIVACY_URL must be an https address of plain characters, with "
-                      "no user name, query or fragment. It is '${PINBALL_PRIVACY_URL}'")
+  message(FATAL_ERROR "PINBALL_PRIVACY_URL must be a page of https://github.com/rmerck/multiball-academy/ "
+                      "with a plain path (no .., query or fragment). It is '${PINBALL_PRIVACY_URL}'")
 endif()
 # The copyright line of the application bundles.
 set(PINBALL_COPYRIGHT "Copyright 2026 rmerck. MIT licence.")

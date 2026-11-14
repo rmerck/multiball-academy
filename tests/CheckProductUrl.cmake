@@ -9,8 +9,8 @@ include("${SOURCE_DIR}/cmake/ProductUrl.cmake")
 
 set(good
   "https://github.com/rmerck/multiball-academy/blob/main/docs/PRIVACY.md"
-  "https://example.org/"
-  "https://example.org/a-b_c.d~e/f%20g")
+  "https://github.com/rmerck/multiball-academy/blob/main/docs/SUPPORT.md"
+  "https://github.com/rmerck/multiball-academy/a-b_c.d~e/f%20g")
 set(bad
   ""
   "http://github.com/rmerck/multiball-academy"
@@ -24,7 +24,15 @@ set(bad
   "https://example.org/back\\\\slash"
   "https://example.org/?q=1"
   "https://example.org/#frag"
-  "HTTPS://EXAMPLE.ORG/")
+  "HTTPS://EXAMPLE.ORG/"
+  "https://example.org/"
+  "https://127.0.0.1/rmerck/multiball-academy/"
+  "https://github.com/other/multiball-academy/blob/main/docs/PRIVACY.md"
+  "https://github.com/rmerck/other/blob/main/docs/PRIVACY.md"
+  "https://github.com/rmerck/multiball-academy"
+  "https://github.com.evil.example/rmerck/multiball-academy/x"
+  "https://github.com/rmerck/multiball-academy/../../evil"
+  "https://github.com/rmerck/multiball-academy/\"x")
 foreach(url IN LISTS good)
   pinball_check_url("${url}" ok)
   if(NOT ok)
