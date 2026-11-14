@@ -110,15 +110,24 @@ foreach(case IN LISTS layout_bad_args)
     WORKING_DIRECTORY ${PINBALL_TEST_DIR} TIMEOUT 30 LABELS layout)
 endforeach()
 
-# The licence notices on the About screen say what the licence files say:
-# this repository's always, and those of the pinned libraries when their
-# sources are in the build tree (PINBALL_FETCH_DEPS).
+# The notices on the About screen say what the licence files say, section by
+# section: the game's notice what this repository's LICENSE gives, the
+# library notices what THIRD_PARTY_NOTICES.md gives, always, and what the
+# pinned sources' own licence files say when those sources are in the build
+# tree (PINBALL_FETCH_DEPS).
 if(Python3_Interpreter_FOUND)
-  set(layout_licences ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
-  foreach(candidate IN ITEMS "${box2d_SOURCE_DIR}/LICENSE" "${sdl3_SOURCE_DIR}/LICENSE.txt"
-                             "${SDL3_SOURCE_DIR}/LICENSE.txt")
-    if(EXISTS "${candidate}" AND NOT IS_DIRECTORY "${candidate}")
-      list(APPEND layout_licences "${candidate}")
+  set(layout_licences game:${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
+                      ${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md)
+  foreach(candidate IN ITEMS "box2d|${box2d_SOURCE_DIR}/LICENSE"
+                             "sdl|${sdl3_SOURCE_DIR}/LICENSE.txt"
+                             "sdl|${SDL3_SOURCE_DIR}/LICENSE.txt"
+                             "yuv2rgb|${sdl3_SOURCE_DIR}/src/video/yuv2rgb/LICENSE"
+                             "yuv2rgb|${SDL3_SOURCE_DIR}/src/video/yuv2rgb/LICENSE")
+    string(REPLACE "|" ";" candidate "${candidate}")
+    list(GET candidate 0 section)
+    list(GET candidate 1 file)
+    if(EXISTS "${file}" AND NOT IS_DIRECTORY "${file}")
+      list(APPEND layout_licences "${section}:${file}")
     endif()
   endforeach()
   list(REMOVE_DUPLICATES layout_licences)

@@ -90,8 +90,44 @@ set(PINBALL_SUPPORT_EMAIL "dev@mrck.app")
 if(NOT PINBALL_SUPPORT_EMAIL MATCHES "^[a-z0-9]+(\\.[a-z0-9]+)*@[a-z0-9]+(\\.[a-z0-9]+)+$")
   message(FATAL_ERROR "PINBALL_SUPPORT_EMAIL must be a plain address: '${PINBALL_SUPPORT_EMAIL}'")
 endif()
-# The copyright line of the application bundles.
-set(PINBALL_COPYRIGHT "Copyright 2026 rmerck. MIT licence.")
+# The copyright line of the application bundles (NSHumanReadableCopyright),
+# taken from LICENSE so that a change of licence is a change to that file:
+# each "Required Notice:" copyright above the licence's title, less its
+# address, then the title (the first "# " heading). tools/check_notices.py
+# builds the About screen's line the same way. The SPDX id of the game's own
+# licence is PolyForm-Noncommercial-1.0.0; Box2D and SDL keep theirs
+# (THIRD_PARTY_NOTICES.md).
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" pinball_license_lines
+     REGEX "^(Required Notice:|# )")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(PINBALL_COPYRIGHT "")
+set(pinball_license_title "")
+foreach(line IN LISTS pinball_license_lines)
+  if(line MATCHES "^# ")
+    if(NOT line MATCHES "^# ([^\"<>&;]+)$")
+      message(FATAL_ERROR "LICENSE: the licence's title must be plain text: '${line}'")
+    endif()
+    set(pinball_license_title "${CMAKE_MATCH_1}")
+    break()
+  endif()
+  # The whole line or nothing: a name with a mark the bundle cannot carry
+  # stops the configuration rather than being cut short.
+  if(NOT line MATCHES "^Required Notice: (Copyright \\(c\\) [0-9][0-9][0-9][0-9](-[0-9][0-9][0-9][0-9])? [^\"<>&;()]*[^\"<>&;() ])( \\(https?://[^ ()\"<>&;]+\\))?$")
+    message(FATAL_ERROR "LICENSE: a Required Notice must read 'Required Notice: Copyright (c) "
+                        "<year or years> <name>', optionally followed by ' (<address>)', with no "
+                        "quotes, brackets, &, < or > in the name: '${line}'")
+  endif()
+  set(pinball_notice "${CMAKE_MATCH_1}")
+  if(NOT pinball_notice MATCHES "\\.$")
+    string(APPEND pinball_notice ".")
+  endif()
+  string(APPEND PINBALL_COPYRIGHT "${pinball_notice} ")
+endforeach()
+if(PINBALL_COPYRIGHT STREQUAL "" OR pinball_license_title STREQUAL "")
+  message(FATAL_ERROR "LICENSE must begin with its 'Required Notice: Copyright (c) ...' line(s), "
+                      "then the licence's '# <title>' heading")
+endif()
+string(APPEND PINBALL_COPYRIGHT "Licensed under the ${pinball_license_title}.")
 project(MultiballAcademy VERSION 2.0.0 LANGUAGES CXX)
 # The bundle version (CFBundleVersion) on iOS and macOS, also shown beside
 # the version. A whole number with no leading zero.
