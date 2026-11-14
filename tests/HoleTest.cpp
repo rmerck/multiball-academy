@@ -48,7 +48,7 @@ float distance(Vec2 a, Vec2 b) {
 // (-ffp-contract=off, as Box2D is), the physics uses only exactly rounded
 // arithmetic, and the table's curves are point tables written out in
 // TableLayout.hpp, not computed with the C library.
-constexpr std::uint64_t kSoakTrajectory = 0xbdcde1a92c499520ULL;
+constexpr std::uint64_t kSoakTrajectory = 0x7def69fed4c78cb6ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {
@@ -386,8 +386,10 @@ void testHoles() {
     // The geometry alone must keep the ball moving: the ball search is a
     // safety net and should never be needed in normal play.
     CHECK(game.ballSearchCount() == 0);
-    CHECK(game.drainCount() >= 20);
-    CHECK(game.bumperHits() > 20);
+    // (Fewer drains than there were before the kickback and the short save
+    // after an eject: each keeps a ball in play.)
+    CHECK(game.drainCount() >= 12);
+    CHECK(game.bumperHits() > 12);
 
     std::uint32_t holes = 0;
     std::uint32_t rollovers = 0;

@@ -292,6 +292,12 @@ void sectionExits(bool quick) {
   row(Kind::Hard, runway * 100 >= n * 80 && skyway * 100 >= n * 80, "A4",
       "each flipper has a shot that feeds the opposite inlane within 4 s",
       "80 percent of made shots", text("Runway %d, Skyway %d of %d", runway, skyway, n));
+  // The Briefing room's kick varies: every part of its range.
+  const ExitResult kicks = scoopKicks(quick ? 60 : 300);
+  std::printf("# exit of the Briefing room, over its range: %s\n", firsts(kicks.first).c_str());
+  row(Kind::Hard, kicks.safe == kicks.releases, "B5s",
+      "Briefing room kicks, over the whole range of its variation, that reach a flipper first",
+      "all", text("%d of %d", kicks.safe, kicks.releases));
   // The Hangar's second way out: the kick to the right flipper.
   const ExitResult right =
       exitAt(table::kHoles[table::kHangarHole].exitPosition, table::kHangarEjectRight, n);

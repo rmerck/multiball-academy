@@ -219,6 +219,9 @@ void testAcceptance() {
      // in order, 0.4 s apart, and each meets a flipper or an inlane first.
     CHECK(exitAt(table::kHoles[table::kHangarHole].exitPosition, table::kHangarEjectRight, 10)
               .safe == 10);
+    // The Briefing room's kick, at the corners of its range and inside it.
+    const ExitResult kicks = scoopKicks(12);
+    CHECK(kicks.safe == 12);
     const LockBurstResult lock = lockBursts(6);
     CHECK(lock.bursts == 6 && lock.released == 18);
     CHECK(lock.outOfOrder == 0 && lock.badSpacing == 0 && lock.heldMoved == 0);
@@ -285,12 +288,14 @@ void testAcceptance() {
     StressOptions options;
     options.balls = 3;
     options.bot = BotKind::Reflex;
-    options.steps = 5000;
+    options.steps = 12000;  // Long enough for balls to be locked and to drain.
     options.seed = 9;
     const StressResult a = stress(options);
     const StressResult b = stress(options);
     CHECK(a.fingerprint == b.fingerprint && a.drains == b.drains && a.drains > 0);
     CHECK(a.stepsWithAllFree == b.stepsWithAllFree && a.autoLaunches == b.autoLaunches);
+    CHECK(a.locks == b.locks && a.lockReleases == b.lockReleases && a.spins == b.spins);
+    CHECK(a.locks > 0 && a.spins > 0);
     options.seed = 10;
     CHECK(stress(options).fingerprint != a.fingerprint);
 

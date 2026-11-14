@@ -5,9 +5,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#ifdef PINBALL_TUNE_SCOOP
-#include <cstdlib>
-#endif
 
 #include "core/TableLayout.hpp"
 
@@ -661,30 +658,12 @@ Vec2 Game::nextHangarExitVelocity() noexcept {
                                : table::kHoles[table::kHangarHole].exitVelocity;
 }
 
-#ifdef PINBALL_TUNE_SCOOP
-int tuneValue(const char* name, int fallback) {
-  const char* text = std::getenv(name);
-  return text != nullptr ? std::atoi(text) : fallback;
-}
-#endif
-
 Vec2 Game::nextScoopExitVelocity() noexcept {
   // A little different each time, both ways (table::kScoopExitJitterLeft).
-#ifdef PINBALL_TUNE_SCOOP
-  static const int left = tuneValue("SCOOP_L", table::kScoopExitJitterLeft);
-  static const int right = tuneValue("SCOOP_R", table::kScoopExitJitterRight);
-  static const int down = tuneValue("SCOOP_D", table::kScoopExitJitterDown);
-#else
   constexpr int left = table::kScoopExitJitterLeft;
   constexpr int right = table::kScoopExitJitterRight;
   constexpr int down = table::kScoopExitJitterDown;
-#endif
   Vec2 velocity = table::kHoles[table::kScoopHole].exitVelocity;
-#ifdef PINBALL_TUNE_SCOOP
-  static const int meanX = tuneValue("SCOOP_VX", static_cast<int>(velocity.x));
-  static const int meanY = tuneValue("SCOOP_VY", static_cast<int>(velocity.y));
-  velocity = {static_cast<float>(meanX), static_cast<float>(meanY)};
-#endif
   const auto across = static_cast<std::uint64_t>(left + right + 1);
   const auto along = static_cast<std::uint64_t>(2 * down + 1);
   velocity.x += static_cast<float>(static_cast<int>(nextRandom() % across) - left);

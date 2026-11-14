@@ -403,8 +403,11 @@ inline constexpr std::size_t kHangarHole = 1;
 inline constexpr std::size_t kRunwayHole = 2;
 inline constexpr std::size_t kSkywayHole = 3;
 inline constexpr std::array<Hole, 4> kHoles{{
-    // Briefing room: kicked down to the left flipper from below its flares.
-    {{356.0F, 390.0F}, {19.0F, 30.0F}, HoleType::Scoop, {356.0F, 456.0F}, {-95.0F, 200.0F}},
+    // Briefing room: dropped to the left flipper from below its flares. It is
+    // let go sideways and not thrown down: thrown down at 200 px/s it reached
+    // the bat so fast that the reflex player lost one ball in eleven within
+    // six seconds of it; let fall, one in twenty.
+    {{356.0F, 390.0F}, {19.0F, 30.0F}, HoleType::Scoop, {356.0F, 456.0F}, {-95.0F, 0.0F}},
     // Hangar: lobbed from below the door line to the left inlane.
     {{279.0F, 349.0F}, {27.0F, 23.0F}, HoleType::Hangar, {279.0F, 420.0F}, {-211.0F, -60.0F}},
     // Runway and Skyway: set down at the far end of the rail, above an inlane.
@@ -458,7 +461,9 @@ inline constexpr double kHangarHoldSeconds = 0.9;
 // -kScoopExitJitterLeft to +kScoopExitJitterRight, down from
 // -kScoopExitJitterDown to +kScoopExitJitterDown. With one fixed kick the
 // ball lands on the same spot of the left flipper every time, and a player
-// with steady timing can then repeat one safe round of shots for ever.
+// with steady timing can then repeat one safe round of shots for ever
+// (left inlane, Briefing room, right flipper, slingshots, Runway, and
+// round again: the reflex player's balls that ran to the 20 minute cap).
 inline constexpr int kScoopExitJitterLeft = 15;
 inline constexpr int kScoopExitJitterRight = 15;
 inline constexpr int kScoopExitJitterDown = 20;

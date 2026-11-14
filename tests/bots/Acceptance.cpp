@@ -629,6 +629,31 @@ ExitResult exitAt(Vec2 position, Vec2 velocity, int releases) {
   return result;
 }
 
+ExitResult scoopKicks(int releases) {
+  ExitResult result;
+  const table::Hole& scoop = table::kHoles[table::kScoopHole];
+  const int across = table::kScoopExitJitterLeft + table::kScoopExitJitterRight + 1;
+  const int along = 2 * table::kScoopExitJitterDown + 1;
+  for (int j = 0; j < releases; ++j) {
+    TableHarness harness;
+    // Every corner of the range, then through it both ways at once.
+    const int ix = j < 4 ? (j % 2) * (across - 1) : (j * 7) % across;
+    const int iy = j < 4 ? (j / 2) * (along - 1) : (j * 11) % along;
+    harness.put(0, scoop.exitPosition,
+                {scoop.exitVelocity.x + static_cast<float>(ix - table::kScoopExitJitterLeft),
+                 scoop.exitVelocity.y + static_cast<float>(iy - table::kScoopExitJitterDown)},
+                true);
+    const FirstTouch touch = firstTouch(harness, kStepsPerSecond * 10);
+    ++result.releases;
+    ++result.first[static_cast<std::size_t>(touch.touch)];
+    result.safe += touch.touch == Touch::Flipper || touch.touch == Touch::InlaneLeft ||
+                           touch.touch == Touch::InlaneRight
+                       ? 1
+                       : 0;
+  }
+  return result;
+}
+
 ExitResult exitOf(std::size_t hole, int releases) {
   if (hole >= table::kHoles.size()) {
     return {};

@@ -127,6 +127,9 @@ struct ExitResult {
 // way out, to the right flipper).
 [[nodiscard]] ExitResult exitAt(Vec2 position, Vec2 velocity, int releases);
 
+// The Briefing room's kick over the whole of its range of variation.
+[[nodiscard]] ExitResult scoopKicks(int releases);
+
 // The lock: two balls locked by the game and a third sent in, so that all
 // three are let go. Each is nudged a little off its exact release, and each
 // is followed to the first thing it meets, flippers idle.
