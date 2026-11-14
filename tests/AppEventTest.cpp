@@ -1591,6 +1591,22 @@ void testAboutAccessibility() {
   CHECK(frames(*app, 1));
   CHECK(app->status().aboutOpen && app->status().about.page == AboutPage::Scores);
   const pinball::screen::AboutLayout about = pinball::screen::aboutLayout(layout);
+  // Where VoiceOver was sent: a new screen goes to its first element; a new
+  // tab or licence page of the dialog to that page's first element after
+  // the tabs, never back to the first tab. Each change moves it once.
+  using Move = pinball::ios::AccessibilityFocus::Kind;
+  unsigned moves = app->status().accessibilityMove.count;
+  const auto movedTo = [&](Move kind, std::string_view words) {
+    const App::AccessibilityMove move = app->status().accessibilityMove;
+    CHECK(move.count == moves + 1);
+    CHECK(move.kind == kind);
+    CHECK(move.label.find(words) != std::string::npos);
+    moves = move.count;
+  };
+  {
+    const App::AccessibilityMove move = app->status().accessibilityMove;
+    CHECK(move.kind == Move::Screen && move.label == "SCORES");
+  }
 
   // What every tab has: its controls first, each a button with a code of
   // its own, and everything else read only, in the dialog and on no
@@ -1601,8 +1617,14 @@ void testAboutAccessibility() {
       return;
     }
     const char* const tabs[] = {"SCORES", "ABOUT", "LICENCES"};
+    const auto shown = static_cast<std::size_t>(app->status().about.page);
     for (std::size_t i = 0; i < 3; ++i) {
       CHECK(items[i].label == tabs[i] && items[i].role == Role::Button && items[i].code != 0);
+      // The tab that is up, and it alone, is selected.
+      CHECK(items[i].selected == (i == shown));
+    }
+    for (std::size_t i = 3; i < items.size(); ++i) {
+      CHECK(!items[i].selected);
     }
     CHECK(items.back().label == "CLOSE" && items.back().role == Role::Button);
     const std::vector<Rect> controls{about.tabs[0], about.tabs[1], about.tabs[2], about.close};
@@ -1640,6 +1662,9 @@ void testAboutAccessibility() {
   tap(*app, centreOf(about.tabs[1]));
   CHECK(frames(*app, 1));
   CHECK(app->status().about.page == AboutPage::About);
+  movedTo(Move::Page, version);
+  CHECK(frames(*app, 3));
+  CHECK(app->status().accessibilityMove.count == moves);
   items = app->accessibilityItems();
   common(items);
   CHECK(findItem(items, version, Role::Header) != nullptr);
@@ -1662,6 +1687,7 @@ void testAboutAccessibility() {
   tap(*app, centreOf(about.tabs[2]));
   CHECK(frames(*app, 1));
   CHECK(app->status().about.page == AboutPage::Licences);
+  movedTo(Move::Page, "LICENCES. PAGE 1 OF");
   const std::size_t pages = pinball::licencePageCount(layout);
   std::string read;
   for (std::size_t page = 0; page < pages; ++page) {
@@ -1692,6 +1718,12 @@ void testAboutAccessibility() {
     CHECK(previous->code != next->code);
     tap(*app, centreOf(about.next));
     CHECK(frames(*app, 1));
+    if (page + 1 < pages) {
+      movedTo(Move::Page, "LICENCES. PAGE " + std::to_string(page + 2) + " OF");
+    } else {
+      // NEXT on the last page changes nothing, and moves nothing.
+      CHECK(app->status().accessibilityMove.count == moves);
+    }
   }
   CHECK(squeezed(read) == squeezed(pinball::licenceText()));
   // On the last page NEXT stays put, and PREVIOUS goes back.
@@ -1699,11 +1731,18 @@ void testAboutAccessibility() {
   if (pages > 1) {
     tap(*app, centreOf(about.previous));
     CHECK(app->status().about.licencePage == pages - 2);
+    CHECK(frames(*app, 1));
+    movedTo(Move::Page, "LICENCES. PAGE " + std::to_string(pages - 1) + " OF");
   }
+  // Back to SCORES by its tab: its own page, not the first tab.
+  tap(*app, centreOf(about.tabs[0]));
+  CHECK(frames(*app, 1));
+  movedTo(Move::Page, version);
   // Closed: the title's own elements again.
   tap(*app, centreOf(about.close));
   CHECK(frames(*app, 1));
   CHECK(!app->status().aboutOpen);
+  movedTo(Move::Screen, pinball::kGameTitle);
   items = app->accessibilityItems();
   CHECK(findItem(items, "CLOSE", Role::Button) == nullptr);
   CHECK(findItem(items, "PLAY", Role::Button) != nullptr);
@@ -1757,17 +1796,26 @@ void testGuideFromHowToShowsANewGame() {
   tap(*app, centreOf(first.guide));
   CHECK(app->status().front.page == FrontPage::Guide);
   CHECK(frames(*app, 3));
+  // What the frame drew: the guide's own game, new, with LAUNCH.
+  using Source = App::TableSource;
   App::Status status = app->status();
-  CHECK(status.guideTableScore == 0 && status.guideTableSteps == 0);
-  CHECK(status.guideTouch.centreRole == Centre::Launch);
+  CHECK(status.guideTable.source == Source::Guide);
+  CHECK(status.guideTable.score == 0 && status.guideTable.steps == 0);
+  CHECK(status.guideTable.centre == Centre::Launch);
   // Again after going back: a new game each time, attract mode untouched.
   tap(*app, {10.0F, 10.0F});
   CHECK(app->status().front.page == FrontPage::HowTo);
   CHECK(frames(*app, 20));
+  CHECK(app->status().guideTable.source == Source::None);
   tap(*app, centreOf(first.guide));
   CHECK(frames(*app, 2));
   status = app->status();
-  CHECK(status.guideTableScore == 0 && status.guideTableSteps == 0);
+  CHECK(status.guideTable.source == Source::Guide);
+  CHECK(status.guideTable.score == 0 && status.guideTable.steps == 0);
+  // Off the guide, nothing is drawn behind it.
+  tap(*app, {10.0F, 10.0F});
+  CHECK(frames(*app, 2));
+  CHECK(app->status().guideTable.source == Source::None);
   CHECK(app->finish() == 0);
 }
 

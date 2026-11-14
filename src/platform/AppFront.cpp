@@ -31,6 +31,9 @@ constexpr SoundSet kAskSound = soundBit(Sound::TiltWarning);
 constexpr SoundSet kResetSound = soundBit(Sound::Drain);
 constexpr SoundSet kIntroSound = soundBit(Sound::SetComplete);
 
+// The About dialog's tabs, which come first among its elements.
+constexpr std::size_t kAboutTabCount = 3;
+
 // The touch guide as VoiceOver reads it: every control it marks.
 constexpr std::string_view kGuideSpoken =
     "TOUCH CONTROLS. LEFT HALF OF THE SCREEN: LEFT FLIPPER. RIGHT HALF: RIGHT FLIPPER. "
@@ -266,6 +269,10 @@ void App::frontAct(FrontAction action) {
       mixer_.trigger(kResetSound);
       break;
   }
+  // The guide's game lives while HOW TO PLAY's guide is up.
+  if (front_.state().page != FrontPage::Guide) {
+    guideGame_.reset();
+  }
 }
 
 void App::handleFrontKey(const SDL_KeyboardEvent& key) {
@@ -435,8 +442,15 @@ void App::refreshAccessibility() {
   fold(interrupted_ ? 1U : 0U);
   fold(static_cast<std::uint64_t>(aboutPage_.page));
   fold(aboutPage_.licencePage);
+  for (std::size_t i = 0; i < highScores_.size(); ++i) {
+    const HighScore entry = highScores_.at(i);
+    fold(entry.score);
+    fold(entry.rank);
+    for (const char c : entry.initials) {
+      fold(static_cast<std::uint8_t>(c));
+    }
+  }
   fold(highScores_.size());
-  fold(highScores_.best());
   fold(mixer_.muted() ? 1U : 0U);
   fold(musicOn_ ? 1U : 0U);
   fold(settings_.volume);
@@ -447,21 +461,25 @@ void App::refreshAccessibility() {
     return;
   }
   // A new screen or page, not a setting changed on the same one: VoiceOver
-  // moves to its first element. A tab of About and a page of its licences
-  // are new pages.
-  const std::uint64_t aboutKey =
-      now == Screen::About
-          ? (static_cast<std::uint64_t>(aboutPage_.page) << 8 | (aboutPage_.licencePage & 0xFFU))
-          : 0U;
-  const std::uint64_t pageKey = (static_cast<std::uint64_t>(now) << 48) |
-                                (aboutKey << 32) |
+  // moves to its first element. Another tab of About, or another page of
+  // its licences, is the same screen with a new page: VoiceOver moves to
+  // the page's first element after the tabs, not back to the first tab.
+  const std::uint64_t pageKey = (static_cast<std::uint64_t>(now) << 32) |
                                 (static_cast<std::uint64_t>(state.page) << 16) | state.howToPage;
-  const bool screenChanged = pageKey != accessibilityPage_;
-  accessibilityPage_ = pageKey;
-  accessibilityKey_ = key;
+  const std::uint64_t subpageKey =
+      now == Screen::About ? (static_cast<std::uint64_t>(aboutPage_.page) << 32 |
+                              static_cast<std::uint64_t>(aboutPage_.licencePage))
+                           : 0U;
 
   // The labels live in items for the call; the elements point into them.
   const std::vector<AccessItem> items = accessibilityItems();
+  ios::AccessibilityFocus focus;
+  if (pageKey != accessibilityPage_) {
+    focus.kind = ios::AccessibilityFocus::Kind::Screen;
+  } else if (subpageKey != accessibilitySubpage_) {
+    focus.kind = ios::AccessibilityFocus::Kind::Page;
+    focus.element = kAboutTabCount < items.size() ? kAboutTabCount : 0;
+  }
   std::vector<ios::AccessibleElement> elements;
   elements.reserve(items.size());
   const float ppu = layout_.pointsPerUnit;
@@ -471,9 +489,21 @@ void App::refreshAccessibility() {
                         {r.x * ppu, r.y * ppu, r.w * ppu, r.h * ppu},
                         item.code,
                         item.role,
-                        item.enabled});
+                        item.enabled,
+                        item.selected});
   }
-  ios::setAccessibilityElements(elements, accessibilityEvent_, screenChanged);
+  if (!ios::setAccessibilityElements(elements, accessibilityEvent_, focus)) {
+    // Not replaced: the old key stays, and the next frame tries again.
+    return;
+  }
+  accessibilityPage_ = pageKey;
+  accessibilitySubpage_ = subpageKey;
+  accessibilityKey_ = key;
+  if (focus.kind != ios::AccessibilityFocus::Kind::Stay) {
+    accessibilityMove_.kind = focus.kind;
+    accessibilityMove_.label = focus.element < items.size() ? items[focus.element].label : "";
+    ++accessibilityMove_.count;
+  }
 }
 
 std::vector<App::AccessItem> App::accessibilityItems() const {
@@ -612,11 +642,16 @@ std::vector<App::AccessItem> App::accessibilityItems() const {
       const auto aboutCode = [](OverlayTarget::Kind kind, std::uint8_t index = 0) {
         return accessCode(AccessGroup::About, static_cast<std::uint8_t>(kind), index);
       };
-      // The tabs, then what the page that is up shows, then CLOSE.
-      constexpr std::array<std::string_view, 3> kTabs{"SCORES", "ABOUT", "LICENCES"};
+      // The tabs, the one that is up selected; then what its page shows;
+      // then CLOSE.
+      constexpr std::array<std::string_view, kAboutTabCount> kTabs{"SCORES", "ABOUT",
+                                                                   "LICENCES"};
       for (std::size_t i = 0; i < kTabs.size(); ++i) {
         add(std::string(kTabs[i]), about.tabs[i],
             aboutCode(OverlayTarget::Kind::AboutTab, static_cast<std::uint8_t>(i)), Role::Button);
+        if (!items.empty() && items.back().label == kTabs[i]) {
+          items.back().selected = static_cast<std::size_t>(aboutPage_.page) == i;
+        }
       }
       for (AboutReadout& part : aboutReadout(highScores_, layout_, aboutPage_)) {
         using Part = AboutReadout::Kind;

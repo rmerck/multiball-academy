@@ -134,6 +134,21 @@ class App {
   // starts nothing yet.
   void discardSavedGame();
 
+  // A game's table as render() drew it: whose game, its score and steps,
+  // and what the centre button showed over it.
+  enum class TableSource : std::uint8_t { None, Guide, Attract, Player };
+  struct DrawnTable {
+    TableSource source = TableSource::None;
+    std::uint64_t score = 0;
+    std::uint64_t steps = 0;
+    TouchControls::View::Centre centre = TouchControls::View::Centre::Launch;
+  };
+  struct AccessibilityMove {
+    ios::AccessibilityFocus::Kind kind = ios::AccessibilityFocus::Kind::Stay;
+    std::string label;
+    unsigned count = 0;
+  };
+
   // What the application is showing and doing, for tests and diagnostics.
   struct Status {
     bool paused;
@@ -184,12 +199,12 @@ class App {
     unsigned hapticsPlayed;
     // The high score table, as shown.
     HighScores scores;
-    // The game drawn behind HOW TO PLAY's touch guide while it is up (a new
-    // game's: no score, no step taken), and what its touch controls show.
-    // 0, 0 and the player's controls when that guide is not up.
-    std::uint64_t guideTableScore;
-    std::uint64_t guideTableSteps;
-    TouchControls::View guideTouch;
+    // What the last frame drew behind HOW TO PLAY's touch guide; source
+    // None if that frame did not show it.
+    DrawnTable guideTable;
+    // The last move of VoiceOver's focus asked of the system, and the label
+    // of the element it went to; how many such moves there have been.
+    AccessibilityMove accessibilityMove;
   };
   [[nodiscard]] Status status() const;
   // How many frames a standing picture is drawn for after each event.
@@ -211,6 +226,7 @@ class App {
     std::int32_t code = 0;
     ios::AccessRole role = ios::AccessRole::Button;
     bool enabled = true;
+    bool selected = false;
   };
   [[nodiscard]] std::vector<AccessItem> accessibilityItems() const;
 
@@ -502,6 +518,9 @@ class App {
   // own, never attract mode's or a game left by MAIN MENU, with its lights.
   std::optional<Game> guideGame_;
   LightShow guideShow_;
+  // What render() last drew behind that guide.
+  DrawnTable guideDrawn_;
+  AccessibilityMove accessibilityMove_;
   AttractPilot pilot_;
   FixedTimestep attractTimestep_{Game::kStepSeconds, 8};
   std::uint64_t attractSteps_ = 0;
@@ -530,6 +549,7 @@ class App {
   Uint32 accessibilityEvent_ = 0;
   std::uint64_t accessibilityKey_ = ~std::uint64_t{0};
   std::uint64_t accessibilityPage_ = ~std::uint64_t{0};
+  std::uint64_t accessibilitySubpage_ = ~std::uint64_t{0};
 };
 
 }  // namespace pinball

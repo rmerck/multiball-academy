@@ -273,6 +273,7 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
   reduceMotion_ = options_.reduceMotion.value_or(systemReduceMotion());
   lightShow_.setReduceMotion(reduceMotion_);
   attractShow_.setReduceMotion(reduceMotion_);
+  guideShow_.setReduceMotion(reduceMotion_);
   ios::attachWindow(window_.get());
   hapticsAvailable_ = ios::hapticsAvailable();
   accessibilityEvent_ = SDL_RegisterEvents(1);
@@ -666,11 +667,8 @@ App::Status App::status() const {
   status.reviewRequests = reviewRequests_;
   status.hapticsPlayed = hapticsPlayed_;
   status.scores = highScores_;
-  const bool guideUp = frontOpen_ && front_.state().page == FrontPage::Guide && guideGame_;
-  status.guideTableScore = guideUp ? guideGame_->rules().score() : 0;
-  status.guideTableSteps = guideUp ? guideGame_->stepCount() : 0;
-  status.guideTouch =
-      guideUp ? TouchControls().view(pinball::touchContext(*guideGame_)) : status.touch;
+  status.guideTable = guideDrawn_;
+  status.accessibilityMove = accessibilityMove_;
   return status;
 }
 
@@ -768,6 +766,8 @@ void App::render(double alpha, bool cursorLit) {
   SDL_Renderer* r = renderer_.get();
   const bool touch = layout_.idiom == screen::Idiom::Touch;
   refreshAccessibility();
+  // Set again below if this frame shows HOW TO PLAY's touch guide.
+  guideDrawn_ = DrawnTable{};
 
   // The backdrop's own colour everywhere: the desktop's letterbox bars and
   // what shows at the table's edge when a nudge jolts it, and on a touch
@@ -791,13 +791,27 @@ void App::render(double alpha, bool cursorLit) {
       if (!guideGame_) {
         prepareGuideGame();
       }
-      table_->draw(r, *guideGame_, 0.0F, layout_,
+      const Game& drawn = *guideGame_;
+      guideShow_.setReduceMotion(reduceMotion());
+      table_->draw(r, drawn, 0.0F, layout_,
                    DrawOptions{.reduceMotion = reduceMotion(), .lightShow = &guideShow_},
                    HudExtras{highScores_.best(), false});
+      const TouchControls::View controls = TouchControls().view(pinball::touchContext(drawn));
       if (touch) {
-        table_->drawTouchOverlay(r, layout_,
-                                 TouchControls().view(pinball::touchContext(*guideGame_)));
+        table_->drawTouchOverlay(r, layout_, controls);
       }
+      // What was drawn, as it was drawn, for the tests: whose game it is
+      // goes by the object itself.
+      TableSource source = TableSource::Player;
+      if (guideGame_ && &drawn == &*guideGame_) {
+        source = TableSource::Guide;
+      } else if (attract_ && &drawn == &*attract_) {
+        source = TableSource::Attract;
+      }
+      guideDrawn_ = {.source = source,
+                     .score = drawn.rules().score(),
+                     .steps = drawn.stepCount(),
+                     .centre = controls.centreRole};
     } else {
       attractShow_.setAttract(true);
       table_->drawAttract(r, shown, static_cast<float>(attractTimestep_.alpha()),

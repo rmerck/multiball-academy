@@ -226,7 +226,7 @@ GuideLayout guideLayout(const Layout& layout) noexcept {
     const float scoreTop = layout.hud.y + panel::kScoreWell.y;
     const float top = std::max(scoreTop - 4.0F - pauseH, pauseBottom);
     g.pauseLabel = keptIn({pause.x + pause.w - pauseW, top, pauseW, pauseH}, safe);
-    g.pauseLead = {pause.x, pauseBottom, kNone, kNone};
+    g.pauseLead = {};
   } else {
     g.pauseLabel = keptIn({pause.x, bottomOf(layout.hud) + 8.0F, pauseW, pauseH}, safe);
     g.pauseLead = {pause.x + 2.0F, pauseBottom, 4.0F,

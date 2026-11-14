@@ -153,22 +153,23 @@ void requestReview() noexcept {
   }
 }
 
-void setAccessibilityElements(std::span<const AccessibleElement> elements, std::uint32_t eventType,
-                              bool screenChanged) noexcept {
-  // UIKit's, so on the main thread alone, where the game's loop runs. The
-  // labels are copied into the elements: the caller's strings die with the
-  // call.
+bool setAccessibilityElements(std::span<const AccessibleElement> elements, std::uint32_t eventType,
+                              AccessibilityFocus focus) noexcept {
+  // UIKit's, so on the main thread alone, where the game's loop runs. From
+  // another, nothing is changed and the caller tries again. The labels are
+  // copied into the elements: the caller's strings die with the call.
   if (![NSThread isMainThread]) {
-    return;
+    NSLog(@"Accessibility elements not replaced: not on the main thread");
+    return false;
   }
   @autoreleasepool {
     UIView* const view = gView;
     if (view == nil) {
-      return;
+      return true;
     }
     if (elements.empty()) {
       view.accessibilityElements = nil;
-      return;
+      return true;
     }
     NSMutableArray* const list = [NSMutableArray arrayWithCapacity:elements.size()];
     for (const AccessibleElement& element : elements) {
@@ -189,16 +190,28 @@ void setAccessibilityElements(std::span<const AccessibleElement> elements, std::
       } else if (!element.enabled) {
         traits |= UIAccessibilityTraitNotEnabled;
       }
+      if (element.selected) {
+        traits |= UIAccessibilityTraitSelected;
+      }
       item.accessibilityTraits = traits;
       item.eventType = control && element.enabled ? eventType : 0;
       item.code = element.code;
       [list addObject:item];
     }
     view.accessibilityElements = list;
-    if (screenChanged) {
-      UIAccessibilityPostNotification(UIAccessibilityScreenChangedNotification, list.firstObject);
+    id const target = focus.element < list.count ? list[focus.element] : list.firstObject;
+    switch (focus.kind) {
+      case AccessibilityFocus::Kind::Stay:
+        break;
+      case AccessibilityFocus::Kind::Screen:
+        UIAccessibilityPostNotification(UIAccessibilityScreenChangedNotification, target);
+        break;
+      case AccessibilityFocus::Kind::Page:
+        UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification, target);
+        break;
     }
   }
+  return true;
 }
 
 }  // namespace pinball::ios
