@@ -7,6 +7,8 @@
 #include <vector>
 
 #include "bots/TableHarness.hpp"
+#include "core/Courses.hpp"
+#include "core/Rules.hpp"
 
 // The measurements behind the acceptance tests of TABLE.md section 5. Each
 // runs the real game with one of the bots and returns what it counted; the
@@ -305,5 +307,66 @@ struct StressResult {
   std::uint64_t fingerprint = 0;
 };
 [[nodiscard]] StressResult stress(const StressOptions& options);
+
+// --- C2 to C6: whole games under the table's own rules ----------------------------------------
+// A bot plays game after game, three balls each, with everything the rules
+// do: saver, kickback, courses, both multiballs, extra balls. The bot knows
+// nothing of the rules; it plunges when a ball waits and flips.
+struct GamesOptions {
+  BotKind bot = BotKind::Reflex;
+  int reflexError = 5;
+  int games = 20;
+  std::uint64_t seed = 1;
+  // For telling the parts of a game's length apart: the same games with no
+  // ball ever added (no lock, no turbo ball, no Graduation Day), or with no
+  // drained ball given back by the saver.
+  bool multiball = true;
+  bool saver = true;
+};
+struct GamesResult {
+  int games = 0;
+  std::vector<double> gameSeconds;  // From the first plunge to game over.
+  // Each ball of each game, from entering play to the end of the ball
+  // (saves and multiballs are part of it).
+  std::vector<double> ballSeconds;
+  std::vector<std::uint64_t> scores;
+  // Games in which each thing happened at least once.
+  int gamesWithTurbo = 0;
+  int gamesWithAcademy = 0;
+  int gamesWithCourse = 0;       // A course started.
+  int gamesWithCoursePass = 0;
+  int gamesQualified = 0;        // All six courses passed: Graduation Day lit.
+  int gamesGraduated = 0;        // Commencement collected.
+  // Seconds of the game at which its first Turbo multiball started.
+  std::vector<double> firstTurboSeconds;
+  // Every multiball: how long it lasted, and how many had a jackpot.
+  std::vector<double> multiballSeconds;
+  int multiballs = 0;
+  int multiballsWithJackpot = 0;
+  std::array<int, 4> multiballsOfKind{};  // By Multiball.
+  // Points from each feature, all games together.
+  std::array<std::uint64_t, kFeatureCount> featureScore{};
+  std::uint64_t totalScore = 0;
+  std::array<int, kRankCount> finalRank{};
+  std::uint64_t coursesStarted = 0;
+  std::uint64_t coursesPassed = 0;
+  std::uint64_t extraBallsPlayed = 0;
+  int timeouts = 0;  // Games ended by the one hour cap.
+  std::uint64_t steps = 0;
+  // The first invariant broken (bots/RuleWatch.hpp), and how many steps
+  // broke one; nullptr and 0 for a sound run.
+  const char* broken = nullptr;
+  std::uint64_t brokenSteps = 0;
+  // Engine soundness over the same steps.
+  std::uint64_t stuck = 0;
+  std::uint64_t searches = 0;
+  std::uint64_t hangarEntriesDoorsUp = 0;
+  std::uint64_t lockedAstray = 0;
+  std::uint64_t fingerprint = 0;
+
+  [[nodiscard]] static double percentile(std::vector<double> values, double q);
+  [[nodiscard]] double share(Feature feature) const;  // Percent of all points.
+};
+[[nodiscard]] GamesResult playGames(const GamesOptions& options);
 
 }  // namespace pinball::bots::acceptance

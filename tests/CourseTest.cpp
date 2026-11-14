@@ -246,12 +246,12 @@ void testCourses() {
     const Rules& rules = bench.rules;
 
     start(bench, CourseId::BumperBasics);
-    CHECK(rules.goalText() == std::string_view("HIT THE THRUSTERS") && rules.goalRemaining() == 10);
+    CHECK(rules.goalText() == std::string_view("HIT THE THRUSTERS") && rules.goalRemaining() == 12);
     CHECK(rules.lampState(LampId::ArrowTurbine) == LampState::Blink);
-    bench.bumper(9);
-    CHECK(rules.scoreFrom(Feature::Course1) == 9 * 3'000 && rules.goalRemaining() == 1);
+    bench.bumper(11);
+    CHECK(rules.scoreFrom(Feature::Course1) == 11 * 3'000 && rules.goalRemaining() == 1);
     bench.bumper();
-    CHECK(rules.scoreFrom(Feature::Course1) == 10 * 3'000 + 100'000);
+    CHECK(rules.scoreFrom(Feature::Course1) == 12 * 3'000 + 100'000);
     CHECK(!rules.courseRunning() && rules.coursePassed(0) && rules.rank() == 1);
     CHECK(bench.message() == std::string_view("COURSE PASSED  RANK UP"));
     CHECK(rules.lampState(LampId::Course1) == LampState::On);
@@ -270,9 +270,10 @@ void testCourses() {
     start(bench, CourseId::RunwayDrills);
     bench.runway();
     bench.runway();
-    CHECK(rules.scoreFrom(Feature::Course2) == 2 * 20'000 && rules.goalRemaining() == 1);
     bench.runway();
-    CHECK(rules.scoreFrom(Feature::Course2) == 3 * 20'000 + 125'000 && rules.rank() == 2);
+    CHECK(rules.scoreFrom(Feature::Course2) == 3 * 20'000 && rules.goalRemaining() == 1);
+    bench.runway();
+    CHECK(rules.scoreFrom(Feature::Course2) == 4 * 20'000 + 125'000 && rules.rank() == 2);
 
     start(bench, CourseId::CircuitTraining);
     bench.circuit(true);
@@ -308,8 +309,8 @@ void testCourses() {
 
     // TURBINE THEORY: the award falls 5,000 a second from 250,000.
     start(bench, CourseId::TurbineTheory);
-    CHECK(rules.hurryUpValue() == 250'000 && rules.goalRemaining() == 30);
-    bench.spin(29);
+    CHECK(rules.hurryUpValue() == 250'000 && rules.goalRemaining() == 36);
+    bench.spin(35);
     bench.wait(10.4);
     CHECK(rules.hurryUpValue() == 200'000);
     bench.spin();
@@ -386,7 +387,7 @@ void testCourses() {
     // It stays available: relit by ramps, offered again.
     CHECK(rules.rampsForBriefing() == 2);
     start(bench, CourseId::RunwayDrills);
-    CHECK(rules.goalRemaining() == 3);  // From the beginning.
+    CHECK(rules.goalRemaining() == 4);  // From the beginning.
     // A ramp during a course does not count toward relighting.
     finish(bench);
     CHECK(rules.rampsForBriefing() == 2);
@@ -401,9 +402,10 @@ void testCourses() {
     bench.wait(30.0);
     CHECK(rules.courseSecondsLeft() < 5.1);
     CHECK(bench.drain() == Rules::DrainResult::NextBall);
-    CHECK(rules.courseRunning() && rules.goalRemaining() == 2);
+    CHECK(rules.courseRunning() && rules.goalRemaining() == 3);
     CHECK(rules.courseSecondsLeft() > 14.9 && rules.courseSecondsLeft() <= 15.0);
     // With more than that left it keeps what it has.
+    bench.runway();
     bench.runway();
     bench.runway();
     start(bench, CourseId::CircuitTraining);
@@ -512,7 +514,7 @@ void testCourses() {
     rules.setMultiballEnabled(false);
     const std::uint64_t first = rules.scoreFrom(Feature::Course2);
     pass(bench, CourseId::RunwayDrills);
-    CHECK(rules.scoreFrom(Feature::Course2) - first == 3 * 20'000 + 2 * 125'000);
+    CHECK(rules.scoreFrom(Feature::Course2) - first == 4 * 20'000 + 2 * 125'000);
     CHECK(rules.rank() == pinball::kTopRank);
     CHECK(bench.message() == std::string_view("COURSE PASSED"));
     // A second Graduation Day can be qualified.

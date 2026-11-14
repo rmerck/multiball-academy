@@ -10,11 +10,14 @@
 
 namespace pinball {
 
-// Every sound the game can make. The provisional rules cue none of
-// ExtraBall, BankComplete, MissionSelect, MissionAccept, MissionComplete and
-// Promotion. They stay until the sound list of the table's own rules
-// replaces this one: the mixer's voice tests (tests/SoundTest.cpp) are
-// tuned to the whole set, so taking some out is not a change to make alone.
+// Every sound the game can make. The table's rules use the whole set, and
+// several of them for more than one thing until the table has cues of its
+// own (core/Rules.cpp says which): BankComplete for any set completed (bay
+// doors, roll call, W-I-N-G, turbo targets), MissionSelect for something
+// lit or a lesser award (skill shot, combo, extra credit), MissionAccept
+// for something started (course, overdrive, a lock, an exam shot),
+// MissionComplete for a course passed and a jackpot, Promotion for a rank
+// and the start of a multiball.
 enum class Sound : std::uint8_t {
   Flipper,
   Launch,

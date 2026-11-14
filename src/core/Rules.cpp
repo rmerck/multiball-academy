@@ -700,7 +700,7 @@ void Rules::onBallLocked(std::size_t bay, bool served) noexcept {
   status_.live = std::max(status_.live - 1, 0);
   say(locksHeld_ == 1 ? display::Message("BALL 1 LOCKED") : display::Message("BALL 2 LOCKED"));
   cue(Sound::MissionAccept);
-  if (academyMultiballs_ > 0) {
+  if (academyMultiballs_ > 0 || locksHeld_ > tuning::kFirstMultiballOpenLocks) {
     // Only the first multiball of a game keeps the Hangar open between locks.
     doorsOpen_ = false;
   }

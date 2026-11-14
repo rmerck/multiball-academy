@@ -34,7 +34,7 @@ Linux builds from source. Windows is untested.
 | F4 | Fullscreen |
 | M, N | Mute all sound, toggle music |
 
-Keys are read by physical position, so they match a US keyboard on any layout. Scoring under the provisional rules, and what the table's own rule set will add, are described in [docs/RULES.md](docs/RULES.md).
+Keys are read by physical position, so they match a US keyboard on any layout. The rules of the game (courses and rank, the two multiballs, combos, overdrive, Graduation Day and the scoring table) are in [docs/RULES.md](docs/RULES.md).
 
 ## Build
 
@@ -112,7 +112,7 @@ Report security issues through "Report a vulnerability" on the repository's Secu
 ## Documentation
 
 - [docs/BUILDING.md](docs/BUILDING.md): build options, release builds, signing, notarization, tests and CI
-- [docs/RULES.md](docs/RULES.md): the provisional rules, scoring, nudge and tilt
+- [docs/RULES.md](docs/RULES.md): the rules of the game, scoring, nudge and tilt
 - [docs/DESIGN.md](docs/DESIGN.md): design priorities, score file handling, audio, physics and source layout
 - [docs/ASSETS.md](docs/ASSETS.md): art generation and asset integrity
 

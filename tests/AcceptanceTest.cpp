@@ -299,6 +299,24 @@ void testAcceptance() {
     options.seed = 10;
     CHECK(stress(options).fingerprint != a.fingerprint);
 
+    // A whole game under the table's own rules, played twice: the same
+    // game, sound from the first plunge to game over.
+    GamesOptions whole;
+    whole.games = 1;
+    whole.seed = 3;
+    const GamesResult one = playGames(whole);
+    const GamesResult again = playGames(whole);
+    CHECK(one.games == 1 && one.broken == nullptr && one.brokenSteps == 0 && one.timeouts == 0);
+    CHECK(one.fingerprint == again.fingerprint && one.steps == again.steps);
+    CHECK(one.scores == again.scores && one.scores.at(0) > 0);
+    CHECK(one.ballSeconds.size() >= 3 && one.gameSeconds.size() == 1);
+    CHECK(one.hangarEntriesDoorsUp == 0 && one.lockedAstray == 0);
+    std::uint64_t parts = 0;
+    for (const std::uint64_t part : one.featureScore) {
+      parts += part;
+    }
+    CHECK(parts == one.totalScore && one.totalScore == one.scores.at(0));
+
     SoakOptions soakOptions;
     soakOptions.bot = BotKind::Random;
     soakOptions.balls = 4;

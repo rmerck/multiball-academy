@@ -118,8 +118,14 @@ void markDoors(Game& game) {
 // Sends the ball in a slot up into the open Hangar and steps until it is
 // taken. Returns whether it was.
 bool shootHangar(Game& game, std::size_t slot) {
-  putBall(game, slot, kBelowDoors, {0.0F, -900.0F});
   const InputState idle;
+  if (game.doorBankUp()) {
+    // The rules shut the Hangar after some locks: open it again.
+    markDoors(game);
+    game.step(idle);
+    game.step(idle);
+  }
+  putBall(game, slot, kBelowDoors, {0.0F, -900.0F});
   for (int i = 0; i < kSecond; ++i) {
     game.step(idle);
     if (Seam::held(game, slot)) {
@@ -378,7 +384,7 @@ void testDoorBank() {
           table::kDoorMouthHalfSize.y);
   }
 
-  {  // Provisional rules, locks off: the Hangar returns the ball and the
+  {  // With multiball off: the Hangar returns the ball and the
      // bank comes back up half a second later, with its marks cleared.
     Game game;
     run(game, 2);
@@ -1224,7 +1230,7 @@ void testKickback() {
     CHECK(returnedAt >= kBlocked && returnedAt <= kBlocked + 2);
   }
 
-  {  // Provisional rules: lit at the start of a game, out when it has fired,
+  {  // The kickback: lit at the start of a game, out when it has fired,
      // lit again by all four return lanes; never lit on a tilted table.
     Rules rules(1.0 / 120.0);
     CHECK(rules.kickbackLit());

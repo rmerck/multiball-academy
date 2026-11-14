@@ -62,9 +62,13 @@ inline constexpr std::uint64_t kMaxScore = 999'999'999'999ULL;
 // The numbers that set the pace of a game. Tuned against the rule rows of
 // the acceptance suite (tests/AcceptanceMain.cpp).
 namespace tuning {
-// The turbo meter fills at this, then at this much more each time.
-inline constexpr int kTurboMeterFirst = 50;
-inline constexpr int kTurboMeterStep = 25;
+// The turbo meter fills at this, then at this much more each time (60,
+// 260, 460). The first is set for a Turbo multiball in most games, after a
+// minute and a half; the step for a second one to be earned, not given: at
+// 50 and 25 more each time there were four a game and the median game ran
+// over seventeen minutes.
+inline constexpr int kTurboMeterFirst = 60;
+inline constexpr int kTurboMeterStep = 200;
 inline constexpr int kTurboPerBumper = 1;
 inline constexpr int kTurboPerSpin = 1;
 inline constexpr int kTurboPerTarget = 5;
@@ -77,6 +81,12 @@ inline constexpr int kRampsForGraduation = 3;
 // For the first bank of a game any three door hits open the Hangar: a hit
 // on a door already marked marks the next one.
 inline constexpr bool kFirstBankAnyThreeHits = false;
+// For the first Academy multiball of a game the Hangar stays open after
+// this many of its locks: 2 is three Hangar shots after one door bank, 1 is
+// a second bank before the shot that starts it, 0 a bank for every shot.
+// Later multiballs always need a bank for every shot. (At 2, two games in
+// three had an Academy multiball; at 0, one in eight.)
+inline constexpr int kFirstMultiballOpenLocks = 1;
 inline constexpr int kJackpotsForSuper = 3;
 inline constexpr double kBallSaveSeconds = 15.0;
 inline constexpr double kExtraCreditSaveSeconds = 10.0;

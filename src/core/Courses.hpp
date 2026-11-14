@@ -48,13 +48,13 @@ struct Course {
 // Balance: times, goals and awards are tuned against the acceptance suite
 // (tests/AcceptanceMain.cpp, the rule rows).
 inline constexpr std::array<Course, kCourseCount> kCourses{{
-    {"BUMPER BASICS 101", 35.0, 10, 3'000, 100'000, "HIT THE THRUSTERS"},
-    {"RUNWAY DRILLS 103", 35.0, 3, 20'000, 125'000, "SHOOT RUNWAY OR SKYWAY"},
+    {"BUMPER BASICS 101", 35.0, 12, 3'000, 100'000, "HIT THE THRUSTERS"},
+    {"RUNWAY DRILLS 103", 35.0, 4, 20'000, 125'000, "SHOOT RUNWAY OR SKYWAY"},
     {"CIRCUIT TRAINING 201", 40.0, 2, 30'000, 150'000, "COMPLETE A CIRCUIT"},
     // The goal is the three doors; the Hangar itself is the second part.
     {"HANGAR SAFETY 202", 40.0, 3, 10'000, 150'000, "HIT THE BAY DOORS"},
     // The pass award is the hurry-up's floor.
-    {"TURBINE THEORY 301", 35.0, 30, 0, 100'000, "SPIN THE TURBINE"},
+    {"TURBINE THEORY 301", 35.0, 36, 0, 100'000, "SPIN THE TURBINE"},
     {"NAVIGATION 302", 45.0, 3, 30'000, 200'000, "SHOOT THE LIT ARROW"},
 }};
 

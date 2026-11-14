@@ -88,8 +88,9 @@ void testMultiball() {
     CHECK(!bench.doorsUp && rules.lockLit());
   }
 
-  {  // 4.7 Lock, lock, start: the first multiball of a game keeps the doors
-     // down, so three Hangar shots after one bank start it.
+  {  // 4.7 Lock, lock, start. For the first multiball of a game the Hangar
+     // stays open after the first lock; after the second the doors come
+     // back up and must be opened again for the ball that starts it.
     RulesBench bench = unsaved();
     const Rules& rules = bench.rules;
     bench.doors();
@@ -110,7 +111,11 @@ void testMultiball() {
     CHECK(rules.lampState(LampId::Lock2) == LampState::On);
     CHECK(bench.total() == 3);
     bench.step(240);
-    CHECK(!bench.doorsUp && rules.lockLit() && rules.multiball() == Multiball::None);
+    static_assert(tuning::kFirstMultiballOpenLocks == 1);
+    CHECK(bench.doorsUp && !rules.lockLit() && rules.multiball() == Multiball::None);
+    CHECK(!rules.doorMarked(0) && rules.locksHeld() == 2);
+    bench.doors();
+    CHECK(rules.lockLit() && bench.message() == std::string_view("LOCK IS LIT"));
     before = bench.score();
     CHECK(bench.hangar() == Rules::HoleResult::StartMultiball);
     CHECK(bench.score() - before == points::kHangar);
@@ -289,25 +294,28 @@ void testMultiball() {
   }
 
   {  // 4.8 Turbo meter: +1 a bumper, +1 a spin, +5 a turbo target; full at
-     // 50, then 75, 100; it carries over between balls.
+     // its first size, then at its step more each time; it carries over
+     // between balls.
     RulesBench bench = unsaved();
     const Rules& rules = bench.rules;
     bench.bumper(3);
     bench.spin(4);
     bench.rules.onTarget(0);
-    CHECK(rules.turboMeter() == 12 && rules.turboGoal() == 50);
-    CHECK(rules.turboFraction() > 0.23 && rules.turboFraction() < 0.25);
+    const int first = tuning::kTurboMeterFirst;
+    const int second = first + tuning::kTurboMeterStep;
+    CHECK(rules.turboMeter() == 12 && rules.turboGoal() == first);
+    CHECK(rules.turboFraction() == 12.0 / first);
     CHECK(rules.lampState(LampId::TurboCharge) == LampState::Blink);
     bench.drain();
     CHECK(rules.turboMeter() == 12 && rules.ball() == 2);
     bench.wait(Rules::kBallSaveSeconds);
-    bench.spin(30);
+    bench.spin(first - 12 - 8);
     CHECK(rules.lampState(LampId::TurboCharge) == LampState::FastBlink);
     bench.spin(7);
-    CHECK(rules.turboMeter() == 49 && rules.multiball() == Multiball::None);
+    CHECK(rules.turboMeter() == first - 1 && rules.multiball() == Multiball::None);
     bench.spin();
     // Full: a second ball is launched from the lane.
-    CHECK(rules.turboMeter() == 0 && rules.turboGoal() == 75);
+    CHECK(rules.turboMeter() == 0 && rules.turboGoal() == second);
     CHECK(bench.message() == std::string_view("TURBO MULTIBALL"));
     CHECK(rules.multiball() == Multiball::Turbo && rules.turboMultiballs() == 1);
     CHECK(rules.ballsLive() == 2);
@@ -334,11 +342,12 @@ void testMultiball() {
     bench.step();
     CHECK(rules.multiball() == Multiball::None);
     CHECK(bench.message() == std::string_view("MULTIBALL OVER"));
-    // The next fill is at 75.
-    bench.spin(74);
+    // The next fill is a step further off.
+    bench.spin(second - 1);
     CHECK(rules.multiball() == Multiball::None);
     bench.spin();
-    CHECK(rules.multiball() == Multiball::Turbo && rules.turboGoal() == 100);
+    CHECK(rules.multiball() == Multiball::Turbo &&
+          rules.turboGoal() == second + tuning::kTurboMeterStep);
     CHECK(rules.jackpotValue() == 50'000);
   }
 
@@ -358,8 +367,10 @@ void testMultiball() {
     CHECK(bench.message() == std::string_view("TURBO BONUS"));
     CHECK(rules.multiball() == Multiball::None && bench.launched == 0 && bench.refused == 0);
     CHECK(rules.scoreFrom(Feature::TurboBonus) == points::kTurboBonus);
-    CHECK(bench.score() - before == 50 * points::kSpin + points::kTurboBonus);
-    CHECK(rules.turboGoal() == 75 && rules.turboMeter() == 0);
+    CHECK(bench.score() - before ==
+          static_cast<std::uint64_t>(tuning::kTurboMeterFirst) * points::kSpin + points::kTurboBonus);
+    CHECK(rules.turboGoal() == tuning::kTurboMeterFirst + tuning::kTurboMeterStep &&
+          rules.turboMeter() == 0);
 
     // One locked: the second ball makes three in all, and the Hangar then
     // locks nothing more until the multiball is over.
@@ -433,6 +444,7 @@ void testMultiball() {
     const std::uint64_t before = bench.score();
     bench.runway();
     CHECK(bench.score() - before == points::kRamp + 50'000 + 20'000);
+    bench.runway();
     bench.runway();
     bench.runway();
     CHECK(rules.coursePassed(1) && rules.multiball() == Multiball::Turbo && rules.rank() == 1);

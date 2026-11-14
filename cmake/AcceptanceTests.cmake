@@ -48,7 +48,7 @@ if(PINBALL_ACCEPTANCE_TESTS)
   # with a colon runs one part of it: one timing error, one bot.
   foreach(section IN ITEMS launch shots lanes exits rest wedge p1
                            p2:3 p2:4 p2:5 p2:6 p2:8 p2saver:3 p2saver:5 p2saver:8
-                           kickback stress:p1 stress:p2)
+                           kickback stress:p1 stress:p2 rules:3 rules:5 rules:8)
     string(REPLACE ":" "_" section_id "${section}")
     add_test(NAME acceptance_${section_id} COMMAND pinball_acceptance ${section})
     set_tests_properties(acceptance_${section_id} PROPERTIES LABELS acceptance TIMEOUT 14400)

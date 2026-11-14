@@ -98,16 +98,22 @@ float fittedSize(std::string_view text, float width, float start) noexcept {
 struct CourseView {
   bool running = false;
   std::string_view name;
+  // With a course running: its goal and how many are still to go (0: no
+  // count to show). With none: what to shoot to start one.
   std::string_view goal;
   int remaining = 0;
 };
 
-// The provisional rules have no courses, so the game itself never shows one.
-CourseView courseView(const HudPreview* preview) noexcept {
+// The running course or Graduation Day, as the rules give it.
+CourseView courseView(const Rules& rules, const HudPreview* preview) noexcept {
   if (preview != nullptr && preview->course) {
     return {true, kPreviewCourse, kPreviewGoal, 255};
   }
-  return {};
+  if (rules.gameOver()) {
+    return {};
+  }
+  const std::string_view name = rules.courseName();
+  return {!name.empty(), name, rules.goalText(), rules.goalRemaining()};
 }
 
 // The line about locks and balls in play. Empty when there is nothing to say.
@@ -236,7 +242,7 @@ void drawPanel(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
     drawText(r, line, statusWell.x + 190.0F, statusWell.y + 44.0F, kLabelSize,
              c.multiball.running() ? kAmber : kCyan);
   }
-  // Rank. (How it is earned comes with the table's rules.)
+  // Rank: one for each course passed, and the last on Graduation Day.
   label(r, rankWell, "RANK");
   drawText(r, rankName(rules.rank()), rankWell.x + kPad, rankWell.y + 30.0F, display::kRankSize,
            kCyan);
@@ -250,12 +256,16 @@ void drawPanel(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
     drawText(r, course.name, missionX, missionY, display::kMissionSize, kAmber);
     if (!course.goal.empty()) {
       drawText(r, course.goal, missionX, missionY + 34.0F, kLabelSize, kWhite);
-      drawText(r, formatText(buffer.data(), buffer.size(), "%d TO GO", course.remaining),
-               missionWell.x + missionWell.w - kPad, missionY + 34.0F, kLabelSize, kWhite,
-               TextAlign::Right);
+      if (course.remaining > 0) {
+        drawText(r, formatText(buffer.data(), buffer.size(), "%d TO GO", course.remaining),
+                 missionWell.x + missionWell.w - kPad, missionY + 34.0F, kLabelSize, kWhite,
+                 TextAlign::Right);
+      }
     }
   } else {
     drawText(r, kNoCourse, missionX, missionY, display::kMissionSize, kDim);
+    // What starts one.
+    drawText(r, course.goal, missionX, missionY + 34.0F, kLabelSize, kDim);
   }
   // Lit awards along the bottom of the course window.
   {
@@ -269,8 +279,22 @@ void drawPanel(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
     drawText(r, "BALL SAVE", missionWell.x + missionWell.w - kPad, y, kLabelSize,
              rules.ballSaveActive() ? kGreen : kDim, TextAlign::Right);
   }
-  // The window below is for the table's own rules, which are still to
-  // come: nothing is shown in it.
+  // The window below: the state of the table's features, as plain lines
+  // (36 characters hold the longest of each at this size).
+  {
+    const panel::Rect systemsWell = placed(panel::kHighScoreWell);
+    std::array<char, 48> line{};
+    drawText(r,
+             formatText(line.data(), line.size(), "TURBO %d/%d  OD %dX  COMBO %d",
+                        rules.turboMeter(), rules.turboGoal(), rules.overdrive(),
+                        rules.comboLevel()),
+             systemsWell.x + kPad, systemsWell.y + 14.0F, kLabelSize, kWhite);
+    drawText(r,
+             formatText(line.data(), line.size(), "BONUS %dX  EXTRA BALL %d  KICKBACK %s",
+                        rules.bonusMultiplier(), rules.extraBalls(),
+                        rules.kickbackLamp() ? "ON" : "OFF"),
+             systemsWell.x + kPad, systemsWell.y + 40.0F, kLabelSize, kWhite);
+  }
 
   drawMessage(r, messageWell, c, 4.0F);
 
@@ -396,8 +420,10 @@ void drawStrip(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
       // what the rules allow would be drawn a size smaller.
       drawText(r, course.goal, missionX, goalY,
                fittedSize(course.goal, kStripInner, kStripSize), kWhite);
-      drawText(r, formatText(buffer.data(), buffer.size(), "%d TO GO", course.remaining),
-               missionX, lampY, kStripSize, kWhite);
+      if (course.remaining > 0) {
+        drawText(r, formatText(buffer.data(), buffer.size(), "%d TO GO", course.remaining),
+                 missionX, lampY, kStripSize, kWhite);
+      }
     }
   } else {
     drawText(r, kNoCourse, missionX, nameY, kStripSize, kDim);
@@ -427,7 +453,7 @@ void drawHud(SDL_Renderer* r, const HudArt& art, const Game& game, const screen:
   const HudPreview* const preview = extras.preview;
   Content content{.rules = rules,
                   .extras = extras,
-                  .course = courseView(preview),
+                  .course = courseView(game.rules(), preview),
                   .multiball = preview != nullptr && preview->multiball
                                    ? *preview->multiball
                                    : multiballView(game),
