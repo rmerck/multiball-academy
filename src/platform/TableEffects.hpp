@@ -65,17 +65,20 @@ class GlowBatch {
 
 class TableEffects {
  public:
+
   struct Textures {
     SDL_Texture* glow = nullptr;   // Additive (glow.png).
     SDL_Texture* flare = nullptr;  // Additive (flare.png).
     SDL_Texture* ring = nullptr;   // Additive (ring.png).
+    SDL_Texture* gi = nullptr;     // Additive (gi.png): the general illumination's light map.
   };
 
   void setTextures(Textures textures) noexcept { textures_ = textures; }
 
   // Over the playfield art, under everything else: the general
   // illumination, dimmed by the show.
-  void drawUnderlay(SDL_Renderer* r, const LightShow& show);
+  // lightMap: draw gi.png (off in economy).
+  void drawUnderlay(SDL_Renderer* r, const LightShow& show, bool lightMap = true);
   // Over the lamps and the standing elements: what was struck flashes, the
   // spinner strobes, the chases run toward lit shots.
   void drawElementFlashes(SDL_Renderer* r, const Game& game, const LightShow& show);
@@ -83,6 +86,9 @@ class TableEffects {
   // the jackpot ring, the flippers' highlight, the balls' trails.
   void drawShow(SDL_Renderer* r, const Game& game, std::span<const BallView> balls, float alpha,
                 const LightShow& show);
+  // Just under the balls: a soft dark pool round each, so that the ball
+  // keeps its contrast over any light.
+  void drawBallPools(SDL_Renderer* r, std::span<const BallView> balls);
   // Over the balls: a moving specular glint and the colour of the nearest
   // light on the chrome.
   void drawBallGlints(SDL_Renderer* r, const Game& game, std::span<const BallView> balls,
@@ -95,6 +101,9 @@ class TableEffects {
   }
   void addRing(SDL_Renderer* r, Vec2 centre, float radius, art::Rgb colour, float strength) {
     ring_.add(r, textures_.ring, centre, radius, colour, strength);
+  }
+  void addFlare(SDL_Renderer* r, Vec2 centre, float radius, art::Rgb colour, float strength) {
+    flare_.add(r, textures_.flare, centre, radius, colour, strength);
   }
   void endLayer(SDL_Renderer* r) { flushAll(r); }
 

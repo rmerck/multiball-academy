@@ -80,9 +80,10 @@ LUM_NEON_LENS = 0.60
 # The effect colours the renderer uses for bursts, sweeps and the general illumination.
 FX = {"cyan": "#1EEBFF", "magenta": "#FF2EC8", "lime": "#9DFF1E", "orange": "#FF8A00", "yellow": "#FFEA28",
       "violet": "#C45CFF", "white": "#FFF8EC", "gi": "#FFB45C", "gi_bulb": "#FFD9A0", "trail": "#9FF4FF"}
-GLOW_STRENGTH_NEON = 0.50      # glow.png alpha for a lit lamp at full level
-FLASHER_STRENGTH_MAX = 0.70    # strongest flasher burst (flare.png / glow.png); the ball is drawn after it, with its rim
-GI_STRENGTH = 0.40             # the warm edge light at full level
+GLOW_STRENGTH_NEON = 0.95      # glow.png alpha for a lit lamp at full level
+FLASHER_STRENGTH_MAX = 0.95    # strongest flasher burst (flare.png / glow.png); the ball is drawn after it, with its rim
+GI_STRENGTH = 0.40             # gi.png alpha at full level: the warm light over the whole playfield
+BALL_POOL_ALPHA = 0.70        # the dark pool drawn round each ball under the light show (TableEffects::kBallPoolAlpha)
 FLARE_UNITS = 64.0             # flare.png and ring.png cover this many units at scale 1
 
 

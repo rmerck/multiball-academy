@@ -12,7 +12,11 @@ import palette as P
 import render_sim as R
 from common import ROOT, lum, save_png
 
-OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build", "art-review")
+# --fx: with the light show, every lamp lit in neon at full level, the general illumination on, the bumpers
+# flashing as struck.
+ARGS = [a for a in sys.argv[1:] if a != "--fx"]
+R.FX = "--fx" in sys.argv[1:]
+OUT = ARGS[0] if ARGS else os.path.join(ROOT, "build", "art-review")
 L = R.L
 K = 4
 SCALES = [("iPhone SE class, 375 pt @2x", 0.488281 * 2), ("iPhone 17e, 393 pt @3x", 0.511719 * 3),

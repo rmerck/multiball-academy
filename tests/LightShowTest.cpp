@@ -119,10 +119,12 @@ void testLampsFollowRules() {
 }
 
 void testAmbientIsFarBelowLit() {
-  // The quiet table's glimmer stays well under a lit lamp: lit against unlit
-  // is never in doubt.
+  // The quiet table is alive: no unlit insert is dark, and at every moment
+  // many lamps are running their chases. And the chases stay well under a
+  // lit lamp: lit against unlit is never in doubt.
   Game game;
   LightShow show;
+  // On the plunger, nothing struck: only the chases light the unlit lamps.
   float most = 0.0F;
   for (int i = 0; i < 1200; ++i) {
     step(game, show);
@@ -132,9 +134,33 @@ void testAmbientIsFarBelowLit() {
       }
     }
   }
-  CHECK(most > 0.05F);  // It does glimmer.
+  inPlay(game, show);
+  float least = 1.0F;
+  int quietWindows = 0;
+  std::array<float, LightShow::kLampCount> before{};
+  for (int i = 0; i < 2400; ++i) {
+    step(game, show, flipping(static_cast<std::uint32_t>(i)));
+    for (const table::Lamp& lamp : table::kLamps) {
+      if (show.lampState(lamp.id) == LampState::Off && show.show() == fx::Show::None) {
+        least = std::min(least, show.lampLevel(lamp.id));
+      }
+    }
+    if (i % 30 == 0) {
+      int moved = 0;
+      for (std::size_t k = 0; k < before.size(); ++k) {
+        moved += std::fabs(show.lampLevels()[k] - before[k]) > 0.15F ? 1 : 0;
+      }
+      if (i > 0 && moved < 6) {
+        ++quietWindows;
+      }
+      before = show.lampLevels();
+    }
+  }
+  CHECK(least >= fx::kUnlitFloor - 1e-6F);
+  CHECK(most > 0.6F);
   CHECK(most <= fx::kAmbientMax + 1e-6F);
-  CHECK(fx::kAmbientMax * 4.0F <= 1.0F);
+  CHECK(quietWindows == 0);  // Six or more lamps change in every quarter second.
+  CHECK(fx::kAmbientMax + 0.25F <= 1.0F + 1e-6F);
 }
 
 void testSameGameSameLights() {

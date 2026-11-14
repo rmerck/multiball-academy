@@ -395,6 +395,73 @@ TexturePtr makePlayfieldTexture(SDL_Renderer* r) {
   return texture;
 }
 
+// The background with everything inside the shell made clear: drawn over
+// the light show's glows, it trims them at the cabinet's edge. The lane
+// island, inside the shell, is put back. Made once, as the layout drawing is.
+TexturePtr makeOutsideTexture(SDL_Renderer* r, SDL_Texture* background) {
+  if (background == nullptr) {
+    return nullptr;
+  }
+  constexpr int kScale = 2;
+  TexturePtr texture(SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET,
+                                       static_cast<int>(table::kWidth) * kScale,
+                                       static_cast<int>(table::kHeight) * kScale));
+  SDL_Texture* const before = SDL_GetRenderTarget(r);
+  if (!texture || !SDL_SetRenderTarget(r, texture.get())) {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not make the outside texture: %s",
+                 SDL_GetError());
+    return nullptr;
+  }
+  std::vector<SDL_Vertex> shell;
+  Mesh(shell).polygon(table::kShell, SDL_FColor{0.0F, 0.0F, 0.0F, 0.0F});
+  std::vector<SDL_Vertex> island;
+  Mesh(island).polygon(table::kLaneIsland, SDL_FColor{1.0F, 1.0F, 1.0F, 1.0F});
+  for (SDL_Vertex& v : island) {
+    v.tex_coord = {v.position.x / table::kWidth, v.position.y / table::kHeight};
+  }
+  const SDL_FRect whole{0.0F, 0.0F, table::kWidth, table::kHeight};
+  bool drawn = SDL_SetRenderScale(r, static_cast<float>(kScale), static_cast<float>(kScale));
+  drawn = SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE) && drawn;
+  drawn = SDL_RenderTexture(r, background, nullptr, &whole) && drawn;
+  drawn = SDL_RenderGeometry(r, nullptr, shell.data(), static_cast<int>(shell.size()), nullptr, 0) &&
+          drawn;
+  drawn = SDL_RenderGeometry(r, background, island.data(), static_cast<int>(island.size()), nullptr,
+                             0) &&
+          drawn;
+  drawn = SDL_SetRenderTarget(r, before) && drawn;
+  if (!drawn) {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not draw the outside texture: %s",
+                 SDL_GetError());
+    return nullptr;
+  }
+  SDL_SetTextureBlendMode(texture.get(), SDL_BLENDMODE_BLEND);
+  return texture;
+}
+
+// A copy of a texture at one pixel to the playfield unit, straight alpha,
+// with the blend mode given.
+TexturePtr resampled(SDL_Renderer* r, SDL_Texture* source, SDL_BlendMode mode) {
+  TexturePtr texture(SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET,
+                                       static_cast<int>(table::kWidth),
+                                       static_cast<int>(table::kHeight)));
+  SDL_Texture* const before = SDL_GetRenderTarget(r);
+  if (!texture || !SDL_SetRenderTarget(r, texture.get())) {
+    return nullptr;
+  }
+  SDL_BlendMode was = SDL_BLENDMODE_NONE;
+  SDL_GetTextureBlendMode(source, &was);
+  SDL_SetTextureBlendMode(source, SDL_BLENDMODE_NONE);
+  const SDL_FRect whole{0.0F, 0.0F, table::kWidth, table::kHeight};
+  bool drawn = SDL_RenderTexture(r, source, nullptr, &whole);
+  SDL_SetTextureBlendMode(source, was);
+  drawn = SDL_SetRenderTarget(r, before) && drawn;
+  if (!drawn) {
+    return nullptr;
+  }
+  SDL_SetTextureBlendMode(texture.get(), mode);
+  return texture;
+}
+
 // The lamps of a light show: each insert at its level in the neon of its
 // colour, a halo, and a hot core.
 void drawLitLamps(SDL_Renderer* r, SDL_Texture* arrow, SDL_Texture* round, TableEffects& effects,
@@ -406,7 +473,7 @@ void drawLitLamps(SDL_Renderer* r, SDL_Texture* arrow, SDL_Texture* round, Table
     }
     SDL_Texture* const insert = sprites[i].arrow ? arrow : round;
     setTint(insert, art::kLampNeon[i], art::kLampNeonLevels[i]);
-    SDL_SetTextureAlphaMod(insert, toByte(level * 1.15F));
+    SDL_SetTextureAlphaMod(insert, toByte(level));
     SDL_RenderTextureRotated(r, insert, nullptr, &sprites[i].insert.dst,
                              sprites[i].insert.angleDegrees, nullptr, SDL_FLIP_NONE);
   }
@@ -414,17 +481,23 @@ void drawLitLamps(SDL_Renderer* r, SDL_Texture* arrow, SDL_Texture* round, Table
   SDL_SetTextureAlphaMod(round, SDL_ALPHA_OPAQUE);
   for (std::size_t i = 0; i < sprites.size(); ++i) {
     const float level = show.lampLevel(table::kLamps[i].id);
-    if (level < 0.3F) {
-      continue;  // A glimmer is the lens alone.
+    if (level <= fx::kUnlitFloor + 0.02F) {
+      continue;  // Dim plastic: the lens alone.
     }
     const Vec2 at = table::kLamps[i].position;
     const art::Rgb neon = art::kLampNeon[i];
-    // The halo and the core grow faster than the lens: a glimmer has next to
-    // none, a lit lamp all of it.
-    const float lit = level * std::sqrt(level);
-    effects.addGlow(r, at, sprites[i].glowRadius * 1.45F, neon, art::kNeonGlowStrength * lit);
-    effects.addGlow(r, at, sprites[i].glowRadius * 0.45F, mixRgb(neon, art::kFxWhite, 0.55F),
-                    0.40F * lit);
+    // The halo grows faster than the lens: a chase has some, a lit lamp a
+    // big saturated one, and only a lit lamp has the hot core and the star.
+    const float above = (level - fx::kUnlitFloor) / (1.0F - fx::kUnlitFloor);
+    const float halo = above * std::sqrt(above);
+    effects.addGlow(r, at, sprites[i].glowRadius * 3.4F, neon, 0.55F * art::kNeonGlowStrength * halo);
+    effects.addGlow(r, at, sprites[i].glowRadius * 1.7F, neon, art::kNeonGlowStrength * halo);
+    if (level > 0.8F) {
+      const float hot = (level - 0.8F) / 0.2F;
+      effects.addGlow(r, at, sprites[i].glowRadius * 0.6F, mixRgb(neon, art::kFxWhite, 0.55F),
+                      0.6F * hot);
+      effects.addFlare(r, at, sprites[i].glowRadius * 1.5F, neon, 0.45F * hot);
+    }
   }
   effects.endLayer(r);
 }
@@ -470,6 +543,7 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   t.glow = required("sprites/glow.png");
   t.flare = required("sprites/flare.png");
   t.ring = required("sprites/ring.png");
+  t.gi = required("sprites/gi.png");
   t.bar = required("sprites/bar.png");
   t.door = required("sprites/door.png");
   t.plunger = required("sprites/plunger.png");
@@ -510,13 +584,39 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   SDL_SetTextureBlendMode(t.glow.get(), SDL_BLENDMODE_ADD);
   SDL_SetTextureBlendMode(t.flare.get(), SDL_BLENDMODE_ADD);
   SDL_SetTextureBlendMode(t.ring.get(), SDL_BLENDMODE_ADD);
-  return std::unique_ptr<TableRenderer>(new TableRenderer(std::move(t)));
+  SDL_SetTextureBlendMode(t.gi.get(), SDL_BLENDMODE_ADD);
+  SDL_SetTextureScaleMode(t.gi.get(), SDL_SCALEMODE_LINEAR);
+  // What lies outside the playfield's shell, to be drawn back over the
+  // light show's glows where they would spill past the cabinet.
+  t.outside = makeOutsideTexture(renderer, t.background.get());
+  if (!t.outside) {
+    return nullptr;
+  }
+  if (const char* name = SDL_GetRendererName(renderer);
+      name != nullptr && std::string_view(name) == SDL_SOFTWARE_RENDERER) {
+    // The software renderer blends a texture drawn at its own size far
+    // faster than one it must scale: the two that cover the whole
+    // playfield every frame are made again at one pixel to the unit, the
+    // size its pictures are drawn at.
+    t.outside = resampled(renderer, t.outside.get(), SDL_BLENDMODE_BLEND);
+    t.gi = resampled(renderer, t.gi.get(), SDL_BLENDMODE_ADD);
+    if (!t.outside || !t.gi) {
+      return nullptr;
+    }
+  }
+  const char* const rendererName = SDL_GetRendererName(renderer);
+  const bool software =
+      rendererName != nullptr && std::string_view(rendererName) == SDL_SOFTWARE_RENDERER;
+  auto drawer = std::unique_ptr<TableRenderer>(new TableRenderer(std::move(t)));
+  drawer->setEffectsEconomy(software);
+  return drawer;
 }
 
 TableRenderer::TableRenderer(Textures textures) : textures_(std::move(textures)) {
   effects_.setTextures({.glow = textures_.glow.get(),
                         .flare = textures_.flare.get(),
-                        .ring = textures_.ring.get()});
+                        .ring = textures_.ring.get(),
+                        .gi = textures_.gi.get()});
 }
 
 OverlayArt TableRenderer::overlayArt() const noexcept {
@@ -672,6 +772,27 @@ void TableRenderer::drawSlingshotFlashes(SDL_Renderer* r, const Game& game,
   }
 }
 
+namespace {
+
+// A struck bumper or slingshot: the game's own flash or the light show's
+// longer one, whichever is brighter.
+float bumperStrike(const Game& game, const LightShow& show, std::size_t i) noexcept {
+  return std::clamp(std::max(game.bumperFlash(i), show.bumperFlash(i)), 0.0F, 1.0F);
+}
+float slingStrike(const Game& game, const LightShow& show, std::size_t i) noexcept {
+  return std::clamp(std::max(game.slingshotFlash(i), show.slingFlash(i)), 0.0F, 1.0F);
+}
+// The bumper lamps' idle pulse, 0 to 1, each a third of a turn after the
+// one before; slow with reduce motion.
+float bumperPulse(const LightShow& show, std::size_t i) noexcept {
+  const float period = show.reduceMotion() ? 360.0F : 96.0F;
+  const float phase = static_cast<float>(show.step() % static_cast<std::uint64_t>(period)) / period +
+                      static_cast<float>(i) / 3.0F;
+  return 0.5F + 0.5F * std::sin(2.0F * table::kPi * phase);
+}
+
+}  // namespace
+
 void TableRenderer::drawLitBumpers(SDL_Renderer* r, const Game& game,
                                    const LightShow& show) const {
   SDL_Texture* const body = textures_.bumper.get();
@@ -679,33 +800,36 @@ void TableRenderer::drawLitBumpers(SDL_Renderer* r, const Game& game,
   const float gi = show.giLevel();
   for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
     const table::Bumper& bumper = table::kBumpers[i];
-    const float flash = std::clamp(game.bumperFlash(i), 0.0F, 1.0F);
+    const float flash = bumperStrike(game, show, i);
+    const float pulse = bumperPulse(show, i);
     const float radius = bumper.shape.radius;
-    // Struck: the body runs through yellow to white-hot and swells; the cap
-    // pulses larger still.
-    const float scale = radius / kBumperSpriteRadius * (1.0F + 0.12F * flash);
+    // At rest the body glows with its lamp's pulse; struck it runs through
+    // yellow to white-hot and swells, and the cap swells further.
+    const float scale = radius / kBumperSpriteRadius * (1.0F + 0.14F * flash);
     const SDL_FRect dst = centred(bumper.shape.center, 64.0F * scale, 64.0F * scale);
-    const art::Rgb tint = flash < 0.5F
-                              ? blendRgb(art::kTintBumper, art::kFxYellow, flash * 2.0F)
-                              : blendRgb(art::kFxYellow, art::kFxWhite, (flash - 0.5F) * 1.2F);
+    const art::Rgb rest = blendRgb(art::kTintBumper, art::kFxOrange, pulse);
+    const art::Rgb tint = flash < 0.5F ? blendRgb(rest, art::kFxYellow, flash * 2.0F)
+                                       : blendRgb(art::kFxYellow, art::kFxWhite, (flash - 0.5F) * 1.4F);
     setTint(body, tint, 1.0F);
     SDL_RenderTexture(r, body, nullptr, &dst);
-    const float capScale = radius / kBumperSpriteRadius * (1.0F + 0.18F * flash);
+    const float capScale =
+        radius / kBumperSpriteRadius * (1.0F + 0.03F * pulse * gi + 0.22F * flash);
     const SDL_FRect capDst = centred(bumper.shape.center, 64.0F * capScale, 64.0F * capScale);
     SDL_RenderTexture(r, cap, nullptr, &capDst);
   }
   for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
     const table::Bumper& bumper = table::kBumpers[i];
-    const float flash = std::clamp(game.bumperFlash(i), 0.0F, 1.0F);
+    const float flash = bumperStrike(game, show, i);
     const float radius = bumper.shape.radius;
-    // A real machine's bumper lamps are always on: a steady warm light that
-    // follows the general illumination, then the strike over it.
-    effects_.addGlow(r, bumper.shape.center, radius * 1.9F, art::kFxOrange, 0.18F * gi);
+    const Vec2 at = bumper.shape.center;
+    // A real machine's bumper lamps are always on, pulsing under the cap.
+    effects_.addGlow(r, at, radius * 2.4F, art::kFxOrange, (0.22F + 0.28F * bumperPulse(show, i)) * gi);
     if (flash > 0.0F) {
-      effects_.addGlow(r, bumper.shape.center, radius * 2.8F, art::kFxYellow, 0.65F * flash);
-      effects_.addGlow(r, bumper.shape.center, radius * 0.7F, art::kFxWhite, 0.45F * flash);
-      effects_.addRing(r, bumper.shape.center, radius * (1.05F + 1.3F * (1.0F - flash)),
-                       art::kFxOrange, 0.8F * flash);
+      effects_.addGlow(r, at, 120.0F, art::kFxGi, 0.40F * flash);  // The local GI pop.
+      effects_.addGlow(r, at, radius * 4.0F, art::kFxYellow, 0.9F * flash);
+      effects_.addGlow(r, at, radius * 1.0F, art::kFxWhite, 0.75F * flash);
+      effects_.addFlare(r, at, radius * 2.6F, art::kFxYellow, 0.7F * flash);
+      effects_.addRing(r, at, radius * (1.1F + 1.8F * (1.0F - flash)), art::kFxOrange, 0.9F * flash);
     }
   }
   effects_.endLayer(r);
@@ -718,16 +842,19 @@ void TableRenderer::drawLitSlingshots(SDL_Renderer* r, const Game& game,
   int count = 0;
   for (std::size_t i = 0; i < table::kSlingshots.size(); ++i) {
     const table::Triangle& sling = table::kSlingshots[i];
-    const float flash = std::clamp(game.slingshotFlash(i), 0.0F, 1.0F);
+    const float flash = slingStrike(game, show, i);
     const Vec2 face = (sling.points[0] + sling.points[2]) * 0.5F;
-    effects_.addGlow(r, face, 46.0F, art::kFxMagenta, 0.10F * gi);
+    const Vec2 middle = (sling.points[0] + sling.points[1] + sling.points[2]) * (1.0F / 3.0F);
+    effects_.addGlow(r, middle, 60.0F, art::kFxMagenta, 0.22F * gi);
     if (flash > 0.0F) {
-      effects_.addGlow(r, face, 72.0F, art::kFxMagenta, 0.65F * flash);
-      effects_.addGlow(r, face, 22.0F, art::kFxWhite, 0.40F * flash);
+      effects_.addGlow(r, middle, 130.0F, art::kFxGi, 0.40F * flash);  // The local GI pop.
+      effects_.addGlow(r, face, 100.0F, art::kFxMagenta, 0.9F * flash);
+      effects_.addGlow(r, face, 30.0F, art::kFxWhite, 0.65F * flash);
+      effects_.addFlare(r, face, 70.0F, art::kFxMagenta, 0.6F * flash);
       // The plastic over it lights up whole.
       const art::Rgb c = art::kFxMagenta;
       const SDL_FColor colour{static_cast<float>(c.r) / 255.0F, static_cast<float>(c.g) / 255.0F,
-                              static_cast<float>(c.b) / 255.0F, 0.45F * flash};
+                              static_cast<float>(c.b) / 255.0F, 0.7F * flash};
       for (const Vec2 p : sling.points) {
         faces[static_cast<std::size_t>(count++)] = {{p.x, p.y}, colour, {0.0F, 0.0F}};
       }
@@ -934,7 +1061,7 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
   SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
   const LightShow* const show = options.lightShow;
   if (show != nullptr) {
-    effects_.drawUnderlay(r, *show);
+    effects_.drawUnderlay(r, *show, !economy_);
   }
   const TableLights lights = tableLights(game);
   if (textures_.backgroundFromLayout) {
@@ -956,6 +1083,13 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
     const DrawnBalls balls = ballsToDraw(game, alpha, options.extraBalls);
     if (show != nullptr) {
       effects_.drawShow(r, game, balls.span(), alpha, *show);
+      // Every glow stops at the cabinet: what lies outside the shell is
+      // drawn back over them.
+      if (!economy_ || show->bursts().count > 0 || show->sweepY() >= 0.0F ||
+          show->ringRadius() >= 0.0F) {
+        SDL_RenderTexture(r, textures_.outside.get(), nullptr, &playfield);
+      }
+      effects_.drawBallPools(r, balls.span());
     }
     drawBalls(r, balls.span());
     if (show != nullptr) {

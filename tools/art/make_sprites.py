@@ -110,6 +110,55 @@ def ring():
     return Image.fromarray(out.astype(np.uint8), "RGBA")
 
 
+def _field_mask(scale, ss=4):
+    """The playfield inside the shell, the lane island cut out, at `scale` pixels per unit (anti-aliased by
+    drawing `ss` times larger), and each pixel's distance in units to the nearest wall chain."""
+    from PIL import Image, ImageDraw
+    w, h = int(round(L["width"] * scale)), int(round(L["height"] * scale))
+    big = Image.new("L", (w * ss, h * ss), 0)
+    d = ImageDraw.Draw(big)
+    k = scale * ss
+    d.polygon([(x * k, y * k) for x, y in L["shell"]], fill=255)
+    d.polygon([(x * k, y * k) for x, y in L["laneIsland"]], fill=0)
+    mask = np.asarray(big.resize((w, h), Image.BOX), np.float64) / 255.0
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float64)
+    ux, uy = (xs + 0.5) / scale, (ys + 0.5) / scale
+    dist = np.full(ux.shape, 1e9)
+    for chain in (L["shell"], L["laneIsland"]):
+        for i in range(len(chain)):
+            (ax, ay), (bx, by) = chain[i - 1], chain[i]
+            dx, dy = bx - ax, by - ay
+            t = np.clip(((ux - ax) * dx + (uy - ay) * dy) / max(1e-9, dx * dx + dy * dy), 0, 1)
+            dist = np.minimum(dist, np.hypot(ux - ax - t * dx, uy - ay - t * dy))
+    return mask, dist, ux, uy
+
+
+def _light_png(alpha):
+    from PIL import Image
+    out = np.empty(alpha.shape + (4,), np.float64)
+    out[..., :3] = 255
+    out[..., 3] = np.round(np.clip(alpha, 0, 1) * 255)
+    return Image.fromarray(out.astype(np.uint8), "RGBA")
+
+
+def gi():
+    """The general illumination as a light map over the whole playfield, white, tinted and scaled by the
+    renderer: warm everywhere inside the shell, brightest along the walls where the bulbs are, pools under
+    the bumpers and slingshots. Nothing outside the shell. Half a pixel per unit (it is soft). numpy/Pillow."""
+    mask, dist, ux, uy = _field_mask(0.5)
+    light = 0.10 + 0.90 * np.exp(-dist / 40.0)
+    for b in L["bumpers"]:
+        light += 0.35 * np.exp(-((ux - b["c"][0]) ** 2 + (uy - b["c"][1]) ** 2) / (2 * 60.0 ** 2))
+    for tri in L["slingshots"]:
+        cx = sum(p[0] for p in tri) / 3.0
+        cy = sum(p[1] for p in tri) / 3.0
+        light += 0.25 * np.exp(-((ux - cx) ** 2 + (uy - cy) ** 2) / (2 * 55.0 ** 2))
+    # The launch lane is narrow, all of it near a wall: held down so it does not glare.
+    lane = min(x for x, _ in L["laneIsland"])
+    light = np.where(ux > lane, light * 0.45, light)
+    return _light_png(np.clip(light, 0, 1) * mask)
+
+
 def flipper():
     m = 9.0
     w = 2 * m + FLIP["baseRadius"] + FLIP["length"] + FLIP["tipRadius"]
@@ -360,7 +409,7 @@ SPRITES = {
     "bumper_cap.png": lambda: bumper("cap"), "bar.png": bar, "plunger.png": plunger, "button.png": button, "button_gloss.png": button_gloss,
     "insert_round.png": lambda: insert("round"), "insert_arrow.png": lambda: insert("arrow"), "door.png": door,
     "spinner_0.png": lambda: spinner(0), "spinner_1.png": lambda: spinner(1), "kickback.png": kickback,
-    "flare.png": flare, "ring.png": ring,
+    "flare.png": flare, "ring.png": ring, "gi.png": gi,
 }
 
 

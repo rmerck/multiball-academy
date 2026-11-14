@@ -87,6 +87,14 @@ class TableRenderer {
   void drawTouchOverlay(SDL_Renderer* renderer, const screen::Layout& layout,
                         const TouchControls::View& view) const;
 
+  // Economy: the light show without its two whole-playfield layers (the
+  // general illumination's light map, and the trim at the cabinet unless
+  // a flasher, sweep or ring is lit). On by default for the software
+  // renderer, which blends every pixel of those on the processor; the
+  // review tools turn it off to see everything.
+  void setEffectsEconomy(bool on) noexcept { economy_ = on; }
+  [[nodiscard]] bool effectsEconomy() const noexcept { return economy_; }
+
   // The art the dialogs (pause, About, initials) draw with. Valid for as
   // long as this renderer.
   [[nodiscard]] OverlayArt overlayArt() const noexcept;
@@ -104,6 +112,10 @@ class TableRenderer {
     TexturePtr glow;
     TexturePtr flare;  // The light show's flasher bursts.
     TexturePtr ring;   // And its shock rings.
+    TexturePtr gi;     // And the general illumination's light map.
+    // The background outside the playfield's shell (made at load): trims
+    // the light show at the cabinet.
+    TexturePtr outside;
     TexturePtr bar;
     TexturePtr door;
     TexturePtr plunger;
@@ -153,6 +165,7 @@ class TableRenderer {
   Textures textures_;
   // The light show's drawing, with its fixed batches.
   mutable TableEffects effects_;
+  bool economy_ = false;
   // Triangles for drawElements, kept between frames so that drawing one
   // allocates nothing.
   mutable std::vector<SDL_Vertex> elements_;

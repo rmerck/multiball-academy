@@ -270,6 +270,8 @@ int run(const Options& o) {
     if (!drawer) {
       return EXIT_FAILURE;
     }
+    // Everything the light show draws, whatever the renderer.
+    drawer->setEffectsEconomy(false);
     Game game;
     pinball::LightShow show;
     show.setReduceMotion(o.reduceMotion);

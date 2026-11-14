@@ -67,6 +67,7 @@ def text():
     lines += ["inline constexpr float kNeonGlowStrength = %.2fF;" % P.GLOW_STRENGTH_NEON,
               "inline constexpr float kFlasherStrengthMax = %.2fF;" % P.FLASHER_STRENGTH_MAX,
               "inline constexpr float kGiStrength = %.2fF;" % P.GI_STRENGTH,
+              "inline constexpr float kBallPoolAlpha = %.2fF;  // the dark pool round each ball" % P.BALL_POOL_ALPHA,
               "inline constexpr float kFlareUnits = %.1fF;    // flare.png and ring.png at scale 1" % P.FLARE_UNITS,
               "", "}  // namespace pinball::art", ""]
     return "\n".join(lines)

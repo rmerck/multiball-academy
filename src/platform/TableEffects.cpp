@@ -34,22 +34,6 @@ art::Rgb holeColour(std::size_t hole) noexcept {
   }
 }
 
-// The general illumination: bulbs under the playfield's edge, every fourth
-// point of the shell, a little inside it. Worked out once.
-struct GiBulbs {
-  std::array<Vec2, table::kShell.size() / 4 + 1> at{};
-  std::size_t count = 0;
-};
-GiBulbs makeGiBulbs() noexcept {
-  GiBulbs bulbs;
-  const Vec2 middle{table::kWidth * 0.5F, table::kHeight * 0.55F};
-  for (std::size_t i = 0; i < table::kShell.size(); i += 4) {
-    const Vec2 p = table::kShell[i];
-    bulbs.at[bulbs.count++] = p + unit(middle - p) * 34.0F;
-  }
-  return bulbs;
-}
-
 }  // namespace
 
 art::Rgb mixRgb(art::Rgb a, art::Rgb b, float t) noexcept {
@@ -174,8 +158,7 @@ void TableEffects::clearCounters() noexcept {
   ring_.clearCounters();
 }
 
-void TableEffects::drawUnderlay(SDL_Renderer* r, const LightShow& show) {
-  static const GiBulbs kBulbs = makeGiBulbs();
+void TableEffects::drawUnderlay(SDL_Renderer* r, const LightShow& show, bool lightMap) {
   const float gi = show.giLevel();
   if (gi < 0.995F) {
     // The floor darkens with the lights; lit lamps go over it untouched.
@@ -186,10 +169,15 @@ void TableEffects::drawUnderlay(SDL_Renderer* r, const LightShow& show) {
     SDL_RenderFillRect(r, &field);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
   }
-  for (std::size_t i = 0; i < kBulbs.count; ++i) {
-    glow_.add(r, textures_.glow, kBulbs.at[i], 54.0F, art::kFxGiBulb, art::kGiStrength * gi);
+  // The general illumination: warm over the whole playfield, brightest at
+  // the walls and round the bumpers and slingshots (gi.png, which stops at
+  // the shell).
+  if (lightMap && textures_.gi != nullptr && gi > 0.0F) {
+    const SDL_FRect field{0.0F, 0.0F, table::kWidth, table::kHeight};
+    SDL_SetTextureColorMod(textures_.gi, art::kFxGi.r, art::kFxGi.g, art::kFxGi.b);
+    SDL_SetTextureAlphaModFloat(textures_.gi, std::min(1.0F, art::kGiStrength * gi));
+    SDL_RenderTexture(r, textures_.gi, nullptr, &field);
   }
-  flushAll(r);
 }
 
 void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const LightShow& show) {
@@ -201,8 +189,9 @@ void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const L
     if (f > 0.0F) {
       const table::Capsule& shape = table::kTargets[i].shape;
       const Vec2 mid = (shape.a + shape.b) * 0.5F;
-      glow_.add(r, glow, mid, 44.0F, art::kFxLime, 0.6F * f);
-      glow_.add(r, glow, mid, 16.0F, art::kFxWhite, 0.5F * f);
+      glow_.add(r, glow, mid, 110.0F, art::kFxGi, 0.35F * f);  // The local GI pop.
+      glow_.add(r, glow, mid, 72.0F, art::kFxLime, 0.85F * f);
+      glow_.add(r, glow, mid, 22.0F, art::kFxWhite, 0.7F * f);
     }
   }
   // Bay doors: the face lamp, and a flash when struck or when the bank moves.
@@ -214,8 +203,8 @@ void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const L
     }
     const float f = show.doorFlash(i);
     if (f > 0.0F) {
-      glow_.add(r, glow, mid, 34.0F, art::kFxOrange, 0.6F * f);
-      glow_.add(r, glow, mid, 12.0F, art::kFxWhite, 0.45F * f);
+      glow_.add(r, glow, mid, 56.0F, art::kFxOrange, 0.8F * f);
+      glow_.add(r, glow, mid, 16.0F, art::kFxWhite, 0.6F * f);
     }
   }
   // Holes, on entry and on kickout.
@@ -223,9 +212,9 @@ void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const L
     const float f = show.holeFlash(i);
     if (f > 0.0F) {
       const table::Hole& hole = table::kHoles[i];
-      glow_.add(r, glow, hole.center, 56.0F, holeColour(i), 0.65F * f);
-      glow_.add(r, glow, hole.exitPosition, 26.0F, holeColour(i), 0.5F * f);
-      ring_.add(r, ring, hole.center, 18.0F + 40.0F * (1.0F - f), holeColour(i), 0.7F * f);
+      glow_.add(r, glow, hole.center, 90.0F, holeColour(i), 0.85F * f);
+      glow_.add(r, glow, hole.exitPosition, 40.0F, holeColour(i), 0.7F * f);
+      ring_.add(r, ring, hole.center, 22.0F + 60.0F * (1.0F - f), holeColour(i), 0.85F * f);
     }
   }
   // The lock bays.
@@ -247,15 +236,15 @@ void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const L
     const float f = show.rolloverFlash(i);
     if (f > 0.0F) {
       const bool top = table::kRollovers[i].group == table::RolloverGroup::TopLane;
-      glow_.add(r, glow, table::kRollovers[i].zone.center, 24.0F,
-                top ? art::kFxYellow : art::kFxCyan, 0.55F * f);
+      glow_.add(r, glow, table::kRollovers[i].zone.center, 40.0F,
+                top ? art::kFxYellow : art::kFxCyan, 0.8F * f);
     }
   }
   // The spinner strobes with its turns.
   if (const float s = show.spinnerLevel(); s > 0.0F) {
     const Vec2 mid = (table::kSpinner.a + table::kSpinner.b) * 0.5F;
-    glow_.add(r, glow, mid, {56.0F, 30.0F}, art::kFxLime, 0.6F * s);
-    glow_.add(r, glow, mid, {30.0F, 10.0F}, art::kFxWhite, 0.45F * s);
+    glow_.add(r, glow, mid, {80.0F, 44.0F}, art::kFxLime, 0.8F * s);
+    glow_.add(r, glow, mid, {36.0F, 12.0F}, art::kFxWhite, 0.6F * s);
   }
   // Chases: three chevrons behind each blinking arrow, running toward it.
   for (std::size_t i = 0; i < table::kLamps.size(); ++i) {
@@ -275,8 +264,8 @@ void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const L
         continue;
       }
       const Vec2 p = at - u * (24.0F + 15.0F * static_cast<float>(k));
-      glow_.add(r, glow, p, 11.0F, colour, 0.65F * level);
-      glow_.add(r, glow, p, 4.5F, art::kFxWhite, 0.5F * level);
+      glow_.add(r, glow, p, 16.0F, colour, 0.85F * level);
+      glow_.add(r, glow, p, 6.0F, art::kFxWhite, 0.6F * level);
     }
   }
   flushAll(r);
@@ -293,7 +282,7 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
     }
     // A soft wash from the middle out, fading before the cabinet's edge.
     glow_.add(r, glow, {table::kWidth * 0.5F, table::kHeight * 0.5F},
-              {table::kWidth * 0.62F, table::kHeight * 0.62F}, fxColour(b.colour), 0.6F * b.level);
+              {table::kWidth * 0.75F, table::kHeight * 0.75F}, fxColour(b.colour), 0.85F * b.level);
   }
   // The flasher domes.
   for (const fx::BurstView& b : bursts.span()) {
@@ -304,21 +293,22 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
     const art::Rgb c = fxColour(b.colour);
     const float s = b.level * art::kFlasherStrengthMax;
     // flare.png carries its own bloom: a hot core over it is all it needs.
-    glow_.add(r, glow, at, b.radius * 0.30F, mixRgb(c, art::kFxWhite, 0.6F), s);
-    flare_.add(r, textures_.flare, at, b.radius * 1.15F, c, s);
+    glow_.add(r, glow, at, b.radius * 1.6F, c, s * 0.55F);  // The pool of colour it throws.
+    glow_.add(r, glow, at, b.radius * 0.35F, mixRgb(c, art::kFxWhite, 0.6F), s);
+    flare_.add(r, textures_.flare, at, b.radius * 1.2F, c, s);
   }
   // The multiball sweep climbing the table.
   if (const float y = show.sweepY(); y >= 0.0F) {
     const art::Rgb c = fxColour(show.sweepColour());
-    glow_.add(r, glow, {table::kWidth * 0.5F, y}, {table::kWidth * 0.75F, 80.0F}, c, 0.55F);
-    glow_.add(r, glow, {table::kWidth * 0.5F, y}, {table::kWidth * 0.6F, 18.0F}, art::kFxWhite, 0.45F);
+    glow_.add(r, glow, {table::kWidth * 0.5F, y}, {table::kWidth * 0.8F, 130.0F}, c, 0.8F);
+    glow_.add(r, glow, {table::kWidth * 0.5F, y}, {table::kWidth * 0.7F, 26.0F}, art::kFxWhite, 0.6F);
   }
   // The jackpot's ring.
   if (const float radius = show.ringRadius(); radius >= 0.0F) {
     const float fade = std::max(0.0F, 1.0F - radius / 770.0F);
     // ring.png is brightest at 0.78 of its half size.
-    ring_.add(r, textures_.ring, show.ringCentre(), radius / 0.78F + 8.0F, fxColour(show.ringColour()),
-              0.75F * fade);
+    ring_.add(r, textures_.ring, show.ringCentre(), radius / 0.78F + 12.0F, fxColour(show.ringColour()),
+              0.95F * fade);
   }
   // The flippers: a soft highlight while raised.
   for (std::size_t i = 0; i < table::kFlippers.size(); ++i) {
@@ -329,8 +319,8 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
     if (raised > 0.02F) {
       const Vec2 dir{std::cos(f.angle), std::sin(f.angle)};
       for (const float along : {0.35F, 0.75F}) {
-        glow_.add(r, glow, f.pivot + dir * (table::kFlipperLength * along), 26.0F, art::kFxMagenta,
-                  0.22F * raised);
+        glow_.add(r, glow, f.pivot + dir * (table::kFlipperLength * along), 32.0F, art::kFxMagenta,
+                  0.35F * raised);
       }
     }
   }
@@ -353,6 +343,29 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
     }
   }
   flushAll(r);
+}
+
+void TableEffects::drawBallPools(SDL_Renderer* r, std::span<const BallView> balls) {
+  SDL_Texture* const glow = textures_.glow;
+  if (glow == nullptr) {
+    return;
+  }
+  // glow.png is additive everywhere else: switched for these and back.
+  SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_BLEND);
+  SDL_SetTextureColorMod(glow, art::kInk.r, art::kInk.g, art::kInk.b);
+  SDL_SetTextureAlphaModFloat(glow, art::kBallPoolAlpha);
+  for (const BallView& ball : balls) {
+    if (!ball.visible) {
+      continue;
+    }
+    const float radius = table::kBallRadius * ball.scale * 2.3F;
+    const SDL_FRect dst{ball.position.x - radius, ball.position.y - radius, radius * 2.0F,
+                        radius * 2.0F};
+    SDL_RenderTexture(r, glow, nullptr, &dst);
+  }
+  SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_ADD);
+  SDL_SetTextureColorMod(glow, 255, 255, 255);
+  SDL_SetTextureAlphaMod(glow, 255);
 }
 
 void TableEffects::drawBallGlints(SDL_Renderer* r, const Game& game,

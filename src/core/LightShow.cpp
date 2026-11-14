@@ -253,7 +253,11 @@ void LightShow::readEvents(const Game& game) noexcept {
     const std::size_t i = event.element.index;
     switch (event.type) {
       case PhysicsEvent::Type::Hit:
-        if (event.element.kind == table::ElementKind::Target && i < targetHit_.size()) {
+        if (event.element.kind == table::ElementKind::Bumper && i < bumperHit_.size()) {
+          bumperHit_[i] = mark;
+        } else if (event.element.kind == table::ElementKind::Slingshot && i < slingHit_.size()) {
+          slingHit_[i] = mark;
+        } else if (event.element.kind == table::ElementKind::Target && i < targetHit_.size()) {
           targetHit_[i] = mark;
         } else if (event.element.kind == table::ElementKind::DropTarget && i < doorHit_.size()) {
           doorHit_[i] = mark;
@@ -405,20 +409,27 @@ float LightShow::flash(std::uint64_t hitStep, std::uint32_t length) const noexce
     return 0.0F;
   }
   const float f = 1.0F - static_cast<float>(age) / static_cast<float>(length);
-  return f * f;
+  return f * std::sqrt(f);
+}
+
+float LightShow::bumperFlash(std::size_t bumper) const noexcept {
+  return bumper < bumperHit_.size() ? flash(bumperHit_[bumper], kHitFlashSteps) : 0.0F;
+}
+float LightShow::slingFlash(std::size_t sling) const noexcept {
+  return sling < slingHit_.size() ? flash(slingHit_[sling], kHitFlashSteps) : 0.0F;
 }
 
 float LightShow::doorLevel(std::size_t door) const noexcept {
   return door < doorLevels_.size() ? doorLevels_[door] : 0.0F;
 }
 float LightShow::doorFlash(std::size_t door) const noexcept {
-  return door < doorHit_.size() ? flash(doorHit_[door], 30) : 0.0F;
+  return door < doorHit_.size() ? flash(doorHit_[door], kHitFlashSteps) : 0.0F;
 }
 float LightShow::targetFlash(std::size_t target) const noexcept {
-  return target < targetHit_.size() ? flash(targetHit_[target], 30) : 0.0F;
+  return target < targetHit_.size() ? flash(targetHit_[target], kHitFlashSteps) : 0.0F;
 }
 float LightShow::rolloverFlash(std::size_t rollover) const noexcept {
-  return rollover < rolloverHit_.size() ? flash(rolloverHit_[rollover], 24) : 0.0F;
+  return rollover < rolloverHit_.size() ? flash(rolloverHit_[rollover], kHitFlashSteps) : 0.0F;
 }
 float LightShow::holeFlash(std::size_t hole) const noexcept {
   return hole < holeHit_.size() ? flash(holeHit_[hole], 40) : 0.0F;
@@ -856,26 +867,50 @@ float LightShow::attractLevel(std::size_t lamp) const noexcept {
 // --- Lamps ------------------------------------------------------------------
 
 float LightShow::ambientLevel(std::size_t lamp) const noexcept {
-  // Unlit shot arrows and course lamps glimmer in a slow wave, so a quiet
-  // table still moves; never more than kAmbientMax, far under a lit lamp.
+  // A machine between shots is never still: every unlit insert shows as dim
+  // coloured plastic (kUnlitFloor), and over that the lamps run chases of
+  // their own, never brighter than kAmbientMax, under a lit lamp's 1. With
+  // reduce motion the chases run four times slower, as soft waves.
   const auto id = static_cast<LampId>(lamp);
-  float place = 0.0F;
-  float period = 0.0F;
+  const float slow = reduceMotion_ ? 4.0F : 1.0F;
+  const auto at = [this, slow](float period) {
+    const auto steps = static_cast<std::uint64_t>(period * slow);
+    return static_cast<float>(now_ % steps) / static_cast<float>(steps);
+  };
+  // A comet's head at `head`, this lamp at `place`, on a ring of `count`
+  // places when `ring`.
+  const auto comet = [](float head, float place, float count, bool ring) {
+    float d = std::fabs(head - place);
+    if (ring) {
+      d = std::min(d, count - d);
+    }
+    const float k = std::max(0.0F, 1.0F - d * 0.75F);
+    return kUnlitFloor + (kAmbientMax - kUnlitFloor) * k * std::sqrt(k);
+  };
+  const std::size_t i = lampIndex(id);
   if (table::isArrowLamp(id)) {
-    place = static_cast<float>(lamp) / 7.0F;
-    period = 330.0F;
-  } else if (id >= LampId::Course1 && id <= LampId::Course6) {
-    place = static_cast<float>(lamp - lampIndex(LampId::Course1)) / 6.0F;
-    period = 420.0F;
-  } else {
-    return 0.0F;
+    // Back and forth along the seven shots.
+    const float p = at(168.0F) * 12.0F;
+    return comet(p < 6.0F ? p : 12.0F - p, static_cast<float>(i), 7.0F, false);
   }
-  if (reduceMotion_) {
-    period *= 2.0F;
+  if (id >= LampId::WingW && id <= LampId::WingG) {
+    return comet(at(64.0F) * 4.0F, static_cast<float>(i - lampIndex(LampId::WingW)), 4.0F, true);
   }
-  const float phase = static_cast<float>(now_ % static_cast<std::uint64_t>(period)) / period;
-  const float wave = 0.5F + 0.5F * std::cos(kTau * (phase - place));
-  return kAmbientMax * wave * wave * wave;
+  if (id >= LampId::RollCall1 && id <= LampId::RollCall3) {
+    return comet(at(54.0F) * 3.0F, static_cast<float>(i - lampIndex(LampId::RollCall1)), 3.0F,
+                 true);
+  }
+  if (table::isCourseLamp(id)) {
+    // Round the six courses and Graduation in the middle of them.
+    return comet(at(140.0F) * 7.0F, static_cast<float>(i - lampIndex(LampId::Course1)), 7.0F, true);
+  }
+  if (id == LampId::Lock1 || id == LampId::Lock2) {
+    const bool first = at(80.0F) < 0.5F;
+    return (first == (id == LampId::Lock1)) ? 0.5F : kUnlitFloor;
+  }
+  // The rest breathe, each a little after the one before.
+  const float wave = 0.5F + 0.5F * std::cos(kTau * (at(150.0F) - static_cast<float>(i) * 0.13F));
+  return kUnlitFloor + (0.45F - kUnlitFloor) * wave;
 }
 
 void LightShow::updateLamps(const Game& game) noexcept {
@@ -942,8 +977,10 @@ void LightShow::updateLamps(const Game& game) noexcept {
       std::max(hits[lampIndex(LampId::ArrowTurbine)], spinnerLevel() * 0.7F);
 
   for (std::size_t i = 0; i < kLampCount; ++i) {
-    if (states_[i] == LampState::Off && factor > 0.0F) {
-      hits[i] = std::max(hits[i], ambientLevel(i));
+    if (!blackout && !rules.tilted() && states_[i] != LampState::On) {
+      // Unlit, or a blink's dark half: never darker than coloured plastic.
+      const float ambient = ambientLevel(i) * std::max(factor, 0.6F);
+      hits[i] = std::max(hits[i], states_[i] == LampState::Off ? ambient : kUnlitFloor);
     }
     const float base = fx::lampLevel(states_[i], now_, rm) * factor;
     const float overlay = rules.tilted() ? 0.0F

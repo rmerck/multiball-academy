@@ -42,9 +42,13 @@ inline constexpr std::uint64_t kMinLargeFlashSteps = 42;
 inline constexpr std::uint64_t kMinLargeFadeSteps = 150;
 // Steps a ball's trail remembers.
 inline constexpr std::size_t kTrailLength = 8;
-// The most an unlit lamp glimmers in the quiet table's slow wave: a lit
-// lamp is 1, and at least four times this.
-inline constexpr float kAmbientMax = 0.22F;
+// An unlit insert is never dark: it shows as dim coloured plastic at this
+// level. Over that the quiet table's chases run, never brighter than
+// kAmbientMax; a lit lamp is 1, with a halo and a hot core the chases lack.
+inline constexpr float kUnlitFloor = 0.34F;
+inline constexpr float kAmbientMax = 0.74F;
+// A struck element's flash: about 220 ms.
+inline constexpr std::uint32_t kHitFlashSteps = 26;
 // Bursts in flight at once (pending or lit).
 inline constexpr std::size_t kMaxBursts = 24;
 
@@ -166,6 +170,9 @@ class LightShow {
   // Flashes on a hit, 1 at the hit and fading: turbo targets, rollovers,
   // holes (on entry and on kickout), lock bays, the kickback.
   [[nodiscard]] float targetFlash(std::size_t target) const noexcept;
+  // Bumpers and slingshots, from the hits the physics reported.
+  [[nodiscard]] float bumperFlash(std::size_t bumper) const noexcept;
+  [[nodiscard]] float slingFlash(std::size_t sling) const noexcept;
   [[nodiscard]] float rolloverFlash(std::size_t rollover) const noexcept;
   [[nodiscard]] float holeFlash(std::size_t hole) const noexcept;
   [[nodiscard]] float bayFlash(std::size_t bay) const noexcept;
@@ -260,6 +267,8 @@ class LightShow {
   // One more than the step of the latest hit; 0 for never.
   std::array<std::uint64_t, table::kDropTargets.size()> doorHit_{};
   std::array<std::uint64_t, table::kTargets.size()> targetHit_{};
+  std::array<std::uint64_t, table::kBumpers.size()> bumperHit_{};
+  std::array<std::uint64_t, table::kSlingshots.size()> slingHit_{};
   std::array<std::uint64_t, table::kRollovers.size()> rolloverHit_{};
   std::array<std::uint64_t, table::kHoles.size()> holeHit_{};
   std::array<std::uint64_t, table::kLockBays.size()> bayHit_{};

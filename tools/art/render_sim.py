@@ -11,6 +11,9 @@ import palette as P
 from common import ROOT, hexrgb, layout
 
 L = layout()
+# The light show (src/core/LightShow.*, src/platform/TableEffects.*): set True to draw what the game draws with
+# it: the general illumination, lamps in neon with big halos, flaring bumpers and a dark pool under each ball.
+FX = False
 A = os.path.join(ROOT, "assets")
 LAMP_NAMES = [n for n, _ in P.LAMPS]
 LAMP_COL = dict(P.LAMPS)
@@ -35,6 +38,9 @@ class Sim:
         self.k = float(k)
         bg = background or load("table/background.png")
         self.im = bg.convert("RGB").resize((int(round(768 * k)), int(round(960 * k))), Image.LANCZOS)
+        if FX:
+            # gi.png over the whole playfield, warm, at full illumination.
+            self.add(384, 480, None, P.FX["gi"], P.GI_STRENGTH, sprite="sprites/gi.png", size=(768, 960))
 
     # ---- drawing in units -----------------------------------------------------
     def over(self, sp, cx, cy, w, h=None, angle=0.0, alpha=1.0):
@@ -48,12 +54,16 @@ class Sim:
         self.im.paste(s, (int(round(cx * self.k - s.width / 2)), int(round(cy * self.k - s.height / 2))), s)
 
     def glow(self, cx, cy, radius, colour, strength):
-        strength = min(strength, P.GLOW_STRENGTH_MAX)
-        g = tint(load("sprites/glow.png"), colour)
-        n = max(2, int(round(radius * 2 * self.k)))
-        g = np.asarray(g.resize((n, n), Image.LANCZOS)).astype(np.float32)
-        x, y = int(round(cx * self.k - n / 2)), int(round(cy * self.k - n / 2))
-        x0, y0, x1, y1 = max(0, x), max(0, y), min(self.im.width, x + n), min(self.im.height, y + n)
+        self.add(cx, cy, radius, colour, min(strength, P.GLOW_STRENGTH_MAX))
+
+    def add(self, cx, cy, radius, colour, strength, sprite="sprites/glow.png", size=None):
+        """An additive sprite (glow.png unless told), tinted, at a strength: as GlowBatch draws it."""
+        g = tint(load(sprite), colour)
+        w, h = size if size else (radius * 2, radius * 2)
+        n, m = max(2, int(round(w * self.k))), max(2, int(round(h * self.k)))
+        g = np.asarray(g.resize((n, m), Image.LANCZOS)).astype(np.float32)
+        x, y = int(round(cx * self.k - n / 2)), int(round(cy * self.k - m / 2))
+        x0, y0, x1, y1 = max(0, x), max(0, y), min(self.im.width, x + n), min(self.im.height, y + m)
         if x1 <= x0 or y1 <= y0:
             return
         d = np.asarray(self.im.crop((x0, y0, x1, y1))).astype(np.float32)
@@ -70,12 +80,29 @@ class Sim:
             aim = P.LAMP_AIM[name]
             ang = math.degrees(math.atan2(aim[1] - y, aim[0] - x)) + 90.0
             size = P.INSERT_ARROW_UNITS * (P.INSERT_ARROW_BRIEFING if name == "ArrowBriefing" else 1.0)
-            self.over(tint(load("sprites/insert_arrow.png"), col, P.lit_level(col)), x, y, size, angle=ang)
-            self.glow(x, y, size * P.GLOW_RADIUS_ARROW, col, P.GLOW_STRENGTH_LAMP)
+            if FX:
+                neon = P.NEON[col]
+                self.over(tint(load("sprites/insert_arrow.png"), neon, P.neon_level(neon)), x, y, size, angle=ang)
+                self.neon(x, y, size * P.GLOW_RADIUS_ARROW, neon)
+            else:
+                self.over(tint(load("sprites/insert_arrow.png"), col, P.lit_level(col)), x, y, size, angle=ang)
+                self.glow(x, y, size * P.GLOW_RADIUS_ARROW, col, P.GLOW_STRENGTH_LAMP)
         else:
             dia = L["lampSizes"]["course"] if kind == "course" else L["lampSizes"]["status"]
-            self.over(tint(load("sprites/insert_round.png"), col, P.lit_level(col)), x, y, dia * P.INSERT_ROUND_PER_DIAMETER)
-            self.glow(x, y, dia * P.GLOW_RADIUS_ROUND, col, P.GLOW_STRENGTH_LAMP)
+            if FX:
+                neon = P.NEON[col]
+                self.over(tint(load("sprites/insert_round.png"), neon, P.neon_level(neon)), x, y, dia * P.INSERT_ROUND_PER_DIAMETER)
+                self.neon(x, y, dia * P.GLOW_RADIUS_ROUND, neon)
+            else:
+                self.over(tint(load("sprites/insert_round.png"), col, P.lit_level(col)), x, y, dia * P.INSERT_ROUND_PER_DIAMETER)
+                self.glow(x, y, dia * P.GLOW_RADIUS_ROUND, col, P.GLOW_STRENGTH_LAMP)
+
+    def neon(self, x, y, glow_radius, neon):
+        """A lit lamp's light with the light show, as drawLitLamps draws it at full level."""
+        self.add(x, y, glow_radius * 3.4, neon, 0.55 * P.GLOW_STRENGTH_NEON)
+        self.add(x, y, glow_radius * 1.7, neon, P.GLOW_STRENGTH_NEON)
+        self.add(x, y, glow_radius * 0.6, "#%02x%02x%02x" % tuple(int(round(a + (b - a) * 0.55)) for a, b in zip(P.rgb(neon), P.rgb(P.FX["white"]))), 0.6)
+        self.add(x, y, glow_radius * 1.5, neon, 0.45, sprite="sprites/flare.png")
 
     def furniture(self, lit=(), flash=(), doors_up=True, marked=(), targets_lit=(0, 1), spinner_frame=0,
                   plunger_pull=0.0, flippers=(False, False), kickback=True):
@@ -102,7 +129,15 @@ class Sim:
             size = 64.0 * b["r"] / 30.0 * (1.08 if i in flash else 1.0)
             self.over(tint(load("sprites/bumper.png"), P.TINT["bumper_flash" if i in flash else "bumper"]), b["c"][0], b["c"][1], size)
             self.over(load("sprites/bumper_cap.png"), b["c"][0], b["c"][1], size)
-            if i in flash:
+            if FX:
+                cx, cy, r = b["c"][0], b["c"][1], b["r"]
+                self.add(cx, cy, r * 2.4, P.FX["orange"], 0.5)
+                if i in flash:
+                    self.add(cx, cy, 120, P.FX["gi"], 0.40)
+                    self.add(cx, cy, r * 4.0, P.FX["yellow"], 0.9)
+                    self.add(cx, cy, r * 1.0, P.FX["white"], 0.75)
+                    self.add(cx, cy, r * 2.6, P.FX["yellow"], 0.7, sprite="sprites/flare.png")
+            elif i in flash:
                 self.glow(b["c"][0], b["c"][1], b["r"] * 2.2, P.YELLOW, 0.40)
         pl = L["plunger"]
         self.over(load("sprites/plunger.png"), L["lane"]["centerX"], pl["restTopY"] + plunger_pull + pl["height"] / 2, pl["width"], pl["height"])
@@ -124,6 +159,14 @@ class Sim:
         d = np.hypot(xx - n / 2, yy - n / 2) / (r * 1.5 * k)
         a = np.clip(1 - d, 0, 1) ** 1.2 * P.BALL_SHADOW_ALPHA
         sh = np.zeros((n, n, 4), np.uint8); sh[..., :3] = hexrgb("#05030F"); sh[..., 3] = (np.clip(a * 1.25, 0, P.BALL_SHADOW_ALPHA) * 255).astype(np.uint8)
+        if FX:
+            # The dark pool round the ball (TableEffects::drawBallPools): glow.png in ink, blended.
+            pr = r * 2.3
+            g = np.asarray(load("sprites/glow.png").resize((int(round(pr * 2 * k)),) * 2, Image.LANCZOS)).astype(np.float32)
+            pool = np.zeros(g.shape, np.uint8); pool[..., :3] = P.rgb(P.INK)
+            pool[..., 3] = np.clip(g[..., 3] * P.BALL_POOL_ALPHA, 0, 255).astype(np.uint8)
+            ps = Image.fromarray(pool, "RGBA")
+            self.im.paste(ps, (int(round(x * k - ps.width / 2)), int(round(y * k - ps.height / 2))), ps)
         lift = (scale - 1.0) * 40.0
         ox, oy = P.BALL_SHADOW_OFFSET
         s = Image.fromarray(sh, "RGBA")
