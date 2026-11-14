@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <string_view>
 
 #include "core/TableLayout.hpp"
 
@@ -123,12 +124,33 @@ void GlowBatch::flush(SDL_Renderer* r) {
   }
   // The vertex colours carry the tint and strength: the texture's own
   // modulation (set by other draws of it) must not.
-  SDL_SetTextureColorMod(texture_, 255, 255, 255);
-  SDL_SetTextureAlphaMod(texture_, 255);
-  SDL_RenderGeometry(r, texture_, vertices_.data(), static_cast<int>(quads_ * 4), indices_.data(),
-                     static_cast<int>(quads_ * 6));
+  if (software_ == Software::Unknown) {
+    const char* const name = SDL_GetRendererName(r);
+    software_ = name != nullptr && std::string_view(name) == SDL_SOFTWARE_RENDERER ? Software::Yes
+                                                                                   : Software::No;
+  }
+  if (software_ == Software::Yes) {
+    // The software renderer fills a textured triangle a pixel at a time,
+    // but copies a rectangle with its fast blitter: each quad as a copy.
+    for (std::size_t q = 0; q < quads_; ++q) {
+      const SDL_Vertex* v = &vertices_[q * 4];
+      const SDL_FRect dst{v[0].position.x, v[0].position.y, v[2].position.x - v[0].position.x,
+                          v[2].position.y - v[0].position.y};
+      SDL_SetTextureColorModFloat(texture_, v[0].color.r, v[0].color.g, v[0].color.b);
+      SDL_SetTextureAlphaModFloat(texture_, v[0].color.a);
+      SDL_RenderTexture(r, texture_, nullptr, &dst);
+    }
+    SDL_SetTextureColorMod(texture_, 255, 255, 255);
+    SDL_SetTextureAlphaMod(texture_, 255);
+    drawCalls_ += quads_;
+  } else {
+    SDL_SetTextureColorMod(texture_, 255, 255, 255);
+    SDL_SetTextureAlphaMod(texture_, 255);
+    SDL_RenderGeometry(r, texture_, vertices_.data(), static_cast<int>(quads_ * 4),
+                       indices_.data(), static_cast<int>(quads_ * 6));
+    ++drawCalls_;
+  }
   drawnQuads_ += quads_;
-  ++drawCalls_;
   quads_ = 0;
 }
 

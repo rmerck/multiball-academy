@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 
 #include "core/Game.hpp"
@@ -55,6 +56,9 @@ class GlowBatch {
   std::array<int, kMaxQuads * 6> indices_{};
   std::size_t quads_ = 0;
   SDL_Texture* texture_ = nullptr;
+  // Which renderer: learnt at the first flush.
+  enum class Software : std::uint8_t { Unknown, Yes, No };
+  Software software_ = Software::Unknown;
   std::size_t drawnQuads_ = 0;
   std::size_t drawCalls_ = 0;
 };

@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <ctime>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -281,6 +282,7 @@ int run(const Options& o) {
     show.setAttract(o.scene == "attract");
     double total = 0.0;
     double worst = 0.0;
+    double cpu = 0.0;  // Processor time: steadier than the clock on a busy machine.
     std::uint32_t t = 0;
     const std::uint32_t steps = o.skip + o.frames * o.every;
     for (std::uint32_t frameIndex = 0; t < steps; ++t) {
@@ -290,6 +292,7 @@ int run(const Options& o) {
         continue;
       }
       const auto start = std::chrono::steady_clock::now();
+      const std::clock_t cpuStart = std::clock();
       SDL_SetRenderDrawColor(r, 18, 18, 58, 255);
       SDL_RenderClear(r);
       pinball::DrawOptions options;
@@ -305,6 +308,7 @@ int run(const Options& o) {
           std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
               .count();
       total += ms;
+      cpu += 1000.0 * static_cast<double>(std::clock() - cpuStart) / CLOCKS_PER_SEC;
       worst = std::max(worst, ms);
       if (o.gpu) {
         SDL_RenderPresent(r);
@@ -323,9 +327,10 @@ int run(const Options& o) {
       }
     }
     if (o.time) {
-      std::printf("%s%s: %u frames, draw mean %.2f ms, worst %.2f ms (%s renderer)\n",
+      std::printf("%s%s: %u frames, draw mean %.2f ms, worst %.2f ms, processor %.2f ms a frame (%s renderer)\n",
                   o.scene.c_str(), o.plain ? " (plain)" : "", o.frames,
-                  total / std::max<double>(o.frames, 1.0), worst, SDL_GetRendererName(r));
+                  total / std::max<double>(o.frames, 1.0), worst,
+                  cpu / std::max<double>(o.frames, 1.0), SDL_GetRendererName(r));
     }
     std::printf("%s: score %llu, balls %zu, show bursts %u, large flashes %u (held %u)\n",
                 o.scene.c_str(), static_cast<unsigned long long>(game.rules().score()),
