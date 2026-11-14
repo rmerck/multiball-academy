@@ -372,18 +372,18 @@ void visit(V& v, BallRecord& b) {
   visit(v, b.onRollover);
   visit(v, b.holeArmed);
   v.element(b.holder);
-  v.integer(b.heldSteps, 0U, kAnyU32);
+  v.integer(b.heldSteps, 0U, kMaxHeldSteps);
   v.flag(b.wasHeld);
   v.integer(b.arrival, std::uint64_t{0}, kMaxStepCount);
   v.integer(b.lockBay, std::uint8_t{0}, static_cast<std::uint8_t>(table::kLockBays.size()));
   v.flag(b.releasing);
   v.integer(b.ejectStep, std::uint64_t{0}, kMaxStepCount + 1U);
   visit(v, b.searchAnchor, -kAnyPlace, kAnyPlace);
-  v.integer(b.stillSteps, 0U, kAnyU32);
+  v.integer(b.stillSteps, 0U, kMaxStillSteps);
   v.flag(b.inPlay);
   visit(v, b.takenAt, -kAnyPlace, kAnyPlace);
   v.flag(b.autoLaunch);
-  v.integer(b.launchSteps, 0U, kAnyU32);
+  v.integer(b.launchSteps, 0U, kMaxLaunchSteps);
   v.flag(b.launched);
 }
 

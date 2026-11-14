@@ -75,8 +75,23 @@ bool SaveStore::write(const save::Snapshot& snapshot) {
     return false;
   }
   const std::string bytes = save::encode(snapshot);
-  if (bytes.empty() || !replaceFile(file, bytes)) {
+  // A plain fsync: the file must outlive the application being ended, not a
+  // power cut, and it is written in the moment before suspension.
+  if (bytes.empty() || !replaceFile(file, bytes, FileAccess::OwnerOnly, Durability::System)) {
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Could not save the game in progress");
+    return false;
+  }
+  return true;
+}
+
+bool SaveStore::take() {
+  const std::string file = path();
+  if (file.empty()) {
+    return false;
+  }
+  if (std::remove(file.c_str()) != 0) {
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "The saved game is gone or cannot be deleted; not resumed (error %d)", errno);
     return false;
   }
   return true;

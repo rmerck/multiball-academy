@@ -566,6 +566,22 @@ void testRejectsBadFields() {
     s.rules.statusLocked = 1;
   });
   refused("a timer of a day", [](S& s) { s.rules.courseSteps = 120U * 86400U; });
+  // A ball's own counters past what play reaches: a tilted table's ball set
+  // to wait 414 days for its launch would leave the table stuck.
+  refused("a launch wait of 414 days", [](S& s) {
+    s.rules.tilted = true;
+    s.balls[0].autoLaunch = true;
+    s.balls[0].launched = false;
+    s.balls[0].inPlay = false;
+    s.balls[0].launchSteps = 0xFFFFFFFFU;
+  });
+  refused("a launch wait past the relaunch", [](S& s) {
+    s.balls[0].launchSteps = save::kMaxLaunchSteps + 1;
+  });
+  refused("a ball still past the ball search", [](S& s) {
+    s.balls[0].stillSteps = save::kMaxStillSteps + 1;
+  });
+  refused("a hold of a day", [](S& s) { s.balls[0].heldSteps = 120U * 86400U; });
   refused("a door command past Raise", [](S& s) { s.rules.doorCommand = 3; });
   refused("a game random of 0", [](S& s) { s.game.random = 0; });
   refused("too many spins owed", [](S& s) { s.game.spinsOwed = table::kMaxSpinsOwed + 1; });

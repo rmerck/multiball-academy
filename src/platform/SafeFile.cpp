@@ -176,13 +176,16 @@ mode_t modeFor(FileAccess access) noexcept {
 
 // Pushes a file's data to the disk itself, not only to the drive's cache.
 // Succeeds, having done what can be done, where there is no flush to ask for.
-bool syncToDisk(int fd) noexcept {
+// With full off, a plain fsync (Durability::System).
+bool syncToDisk(int fd, bool full) noexcept {
 #if defined(__APPLE__) && defined(F_FULLFSYNC)
   // On macOS plain fsync stops at the drive. Not every volume supports the
   // full flush, so fall through to fsync if it is refused.
-  if (::fcntl(fd, F_FULLFSYNC) == 0) {
+  if (full && ::fcntl(fd, F_FULLFSYNC) == 0) {
     return true;
   }
+#else
+  (void)full;
 #endif
   int synced = -1;
   do {
@@ -264,7 +267,8 @@ ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
   return ReadResult::Ok;
 }
 
-bool replaceFile(const std::string& path, std::string_view text, FileAccess access) {
+bool replaceFile(const std::string& path, std::string_view text, FileAccess access,
+                 Durability durability) {
   // A fresh, uniquely named file beside the target, created exclusively and
   // for its owner only. Nothing already at any name is opened, and two
   // programs saving at once cannot disturb each other's file.
@@ -286,7 +290,7 @@ bool replaceFile(const std::string& path, std::string_view text, FileAccess acce
   // The data must be on disk before the rename makes it the real file.
   bool ok = writeAll(file.get(), text);
   if (ok) {
-    ok = syncToDisk(file.get());
+    ok = syncToDisk(file.get(), durability == Durability::Disk);
   }
   // Once the data is safely down, an interrupted close has still closed.
   const bool closed = file.close() || errno == EINTR;
@@ -396,7 +400,8 @@ ReadResult readRegularFile(const std::string& path, std::size_t maxBytes,
   return ReadResult::Ok;
 }
 
-bool replaceFile(const std::string& path, std::string_view text, FileAccess /*access*/) {
+bool replaceFile(const std::string& path, std::string_view text, FileAccess /*access*/,
+                 Durability /*durability*/) {
   const std::string temporary = path + ".tmp";
   SDL_RemovePath(temporary.c_str());
   SDL_IOStream* const stream = SDL_IOFromFile(temporary.c_str(), "wb");

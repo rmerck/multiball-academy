@@ -54,8 +54,25 @@ enum class FileAccess {
 // that does not fail the save.)
 // Elsewhere a fixed temporary name and plain SDL file calls are used, and
 // access has no effect.
+//
+// durability: Disk, the default, flushes past the drive's own cache where
+// the system can (F_FULLFSYNC on Apple systems), so the file outlives a
+// power cut. System is a plain fsync: enough to outlive the application
+// being ended, and much quicker on Apple systems, for a write that must be
+// done within the moment an application has before it is suspended.
+enum class Durability { Disk, System };
 [[nodiscard]] bool replaceFile(const std::string& path, std::string_view text,
-                               FileAccess access = FileAccess::OwnerOnly);
+                               FileAccess access = FileAccess::OwnerOnly,
+                               Durability durability = Durability::Disk);
+
+// A directory's name ready for a file's name to be added: with a separator
+// at the end, added if it is missing. Empty stays empty.
+[[nodiscard]] inline std::string withTrailingSeparator(std::string directory) {
+  if (!directory.empty() && directory.back() != '/' && directory.back() != '\\') {
+    directory += '/';
+  }
+  return directory;
+}
 
 enum class MoveResult {
   Moved,

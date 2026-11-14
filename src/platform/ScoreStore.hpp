@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "core/HighScores.hpp"
+#include "platform/SafeFile.hpp"
 
 namespace pinball {
 
@@ -13,7 +14,9 @@ class ScoreStore {
  public:
   // directory: where the file is kept, ending in a separator; empty (the
   // default) for the per-user preferences directory. Only tests give one.
-  explicit ScoreStore(std::string directory = {}) : directory_(std::move(directory)) {}
+  // A separator is added if it is missing.
+  explicit ScoreStore(std::string directory = {})
+      : directory_(withTrailingSeparator(std::move(directory))) {}
 
   // The file is small plain text; whatever is on disk is validated in full
   // before any of it is used, and a bad or missing file just means an empty

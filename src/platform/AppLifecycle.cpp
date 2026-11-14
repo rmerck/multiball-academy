@@ -167,11 +167,11 @@ void App::withdrawSavedGame() {
 }
 
 void App::followSavedGame() {
-  if (!saveOnDisk_ && !savedGame_) {
-    return;
-  }
-  if (game_.gamesBegun() != gamesBegunSeen_ || game_.gameOver()) {
-    gamesBegunSeen_ = game_.gamesBegun();
+  // Kept up to date whether or not there is a save, so that a game begun
+  // before this one was saved does not count against it later.
+  const bool begun = game_.gamesBegun() != gamesBegunSeen_;
+  gamesBegunSeen_ = game_.gamesBegun();
+  if ((saveOnDisk_ || savedGame_) && (begun || game_.gameOver())) {
     discardSavedGame();
   }
 }
@@ -188,8 +188,11 @@ bool App::resumeSavedGame() {
   if (!savedGame_) {
     return false;
   }
-  // Off the disk before it is on the table: a save is resumed once.
-  if (!saveStore_.remove()) {
+  // Off the disk before it is on the table: a save is resumed once. If
+  // this call did not delete it (another copy of the game resumed it, or it
+  // cannot be deleted), it is not resumed here.
+  if (!saveStore_.take()) {
+    savedGame_.reset();
     return false;
   }
   saveOnDisk_ = false;

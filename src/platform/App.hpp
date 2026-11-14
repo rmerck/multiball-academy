@@ -57,8 +57,9 @@ struct AppOptions {
   // the system, which resizes the window from there (inSystemCorner). By
   // default where the system does that: on a tablet.
   std::optional<bool> systemCorners;
-  // Where the high scores and the saved game are kept, ending in a
-  // separator; empty for the player's preferences directory. For tests,
+  // Where the high scores and the saved game are kept (a separator is
+  // added at the end if missing); empty for the player's preferences
+  // directory. For tests,
   // which give a scratch directory so that the player's files are never
   // touched; no command line sets it.
   std::string dataDirectory;

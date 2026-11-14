@@ -463,6 +463,26 @@ void testSavedGame() {
     CHECK(exists(file));
   }
   {
+    // Two copies of the game started on the same save (two windows on a
+    // Mac): the one that resumes it first has it; the other is refused.
+    const std::unique_ptr<App> first = App::create(options);
+    const std::unique_ptr<App> second = App::create(options);
+    CHECK(first != nullptr && second != nullptr);
+    if (!first || !second) {
+      return;
+    }
+    CHECK(first->hasSavedGame() && second->hasSavedGame());
+    CHECK(first->resumeSavedGame());
+    CHECK(!second->resumeSavedGame());
+    CHECK(!second->hasSavedGame());
+    CHECK(second->status().steps != first->status().steps);
+    // The first quits in the middle of its game: kept for next time.
+    key(*first, SDLK_F3, SDL_SCANCODE_F3);
+    CHECK(frames(*first, 5));
+    CHECK(first->finish() == 0);
+    CHECK(exists(file));
+  }
+  {
     // A new game asked for instead: the save goes at once.
     const std::unique_ptr<App> app = App::create(options);
     CHECK(app != nullptr && app->hasSavedGame());
@@ -529,6 +549,32 @@ void testSavedGame() {
     system(*app, SDL_EVENT_DID_ENTER_BACKGROUND);
     CHECK(!exists(file));
     system(*app, SDL_EVENT_DID_ENTER_FOREGROUND);
+    CHECK(app->finish() == 0);
+    CHECK(!exists(file));
+  }
+  {
+    // A game that goes on after its save was written, with no word that the
+    // application is in front again (here: the player ends the touch
+    // screen's pause), and ends: the save goes with the game.
+    AppOptions touch = options;
+    touch.idiom = pinball::screen::Idiom::Touch;
+    const std::unique_ptr<App> app = App::create(touch);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(!exists(file));
+    launchAndPlay(*app);
+    system(*app, SDL_EVENT_WILL_ENTER_BACKGROUND);
+    CHECK(exists(file));
+    CHECK(app->status().paused);
+    key(*app, SDLK_F3, SDL_SCANCODE_F3);
+    CHECK(!app->status().paused);
+    CHECK(frames(*app, 5));
+    CHECK(exists(file));
+    CHECK(playToGameOver(
+        *app, [&app] { key(*app, SDLK_SPACE, SDL_SCANCODE_SPACE); }, [] {}));
+    CHECK(!exists(file));
     CHECK(app->finish() == 0);
     CHECK(!exists(file));
   }
