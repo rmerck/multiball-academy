@@ -98,7 +98,8 @@ bool sameOnTable(const Game& a, const Game& b) {
     const pinball::BallView& y = ballsB.items[i];
     if (x.id != y.id || x.position.x != y.position.x || x.position.y != y.position.y ||
         x.visible != y.visible || x.raised != y.raised || x.locked != y.locked ||
-        x.scale != y.scale) {
+        x.scale != y.scale || x.drawOffset.x != y.drawOffset.x ||
+        x.drawOffset.y != y.drawOffset.y || x.sink != y.sink) {
       return false;
     }
   }

@@ -382,6 +382,9 @@ void visit(V& v, BallRecord& b) {
   v.integer(b.stillSteps, 0U, kMaxStillSteps);
   v.flag(b.inPlay);
   visit(v, b.takenAt, -kAnyPlace, kAnyPlace);
+  v.integer(b.takenStep, std::uint64_t{0}, kMaxStepCount + 1U);
+  visit(v, b.ejectFrom, -kAnyPlace, kAnyPlace);
+  v.flag(b.ejectFromBay);
   v.flag(b.autoLaunch);
   v.integer(b.launchSteps, 0U, kMaxLaunchSteps);
   v.flag(b.launched);
@@ -446,7 +449,8 @@ bool ballConsistent(const BallRecord& b, const GameRecord& g) {
   } else if (b.releasing) {
     return false;
   }
-  if (b.arrival > g.arrivals || b.ejectStep > g.stepCount + 1U) {
+  if (b.arrival > g.arrivals || b.ejectStep > g.stepCount + 1U ||
+      b.takenStep > g.stepCount + 1U) {
     return false;
   }
   return true;

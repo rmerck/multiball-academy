@@ -420,6 +420,9 @@ save::Snapshot Game::snapshot() const {
     r.stillSteps = ball.stillSteps;
     r.inPlay = ball.inPlay;
     r.takenAt = ball.takenAt;
+    r.takenStep = ball.takenStep;
+    r.ejectFrom = ball.ejectFrom;
+    r.ejectFromBay = ball.ejectFromBay;
     r.autoLaunch = ball.autoLaunch;
     r.launchSteps = ball.launchSteps;
     r.launched = ball.launched;
@@ -479,6 +482,9 @@ bool Game::restore(const save::Snapshot& s) {
     ball.stillSteps = r.stillSteps;
     ball.inPlay = r.inPlay;
     ball.takenAt = r.takenAt;
+    ball.takenStep = r.takenStep;
+    ball.ejectFrom = r.ejectFrom;
+    ball.ejectFromBay = r.ejectFromBay;
     ball.autoLaunch = r.autoLaunch;
     ball.launchSteps = r.launchSteps;
     ball.launched = r.launched;

@@ -48,7 +48,8 @@ taken between two steps:
   (bumpers being touched, rollovers being crossed, holes armed, the last
   sensor position), and what Game keeps (holder, hold time, arrival order,
   lock bay, releasing, eject step, ball-search anchor and count, in play,
-  where a hole took it, auto-launch).
+  where and when a hole took it, where it was let out from (for drawing it
+  going in and out), auto-launch).
 
 Not kept: the message showing and its queue, sounds of the step, flashes and
 the table's shake (all of the moment), and the controls (released: nothing
@@ -128,15 +129,15 @@ longer than the moment before suspension. Little-endian:
 | Bytes | Field |
 | --- | --- |
 | 8 | `MBA-SAVE` |
-| 2 | format version (`save::kFormatVersion`, now 1) |
+| 2 | format version (`save::kFormatVersion`, now 2) |
 | 1 + n | build id: version and build number, `2.0.0+1` |
 | 32 | layout fingerprint: SHA-256 of the geometry a saved ball depends on (walls, flippers, bumpers, targets, doors, rollovers, holes and their exits, bays, sensors, kickback, plunger) |
 | 14 | the count of each kind of element (balls, bumpers, slingshots, targets, doors, rollovers, holes, sensors, bays, flippers, courses, shots, features, ranks) |
 | 4 | payload size |
-| 1066 | the records, fixed size |
+| 1117 | the records, fixed size |
 | 32 | SHA-256 of everything before it |
 
-1,166 bytes in all for build `2.0.0+1`. Everything is keyed to element ids
+1,217 bytes in all for build `2.0.0+1`. Everything is keyed to element ids
 of `core/TableLayout.hpp` (a hole is its index in `kHoles`, a bay its index
 in `kLockBays`), never to a shape or a body.
 
@@ -154,7 +155,10 @@ the Hangar holds a locked ball, a held ball names a hole or the kickback,
 empty slots carry nothing, remembered steps not in the future). Anything
 wrong: the file is deleted and nothing is offered.
 
-**Bump `kFormatVersion` whenever a record changes.** A change of the table's
+**Bump `kFormatVersion` whenever a record changes**, and add the field to
+the records whenever Game, Rules or PhysicsWorld gains state: the
+round-trip tests compare what the table shows, so a field left out fails
+them. A change of the table's
 geometry needs nothing: the fingerprint changes with it and old saves are
 refused. A new build refuses an old build's save by its build id, so an
 update from the App Store starts fresh.
