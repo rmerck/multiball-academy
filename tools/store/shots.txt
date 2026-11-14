@@ -1,0 +1,9 @@
+# The App Store screenshots: one line per shot, in store order.
+# name | caption (capitals, the title's lettering) | bar colour (pink or yellow) | what the raw frame must show
+# tools/store/compose.py reads the first three fields; capture.sh prints the fourth as the brief.
+multiball | THREE BALLS AT ONCE | pink | Academy multiball: three balls on the table, ACADEMY MULTIBALL on the display, jackpot arrows lit
+hangar | LOCK IT IN THE HANGAR | yellow | bay doors down, a ball parked in a Hangar bay, LOCK IS LIT or BALL 1 LOCKED, a new ball on the plunger
+course | SIX COURSES TO PASS | pink | a course running: course name and goal line in the course window, its arrows blinking, ball in play
+graduation | GRADUATION DAY | yellow | GRADUATION DAY or FINAL EXAM on the display, all seven arrows lit, three balls (fallback: a COMBO 3X moment, caption CHAIN YOUR SHOTS)
+table | ONE ORIGINAL TABLE | pink | start of a game: ball on the plunger, LAUNCH THE BALL, the whole table unlit and clear
+about | NO ADS. NO ACCOUNTS. | yellow | the ABOUT tab of SCORES & ABOUT: privacy statement, version, PRIVACY POLICY button
