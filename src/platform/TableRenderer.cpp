@@ -815,8 +815,7 @@ void TableRenderer::draw(SDL_Renderer* r, const Game& game, float alpha,
   drawPlunger(r, game);
   drawFlippers(r, game, alpha);
   {
-    // The shadows and the halos follow the same in-between positions as
-    // the balls.
+    // The shadows follow the same in-between positions as the balls.
     const DrawnBalls balls = ballsToDraw(game, alpha, options.extraBalls);
     drawBalls(r, balls.span());
   }

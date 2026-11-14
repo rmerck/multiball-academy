@@ -7,6 +7,14 @@ include(${SOURCE_DIR}/cmake/IosIconCheck.cmake)
 set(icon ${SOURCE_DIR}/packaging/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png)
 set(marker ${SOURCE_DIR}/packaging/ios/ICON_IS_A_PLACEHOLDER)
 
+# The placeholder that was once committed stays refused: its hash may not
+# fall off the list.
+list(FIND PINBALL_IOS_PLACEHOLDER_ICON_HASHES
+  62cae5f0b7bbcca630794c23a725009451cac0e2c6bee2b507655b3ff99709bb found)
+if(found EQUAL -1)
+  message(FATAL_ERROR "the historical placeholder icon's hash is no longer refused")
+endif()
+
 # The real icon, as committed: no marker, not a placeholder's hash.
 pinball_ios_icon_is_placeholder(placeholder ICON ${icon} MARKER ${marker})
 if(placeholder)

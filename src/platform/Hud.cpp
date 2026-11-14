@@ -281,15 +281,19 @@ void drawPanel(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
   if (desktop) {
     if (art.panel != nullptr) {
       // The art has the touch buttons' sockets here. The keys are listed on
-      // a window like the others instead: the art's last window, with its
-      // chrome lip, stretched over the area. Two pixels to the unit.
+      // a window like the others instead: one of the art's windows, with
+      // its chrome lip, stretched over the area and a little wider than
+      // the windows above, so the longest line clears the lip. The status
+      // window is the source: nothing of the art's ornament lies by it.
+      // Two pixels to the unit.
       constexpr float kLip = 6.0F;
       constexpr float kCorner = 28.0F;  // Pixels: the lip and the glass's round corner.
-      const panel::Rect& source = panel::kHighScoreWell;
+      constexpr float kMargin = 10.0F;  // From the panel's sides to the lip.
+      const panel::Rect& source = panel::kStatusWell;
       const SDL_FRect src{(source.x - kLip - panel::kLeft) * 2.0F, (source.y - kLip) * 2.0F,
                           (source.w + 2.0F * kLip) * 2.0F, (source.h + 2.0F * kLip) * 2.0F};
-      const SDL_FRect dst{layout.hud.x + panel::kInset - kLip, dy + 874.0F,
-                          panel::kWellWidth + 2.0F * kLip, panel::kHeight - 876.0F};
+      const SDL_FRect dst{layout.hud.x + kMargin, dy + 874.0F, panel::kWidth - 2.0F * kMargin,
+                          panel::kHeight - 876.0F};
       SDL_RenderTexture9Grid(r, art.panel, &src, kCorner, kCorner, kCorner, kCorner, 0.5F, &dst);
     }
     drawText(r, "Z / FLIP   SPACE LAUNCH   X . UP NUDGE", middle, dy + 882.0F, kLabelSize, kDim,
