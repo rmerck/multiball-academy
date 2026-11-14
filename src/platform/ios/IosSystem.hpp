@@ -15,15 +15,21 @@ struct SDL_Window;
 // is iOS.)
 namespace pinball::ios {
 
-// One control or title of a menu screen for VoiceOver. frame is in the
-// window's points. Activating a control pushes an SDL event of the type
-// given to setAccessibilityElements with user.code set to code; a title
-// (header) is read and not activated.
+// What an accessibility element is: a control, which can be activated; a
+// title; or a block of text, which is only read.
+enum class AccessRole : std::uint8_t { Button, Header, Text };
+
+// One control, title or block of text of a menu screen for VoiceOver. frame
+// is in the window's points. Activating a control pushes an SDL event of the
+// type given to setAccessibilityElements with user.code set to code; a title
+// or text is read and not activated, and neither is a control that is not
+// enabled (one drawn greyed, that leads nowhere).
 struct AccessibleElement {
   std::string_view label;
   screen::Rect frame;
   std::int32_t code = 0;
-  bool header = false;
+  AccessRole role = AccessRole::Button;
+  bool enabled = true;
 };
 
 #if defined(PINBALL_IOS)

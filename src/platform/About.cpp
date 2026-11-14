@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/Format.hpp"
 #include "core/Courses.hpp"
@@ -143,22 +145,55 @@ Paging licencePaging(const screen::Layout& layout) noexcept {
   return {pages, (lines + pages - 1) / pages};
 }
 
+// Where drawHeading puts its parts for a heading at y: the title from
+// title down, the version line from version, and what follows from below.
+struct HeadingPlace {
+  float title;
+  float version;
+  float rule;
+  float below;
+};
+
+HeadingPlace headingPlace(const Body& body, float y) noexcept {
+  const float version = y + 64.0F;
+  const float rule = version + 7.0F * body.size + 10.0F;
+  return {y - 10.0F, version, rule, rule + 30.0F};
+}
+
+// The high score table's title, and the rows under it.
+constexpr float kScoreTitleGap = 38.0F;
+constexpr float kScoreRowStep = 36.0F;
+// Lettering of size 3, the size of the page titles and the score rows.
+constexpr float kLargeTextHeight = 21.0F;
+
+// Where drawFacts puts its parts from y down: the build and support lines,
+// the privacy title and the statement.
+struct FactsPlace {
+  float build;
+  float privacyTitle;
+  float statement;
+};
+
+FactsPlace factsPlace(const Body& body, float y) noexcept {
+  const float title = y + body.step + 7.0F * body.size + 20.0F;
+  return {y, title, title + kScoreTitleGap};
+}
+
 // The title, the version, and a rule under them. Returns the y below the
 // rule.
 float drawHeading(SDL_Renderer* r, const OverlayArt& art, const Body& body, float middle,
                   float y, float width, float largest) {
+  const HeadingPlace place = headingPlace(body, y);
   // The title lockup in the heading's 64 units, or the name in lettering.
   if (!drawTitleArt(r, art.title, {middle - width * 0.5F, y - 10.0F, width, 60.0F})) {
     const float size = fittedSize(kGameTitle, width, largest);
     drawNeonText(r, kGameTitle, middle, y, size, kAmber, kPink, kViolet, TextAlign::Center);
   }
-  y += 64.0F;
   std::array<char, 48> version{};
-  drawText(r, formatText(version.data(), version.size(), "VERSION %s", kGameVersion), middle, y,
-           body.size, kDim, TextAlign::Center);
-  y += 7.0F * body.size + 10.0F;
-  drawDialogRule(r, art, middle, y, 300.0F);
-  return y + 30.0F;
+  drawText(r, formatText(version.data(), version.size(), "VERSION %s", kGameVersion), middle,
+           place.version, body.size, kDim, TextAlign::Center);
+  drawDialogRule(r, art, middle, place.rule, 300.0F);
+  return place.below;
 }
 
 // The high score table from y down, centred on middle.
@@ -166,7 +201,7 @@ void drawScoreTable(SDL_Renderer* r, const Body& body, const HighScores& scores,
                     float y, bool narrow) {
   drawNeonText(r, "HIGH SCORES", middle, y, 3.0F, kWhite, kCyan, kViolet,
                TextAlign::Center);
-  y += 38.0F;
+  y += kScoreTitleGap;
   if (scores.size() == 0) {
     drawText(r, "NO GAMES FINISHED YET", middle, y, body.size, kDim, TextAlign::Center);
     return;
@@ -186,7 +221,7 @@ void drawScoreTable(SDL_Renderer* r, const Body& body, const HighScores& scores,
              3.0F, kPink);
     drawText(r, score, scoreRight, y, 3.0F, kWhite, TextAlign::Right);
     drawText(r, rankName(entry.rank), rank, y, 3.0F, kAmber);
-    y += 36.0F;
+    y += kScoreRowStep;
   }
 }
 
@@ -194,19 +229,17 @@ void drawScoreTable(SDL_Renderer* r, const Body& body, const HighScores& scores,
 // and where the policy is if the build knows and showAddress asks for it.
 void drawFacts(SDL_Renderer* r, const Body& body, float middle, float y, float width,
                bool showAddress) {
+  const FactsPlace place = factsPlace(body, y);
   std::array<char, 48> build{};
-  drawText(r, formatText(build.data(), build.size(), "BUILD %s", kBuildNumber), middle, y,
-           body.size, kDim, TextAlign::Center);
-  y += body.step;
+  drawText(r, formatText(build.data(), build.size(), "BUILD %s", kBuildNumber), middle,
+           place.build, body.size, kDim, TextAlign::Center);
   // Where to write for help: the one contact detail the game shows.
   std::array<char, 64> support{};
-  drawText(r, formatText(support.data(), support.size(), "SUPPORT  %s", kSupportEmail), middle, y,
-           body.size, kAmber, TextAlign::Center);
-  y += 7.0F * body.size + 20.0F;
-  drawNeonText(r, "YOUR PRIVACY", middle, y, 3.0F, kWhite, kCyan, kViolet,
+  drawText(r, formatText(support.data(), support.size(), "SUPPORT  %s", kSupportEmail), middle,
+           place.build + body.step, body.size, kAmber, TextAlign::Center);
+  drawNeonText(r, "YOUR PRIVACY", middle, place.privacyTitle, 3.0F, kWhite, kCyan, kViolet,
                TextAlign::Center);
-  y += 38.0F;
-  y = drawParagraph(r, body, kPrivacy, middle, y, width, kWhite) + 14.0F;
+  y = drawParagraph(r, body, kPrivacy, middle, place.statement, width, kWhite) + 14.0F;
   if (showAddress && !privacyUrl().empty()) {
     drawText(r, "PRIVACY POLICY", middle, y, body.size, kDim, TextAlign::Center);
     drawParagraph(r, body, privacyUrl(), middle, y + body.step, width, kAmber);
@@ -293,6 +326,13 @@ void drawTurnButton(SDL_Renderer* r, const ButtonArt& art, const screen::Rect& f
   }
 }
 
+// The credit as the touch dialog sets it: on one line if it fits the width,
+// else on two; and where.
+std::string_view creditFor(const Body& body, float width) noexcept {
+  return textWidth(kCredit, body.size) <= width ? kCredit : kCreditLines;
+}
+float creditTop(const screen::AboutLayout& about) noexcept { return about.privacyLink.y + 24.0F; }
+
 // The dialog with the controls a touch screen needs.
 void drawTouch(SDL_Renderer* r, const HighScores& scores, const screen::Layout& layout,
                const AboutState& state, const OverlayArt& art) {
@@ -314,8 +354,7 @@ void drawTouch(SDL_Renderer* r, const HighScores& scores, const screen::Layout& 
     case AboutPage::Scores: {
       const float y = drawHeading(r, art, text, middle, body.y + 8.0F, body.w, 6.0F);
       drawScoreTable(r, text, scores, middle, y, body.w < 700.0F);
-      drawParagraph(r, text, textWidth(kCredit, text.size) <= body.w ? kCredit : kCreditLines,
-                    middle, about.privacyLink.y + 24.0F, body.w, kDim);
+      drawParagraph(r, text, creditFor(text, body.w), middle, creditTop(about), body.w, kDim);
       break;
     }
     case AboutPage::About: {
@@ -356,6 +395,123 @@ bool privacyButtonShown(const screen::Layout& layout, const AboutState& state) n
 
 bool pageButtonsShown(const screen::Layout& layout, const AboutState& state) noexcept {
   return isTouch(layout) && state.page == AboutPage::Licences && licencePageCount(layout) > 1;
+}
+
+std::vector<AboutReadout> aboutReadout(const HighScores& scores, const screen::Layout& layout,
+                                       const AboutState& state) {
+  std::vector<AboutReadout> out;
+  if (!isTouch(layout)) {
+    return out;
+  }
+  using Kind = AboutReadout::Kind;
+  const Body text(layout);
+  const screen::AboutLayout about = screen::aboutLayout(layout);
+  const screen::Rect& body = about.body;
+  // A block of lines from y down, the width of the body.
+  const auto block = [&body](float y, float height) {
+    return screen::Rect{body.x, y, body.w, height};
+  };
+  const auto lines = [&text, &body](std::string_view words) {
+    return static_cast<float>(
+        wrapLines(words, text.across(body.w), [](std::size_t, std::string_view) {}));
+  };
+  // The heading of the first two pages, as drawHeading draws it.
+  const HeadingPlace heading = headingPlace(text, body.y + 8.0F);
+  const auto addHeading = [&] {
+    std::string label(kGameTitle);
+    label += ". VERSION ";
+    label += kGameVersion;
+    out.push_back({Kind::Title, std::move(label),
+                   block(heading.title, heading.version + 7.0F * text.size - heading.title)});
+  };
+  switch (state.page) {
+    case AboutPage::Scores: {
+      addHeading();
+      const float top = heading.below;
+      out.push_back({Kind::Title, "HIGH SCORES", block(top, kLargeTextHeight)});
+      const float rows = top + kScoreTitleGap;
+      std::string list;
+      for (std::size_t i = 0; i < scores.size(); ++i) {
+        const HighScore entry = scores.at(i);
+        ScoreText buffer{};
+        list += std::to_string(i + 1) + ". " +
+                std::string(entry.initials.data(), entry.initials.size()) + ", " +
+                std::string(formatScore(entry.score, buffer)) + ", " +
+                std::string(rankName(entry.rank)) + ". ";
+      }
+      if (list.empty()) {
+        out.push_back({Kind::Text, "NO GAMES FINISHED YET", block(rows, 7.0F * text.size)});
+      } else {
+        list.pop_back();
+        const float height =
+            static_cast<float>(scores.size() - 1) * kScoreRowStep + kLargeTextHeight;
+        out.push_back({Kind::Text, std::move(list), block(rows, height)});
+      }
+      out.push_back({Kind::Text, std::string(kCredit),
+                     block(creditTop(about), lines(creditFor(text, body.w)) * text.step)});
+      break;
+    }
+    case AboutPage::About: {
+      addHeading();
+      const FactsPlace place = factsPlace(text, heading.below);
+      std::string facts = "BUILD ";
+      facts += kBuildNumber;
+      facts += ". SUPPORT: ";
+      facts += kSupportEmail;
+      out.push_back({Kind::Text, std::move(facts), block(place.build, text.step + 7.0F * text.size)});
+      out.push_back({Kind::Title, "YOUR PRIVACY", block(place.privacyTitle, kLargeTextHeight)});
+      out.push_back({Kind::Text, std::string(kPrivacy),
+                     block(place.statement, lines(kPrivacy) * text.step)});
+      if (privacyButtonShown(layout, state)) {
+        out.push_back({Kind::PrivacyButton, "PRIVACY POLICY. OPENS IN THE BROWSER",
+                       about.privacyLink});
+      }
+      break;
+    }
+    case AboutPage::Licences: {
+      const screen::Rect area = licenceArea(layout);
+      const Paging paging = licencePaging(layout);
+      const std::size_t page = std::min(state.licencePage, paging.pages - 1);
+      const std::size_t first = page * paging.perPage;
+      out.push_back({Kind::Title,
+                     "LICENCES. PAGE " + std::to_string(page + 1) + " OF " +
+                         std::to_string(paging.pages),
+                     {area.x, area.y + area.h + 4.0F, area.w, 7.0F * text.size}});
+      // The page's lines as one text: a line that ends a paragraph ends it
+      // here too, and the others run on.
+      const std::string_view all = licenceText();
+      std::string words;
+      std::size_t shown = 0;
+      wrapLines(all, text.across(area.w), [&](std::size_t line, std::string_view part) {
+        if (line < first || line >= first + paging.perPage) {
+          return;
+        }
+        ++shown;
+        if (part.empty()) {
+          return;
+        }
+        words += part;
+        // What the wrap took out after the line: a line feed, a space, or
+        // nothing where a word too long for a line (an address) was cut.
+        const std::size_t end = static_cast<std::size_t>(part.data() - all.data()) + part.size();
+        if (end < all.size() && (all[end] == '\n' || all[end] == ' ')) {
+          words += all[end];
+        }
+      });
+      while (!words.empty() && (words.back() == ' ' || words.back() == '\n')) {
+        words.pop_back();
+      }
+      out.push_back({Kind::Text, std::move(words),
+                     {area.x, area.y, area.w, static_cast<float>(shown) * text.step}});
+      if (pageButtonsShown(layout, state)) {
+        out.push_back({Kind::PreviousPage, "PREVIOUS LICENCE PAGE", about.previous, page > 0});
+        out.push_back(
+            {Kind::NextPage, "NEXT LICENCE PAGE", about.next, page + 1 < paging.pages});
+      }
+      break;
+    }
+  }
+  return out;
 }
 
 void drawAbout(SDL_Renderer* r, const HighScores& scores, const screen::Layout& layout,

@@ -20,6 +20,7 @@
 #include "core/Game.hpp"
 #include "core/HowToText.hpp"
 #include "core/OverlayLayout.hpp"
+#include "core/PanelLayout.hpp"
 #include "core/ScreenLayout.hpp"
 #include "core/Settings.hpp"
 #include "core/TextWrap.hpp"
@@ -465,6 +466,51 @@ void checkFront(const Layout& l, const char* name) {
       CHECK(wellFormed(r) && inside(r, l.safe));
     }
     CHECK(noneOverlap(labels));
+    // No label on a control of the game: the labels point at them.
+    const std::vector<Rect> controls{l.pauseButton, l.nudgeLeftButton, l.centreButton,
+                                     l.nudgeRightButton};
+    for (const Rect& label : labels) {
+      for (const Rect& control : controls) {
+        CHECK(!overlap(label, control));
+      }
+    }
+    // The pause label on none of the display's windows (the score, above
+    // all), and its lead, where it has one, from the button to the label
+    // and on nothing else.
+    std::vector<Rect> windows;
+    if (l.composition == screen::Composition::Classic) {
+      for (const Rect& w : panel::kWells) {
+        windows.push_back({w.x + l.hud.x - panel::kLeft, w.y + l.hud.y, w.w, w.h});
+      }
+    } else {
+      for (const Rect& w : strip::kWells) {
+        windows.push_back({w.x + l.hud.x, w.y + l.hud.y, w.w, w.h});
+      }
+    }
+    for (const Rect& w : windows) {
+      CHECK(!overlap(g.pauseLabel, w));
+    }
+    if (g.pauseLead.w > 0.0F && g.pauseLead.h > 0.0F) {
+      CHECK(inside(g.pauseLead, l.safe));
+      CHECK(std::abs(g.pauseLead.y - (l.pauseButton.y + l.pauseButton.h)) < 0.01F);
+      CHECK(std::abs(g.pauseLead.y + g.pauseLead.h - g.pauseLabel.y) < 0.01F);
+      CHECK(g.pauseLead.x >= l.pauseButton.x && g.pauseLead.x + g.pauseLead.w <=
+                                                     l.pauseButton.x + l.pauseButton.w);
+      for (const Rect& label : labels) {
+        CHECK(!overlap(g.pauseLead, label));
+      }
+      for (const Rect& control : controls) {
+        CHECK(!overlap(g.pauseLead, control));
+      }
+      for (const Rect& w : windows) {
+        CHECK(!overlap(g.pauseLead, w));
+      }
+      CHECK(g.pauseLead.x >= g.pauseLabel.x &&
+            g.pauseLead.x + g.pauseLead.w <= g.pauseLabel.x + g.pauseLabel.w);
+    } else {
+      // Right beside the button: under it, with no gap to speak of.
+      CHECK(g.pauseLabel.y - (l.pauseButton.y + l.pauseButton.h) <= 16.0F);
+    }
     CHECK(inside(g.leftLabel, l.flipperLeftZone) && inside(g.rightLabel, l.flipperRightZone));
     CHECK(textFits(howto::kGuideLeft, g.leftLabel, size));
     CHECK(textFits(howto::kGuideRight, g.rightLabel, size));

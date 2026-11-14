@@ -12,7 +12,9 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <system_error>
+#include <vector>
 
 #include "Check.hpp"
 #include "core/Args.hpp"
@@ -25,6 +27,7 @@
 #include "platform/About.hpp"
 #include "platform/App.hpp"
 #include "platform/AudioOutput.hpp"
+#include "platform/ios/IosSystem.hpp"
 
 namespace {
 
@@ -1537,6 +1540,237 @@ void testTitleTouch() {
   }
 }
 
+// The element of items whose label holds words, with that role; null if
+// there is none.
+const App::AccessItem* findItem(const std::vector<App::AccessItem>& items, std::string_view words,
+                                pinball::ios::AccessRole role) {
+  for (const App::AccessItem& item : items) {
+    if (item.role == role && item.label.find(words) != std::string::npos) {
+      return &item;
+    }
+  }
+  return nullptr;
+}
+
+// Text with every run of spaces and line feeds made one space, and none at
+// either end: the licences as they read, however they are wrapped.
+std::string squeezed(std::string_view text) {
+  std::string out;
+  bool space = false;
+  for (const char c : text) {
+    if (c == ' ' || c == '\n') {
+      space = !out.empty();
+      continue;
+    }
+    if (space) {
+      out += ' ';
+      space = false;
+    }
+    out += c;
+  }
+  return out;
+}
+
+// VoiceOver on the About dialog: besides the tabs and CLOSE, every tab's
+// text (the version, the credit, the privacy statement, the licences, page
+// by page) and every button on it (PRIVACY POLICY, the licence arrows),
+// each where it is drawn.
+void testAboutAccessibility() {
+  using Role = pinball::ios::AccessRole;
+  using pinball::AboutPage;
+  const std::unique_ptr<App> app = App::create(titleOptions(pinball::screen::Idiom::Touch));
+  CHECK(app != nullptr);
+  if (!app) {
+    return;
+  }
+  CHECK(untilIntroDone(*app));
+  const pinball::screen::Layout layout = app->status().layout;
+  const pinball::FrontConfig config{.guideShown = true};
+  const pinball::screen::TitleLayout title = pinball::screen::titleLayout(layout, config);
+  tap(*app, centreOf(title.items[static_cast<std::size_t>(TitleItem::About)]));
+  CHECK(frames(*app, 1));
+  CHECK(app->status().aboutOpen && app->status().about.page == AboutPage::Scores);
+  const pinball::screen::AboutLayout about = pinball::screen::aboutLayout(layout);
+
+  // What every tab has: its controls first, each a button with a code of
+  // its own, and everything else read only, in the dialog and on no
+  // control.
+  const auto common = [&](const std::vector<App::AccessItem>& items) {
+    CHECK(items.size() > 5);
+    if (items.size() <= 5) {
+      return;
+    }
+    const char* const tabs[] = {"SCORES", "ABOUT", "LICENCES"};
+    for (std::size_t i = 0; i < 3; ++i) {
+      CHECK(items[i].label == tabs[i] && items[i].role == Role::Button && items[i].code != 0);
+    }
+    CHECK(items.back().label == "CLOSE" && items.back().role == Role::Button);
+    const std::vector<Rect> controls{about.tabs[0], about.tabs[1], about.tabs[2], about.close};
+    for (const App::AccessItem& item : items) {
+      CHECK(!item.label.empty());
+      const Rect& r = item.frame;
+      CHECK(r.w > 0.0F && r.h > 0.0F);
+      CHECK(r.x >= about.box.x - 0.01F && r.y >= about.box.y - 0.01F &&
+            r.x + r.w <= about.box.x + about.box.w + 0.01F &&
+            r.y + r.h <= about.box.y + about.box.h + 0.01F);
+      if (item.role == Role::Button) {
+        CHECK(item.code != 0);
+        continue;
+      }
+      CHECK(item.code == 0);
+      for (const Rect& c : controls) {
+        CHECK(!(r.x < c.x + c.w && c.x < r.x + r.w && r.y < c.y + c.h && c.y < r.y + r.h));
+      }
+    }
+  };
+
+  // SCORES: the title and version, the table, the credit.
+  std::vector<App::AccessItem> items = app->accessibilityItems();
+  common(items);
+  const std::string version = std::string("VERSION ") + pinball::kGameVersion;
+  CHECK(findItem(items, version, Role::Header) != nullptr);
+  CHECK(findItem(items, "HIGH SCORES", Role::Header) != nullptr);
+  CHECK(findItem(items, "NO GAMES FINISHED YET", Role::Text) != nullptr);
+  CHECK(findItem(items, "AN ORIGINAL GAME BY RYAN MERCK", Role::Text) != nullptr);
+  CHECK(findItem(items, "PRIVACY POLICY", Role::Button) == nullptr);
+  CHECK(findItem(items, "LICENCE PAGE", Role::Button) == nullptr);
+
+  // ABOUT: the version, the build and support, the privacy statement and
+  // the button to the policy, where the button is drawn.
+  tap(*app, centreOf(about.tabs[1]));
+  CHECK(frames(*app, 1));
+  CHECK(app->status().about.page == AboutPage::About);
+  items = app->accessibilityItems();
+  common(items);
+  CHECK(findItem(items, version, Role::Header) != nullptr);
+  CHECK(findItem(items, std::string("BUILD ") + pinball::kBuildNumber, Role::Text) != nullptr);
+  CHECK(findItem(items, "YOUR PRIVACY", Role::Header) != nullptr);
+  CHECK(findItem(items, "THIS GAME COLLECTS NOTHING AND SENDS NOTHING", Role::Text) != nullptr);
+  const App::AccessItem* const policy = findItem(items, "PRIVACY POLICY", Role::Button);
+  CHECK((policy != nullptr) ==
+        pinball::privacyButtonShown(layout, {AboutPage::About, 0}));
+  CHECK(std::string_view(pinball::kPrivacyUrl).empty() || policy != nullptr);
+  if (policy != nullptr) {
+    CHECK(policy->enabled);
+    CHECK(policy->frame.x == about.privacyLink.x && policy->frame.y == about.privacyLink.y &&
+          policy->frame.w == about.privacyLink.w && policy->frame.h == about.privacyLink.h);
+  }
+
+  // LICENCES: page by page, its number, its text and the two arrows, the
+  // one that leads nowhere not enabled. Every word of the notices is read
+  // once, in order.
+  tap(*app, centreOf(about.tabs[2]));
+  CHECK(frames(*app, 1));
+  CHECK(app->status().about.page == AboutPage::Licences);
+  const std::size_t pages = pinball::licencePageCount(layout);
+  std::string read;
+  for (std::size_t page = 0; page < pages; ++page) {
+    CHECK(app->status().about.licencePage == page);
+    items = app->accessibilityItems();
+    common(items);
+    const std::string count = "LICENCES. PAGE " + std::to_string(page + 1) + " OF " +
+                              std::to_string(pages);
+    CHECK(findItem(items, count, Role::Header) != nullptr);
+    std::size_t texts = 0;
+    for (const App::AccessItem& item : items) {
+      if (item.role == Role::Text) {
+        ++texts;
+        read += item.label;
+        read += ' ';
+      }
+    }
+    CHECK(texts == 1);
+    const App::AccessItem* const previous = findItem(items, "PREVIOUS LICENCE PAGE", Role::Button);
+    const App::AccessItem* const next = findItem(items, "NEXT LICENCE PAGE", Role::Button);
+    CHECK((previous != nullptr) == (pages > 1) && (next != nullptr) == (pages > 1));
+    if (previous == nullptr || next == nullptr) {
+      break;
+    }
+    CHECK(previous->enabled == (page > 0));
+    CHECK(next->enabled == (page + 1 < pages));
+    CHECK(previous->frame.x == about.previous.x && next->frame.x == about.next.x);
+    CHECK(previous->code != next->code);
+    tap(*app, centreOf(about.next));
+    CHECK(frames(*app, 1));
+  }
+  CHECK(squeezed(read) == squeezed(pinball::licenceText()));
+  // On the last page NEXT stays put, and PREVIOUS goes back.
+  CHECK(app->status().about.licencePage == pages - 1);
+  if (pages > 1) {
+    tap(*app, centreOf(about.previous));
+    CHECK(app->status().about.licencePage == pages - 2);
+  }
+  // Closed: the title's own elements again.
+  tap(*app, centreOf(about.close));
+  CHECK(frames(*app, 1));
+  CHECK(!app->status().aboutOpen);
+  items = app->accessibilityItems();
+  CHECK(findItem(items, "CLOSE", Role::Button) == nullptr);
+  CHECK(findItem(items, "PLAY", Role::Button) != nullptr);
+  // A desktop has none.
+  const std::unique_ptr<App> desk = App::create(titleOptions(pinball::screen::Idiom::Desktop));
+  CHECK(desk != nullptr && desk->accessibilityItems().empty());
+}
+
+// HOW TO PLAY's touch guide shows the controls over a new game: not the
+// game left by MAIN MENU, nor attract mode's.
+void testGuideFromHowToShowsANewGame() {
+  AppOptions options = titleOptions(pinball::screen::Idiom::Touch);
+  options.attractStepsPerFrame = 200;
+  const std::unique_ptr<App> app = App::create(options);
+  CHECK(app != nullptr);
+  if (!app) {
+    return;
+  }
+  using Centre = pinball::TouchControls::View::Centre;
+  CHECK(untilIntroDone(*app));
+  const pinball::screen::Layout layout = app->status().layout;
+  const pinball::FrontConfig config{.guideShown = true};
+  const pinball::screen::TitleLayout title = pinball::screen::titleLayout(layout, config);
+  const auto item = [&title](TitleItem which) {
+    return centreOf(title.items[static_cast<std::size_t>(which)]);
+  };
+  // A game, its ball launched and played a while, then left by MAIN MENU.
+  tap(*app, item(TitleItem::Play));
+  tap(*app, flipperPoint(layout, true));
+  CHECK(!app->status().guideOpen);
+  CHECK(frames(*app, 5));
+  CHECK(app->status().touch.centreRole == Centre::Launch);
+  finger(*app, SDL_EVENT_FINGER_DOWN, 9, centreOf(layout.centreButton));
+  CHECK(frames(*app, 30));
+  finger(*app, SDL_EVENT_FINGER_UP, 9, centreOf(layout.centreButton));
+  CHECK(frames(*app, 120));
+  CHECK(app->status().steps > 0);
+  tap(*app, centreOf(layout.pauseButton));
+  CHECK(frames(*app, 2));
+  const pinball::screen::MenuLayout menu = pinball::screen::menuLayout(layout);
+  tap(*app, centreOf(menu.mainMenu));
+  tap(*app, centreOf(menu.mainMenu));
+  CHECK(app->status().frontOpen);
+  CHECK(untilIntroDone(*app));
+  // Attract mode plays behind the title and HOW TO PLAY.
+  tap(*app, item(TitleItem::HowTo));
+  CHECK(frames(*app, 20));
+  CHECK(app->status().attractSteps > 0);
+  const pinball::screen::PageLayout first =
+      pinball::screen::pageLayout(layout, FrontPage::HowTo, true);
+  tap(*app, centreOf(first.guide));
+  CHECK(app->status().front.page == FrontPage::Guide);
+  CHECK(frames(*app, 3));
+  App::Status status = app->status();
+  CHECK(status.guideTableScore == 0 && status.guideTableSteps == 0);
+  CHECK(status.guideTouch.centreRole == Centre::Launch);
+  // Again after going back: a new game each time, attract mode untouched.
+  tap(*app, {10.0F, 10.0F});
+  CHECK(app->status().front.page == FrontPage::HowTo);
+  CHECK(frames(*app, 20));
+  tap(*app, centreOf(first.guide));
+  CHECK(frames(*app, 2));
+  status = app->status();
+  CHECK(status.guideTableScore == 0 && status.guideTableSteps == 0);
+  CHECK(app->finish() == 0);
+}
+
 // A finished game goes back to the title: not while the initials prompt is
 // up, not for a key in the first moment, and by itself after a while.
 void testGameOverReturnsToTitle() {
@@ -1834,6 +2068,8 @@ void runFront() {
   testTitleReduceMotion();
   testTitleKeys();
   testTitleTouch();
+  testAboutAccessibility();
+  testGuideFromHowToShowsANewGame();
   testGameOverReturnsToTitle();
   testTouchGameOverGuard();
   testReviewAsksOnce();
