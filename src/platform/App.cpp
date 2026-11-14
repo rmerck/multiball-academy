@@ -232,12 +232,12 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
       audio_(options.backgroundAudioOpen ? nullptr : AudioOutput::open()),
       scoreStore_(options.dataDirectory),
       saveStore_(options.dataDirectory),
-      settingsStore_(options.dataDirectory),
       // A timed automated run leaves the player's score file alone: it is
       // neither read (which can also set a bad file aside) nor written.
       highScores_(options.frameLimit || options.scene || !options.keepScores ? HighScores{}
                                                                              : scoreStore_.load()),
-      aboutEvent_(SDL_RegisterEvents(1)) {
+      aboutEvent_(SDL_RegisterEvents(1)),
+      settingsStore_(options.dataDirectory) {
   const bool routed = routeAboutMenu(aboutEvent_);
   SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "About menu item routed to the game: %s",
                routed ? "yes" : "no");
