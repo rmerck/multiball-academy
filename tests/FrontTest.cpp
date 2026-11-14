@@ -77,6 +77,12 @@ void testSettingsRoundTrip() {
   CHECK(!parsed.sound && !parsed.music && parsed.volume == 8 && parsed.haptics);
   CHECK(parsed.parse("PINBALL-SETTINGS 1\n"));
   CHECK(parsed == Settings{});
+  // A key from a newer version is passed over: the rest still counts.
+  CHECK(parsed.parse("PINBALL-SETTINGS 1\ngames 7\ncolour-scheme neon\nasked 2.0.0\n"));
+  CHECK(parsed.gamesFinished == 7 && parsed.reviewAskedVersion == "2.0.0");
+  // But not a malformed one.
+  CHECK(!parsed.parse("PINBALL-SETTINGS 1\nColour neon\n"));
+  CHECK(!parsed.parse("PINBALL-SETTINGS 1\ncolour neo n\n"));
 }
 
 void testSettingsRejectsGarbage() {
@@ -102,7 +108,7 @@ void testSettingsRejectsGarbage() {
       "PINBALL-SETTINGS 1\nasked 2.0.0b\n",
       "PINBALL-SETTINGS 1\nasked 1234567890123456\n",
       "PINBALL-SETTINGS 1\nasked ../x\n",
-      "PINBALL-SETTINGS 1\ncolour 1\n",       // Unknown key.
+      "PINBALL-SETTINGS 1\ncolour\n",         // Unknown key, no value.
       "PINBALL-SETTINGS 1\n\n",
       "PINBALL-SETTINGS 1\r\nsound 1\r\n",
       "PINBALL-SETTINGS 1\nSOUND 1\n",
@@ -376,7 +382,11 @@ void checkFront(const Layout& l, const char* name) {
         CHECK(title.items[i].w == 0.0F);
         continue;
       }
-      CHECK(bigEnough(title.items[i], l));
+      // A finger finds it (44 points), at no less than the floor in units.
+      const Rect& item = title.items[i];
+      CHECK(std::min(item.w, item.h) >= screen::kTitleItemMinUnits);
+      CHECK(l.idiom == screen::Idiom::Desktop ||
+            std::min(item.w, item.h) * l.pointsPerUnit >= screen::kMinHitPoints - 0.001F);
       parts.push_back(title.items[i]);
     }
     for (const Rect& r : parts) {

@@ -1572,58 +1572,44 @@ void testGameOverReturnsToTitle() {
   CHECK(app->status().attractSteps > 0);
 }
 
-// Attract mode plays games of its own, and none of it is the player's: no
-// initials, no score file. Watching the title writes no settings either;
-// a setting changed is written, and read back by the next run. Only where
-// the preferences directory can be sent to a scratch place (Linux).
+// Attract mode plays games of its own to the end, and none of it is the
+// player's: no initials prompt, no score in the table, no score file, no
+// settings file written by watching. A setting changed is written and read
+// back by the next run; a game left in progress is offered as CONTINUE and
+// resumed paused; one left by MAIN MENU is not kept.
 void testAttractKeepsNoScore() {
-  namespace fs = std::filesystem;
-  std::error_code error;
-  const fs::path base = fs::temp_directory_path(error);
-  const fs::path scratchPath =
-      base / ("pinball-app-attract-" + std::to_string(SDL_GetTicksNS()));
-  if (error || !fs::create_directory(scratchPath, error)) {
-    CHECK(false);
+  const ScratchDir scratch("pinball-app-attract");
+  CHECK(scratch.usable());
+  if (!scratch.usable()) {
     return;
   }
-  const std::string scratch = scratchPath.string();
-  struct Cleanup {
-    fs::path path;
-    ~Cleanup() {
-      std::error_code ignored;
-      fs::remove_all(path, ignored);
+  const std::string scores = scratch.file("highscores.txt");
+  const std::string settings = scratch.file("settings.txt");
+  const auto options = [&scratch](int attractSteps = 0) {
+    AppOptions o = titleOptions(pinball::screen::Idiom::Desktop);
+    o.keepScores = true;
+    o.dataDirectory = scratch.directory();
+    if (attractSteps > 0) {
+      o.attractStepsPerFrame = attractSteps;
     }
-  } const cleanup{scratchPath};
-  SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME", scratch.c_str(), true);
-  char* const pref = SDL_GetPrefPath(pinball::kDataOrganisation, pinball::kDataDirectory);
-  const std::string directory = pref != nullptr ? pref : "";
-  SDL_free(pref);
-  if (directory.rfind(scratch, 0) != 0) {
-    SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME");
-    std::puts("app_tests: attract score check skipped (no scratch preferences directory)");
-    return;
-  }
-  const std::string scores = directory + "highscores.txt";
-  const std::string settings = directory + "settings.txt";
+    return o;
+  };
   {
-    AppOptions options = titleOptions(pinball::screen::Idiom::Desktop);
-    options.keepScores = true;
-    const std::unique_ptr<App> app = App::create(options);
+    const std::unique_ptr<App> app = App::create(options(App::kMaxAttractStepsPerFrame));
     CHECK(app != nullptr);
     if (!app) {
       return;
     }
-    // Some seven seconds of attract play. (That attract games end and
-    // start again is tested in core, FrontTest; frames here are slow.)
     bool sawEntry = false;
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 400 && app->status().attractGames < 2; ++i) {
       CHECK(frames(*app, 1));
       sawEntry = sawEntry || app->status().entryOpen;
     }
     const App::Status status = app->status();
+    // Two attract games have ended (and a third begun).
+    CHECK(status.attractGames >= 2);
     CHECK(!sawEntry && status.frontOpen && status.steps == 0);
-    CHECK(status.attractSteps >= 700);
-    CHECK(status.scores.size() == 0);
+    CHECK(status.scores.size() == 0 && status.settings.gamesFinished == 0);
     CHECK(app->finish() == 0);
     CHECK(!SDL_GetPathInfo(scores.c_str(), nullptr));
     CHECK(!SDL_GetPathInfo(settings.c_str(), nullptr));
@@ -1632,28 +1618,25 @@ void testAttractKeepsNoScore() {
     CHECK(SDL_GetPathInfo(settings.c_str(), nullptr));
   }
   {
-    AppOptions options = titleOptions(pinball::screen::Idiom::Desktop);
-    options.keepScores = true;
-    const std::unique_ptr<App> app = App::create(options);
+    const std::unique_ptr<App> app = App::create(options());
     CHECK(app != nullptr);
     if (app) {
       CHECK(!app->status().settings.music && !app->status().musicOn);
     }
   }
-  // A run that keeps no scores does not read them either.
+  // A run that keeps no scores does not read the settings either.
   {
-    const std::unique_ptr<App> app = App::create(titleOptions(pinball::screen::Idiom::Desktop));
+    AppOptions o = options();
+    o.keepScores = false;
+    const std::unique_ptr<App> app = App::create(o);
     CHECK(app != nullptr);
     if (app) {
       CHECK(app->status().settings.music);
     }
   }
-  // A game left in progress is offered as CONTINUE, first on the title;
-  // choosing it puts the game back, paused. One left by MAIN MENU is not.
+  // CONTINUE.
   {
-    AppOptions options = titleOptions(pinball::screen::Idiom::Desktop);
-    options.keepScores = true;
-    const std::unique_ptr<App> app = App::create(options);
+    const std::unique_ptr<App> app = App::create(options());
     CHECK(app != nullptr);
     if (app) {
       CHECK(frames(*app, 2));
@@ -1671,9 +1654,7 @@ void testAttractKeepsNoScore() {
   }
   std::uint64_t leftAt = 0;
   {
-    AppOptions options = titleOptions(pinball::screen::Idiom::Desktop);
-    options.keepScores = true;
-    const std::unique_ptr<App> app = App::create(options);
+    const std::unique_ptr<App> app = App::create(options());
     CHECK(app != nullptr);
     if (app) {
       CHECK(frames(*app, 2));
@@ -1693,17 +1674,141 @@ void testAttractKeepsNoScore() {
   }
   CHECK(leftAt > 0);
   {
-    AppOptions options = titleOptions(pinball::screen::Idiom::Desktop);
-    options.keepScores = true;
-    const std::unique_ptr<App> app = App::create(options);
+    const std::unique_ptr<App> app = App::create(options());
     CHECK(app != nullptr);
     if (app) {
       CHECK(frames(*app, 2));
       CHECK(app->status().front.titleFocus == TitleItem::Play);
     }
   }
-  std::remove(settings.c_str());
-  SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "XDG_DATA_HOME");
+}
+
+// Plays one game to its end from the title and answers the initials
+// prompt, leaving the finished game standing. False if it would not end.
+bool playOneGame(App& app) {
+  key(app, SDLK_F2, SDL_SCANCODE_F2);
+  if (!playToGameOver(app, [&app] { key(app, SDLK_SPACE, SDL_SCANCODE_SPACE); }, [] {})) {
+    return false;
+  }
+  if (app.status().entryOpen) {
+    SDL_Delay(750);
+    key(app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+  }
+  return !app.status().entryOpen && app.status().gameOver;
+}
+
+// Until the title is back after a finished game. False if it never is.
+bool untilTitle(App& app) {
+  const int limit = static_cast<int>(App::kGameOverIdleSeconds / kFastFrame) + 4;
+  for (int i = 0; i < limit && !app.status().frontOpen; ++i) {
+    if (!frames(app, 1)) {
+      return false;
+    }
+  }
+  return app.status().frontOpen;
+}
+
+// The store review is asked for from the title, after a game of this run
+// has ended and the fifth game in all is finished, once for a version: a
+// second return to the title does not ask again, and the next run knows.
+void testReviewAsksOnce() {
+  const ScratchDir scratch("pinball-app-review");
+  CHECK(scratch.usable());
+  if (!scratch.usable()) {
+    return;
+  }
+  {
+    SDL_IOStream* const file = SDL_IOFromFile(scratch.file("settings.txt").c_str(), "wb");
+    CHECK(file != nullptr);
+    if (file == nullptr) {
+      return;
+    }
+    const std::string text = "PINBALL-SETTINGS 1\ngames 4\n";
+    CHECK(SDL_WriteIO(file, text.data(), text.size()) == text.size());
+    CHECK(SDL_CloseIO(file));
+  }
+  AppOptions options = titleOptions(pinball::screen::Idiom::Desktop);
+  options.keepScores = true;
+  options.dataDirectory = scratch.directory();
+  {
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(frames(*app, 2));
+    // Four games before: not at launch, never mid-game.
+    CHECK(app->status().settings.gamesFinished == 4);
+    CHECK(app->status().reviewRequests == 0);
+    CHECK(playOneGame(*app));
+    CHECK(app->status().settings.gamesFinished == 5);
+    CHECK(app->status().reviewRequests == 0);
+    CHECK(untilTitle(*app));
+    CHECK(app->status().reviewRequests == 1);
+    CHECK(app->status().settings.reviewAskedVersion == pinball::kGameVersion);
+    // Another game and back to the title: not again.
+    CHECK(untilIntroDone(*app));
+    CHECK(playOneGame(*app));
+    CHECK(untilTitle(*app));
+    CHECK(app->status().settings.gamesFinished == 6);
+    CHECK(app->status().reviewRequests == 1);
+    CHECK(app->finish() == 0);
+  }
+  {
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (app) {
+      CHECK(app->status().settings.reviewAskedVersion == pinball::kGameVersion);
+      CHECK(app->status().settings.gamesFinished == 6);
+    }
+  }
+}
+
+// On a touch screen a finished game goes back to the title on a tap, but
+// not on one in the first moment after the game ends.
+void testTouchGameOverGuard() {
+  const std::unique_ptr<App> app = App::create(titleOptions(pinball::screen::Idiom::Touch));
+  CHECK(app != nullptr);
+  if (!app) {
+    return;
+  }
+  CHECK(frames(*app, 3));
+  const pinball::screen::Layout layout = app->status().layout;
+  CHECK(untilIntroDone(*app));
+  const pinball::screen::TitleLayout title =
+      pinball::screen::titleLayout(layout, pinball::FrontConfig{.guideShown = true});
+  tap(*app, centreOf(title.items[static_cast<std::size_t>(TitleItem::Play)]));
+  // The first game's guide.
+  CHECK(app->status().guideOpen);
+  tap(*app, flipperPoint(layout, true));
+  CHECK(!app->status().guideOpen && !app->status().frontOpen);
+  const Point centre = centreOf(layout.centreButton);
+  CHECK(playToGameOver(
+      *app, [&app, centre] { finger(*app, SDL_EVENT_FINGER_DOWN, 9, centre); },
+      [&app, centre] { finger(*app, SDL_EVENT_FINGER_UP, 9, centre); }));
+  if (app->status().entryOpen) {
+    SDL_Delay(750);
+    tap(*app, centreOf(pinball::screen::initialsLayout(layout).ok));
+  }
+  CHECK(!app->status().entryOpen && app->status().gameOver);
+  // At once: a thumb still coming down is not a request.
+  CHECK(frames(*app, 1));
+  tap(*app, flipperPoint(layout, false));
+  CHECK(!app->status().frontOpen);
+  // After the guard, a tap anywhere.
+  CHECK(frames(*app, static_cast<int>(App::kGameOverGuardSeconds / kFastFrame) + 2));
+  CHECK(!app->status().frontOpen);
+  tap(*app, flipperPoint(layout, false));
+  CHECK(app->status().frontOpen);
+}
+
+void runFront() {
+  testTitleKeys();
+  testTitleTouch();
+  testGameOverReturnsToTitle();
+  testTouchGameOverGuard();
+  testReviewAsksOnce();
+  testAttractKeepsNoScore();
 }
 
 void runAll() {
@@ -1720,25 +1825,25 @@ void runAll() {
   testBackgroundAudioOpen();
   testAudioOpenedWhileLeavingStaysStopped();
   testNoAudioRetriesOnReturn();
-  testTitleKeys();
-  testTitleTouch();
-  testGameOverReturnsToTitle();
-  testAttractKeepsNoScore();
 }
 
 }  // namespace
 
 // With the argument "saved-game", only the saved game's checks (registered
-// as a test of their own, app_saved_game, so the two run side by side);
-// without, everything else.
+// as a test of their own, app_saved_game, so they run side by side with the
+// rest); with "front", only those of the title and the screens in front of
+// the game (app_front); without, everything else.
 int main(int argc, char* argv[]) {
   // No window on a screen, no sound, whatever the environment says.
   SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "dummy", SDL_HINT_OVERRIDE);
   setAudioDriver("dummy");
   const bool savedGameOnly = argc > 1 && std::string(argv[1]) == "saved-game";
+  const bool frontOnly = argc > 1 && std::string(argv[1]) == "front";
   try {
     if (savedGameOnly) {
       testSavedGame();
+    } else if (frontOnly) {
+      runFront();
     } else {
       runAll();
     }

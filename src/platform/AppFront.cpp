@@ -3,6 +3,7 @@
 // the review prompt; and what VoiceOver finds on the menus.
 #include <algorithm>
 #include <array>
+#include <deque>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -30,6 +31,12 @@ constexpr SoundSet kPlaySound = soundBit(Sound::Launch);
 constexpr SoundSet kAskSound = soundBit(Sound::TiltWarning);
 constexpr SoundSet kResetSound = soundBit(Sound::Drain);
 constexpr SoundSet kIntroSound = soundBit(Sound::SetComplete);
+
+// The touch guide as VoiceOver reads it: every control it marks.
+constexpr std::string_view kGuideSpoken =
+    "TOUCH CONTROLS. LEFT HALF OF THE SCREEN: LEFT FLIPPER. RIGHT HALF: RIGHT FLIPPER. "
+    "LAUNCH BUTTON: HOLD TO PULL THE PLUNGER, LET GO TO SHOOT. THE BUTTONS BESIDE IT NUDGE "
+    "THE TABLE. PAUSE BUTTON AT THE TOP. ";
 
 // What an accessibility element's code says: which group of controls, and
 // the target in it.
@@ -149,10 +156,19 @@ void App::stepAttract(double seconds) {
   if (!attract_ || reduceMotion_ || front_.state().page == FrontPage::Guide || backgrounded_) {
     return;
   }
-  const int steps = attractTimestep_.advance(std::clamp(seconds, 0.0, 0.25));
+  const int steps = options_.attractStepsPerFrame
+                        ? std::clamp(*options_.attractStepsPerFrame, 1, kMaxAttractStepsPerFrame)
+                        : attractTimestep_.advance(std::clamp(seconds, 0.0, 0.25));
   for (int i = 0; i < steps; ++i) {
+    const bool wasOver = attract_->gameOver();
     attract_->step(pilot_.next(*attract_));
     ++attractSteps_;
+    // An attract game that ends is counted, and that is all: it has no
+    // initials, no score table and no saved game (recordFinishedGame and
+    // the saved game follow the player's game alone).
+    if (attract_->gameOver() && !wasOver) {
+      ++attractGames_;
+    }
   }
   // Its sounds are not played: attract mode is silent but for the tune.
 }
@@ -409,9 +425,9 @@ void App::refreshAccessibility() {
   accessibilityPage_ = pageKey;
   accessibilityKey_ = key;
 
-  // The labels live here for the call.
-  std::vector<std::string> labels;
-  labels.reserve(16);
+  // The labels live here for the call. A deque: adding one never moves the
+  // others, which the elements point into.
+  std::deque<std::string> labels;
   std::vector<ios::AccessibleElement> elements;
   const float ppu = layout_.pointsPerUnit;
   const auto add = [&](std::string label, const screen::Rect& r, std::int32_t code,
@@ -503,14 +519,14 @@ void App::refreshAccessibility() {
           break;
         }
         case FrontPage::Guide:
-          add("TOUCH CONTROLS. LEFT HALF: LEFT FLIPPER. RIGHT HALF: RIGHT FLIPPER. TAP TO GO BACK.",
+          add(std::string(kGuideSpoken) + "TAP TO GO BACK.",
               {0.0F, 0.0F, layout_.canvasWidth, layout_.canvasHeight}, front(Kind::Anywhere),
               false);
           break;
       }
       break;
     case Screen::Guide:
-      add("TOUCH CONTROLS. LEFT HALF: LEFT FLIPPER. RIGHT HALF: RIGHT FLIPPER. TAP TO PLAY.",
+      add(std::string(kGuideSpoken) + "TAP TO PLAY.",
           {0.0F, 0.0F, layout_.canvasWidth, layout_.canvasHeight},
           accessCode(AccessGroup::Dismiss, 0, 0), false);
       break;

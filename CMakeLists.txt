@@ -753,6 +753,11 @@ if(BUILD_TESTING)
     # The saved game (docs/RESUME.md): written on the way out, offered,
     # resumed once, deleted by a new game or the end of one. Uses a scratch
     # preferences directory of its own.
+    # The title and the screens in front of the game: attract mode, the
+    # menus, the return to the title, the review prompt's gate.
+    add_test(NAME app_front COMMAND app_tests front)
+    set_tests_properties(app_front PROPERTIES
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 600 LABELS slow)
     add_test(NAME app_saved_game COMMAND app_tests saved-game)
     set_tests_properties(app_saved_game PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 300 LABELS slow)

@@ -169,9 +169,10 @@ struct Marquee {
 
 Marquee marqueeFor(const HighScores* scores, bool keyboard) {
   Marquee m;
+  // Not the name: the logo above says it.
   m.add(keyboard ? "PRESS ENTER" : "PRESS PLAY");
-  m.add("MULTIBALL");
-  m.add("ACADEMY");
+  m.add("SIX COURSES");
+  m.add("LOCK 3 BALLS");
   if (scores != nullptr && scores->size() > 0) {
     m.add("HIGH SCORES");
     for (std::size_t i = 0; i < scores->size() && m.count < m.messages.size(); ++i) {
@@ -355,14 +356,15 @@ void drawTitle(SDL_Renderer* r, const screen::Layout& layout, const FrontView& v
   if (t >= kTitleIntroSeconds) {
     const float size = screen::smallestTextSize(layout);
     const float middle = title.footer.x + title.footer.w * 0.5F;
-    if (view.keyboard) {
-      drawText(r, "ARROWS AND ENTER TO CHOOSE.  F2 TO PLAY AT ONCE.", middle, title.footer.y,
-               size, kOrchid, TextAlign::Center);
-    } else {
-      std::array<char, 48> version{};
-      drawText(r, formatText(version.data(), version.size(), "VERSION %s", kGameVersion), middle,
-               title.footer.y, size, kOrchid, TextAlign::Center);
-    }
+    std::array<char, 48> version{};
+    const std::string_view line =
+        view.keyboard ? std::string_view("ARROWS AND ENTER TO CHOOSE.  F2 TO PLAY AT ONCE.")
+                      : formatText(version.data(), version.size(), "VERSION %s", kGameVersion);
+    // On a backing of its own: the attract table runs under it.
+    const float backingW = textWidth(line, size) + 4.0F * size;
+    fillRect(r, {middle - backingW * 0.5F, title.footer.y - 2.0F * size, backingW, 11.0F * size},
+             sdl(art::kInk, 215));
+    drawText(r, line, middle, title.footer.y, size, kOrchid, TextAlign::Center);
   }
 }
 

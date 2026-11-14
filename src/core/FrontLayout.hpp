@@ -12,6 +12,11 @@
 // screen::kMinHitUnits on a side.
 namespace pinball::screen {
 
+// The title's menu buttons: this wide, and as tall as kMinHitPoints needs
+// on the screen but not under this many units.
+inline constexpr float kTitleItemWidth = 440.0F;
+inline constexpr float kTitleItemMinUnits = 64.0F;
+
 struct TitleLayout {
   // The whole composition: the table, its status display and its deck.
   Rect area;

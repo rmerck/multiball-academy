@@ -66,6 +66,10 @@ struct AppOptions {
   // does. Never for a timed run or a staged scene, which go straight to
   // the game. Off for tests that start with the game itself.
   bool showTitle = true;
+  // For tests: attract mode's game takes this many steps every frame,
+  // whatever the clock, so that a test can see attract games end. 1 to
+  // kMaxAttractStepsPerFrame.
+  std::optional<int> attractStepsPerFrame;
   // Where the high scores and the saved game are kept (a separator is
   // added at the end if missing); empty for the player's preferences
   // directory. For tests,
@@ -158,8 +162,10 @@ class App {
     bool frontOpen;
     FrontState front;
     bool introDone;
-    // Simulation steps of the attract game since the title last opened.
+    // Simulation steps of the attract game since the title last opened,
+    // and attract games that have ended in this run.
     std::uint64_t attractSteps;
+    unsigned attractGames;
     // The touch guide before the first game is up.
     bool guideOpen;
     // MAIN MENU was chosen once in the pause and waits for a second press.
@@ -180,6 +186,7 @@ class App {
   // flippers when the last ball drains are not a request).
   static constexpr double kGameOverIdleSeconds = 8.0;
   static constexpr double kGameOverGuardSeconds = 0.8;
+  static constexpr int kMaxAttractStepsPerFrame = 2000;
 
   // The system's Reduce Motion setting as the game last read it (at start
   // and on every return to the foreground): the one place everything that
@@ -460,6 +467,7 @@ class App {
   AttractPilot pilot_;
   FixedTimestep attractTimestep_{Game::kStepSeconds, 8};
   std::uint64_t attractSteps_ = 0;
+  unsigned attractGames_ = 0;
   // The touch guide before the player's first game.
   bool guideOpen_ = false;
   bool confirmMainMenu_ = false;

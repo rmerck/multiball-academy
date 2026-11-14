@@ -104,7 +104,16 @@ bool Settings::parse(std::string_view text) noexcept {
     const std::string_view value = line.substr(space + 1);
     const auto found = std::ranges::find(kKeys, name);
     if (found == kKeys.end()) {
-      return false;
+      // A key this version does not know, from a newer one: passed over, so
+      // that the rest of the file still counts. Only a plain word with a
+      // plain value (the file's size bounds how many).
+      const auto word = [](char c) { return (c >= 'a' && c <= 'z') || c == '-'; };
+      const auto plain = [](char c) { return c > ' ' && c <= '~'; };
+      if (name.empty() || !std::ranges::all_of(name, word) || value.empty() ||
+          !std::ranges::all_of(value, plain)) {
+        return false;
+      }
+      continue;
     }
     const auto index = static_cast<std::size_t>(found - kKeys.begin());
     if (seen[index]) {

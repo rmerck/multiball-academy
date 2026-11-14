@@ -42,8 +42,10 @@ struct Settings {
   // Text form: a header line, then one "key value" line for each setting.
   [[nodiscard]] std::string serialize() const;
   // Replaces every setting with what text says. A key that is missing
-  // keeps its default. Anything malformed, unknown, repeated or out of
-  // range makes the whole text invalid: the settings are left at their
+  // keeps its default; one this version does not know (a lower-case word
+  // with a plain value) is passed over, so a newer file stays readable.
+  // Anything malformed, repeated or out of range makes the whole text
+  // invalid: the settings are left at their
   // defaults and false is returned. Never trusts the input.
   [[nodiscard]] bool parse(std::string_view text) noexcept;
 };

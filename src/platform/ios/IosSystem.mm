@@ -113,6 +113,10 @@ void attachWindow(SDL_Window* window) noexcept {
     gHeavy = [UIImpactFeedbackGenerator feedbackGeneratorWithStyle:UIImpactFeedbackStyleHeavy
                                                            forView:view];
     gNotice = [UINotificationFeedbackGenerator feedbackGeneratorForView:view];
+    // Ready for the first, without its start-up delay.
+    [gLight prepare];
+    [gHeavy prepare];
+    [gNotice prepare];
   }
 }
 
@@ -135,8 +139,11 @@ void haptic(Haptic kind) noexcept {
         break;
       case Haptic::Jackpot:
         [gNotice notificationOccurred:UINotificationFeedbackTypeSuccess];
+        [gNotice prepare];
         break;
     }
+    // The Taptic Engine stays ready for the next while the game is played.
+    [gLight prepare];
   }
 }
 

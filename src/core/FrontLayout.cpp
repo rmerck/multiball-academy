@@ -1,6 +1,7 @@
 #include "core/FrontLayout.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "core/OverlayLayout.hpp"
 
@@ -88,9 +89,13 @@ TitleLayout titleLayout(const Layout& layout, const FrontConfig& config) noexcep
   const float cx = table.x + table.w * 0.5F;
   const bool wide = classic(layout);
   const std::size_t shown = config.continueShown ? kTitleItemCount : kTitleItemCount - 1;
-  const float gap = wide ? (config.continueShown ? 12.0F : 16.0F) : 18.0F;
+  // The title's buttons are as small as a finger allows (kMinHitPoints),
+  // never under kTitleItemMinUnits, so that the table shows round them.
+  const float itemH =
+      std::max(kTitleItemMinUnits, std::ceil(kMinHitPoints / std::max(layout.pointsPerUnit, 0.01F)));
+  const float gap = 10.0F;
   const float itemsH =
-      static_cast<float>(shown) * kButton + static_cast<float>(shown - 1) * gap;
+      static_cast<float>(shown) * itemH + static_cast<float>(shown - 1) * gap;
   const float header = headerHeight(t);
   float top = table.y - header;
   if (top < layout.safe.y) {
@@ -104,15 +109,15 @@ TitleLayout titleLayout(const Layout& layout, const FrontConfig& config) noexcep
   const float content = itemsH + 16.0F + 30.0F;
   const float room = bottomOf(table) - y;
   if (room > content) {
-    y += std::min((room - content) * 0.25F, 80.0F);
+    y += std::min((room - content) * 0.2F, 60.0F);
   }
   for (std::size_t i = 0; i < kTitleItemCount; ++i) {
     if (i == static_cast<std::size_t>(TitleItem::Continue) && !config.continueShown) {
       title.items[i] = {cx, y, kNone, kNone};
       continue;
     }
-    title.items[i] = centredAt(cx, y, 520.0F, kButton);
-    y += kButton + gap;
+    title.items[i] = centredAt(cx, y, kTitleItemWidth, itemH);
+    y += itemH + gap;
   }
   title.footer = centredAt(cx, y - gap + 16.0F, std::min(table.w, layout.safe.w) - 2.0F * kMargin,
                            30.0F);

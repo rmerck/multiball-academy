@@ -656,6 +656,7 @@ App::Status App::status() const {
   status.front = front_.state();
   status.introDone = introDone();
   status.attractSteps = attractSteps_;
+  status.attractGames = attractGames_;
   status.guideOpen = guideOpen_;
   status.confirmMainMenu = confirmMainMenu_;
   status.settings = settings_;
