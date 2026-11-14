@@ -15,6 +15,8 @@ struct MenuLayout {
   Rect sound;
   Rect music;
   Rect about;
+  // Leave the game for the title screen.
+  Rect mainMenu;
 };
 
 struct AboutLayout {

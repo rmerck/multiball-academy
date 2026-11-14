@@ -23,12 +23,16 @@ constexpr SDL_Color kOrchid = sdl(art::kOrchid);
 constexpr SDL_Color kCream = sdl(art::kCream);
 
 // The word over the table, and under it how to go on.
-void drawPausedWord(SDL_Renderer* r, const screen::Layout& layout, std::string_view hint) {
+void drawPausedWord(SDL_Renderer* r, const screen::Layout& layout, std::string_view hint,
+                    std::string_view second = {}) {
   // Centred over the playfield.
   const float middle = layout.playfield.x + layout.playfield.w * 0.5F;
   const float top = layout.playfield.y;
   drawText(r, "PAUSED", middle, top + 430.0F, 9.0F, kCream, TextAlign::Center);
   drawText(r, hint, middle, top + 520.0F, 3.0F, kYellow, TextAlign::Center);
+  if (!second.empty()) {
+    drawText(r, second, middle, top + 560.0F, 3.0F, kOrchid, TextAlign::Center);
+  }
 }
 
 }  // namespace
@@ -39,8 +43,13 @@ void drawPauseMenu(SDL_Renderer* r, const screen::Layout& layout, const MenuStat
     return;
   }
   if (layout.idiom == screen::Idiom::Desktop) {
-    drawPausedWord(r, layout,
-                   state.afterInterruption ? "CLICK THE WINDOW TO RESUME" : "PRESS F3 TO RESUME");
+    if (state.afterInterruption) {
+      drawPausedWord(r, layout, "CLICK THE WINDOW TO RESUME");
+    } else {
+      drawPausedWord(r, layout, "PRESS F3 TO RESUME",
+                     state.confirmMainMenu ? "PRESS ESC AGAIN TO LEAVE THE GAME"
+                                           : "ESC: MAIN MENU");
+    }
     return;
   }
   // The table is dimmed by whoever draws it paused; the rest is dimmed here.
@@ -77,6 +86,11 @@ void drawPauseMenu(SDL_Renderer* r, const screen::Layout& layout, const MenuStat
   drawCaptionButton(r, menu.music, state.musicOn ? "MUSIC ON" : "MUSIC OFF",
                     state.musicOn ? kButtonOrchid : kButtonOff, false, 4.0F, 3.0F, button);
   drawCaptionButton(r, menu.about, "SCORES & ABOUT", kPink, false, 4.0F, 3.0F, button);
+  if (state.confirmMainMenu) {
+    drawCaptionButton(r, menu.mainMenu, "TAP AGAIN TO LEAVE", kOrange, true, 4.0F, 3.0F, button);
+  } else {
+    drawCaptionButton(r, menu.mainMenu, "MAIN MENU", kTeal, false, 4.0F, 3.0F, button);
+  }
 }
 
 }  // namespace pinball

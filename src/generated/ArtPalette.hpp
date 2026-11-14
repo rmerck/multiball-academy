@@ -156,8 +156,8 @@ inline constexpr Rgb kFxTrail{159, 244, 255};
 inline constexpr float kNeonGlowStrength = 0.95F;
 inline constexpr float kFlasherStrengthMax = 0.95F;
 inline constexpr float kGiStrength = 0.75F;
-inline constexpr float kBallPoolAlpha = 0.60F;  // the dark pool round each ball
-inline constexpr float kBallPoolRadii = 2.2F;  // its radius in ball radii
+inline constexpr float kBallPoolAlpha = 0.70F;  // the dark pool round each ball
+inline constexpr float kBallPoolRadii = 2.4F;  // its radius in ball radii
 inline constexpr float kFlareUnits = 64.0F;    // flare.png and ring.png at scale 1
 
 }  // namespace pinball::art

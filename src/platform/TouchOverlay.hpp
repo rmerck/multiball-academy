@@ -28,6 +28,11 @@ struct OverlayArt {
   SDL_Texture* dialog = nullptr;
   SDL_Texture* title = nullptr;
   ButtonArt button;
+  // The title screen's: one lamp of its dot display (sprites/dot.png, 8
+  // units, tinted) and the soft light (sprites/glow.png, additive). The
+  // glow belongs to the table and must be left additive.
+  SDL_Texture* dot = nullptr;
+  SDL_Texture* glow = nullptr;
 };
 
 // Captions, arrows and marks on a button: light on the plain dark slab,
