@@ -5,9 +5,13 @@
 #   capture.sh sets
 #       the screenshot sets, the simulator each one is taken on, and its size
 #   capture.sh start <set> <Name.app>
-#       boots that simulator without a window (one at a time), installs the
-#       application, starts it with SDL's silent audio driver, and prints the
-#       touch plan for the set
+#       takes the Mac lock (/tmp/ios-mac.lock), boots that simulator without
+#       a window (one at a time), installs the application, starts it with
+#       SDL's silent audio driver, and prints the touch plan for the set.
+#       Booting takes longer than one call may run on the shared Mac: run it
+#       detached and read its log, for example
+#         nohup bash tools/store/capture.sh start ipad-13 "<build>/Release-iphonesimulator/Multiball Academy.app" \
+#           > /tmp/capture-start.log 2>&1 < /dev/null &
 #   capture.sh shot <set> <name> [raw directory]
 #       one screenshot to <raw>/<set>/<name>.png (default raw: store-raw)
 #   capture.sh burst <set> <name> <seconds> [interval] [raw directory]
@@ -17,8 +21,8 @@
 #   capture.sh plan <set>
 #       the touch plan again
 #   capture.sh stop <set>
-#       ends the application and shuts the simulator down if this script
-#       booted it
+#       ends the application, shuts the simulator down if this script booted
+#       it, and releases the Mac lock taken by start
 #
 # Touches are not sent by this script: simctl has no touch input. They are
 # played with Xcode's device interaction tool (DeviceInteractionSynthesize in
@@ -35,8 +39,9 @@
 # submitted (configured without PINBALL_IOS_TEST_EXIT) for simulator: the
 # same code, art and rules.
 #
-# On the shared Mac take the lock first (mkdir /tmp/ios-mac.lock) and boot
-# one simulator at a time.
+# The shared Mac's rules: start takes the lock /tmp/ios-mac.lock (and fails
+# if another holder has it), one simulator is booted at a time, stop releases
+# the lock. A screenshot that is not the set's native size is an error.
 set -euo pipefail
 
 fail() {
@@ -49,9 +54,23 @@ if [ -z "${DEVELOPER_DIR:-}" ] && [ -d /Applications/Xcode.app/Contents/Develope
   export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fi
 
-identifier=io.github.rmerck.multiballacademy
 state_dir=${TMPDIR:-/tmp}/multiball-capture
 mkdir -p "$state_dir"
+lock=/tmp/ios-mac.lock
+lock_owner=store-capture
+
+release_on_failure() {
+  local status=$?
+  [ "$status" -eq 0 ] || rm -rf "$lock"
+  exit "$status"
+}
+
+# The bundle id saved by start, from the application that was installed.
+saved_identifier() {
+  local f=$state_dir/$1.identifier
+  [ -f "$f" ] || fail "no application was started on this simulator by capture.sh start"
+  cat "$f"
+}
 
 # set -> simulator name, native size (portrait), points wide
 device_of() {
@@ -152,6 +171,16 @@ case $cmd in
     set=$2
     app=${3%/}
     [ -d "$app" ] || fail "no such application: $app"
+    identifier=$(plutil -extract CFBundleIdentifier raw -o - "$app/Info.plist") \
+      || fail "no bundle identifier in $app/Info.plist"
+    [[ $identifier =~ ^[A-Za-z0-9.-]+$ ]] || fail "unexpected bundle identifier: $identifier"
+    if mkdir "$lock" 2>/dev/null; then
+      echo "$lock_owner" > "$lock/owner"
+      # Given back if start fails; kept for shot, burst and stop if it works.
+      trap release_on_failure EXIT
+    elif [ "$(cat "$lock/owner" 2>/dev/null)" != "$lock_owner" ]; then
+      fail "the Mac lock is held by '$(cat "$lock/owner" 2>/dev/null)': wait and try again"
+    fi
     info=$(device_of "$set")
     name=${info%%|*}
     udid=$(udid_of "$name")
@@ -167,6 +196,7 @@ print(sum(1 for ds in json.load(sys.stdin)["devices"].values() for d in ds if d.
     fi
     xcrun simctl bootstatus "$udid" >/dev/null
     xcrun simctl install "$udid" "$app"
+    echo "$identifier" > "$state_dir/$udid.identifier"
     xcrun simctl terminate "$udid" "$identifier" >/dev/null 2>&1 || true
     # The first launch after a boot sometimes returns no process: retry once.
     SIMCTL_CHILD_SDL_AUDIO_DRIVER=dummy xcrun simctl launch "$udid" "$identifier" >/dev/null \
@@ -185,6 +215,7 @@ print(sum(1 for ds in json.load(sys.stdin)["devices"].values() for d in ds if d.
     size=${rest%%|*}
     udid=$(udid_of "$name")
     [ "$(state_of "$udid")" = Booted ] || fail "$name is not booted: capture.sh start first"
+    saved_identifier "$udid" >/dev/null
     if [ "$cmd" = shot ]; then
       raw=${4:-store-raw}
       seconds=0
@@ -203,7 +234,8 @@ print(sum(1 for ds in json.load(sys.stdin)["devices"].values() for d in ds if d.
       xcrun simctl io "$udid" screenshot --type=png --mask=ignored "$out" >/dev/null 2>&1
       got=$(sips -g pixelWidth -g pixelHeight "$out" | awk '/pixelWidth/{w=$2} /pixelHeight/{h=$2} END{print w "x" h}')
       if [ "$got" != "$size" ] && [ "$got" != "${size#*x}x${size%x*}" ]; then
-        echo "capture: WARNING: $out is $got, the set wants $size (portrait) or its landscape" >&2
+        rm -f "$out"
+        fail "the screenshot is $got, the set wants $size (portrait) or its landscape: wrong device or display"
       fi
       echo "$out $got"
     }
@@ -228,13 +260,20 @@ print(sum(1 for ds in json.load(sys.stdin)["devices"].values() for d in ds if d.
     info=$(device_of "$2")
     udid=$(udid_of "${info%%|*}")
     [ -n "$udid" ] || fail "no such simulator"
-    xcrun simctl terminate "$udid" "$identifier" >/dev/null 2>&1 || true
+    if [ -f "$state_dir/$udid.identifier" ]; then
+      xcrun simctl terminate "$udid" "$(cat "$state_dir/$udid.identifier")" >/dev/null 2>&1 || true
+      rm -f "$state_dir/$udid.identifier"
+    fi
     if [ -f "$state_dir/$udid.booted-here" ]; then
       xcrun simctl shutdown "$udid" || true
       rm -f "$state_dir/$udid.booted-here"
       echo "capture: shut down"
     else
       echo "capture: left running (it was booted before start)"
+    fi
+    if [ "$(cat "$lock/owner" 2>/dev/null)" = "$lock_owner" ]; then
+      rm -rf "$lock"
+      echo "capture: Mac lock released"
     fi
     ;;
   *)

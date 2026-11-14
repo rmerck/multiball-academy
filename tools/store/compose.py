@@ -26,11 +26,17 @@ import math
 import os
 import struct
 import sys
-import zlib
+import tempfile
+import warnings
 
 import numpy as np
 import skia
 from PIL import Image
+
+# The largest image read is a 13-inch iPad frame (2064 x 2752, 5.7 million
+# pixels). Anything much larger is refused rather than decoded.
+Image.MAX_IMAGE_PIXELS = 6_500_000
+warnings.simplefilter("error", Image.DecompressionBombWarning)
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 DEFAULT_BACKDROP = os.path.join(ROOT, "assets", "ui", "backdrop.png")
@@ -218,6 +224,9 @@ def caption_band(w, k, caption, bar, typeface):
 def compose(raw, set_name, caption, bar, backdrop, typeface, trim=None):
     spec = SETS[set_name]
     pw, ph = spec["size"]
+    if raw.size not in ((pw, ph), (ph, pw)):
+        raise SystemExit("the raw frame is %dx%d; the %s set takes the simulator's native %dx%d "
+                         "(or %dx%d in landscape)" % (raw.width, raw.height, set_name, pw, ph, ph, pw))
     landscape = raw.width > raw.height
     w, h = (ph, pw) if landscape else (pw, ph)
     # One measure for everything drawn: the 6.9-inch portrait frame is 1.
@@ -275,13 +284,21 @@ def png_chunks(path):
 
 
 def save_clean(im, path):
-    """RGB PNG with IHDR, IDAT and IEND only."""
+    """RGB PNG with IHDR, IDAT and IEND only, checked before it takes the name."""
     clean = Image.new("RGB", im.size)
     clean.paste(im.convert("RGB"))
-    tmp = path + ".tmp"
-    clean.save(tmp, "PNG", optimize=False, compress_level=9)
-    os.replace(tmp, path)
-    check(path)
+    folder = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(prefix=".compose-", suffix=".png", dir=folder)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            clean.save(f, "PNG", optimize=False, compress_level=9)
+        check(tmp)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
 
 
 def accepted_sizes():

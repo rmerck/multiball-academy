@@ -8,12 +8,13 @@
 #   --source <dir>         the checkout to build (default: the one this
 #                          script is in), e.g. a worktree at origin/main
 #   --build <dir>          build directory (default: build-ios-release,
-#                          relative to the current directory)
+#                          relative to the current directory): new, empty,
+#                          or an iOS build directory made before
 #   --build-number <n>     bundle version (default: 1); must be higher than
 #                          the last upload's for the same version
-#   --allow-dirty          build even if the working tree has changes
-#                          (for a trial; the package says which commit it
-#                          was built from, and a dirty tree makes that untrue)
+#   --allow-dirty          build even if the working tree has changes or
+#                          untracked files (a trial only: no upload options
+#                          are written and no upload command is printed)
 #
 # The team id is read from the environment and goes to CMake on the command
 # line, so it lives in the build directory alone and is never committed.
@@ -36,6 +37,9 @@
 #      Store profile for this bundle id
 #   7. an upload variant of the export options next to the archive, and the
 #      command that uses it
+# The archive is made as MultiballAcademy.unchecked.xcarchive and gets its
+# final name only when every check has passed; a failed run leaves no
+# archive, export or upload options behind.
 #
 # macOS with Xcode only. Takes a few minutes (the first configure longer):
 # on a shared machine start it detached and read its log.
@@ -52,7 +56,7 @@ step() {
 
 [ "$(uname -s)" = Darwin ] || fail "macOS only"
 
-build=build-ios-release
+build="build-ios-release"
 source_dir=
 build_number=1
 allow_dirty=no
@@ -91,11 +95,21 @@ here=$(cd "$(dirname "$0")" && pwd -P)
 repo=$(cd "${source_dir:-$here/../..}" && pwd -P) || fail "no such directory: $source_dir"
 [ -f "$repo/cmake/Ios.cmake" ] && [ -f "$repo/tools/ios/check_bundle.sh" ] \
   || fail "not a checkout of the game: $repo"
+# The build directory: new, empty, or one configured for iOS before.
+if [ -e "$build" ]; then
+  [ -d "$build" ] || fail "not a directory: $build"
+  if [ -n "$(ls -A "$build")" ]; then
+    [ -f "$build/CMakeCache.txt" ] \
+      || fail "$build is neither empty nor a build directory (no CMakeCache.txt)"
+    grep -q -x 'CMAKE_SYSTEM_NAME:[A-Z]*=iOS' "$build/CMakeCache.txt" \
+      || fail "$build is a build directory for another system, not iOS"
+  fi
+fi
 mkdir -p "$build"
 build=$(cd "$build" && pwd -P)
 cd "$repo"
 commit=$(git rev-parse HEAD)
-changes=$(git status --porcelain --untracked-files=no)
+changes=$(git status --porcelain --untracked-files=normal)
 if [ -n "$changes" ]; then
   if [ "$allow_dirty" = yes ]; then
     echo "archive: WARNING: building commit $commit with local changes:"
@@ -109,9 +123,23 @@ echo "archive: source $repo at $commit, team $team, build number $build_number"
 
 [ "$build" != "$repo" ] || fail "the build directory must not be the repository itself"
 archive=$build/MultiballAcademy.xcarchive
+unchecked=$build/MultiballAcademy.unchecked.xcarchive
 export_dir=$build/export
+unpacked=$build/ipa
+upload_options=$build/ExportOptions-upload.plist
 log_dir=$build/logs
 mkdir -p "$log_dir"
+# Nothing of an earlier run survives to be uploaded by mistake, and nothing
+# of this one unless every check passes.
+rm -rf "$archive" "$unchecked" "$export_dir" "$unpacked" "$upload_options" "$build/upload"
+finished=no
+clean_up() {
+  if [ "$finished" != yes ]; then
+    rm -rf "$archive" "$unchecked" "$export_dir" "$unpacked" "$upload_options"
+  fi
+}
+trap clean_up EXIT
+trap 'exit 1' HUP INT TERM
 
 # Provisioning profiles before, to report what Xcode creates.
 profile_dirs=("$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
@@ -119,7 +147,9 @@ profile_dirs=("$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 list_profiles() {
   local dir
   for dir in "${profile_dirs[@]}"; do
-    [ -d "$dir" ] && find "$dir" -maxdepth 1 -type f \( -name '*.mobileprovision' -o -name '*.provisionprofile' \)
+    if [ -d "$dir" ]; then
+      find "$dir" -maxdepth 1 -type f \( -name '*.mobileprovision' -o -name '*.provisionprofile' \)
+    fi
   done | LC_ALL=C sort
 }
 profiles_before=$(list_profiles)
@@ -153,26 +183,25 @@ project=$(find "$build" -maxdepth 1 -name '*.xcodeproj' -print -quit)
 echo "archive: $name $version ($build_number), $bundle_id, project $(basename "$project")"
 
 step "2/7 archive"
-rm -rf "$archive" "$export_dir"
 xcodebuild archive -project "$project" -scheme pinball -configuration Release \
-  -destination 'generic/platform=iOS' -archivePath "$archive" -allowProvisioningUpdates \
+  -destination 'generic/platform=iOS' -archivePath "$unchecked" -allowProvisioningUpdates \
   > "$log_dir/archive.log" 2>&1 \
   || { grep -E 'error:|warning:|BUILD|ARCHIVE' "$log_dir/archive.log" | tail -n 30 >&2 || true
        fail "archive failed (log: $log_dir/archive.log)"; }
-products=$(cd "$archive/Products" && find . -mindepth 2 -maxdepth 2 | LC_ALL=C sort)
+products=$(cd "$unchecked/Products" && find . -mindepth 2 -maxdepth 2 | LC_ALL=C sort)
 [ "$products" = "./Applications/$name.app" ] \
   || fail "the archive must hold the application alone, it holds:
 $products"
-archive_plist=$archive/Info.plist
+archive_plist=$unchecked/Info.plist
 [ "$(plutil -extract ApplicationProperties.CFBundleIdentifier raw -o - "$archive_plist")" = "$bundle_id" ] \
   || fail "the archive is not $bundle_id"
-echo "archive: $archive"
+echo "archive: $unchecked"
 
 step "3/7 debug symbols"
-bash "$repo/tools/ios/collect_dsym.sh" "$archive" "$build"
+bash "$repo/tools/ios/collect_dsym.sh" "$unchecked" "$build"
 
 step "4/7 export"
-xcodebuild -exportArchive -archivePath "$archive" \
+xcodebuild -exportArchive -archivePath "$unchecked" \
   -exportOptionsPlist "$repo/packaging/ios/ExportOptions.plist" \
   -exportPath "$export_dir" -allowProvisioningUpdates > "$log_dir/export.log" 2>&1 \
   || { tail -n 30 "$log_dir/export.log" >&2; fail "export failed (log: $log_dir/export.log)"; }
@@ -181,14 +210,12 @@ ipa=$export_dir/$name.ipa
 echo "archive: $ipa ($(stat -f %z "$ipa") bytes)"
 
 step "5/7 check_bundle --release on the exported application"
-unpacked=$build/ipa
-rm -rf "$unpacked"
 mkdir -p "$unpacked"
 ditto -x -k "$ipa" "$unpacked"
 app=$unpacked/Payload/$name.app
 [ -d "$app" ] || fail "no $name.app in the .ipa"
 # check_bundle --release wants the symbols beside the bundle.
-ditto "$archive/dSYMs/$name.app.dSYM" "$unpacked/Payload/$name.app.dSYM"
+ditto "$unchecked/dSYMs/$name.app.dSYM" "$unpacked/Payload/$name.app.dSYM"
 bash "$repo/tools/ios/check_bundle.sh" "$app" "$product" "$repo" --release
 
 step "6/7 signature"
@@ -251,12 +278,30 @@ else
 fi
 
 step "7/7 upload command"
-upload_options=$build/ExportOptions-upload.plist
+# Every check has passed: the archive gets its final name.
+mv "$unchecked" "$archive"
+developer_dir=${DEVELOPER_DIR:-$(xcode-select -p)}
+if [ "$allow_dirty" = yes ]; then
+  finished=yes
+  cat <<EOF
+
+archive: done, as a trial. $name $version ($build_number) from $commit with local changes:
+  archive  $archive
+  package  $ipa
+This build is not from a committed state, so no upload options were written and no upload
+command is given. Build again from a clean checkout to upload.
+EOF
+  exit 0
+fi
 cp "$repo/packaging/ios/ExportOptions.plist" "$upload_options"
 plutil -replace destination -string upload "$upload_options"
 plutil -lint "$upload_options" >/dev/null
 [ "$(plutil -extract method raw -o - "$upload_options")" = app-store-connect ] \
   || fail "the export options are not for App Store Connect"
+upload_command=$(printf '%q ' env "DEVELOPER_DIR=$developer_dir" xcodebuild -exportArchive \
+  -archivePath "$archive" -exportOptionsPlist "$upload_options" -exportPath "$build/upload" \
+  -allowProvisioningUpdates)
+finished=yes
 
 cat <<EOF
 
@@ -267,6 +312,6 @@ archive: done. $name $version ($build_number) from $commit:
 Nothing has been uploaded. To send this build to App Store Connect, run (one line; it uses the
 Apple account signed in to Xcode, the same one that signed it, and no password is stored anywhere):
 
-DEVELOPER_DIR=${DEVELOPER_DIR:-$(xcode-select -p)} xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$upload_options" -exportPath "$build/upload" -allowProvisioningUpdates
+${upload_command% }
 
 EOF
