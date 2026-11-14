@@ -93,6 +93,24 @@ void App::startGame() {
   redrawsDue_ = kRedrawsAfterEvent;
 }
 
+void App::continueSavedGame() {
+  if (!resumeSavedGame()) {
+    // It could not be resumed (and is gone): the title without it.
+    front_.configure(frontConfig());
+    front_.reset();
+    mixer_.trigger(kAskSound);
+    return;
+  }
+  // The saved game is on the table, paused as it was left.
+  frontOpen_ = false;
+  attract_.reset();
+  frontFinger_.reset();
+  guideOpen_ = false;
+  confirmMainMenu_ = false;
+  mixer_.trigger(kPlaySound);
+  redrawsDue_ = kRedrawsAfterEvent;
+}
+
 void App::goToMainMenu() {
   paused_ = false;
   autoPaused_ = false;
@@ -153,7 +171,7 @@ void App::frontAct(FrontAction action) {
       mixer_.trigger(kCloseSound);
       break;
     case FrontAction::Continue:
-      resumeSavedGame();
+      continueSavedGame();
       break;
     case FrontAction::Play:
       startGame();

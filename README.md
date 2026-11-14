@@ -115,6 +115,7 @@ Report security issues through "Report a vulnerability" on the repository's Secu
 - [docs/RULES.md](docs/RULES.md): the rules of the game, scoring, nudge and tilt
 - [docs/DESIGN.md](docs/DESIGN.md): design priorities, score file handling, audio, physics and source layout
 - [docs/ASSETS.md](docs/ASSETS.md): art generation and asset integrity
+- [docs/RESUME.md](docs/RESUME.md): saving a game in progress and resuming it
 
 ## License
 

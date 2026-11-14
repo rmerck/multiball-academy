@@ -253,6 +253,18 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
   }
 #endif
 
+  // A game left in progress last time, offered until it is resumed or a
+  // game is begun. A file that cannot be resumed is deleted by the load.
+  if (keepsSavedGame()) {
+    savedGame_ = saveStore_.load();
+    saveOnDisk_ = savedGame_.has_value();
+    if (savedGame_) {
+      SDL_Log("A saved game can be resumed: ball %d, score %llu", savedGame_->rules.ball,
+              static_cast<unsigned long long>(savedGame_->rules.score));
+    }
+  }
+  gamesBegunSeen_ = game_.gamesBegun();
+
   systemCorners_ = options.systemCorners.value_or(SDL_IsTablet());
   reduceMotion_ = systemReduceMotion();
   ios::attachWindow(window_.get());
@@ -380,6 +392,7 @@ FrameResult App::iterate(bool restWhenStill) {
       // Checked per step, so a game that ends and restarts within one
       // frame is still recorded.
       recordFinishedGame();
+      followSavedGame();
       if (halted()) {
         // The initials prompt opened. Nothing more runs behind it, so a
         // key held this frame cannot start a new game under the prompt.
@@ -436,6 +449,8 @@ FrameResult App::iterate(bool restWhenStill) {
 int App::finish() {
   // Quitting at the initials prompt keeps the score, under the letters shown.
   commitInitials();
+  // Quitting in the middle of a game keeps the game (the Mac's Quit).
+  saveGameInProgress();
 
   if (deviceLost_) {
     return 1;

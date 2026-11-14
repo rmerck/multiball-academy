@@ -10,7 +10,10 @@
 // for the review tools' window description, or with '5' for what the system
 // and the player's fingers give the touch screen: a window size and safe
 // area, then a run of touches (see fuzzTouchScreen), or with '6' for the
-// score writer (games entered, then written and read back).
+// score writer (games entered, then written and read back), '7' for a saved
+// game's file as read from disk, or '8' for a saved game's records alone
+// (sealed here with a good header and checksum, which the fuzzer could
+// never forge, so that every field's check is reached).
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -32,6 +35,7 @@
 #include "core/PngHeader.hpp"
 #include "core/Settings.hpp"
 #include "core/Rules.hpp"
+#include "core/Snapshot.hpp"
 #include "core/SurfaceSpec.hpp"
 #include "core/TouchControls.hpp"
 
@@ -318,6 +322,108 @@ void fuzzScoreWriter(std::string_view bytes) {
   require(read.serialize() == written);
 }
 
+// What the saved-game reader promises about anything it accepts: it is
+// valid, and it is the one way to write that game (so nothing the writer
+// would not have written gets through).
+void checkSavedGame(const pinball::save::Snapshot& snapshot) {
+  namespace save = pinball::save;
+  require(save::valid(snapshot));
+  const std::string payload = save::encodePayload(snapshot);
+  require(payload.size() == save::payloadSize());
+  const auto again = save::decodePayload(std::span(
+      reinterpret_cast<const std::uint8_t*>(payload.data()), payload.size()));
+  require(again.has_value() && *again == snapshot);
+  require(snapshot.rules.ball >= 1 && snapshot.rules.ball <= pinball::Rules::kBallsPerGame);
+  std::size_t active = 0;
+  for (const save::BallRecord& ball : snapshot.balls) {
+    active += ball.active ? 1U : 0U;
+    require(ball.lockBay <= pinball::table::kLockBays.size());
+    require(pinball::table::isValid(ball.holder) ||
+            ball.holder.kind == pinball::table::ElementKind::None);
+    require(std::isfinite(ball.x) && std::isfinite(ball.y) && std::isfinite(ball.vx) &&
+            std::isfinite(ball.vy));
+  }
+  require(active >= 1 && active + snapshot.game.queuedBalls <= pinball::table::kMaxBalls);
+}
+
+void fuzzSavedGameFile(std::string_view bytes) {
+  namespace save = pinball::save;
+  const std::span<const std::uint8_t> input(reinterpret_cast<const std::uint8_t*>(bytes.data()),
+                                            bytes.size());
+  const auto snapshot = save::decode(input);
+  if (!snapshot) {
+    return;
+  }
+  require(bytes.size() == save::fileSize());
+  checkSavedGame(*snapshot);
+  require(save::encode(*snapshot) == bytes);
+}
+
+// A good set of records to lay the fuzzer's bytes over: one ball resting on
+// the plunger of a game just begun.
+const std::string& goodRecords() {
+  static const std::string records = [] {
+    namespace save = pinball::save;
+    save::Snapshot snapshot;
+    for (std::size_t i = 0; i < snapshot.table.flipperAngles.size(); ++i) {
+      snapshot.table.flipperAngles[i] = pinball::table::kFlippers[i].restAngle;
+    }
+    save::BallRecord& ball = snapshot.balls[0];
+    ball.active = true;
+    ball.x = static_cast<double>(pinball::table::kBallStart.x / save::kPixelsPerMeter);
+    ball.y = static_cast<double>(pinball::table::kBallStart.y / save::kPixelsPerMeter);
+    ball.holeArmed.fill(true);
+    ball.searchAnchor = pinball::table::kBallStart;
+    require(save::valid(snapshot));
+    return save::encodePayload(snapshot);
+  }();
+  return records;
+}
+
+void fuzzSavedGameRecords(std::string_view input) {
+  namespace save = pinball::save;
+  // A whole set of records as given; anything else is a patch: two bytes of
+  // offset, then bytes laid over good records there. So every field can be
+  // reached by an input far shorter than the records.
+  std::string records = goodRecords();
+  if (input.size() == records.size()) {
+    records.assign(input);
+  } else if (input.size() >= 2) {
+    const std::size_t offset = (static_cast<std::size_t>(static_cast<std::uint8_t>(input[0])) |
+                                (static_cast<std::size_t>(static_cast<std::uint8_t>(input[1]))
+                                 << 8U)) %
+                               records.size();
+    const std::string_view patch = input.substr(2);
+    const std::size_t count = std::min(patch.size(), records.size() - offset);
+    records.replace(offset, count, patch.substr(0, count));
+  }
+  const std::string_view bytes = records;
+  const auto snapshot = save::decodePayload(
+      std::span(reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()));
+  // The same bytes in a sealed file read the same.
+  const std::string sealed = [&] {
+    save::Snapshot blank;
+    std::string file = save::encode(blank);
+    const std::size_t headerSize = file.size() - save::payloadSize() - 32;
+    file.resize(headerSize);
+    file.append(bytes.data(), bytes.size());
+    const auto sum = pinball::sha256(reinterpret_cast<const std::uint8_t*>(file.data()),
+                                     file.size());
+    file.append(reinterpret_cast<const char*>(sum.data()), sum.size());
+    return file;
+  }();
+  const auto fromFile = save::decode(
+      std::span(reinterpret_cast<const std::uint8_t*>(sealed.data()), sealed.size()));
+  require(snapshot.has_value() == fromFile.has_value());
+  if (!snapshot) {
+    return;
+  }
+  require(bytes.size() == save::payloadSize());
+  require(*snapshot == *fromFile);
+  checkSavedGame(*snapshot);
+  require(save::encodePayload(*snapshot) == bytes);
+}
+
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) {
@@ -342,6 +448,14 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     return 0;
   }
   if (data[0] == '7') {
+    fuzzSavedGameFile(text);
+    return 0;
+  }
+  if (data[0] == '8') {
+    fuzzSavedGameRecords(text);
+    return 0;
+  }
+  if (data[0] == '9') {
     // The settings file: anything accepted is in range and comes back the
     // same; anything refused leaves the defaults.
     pinball::Settings settings;

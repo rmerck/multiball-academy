@@ -245,8 +245,10 @@ if(PINBALL_FUZZ)
     src/core/PngHeader.cpp
     src/core/ScreenLayout.cpp
     src/core/Settings.cpp
+    src/core/Sha256.cpp
+    src/core/Snapshot.cpp
     src/core/TouchControls.cpp)
-  target_include_directories(pinball_fuzz_core PUBLIC src)
+  target_include_directories(pinball_fuzz_core PUBLIC src ${PINBALL_VERSION_DIR})
   pinball_apply_hardening(pinball_fuzz_core PUBLIC)
   target_compile_options(pinball_fuzz_core PUBLIC -fsanitize=fuzzer-no-link)
   add_executable(pinball_fuzz tests/fuzz/FuzzParsers.cpp)
@@ -275,6 +277,7 @@ add_library(pinball_core STATIC
   src/core/FrontLayout.cpp
   src/core/FrontMenu.cpp
   src/core/Game.cpp
+  src/core/GameSave.cpp
   src/core/HighScores.cpp
   src/core/Courses.cpp
   src/core/OverlayLayout.cpp
@@ -285,6 +288,7 @@ add_library(pinball_core STATIC
   src/core/ScreenLayout.cpp
   src/core/Settings.cpp
   src/core/Sha256.cpp
+  src/core/Snapshot.cpp
   src/core/Music.cpp
   src/core/Sound.cpp
   src/core/TouchControls.cpp
@@ -322,6 +326,7 @@ add_library(pinball_platform STATIC
   src/platform/InitialsScreen.cpp
   src/platform/PauseMenu.cpp
   src/platform/SafeFile.cpp
+  src/platform/SaveStore.cpp
   src/platform/ScoreStore.cpp
   src/platform/SettingsStore.cpp
   src/platform/TableRenderer.cpp
@@ -612,6 +617,7 @@ if(BUILD_TESTING)
     tests/PngHeaderTest.cpp
     tests/RuleFuzzTest.cpp
     tests/RulesTest.cpp
+    tests/SaveGameTest.cpp
     tests/ScreenLayoutTest.cpp
     tests/Sha256Test.cpp
     tests/MusicTest.cpp
@@ -706,6 +712,12 @@ if(BUILD_TESTING)
     add_test(NAME app_events COMMAND app_tests)
     set_tests_properties(app_events PROPERTIES
       ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 600 LABELS slow)
+    # The saved game (docs/RESUME.md): written on the way out, offered,
+    # resumed once, deleted by a new game or the end of one. Uses a scratch
+    # preferences directory of its own.
+    add_test(NAME app_saved_game COMMAND app_tests saved-game)
+    set_tests_properties(app_saved_game PROPERTIES
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 300 LABELS slow)
   endif()
 
   # Python runs isolated (-I): no user site directory, no PYTHON* variables
