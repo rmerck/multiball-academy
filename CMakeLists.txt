@@ -833,12 +833,14 @@ if(BUILD_TESTING)
   if(PINBALL_BUILD_TOOLS)
     # WCAG 2.3.1: the light show's worst cases, rendered at 60 frames a
     # second and measured per pixel (tools/fxreel/FlashMeter.hpp) against a
-    # 10 degree field at the largest scale the game is shown at (iPad Pro 13,
-    # 40 cm): no more than 15 percent of any such field (the limit is 25)
-    # may flash over three times a second; with reduce motion, 5. Any red
-    # flash fails. storm: multiball, a jackpot every 30 steps, the bumper
-    # nest every 20; domes: small domes in turn every 8 steps and the nest.
-    foreach(scene storm domes)
+    # square the size of a 10 degree field at the largest scale the game is
+    # shown at (iPad Pro 13, 40 cm): no more than 15 percent of that square
+    # (the limit is 25 percent of the field) may flash over three times a
+    # second, in a general flash or a red one; with reduce motion, 5. storm:
+    # multiball, a jackpot every 30 steps, the bumper nest every 20; domes:
+    # small domes in turn every 8 steps and the nest; mix: the review's
+    # domes every 10 steps, the nest and a jackpot every 30.
+    foreach(scene storm domes mix)
       add_test(NAME fx_wcag_${scene}
         COMMAND pinball_fxreel ${scene} - --wcag 0.15 --frames 360)
       add_test(NAME fx_wcag_${scene}_reduce_motion

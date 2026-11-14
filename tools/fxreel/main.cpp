@@ -13,6 +13,9 @@
 //          tilt       the table shoved until it tilts
 //          storm      the worst case for photosensitivity: multiball, a jackpot
 //                     every 30 steps, a ball sent into the bumper nest every 20
+//          mix        multiball, domes in turn (top lanes 90, Turbine 100,
+//                     Academy 100, Briefing 70; yellow, 36 steps) every 10
+//                     steps, the nest every 20, a jackpot every 30
 //          domes      multiball, small domes in turn (top lanes, Turbine,
 //                     Academy, Briefing) one every 8 steps (each place 3.75
 //                     times a second), the nest struck
@@ -37,7 +40,7 @@
 //                            flashing more than three times a second, the
 //                            whole table's share and the red flash's; fails
 //                            if the iPad's field share is over LIMIT (0:
-//                            report only), or there is any red flash.
+//                            report only); the same for the red flash.
 //
 // Writes <out_prefix>_000.png and on; a prefix of - writes nothing. Each frame is the playfield alone at
 // one pixel to the unit (768 x 960).
@@ -132,7 +135,7 @@ class Script {
     if (s == "multiball") {
       return pinball::stageScene(game, pinball::Scene::Hangar);
     }
-    if (s == "jackpot" || s == "storm" || s == "domes") {
+    if (s == "jackpot" || s == "storm" || s == "domes" || s == "mix") {
       return pinball::stageScene(game, pinball::Scene::Multiball);
     }
     if (s == "drain") {
@@ -181,6 +184,7 @@ class Script {
 
   bool jackpotWanted = false;
   bool domeWanted = false;
+  bool mixDomeWanted = false;
 
   InputState before(Game& game, std::uint32_t t) {
     const std::string& s = options_.scene;
@@ -215,6 +219,20 @@ class Script {
       }
       if (t % 30 == 0 && !jackpot(game, slot)) {
         jackpotWanted = true;  // None lit: the caller starts the show itself.
+      }
+      return InputState{};
+    }
+    if (s == "mix") {
+      // The reviewer's mix: domes in turn every 10 steps, the nest every 20,
+      // a jackpot every 30.
+      if (t % 20 == 0) {
+        Seam::placeBall(game, slot, {262.0F, 165.0F}, {20.0F, 700.0F});
+      }
+      if (t % 10 == 0) {
+        mixDomeWanted = true;
+      }
+      if (t % 30 == 0 && !jackpot(game, slot)) {
+        jackpotWanted = true;
       }
       return InputState{};
     }
@@ -415,6 +433,19 @@ int run(const Options& o) {
         show.burst(kRotation[(t / 8) % kRotation.size()], pinball::fx::Colour::Cyan, 0.8F, 70.0F,
                    30);
       }
+      if (script.mixDomeWanted) {
+        script.mixDomeWanted = false;
+        struct Dome {
+          pinball::fx::Flasher where;
+          float radius;
+        };
+        constexpr std::array<Dome, 4> kMix{{{pinball::fx::Flasher::TopLanes, 90.0F},
+                                            {pinball::fx::Flasher::Turbine, 100.0F},
+                                            {pinball::fx::Flasher::Academy, 100.0F},
+                                            {pinball::fx::Flasher::Briefing, 70.0F}}};
+        const Dome& d = kMix[(t / 10) % kMix.size()];
+        show.burst(d.where, pinball::fx::Colour::Yellow, 0.8F, d.radius, 36);
+      }
       if (script.jackpotWanted) {
         script.jackpotWanted = false;
         show.startShow(pinball::fx::Show::Jackpot, game.ball().position);
@@ -476,12 +507,14 @@ int run(const Options& o) {
       const auto pct = [](float v) { return static_cast<double>(v) * 100.0; };
       std::printf("%s%s%s: WCAG 2.3.1 over 3 flashes a second, worst share of a 10 degree field: "
                   "iPad Pro 13 %.2f%%, Mac window %.2f%%, iPhone 17e %.2f%% (limit 25%%); whole "
-                  "table %.2f%%; red flash %.2f%% (%d frames at 60 a second)\n",
+                  "table %.2f%%; red flash: iPad %.2f%%, Mac %.2f%%, iPhone %.2f%%, whole table "
+                  "%.2f%% (%d frames at 60 a second)\n",
                   o.scene.c_str(), o.plain ? " (plain)" : "", o.reduceMotion ? " (reduce motion)" : "",
                   pct(meter->worstWindow(0)), pct(meter->worstWindow(1)), pct(meter->worstWindow(2)),
-                  pct(meter->worst()), pct(meter->worstRed()), meter->frames());
-      if (meter->worstRed() > 0.0F) {
-        std::fputs("a red flash\n", stderr);
+                  pct(meter->worst()), pct(meter->worstRedWindow(0)), pct(meter->worstRedWindow(1)),
+                  pct(meter->worstRedWindow(2)), pct(meter->worstRed()), meter->frames());
+      if (o.wcag > 0.0F && meter->worstRedWindow(0) > o.wcag) {
+        std::fprintf(stderr, "red flash over the limit of %.2f%%\n", static_cast<double>(o.wcag) * 100.0);
         status = EXIT_FAILURE;
       }
       if (!o.mapPath.empty() && !meter->worstMap().empty()) {
@@ -519,7 +552,7 @@ int run(const Options& o) {
 int main(int argc, char* argv[]) {
   Options options;
   if (!parse(argc, argv, options)) {
-    std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt|storm|domes> <out_prefix>"
+    std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt|storm|domes|mix> <out_prefix>"
                " [--plain] [--reduce-motion] [--every N] [--frames N] [--skip N] [--time] [--gpu]\n",
                stderr);
     return EXIT_FAILURE;

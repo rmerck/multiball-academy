@@ -26,9 +26,10 @@
 // the table, worst over the run. The share of the whole table failing at
 // once is kept as a second number.
 //
-// Red flashes are counted the same way on their own (WCAG's saturated red:
-// R / (R + G + B) at least 0.8 in either state, and (R - G - B) x 320 moving
-// by more than 20, in sRGB from 0 to 1).
+// Red flashes are counted the same way on their own, and measured against
+// the same fields (WCAG's saturated red: R / (R + G + B) at least 0.8 in
+// either state, and (R - G - B) x 320 moving by more than 20, both on the
+// channels linearised as for relative luminance).
 //
 // No SDL: frames come in as straight RGBA bytes.
 namespace fxreel {
@@ -50,24 +51,34 @@ class FlashMeter {
         changes_(extreme_.size() * kKept, -1'000'000), now_(extreme_.size(), 0),
         redExtreme_(extreme_.size(), -1.0F), redDirection_(extreme_.size(), 0),
         redChanges_(extreme_.size() * kKept, -1'000'000), redWasSaturated_(extreme_.size(), 0),
-        windows_(std::move(windows)), worstWindow_(windows_.size(), 0.0F),
+        redNow_(extreme_.size(), 0), windows_(std::move(windows)),
+        worstWindow_(windows_.size(), 0.0F), worstRedWindow_(windows_.size(), 0.0F),
         integral_(static_cast<std::size_t>(width + 1) * static_cast<std::size_t>(height + 1), 0) {
     for (std::size_t i = 0; i < extreme_.size(); ++i) {
       watched_ += mask_.empty() || mask_[i] != 0 ? 1 : 0;
     }
   }
 
-  // The relative luminance of an sRGB pixel.
-  static float luminance(std::uint8_t r, std::uint8_t g, std::uint8_t b) noexcept {
+  // An sRGB channel, linearised as for relative luminance.
+  static float linear(std::uint8_t c) noexcept {
     static const std::array<float, 256> kLinear = [] {
       std::array<float, 256> table{};
-      for (std::size_t c = 0; c < table.size(); ++c) {
-        const float v = static_cast<float>(c) / 255.0F;
-        table[c] = v <= 0.04045F ? v / 12.92F : std::pow((v + 0.055F) / 1.055F, 2.4F);
+      for (std::size_t k = 0; k < table.size(); ++k) {
+        const float v = static_cast<float>(k) / 255.0F;
+        table[k] = v <= 0.04045F ? v / 12.92F : std::pow((v + 0.055F) / 1.055F, 2.4F);
       }
       return table;
     }();
-    return 0.2126F * kLinear[r] + 0.7152F * kLinear[g] + 0.0722F * kLinear[b];
+    return kLinear[c];
+  }
+  // The relative luminance of an sRGB pixel.
+  static float luminance(std::uint8_t r, std::uint8_t g, std::uint8_t b) noexcept {
+    return 0.2126F * linear(r) + 0.7152F * linear(g) + 0.0722F * linear(b);
+  }
+  // WCAG's saturated red, on linearised channels: R / (R + G + B).
+  static float redRatio(std::uint8_t r, std::uint8_t g, std::uint8_t b) noexcept {
+    const float sum = linear(r) + linear(g) + linear(b);
+    return sum > 0.0F ? linear(r) / sum : 0.0F;
   }
 
   // One frame, `stride` bytes a row, RGBA. Returns the share of watched
@@ -114,12 +125,8 @@ class FlashMeter {
         failing += recent == kKept ? 1 : 0;
         now_[i] = recent == kKept ? 1 : 0;
         // The red flash, followed apart.
-        const float sum = static_cast<float>(p[0]) + static_cast<float>(p[1]) +
-                          static_cast<float>(p[2]);
-        const float ratio = sum > 0.0F ? static_cast<float>(p[0]) / sum : 0.0F;
-        const float red =
-            std::max(0.0F, (static_cast<float>(p[0]) - static_cast<float>(p[1]) -
-                            static_cast<float>(p[2])) / 255.0F * 320.0F);
+        const float ratio = redRatio(p[0], p[1], p[2]);
+        const float red = std::max(0.0F, (linear(p[0]) - linear(p[1]) - linear(p[2])) * 320.0F);
         float& rext = redExtreme_[i];
         std::int8_t& rdir = redDirection_[i];
         if (rext < 0.0F) {
@@ -147,6 +154,7 @@ class FlashMeter {
           redRecent += frame_ - rs[k] < fps_ ? 1 : 0;
         }
         redFailing += redRecent == kKept ? 1 : 0;
+        redNow_[i] = redRecent == kKept ? 1 : 0;
       }
     }
     ++frame_;
@@ -171,8 +179,11 @@ class FlashMeter {
   [[nodiscard]] float worstWindow(std::size_t k) const noexcept {
     return k < worstWindow_.size() ? worstWindow_[k] : 0.0F;
   }
-  // The worst share of the table in a red flash.
+  // The worst share of the table in a red flash, and of each window.
   [[nodiscard]] float worstRed() const noexcept { return worstRed_; }
+  [[nodiscard]] float worstRedWindow(std::size_t k) const noexcept {
+    return k < worstRedWindow_.size() ? worstRedWindow_[k] : 0.0F;
+  }
   [[nodiscard]] int frames() const noexcept { return frame_; }
   // Where the first window was worst (its top left), in meter pixels.
   [[nodiscard]] std::pair<int, int> worstAt() const noexcept { return worstAt_; }
@@ -187,12 +198,17 @@ class FlashMeter {
     if (windows_.empty()) {
       return;
     }
+    measureWindows(now_, worstWindow_, true);
+    measureWindows(redNow_, worstRedWindow_, false);
+  }
+  void measureWindows(const std::vector<std::uint8_t>& failing, std::vector<float>& worst,
+                      bool keepMap) {
     const auto w1 = static_cast<std::size_t>(width_) + 1;
     for (int y = 0; y < height_; ++y) {
       std::int32_t row = 0;
       for (int x = 0; x < width_; ++x) {
-        row += now_[static_cast<std::size_t>(y) * static_cast<std::size_t>(width_) +
-                    static_cast<std::size_t>(x)];
+        row += failing[static_cast<std::size_t>(y) * static_cast<std::size_t>(width_) +
+                       static_cast<std::size_t>(x)];
         integral_[(static_cast<std::size_t>(y) + 1) * w1 + static_cast<std::size_t>(x) + 1] =
             integral_[static_cast<std::size_t>(y) * w1 + static_cast<std::size_t>(x) + 1] + row;
       }
@@ -218,9 +234,9 @@ class FlashMeter {
       // Over the field's own area, even where the table is smaller.
       const float field = static_cast<float>(windows_[k]) * static_cast<float>(windows_[k]);
       const float share = static_cast<float>(most) / field;
-      if (share > worstWindow_[k]) {
-        worstWindow_[k] = share;
-        if (k == 0) {
+      if (share > worst[k]) {
+        worst[k] = share;
+        if (k == 0 && keepMap) {
           worstMap_ = now_;
           worstFrame_ = frame_ - 1;
           worstAt_ = {mx, my};
@@ -286,8 +302,10 @@ class FlashMeter {
   std::vector<std::int8_t> redDirection_;
   std::vector<std::int32_t> redChanges_;
   std::vector<std::uint8_t> redWasSaturated_;
+  std::vector<std::uint8_t> redNow_;
   std::vector<int> windows_;
   std::vector<float> worstWindow_;
+  std::vector<float> worstRedWindow_;
   std::vector<std::int32_t> integral_;
   float worstRed_ = 0.0F;
   int watched_ = 0;

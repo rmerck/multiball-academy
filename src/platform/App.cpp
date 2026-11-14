@@ -652,6 +652,7 @@ App::Status App::status() const {
   status.frames = frames_;
   status.drawnFrames = drawnFrames_;
   status.steps = game_.stepCount();
+  status.lightShowResets = lightShowResets_;
   status.input = input_;
   status.layout = layout_;
   status.touch = touch_.view(touchContext());

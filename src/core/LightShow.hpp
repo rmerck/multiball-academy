@@ -41,8 +41,9 @@ namespace fx {
 // Blinking lamps, in steps of the game's clock (120 a second).
 inline constexpr std::uint64_t kBlinkSteps = 60;      // Twice a second.
 inline constexpr std::uint64_t kFastBlinkSteps = 24;  // Five times a second: hurry up.
-// The shortest gap between the starts of two large flashes: 42 steps is
-// 2.86 a second, under the three of WCAG 2.3.1.
+// The shortest gap between the starts of two large flashes: 120 steps is
+// one a second, well under the three of WCAG 2.3.1, leaving room on any one
+// spot for the hit flashes (kMinHitSteps) and the domes (kMinDomeSteps).
 inline constexpr std::uint64_t kMinLargeFlashSteps = 120;
 // With reduce motion: well under once a second.
 inline constexpr std::uint64_t kMinLargeFadeSteps = 150;

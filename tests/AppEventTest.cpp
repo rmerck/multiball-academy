@@ -458,11 +458,14 @@ void testSavedGame() {
     }
     CHECK(app->hasSavedGame());
     CHECK(exists(file));
+    CHECK(app->status().lightShowResets == 0);
     CHECK(app->resumeSavedGame());
     CHECK(!exists(file));
     CHECK(!app->hasSavedGame());
     CHECK(!app->resumeSavedGame());
     App::Status status = app->status();
+    // The lights start afresh on the restored table, once.
+    CHECK(status.lightShowResets == 1);
     CHECK(status.paused);
     CHECK(status.steps == savedSteps);
     CHECK(!status.gameOver);
