@@ -208,6 +208,10 @@ bool App::resumeSavedGame() {
   if (!game_.restore(snapshot)) {
     return false;
   }
+  // The lights start afresh on the restored table: a multiball, tilt or
+  // game over already running is taken as found, its start show not played
+  // again (LightShow::observe's first look).
+  lightShow_.reset();
   gamesBegunSeen_ = game_.gamesBegun();
   // The table holds a game that is not over and has no score to enter.
   entry_.reset();

@@ -13,6 +13,10 @@
 //          tilt       the table shoved until it tilts
 //          storm      the worst case for photosensitivity: multiball, a jackpot
 //                     every 30 steps, a ball sent into the bumper nest every 20
+//          domes      multiball, small domes in turn (top lanes, Turbine,
+//                     Academy, Briefing) one every 8 steps (each place 3.75
+//                     times a second), the nest struck
+//                     every 20
 // options  --plain           draw without the light show (the look before it)
 //          --reduce-motion   the light show with reduce motion on
 //          --every N         a frame every N steps (default 4: 30 a second)
@@ -27,9 +31,13 @@
 //
 //          --wcag LIMIT      measure the run with the general flash test of
 //                            WCAG 2.3.1 (FlashMeter.hpp) at 60 frames a second
-//                            (--every 2), print the worst share of the
-//                            playfield flashing more than three times a
-//                            second, and fail if it is over LIMIT (0: report)
+//                            (it takes a frame every 2 steps itself: not with
+//                            --every). Prints, for a 10 degree field at each
+//                            device's scale, the worst share of the field
+//                            flashing more than three times a second, the
+//                            whole table's share and the red flash's; fails
+//                            if the iPad's field share is over LIMIT (0:
+//                            report only), or there is any red flash.
 //
 // Writes <out_prefix>_000.png and on; a prefix of - writes nothing. Each frame is the playfield alone at
 // one pixel to the unit (768 x 960).
@@ -37,6 +45,7 @@
 #include <SDL3/SDL_main.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <ctime>
 #include <cmath>
@@ -58,6 +67,20 @@
 #include "platform/TableRenderer.hpp"
 
 namespace {
+
+// A 10 degree field of view, in playfield units, at each device's scale and
+// viewing distance (2 d tan 5 degrees = 0.175 d):
+// - iPad Pro 13 in portrait at 40 cm: 7.0 cm; 264 pixels an inch at 2
+//   pixels a point is 52 points a cm, the playfield 1.008 points a unit, so
+//   about 360 units; 326 taken (the low end of 326 to 368, the strictest).
+// - The Mac window at its default size (the 1280 x 960 canvas, a point a
+//   unit) on a 14 inch MacBook Pro (about 50 points a cm) at 50 cm: 8.75 cm,
+//   about 435 units.
+// - iPhone 17e at 30 cm: 5.25 cm; about 61 points a cm at 0.512 points a
+//   unit, about 630 units (most of the table).
+constexpr int kFieldIpad = 326;
+constexpr int kFieldMac = 435;
+constexpr int kFieldPhone = 630;
 
 using pinball::Game;
 using pinball::InputState;
@@ -91,6 +114,7 @@ struct Options {
   bool time = false;
   bool gpu = false;
   float wcag = -1.0F;  // Negative: not measured.
+  bool everyGiven = false;
   std::string mapPath;  // --wcag-map: where to write the worst frame's failing pixels.
   std::uint32_t every = 4;
   std::uint32_t frames = 90;
@@ -108,7 +132,7 @@ class Script {
     if (s == "multiball") {
       return pinball::stageScene(game, pinball::Scene::Hangar);
     }
-    if (s == "jackpot" || s == "storm") {
+    if (s == "jackpot" || s == "storm" || s == "domes") {
       return pinball::stageScene(game, pinball::Scene::Multiball);
     }
     if (s == "drain") {
@@ -156,6 +180,7 @@ class Script {
   }
 
   bool jackpotWanted = false;
+  bool domeWanted = false;
 
   InputState before(Game& game, std::uint32_t t) {
     const std::string& s = options_.scene;
@@ -190,6 +215,15 @@ class Script {
       }
       if (t % 30 == 0 && !jackpot(game, slot)) {
         jackpotWanted = true;  // None lit: the caller starts the show itself.
+      }
+      return InputState{};
+    }
+    if (s == "domes") {
+      if (t % 20 == 0) {
+        Seam::placeBall(game, slot, {262.0F, 165.0F}, {20.0F, 700.0F});
+      }
+      if (t % 8 == 0) {
+        domeWanted = true;  // The caller lights the next dome.
       }
       return InputState{};
     }
@@ -244,6 +278,7 @@ bool parse(int argc, char* argv[], Options& o) {
       o.time = true;
     } else if (a == "--every") {
       if (!number(o.every)) return false;
+      o.everyGiven = true;
     } else if (a == "--frames") {
       if (!number(o.frames)) return false;
     } else if (a == "--skip") {
@@ -251,6 +286,14 @@ bool parse(int argc, char* argv[], Options& o) {
     } else {
       return false;
     }
+  }
+  if (o.wcag >= 0.0F && o.everyGiven) {
+    std::fputs("--wcag measures at 60 frames a second, a frame every 2 steps: not with --every\n",
+               stderr);
+    return false;
+  }
+  if (o.wcag >= 0.0F) {
+    o.every = 2;
   }
   o.every = std::max<std::uint32_t>(o.every, 1);
   return true;
@@ -333,7 +376,11 @@ int run(const Options& o) {
         SDL_CreateSurface(meterW, meterH, SDL_PIXELFORMAT_RGBA32));
     if (o.wcag >= 0.0F) {
       if (fxreel::FlashMeter::synthetic(10.0F, 60) < 0.99F ||
-          fxreel::FlashMeter::synthetic(2.0F, 60) > 0.0F) {
+          fxreel::FlashMeter::synthetic(2.0F, 60) > 0.0F ||
+          fxreel::FlashMeter::synthetic(10.0F, 60, true) < 0.99F ||
+          fxreel::FlashMeter::synthetic(2.0F, 60, true) > 0.0F ||
+          fxreel::FlashMeter::syntheticWindow(16) < 0.99F ||
+          std::fabs(fxreel::FlashMeter::syntheticWindow(32) - 0.25F) > 0.01F) {
         std::fputs("the flash meter fails its own check\n", stderr);
         return EXIT_FAILURE;
       }
@@ -353,10 +400,21 @@ int run(const Options& o) {
           mask[static_cast<std::size_t>(y * meterW + x)] = in ? 1 : 0;
         }
       }
-      meter = std::make_unique<fxreel::FlashMeter>(meterW, meterH, std::move(mask), 60);
+      meter = std::make_unique<fxreel::FlashMeter>(
+          meterW, meterH, std::move(mask), 60,
+          std::vector<int>{kFieldIpad / kMeterScale, kFieldMac / kMeterScale,
+                           kFieldPhone / kMeterScale});
     }
     for (std::uint32_t frameIndex = 0; t < steps; ++t) {
       game.step(script.before(game, t));
+      if (script.domeWanted) {
+        script.domeWanted = false;
+        constexpr std::array<pinball::fx::Flasher, 4> kRotation{
+            pinball::fx::Flasher::TopLanes, pinball::fx::Flasher::Turbine,
+            pinball::fx::Flasher::Academy, pinball::fx::Flasher::Briefing};
+        show.burst(kRotation[(t / 8) % kRotation.size()], pinball::fx::Colour::Cyan, 0.8F, 70.0F,
+                   30);
+      }
       if (script.jackpotWanted) {
         script.jackpotWanted = false;
         show.startShow(pinball::fx::Show::Jackpot, game.ball().position);
@@ -415,10 +473,17 @@ int run(const Options& o) {
                   cpu / std::max<double>(o.frames, 1.0), SDL_GetRendererName(r));
     }
     if (meter) {
-      std::printf("%s%s%s: WCAG 2.3.1 general flash, worst share of the playfield over 3 flashes a "
-                  "second: %.2f%% (%d frames at 60 a second)\n",
+      const auto pct = [](float v) { return static_cast<double>(v) * 100.0; };
+      std::printf("%s%s%s: WCAG 2.3.1 over 3 flashes a second, worst share of a 10 degree field: "
+                  "iPad Pro 13 %.2f%%, Mac window %.2f%%, iPhone 17e %.2f%% (limit 25%%); whole "
+                  "table %.2f%%; red flash %.2f%% (%d frames at 60 a second)\n",
                   o.scene.c_str(), o.plain ? " (plain)" : "", o.reduceMotion ? " (reduce motion)" : "",
-                  static_cast<double>(meter->worst()) * 100.0, meter->frames());
+                  pct(meter->worstWindow(0)), pct(meter->worstWindow(1)), pct(meter->worstWindow(2)),
+                  pct(meter->worst()), pct(meter->worstRed()), meter->frames());
+      if (meter->worstRed() > 0.0F) {
+        std::fputs("a red flash\n", stderr);
+        status = EXIT_FAILURE;
+      }
       if (!o.mapPath.empty() && !meter->worstMap().empty()) {
         // The worst frame's failing pixels, white on black, at the meter's size.
         const std::unique_ptr<SDL_Surface, SurfaceDeleter> map(
@@ -433,9 +498,10 @@ int run(const Options& o) {
           }
         }
         SDL_SavePNG(map.get(), o.mapPath.c_str());
-        std::printf("worst frame %d\n", meter->worstFrame());
+        std::printf("worst frame %d, window at %d, %d\n", meter->worstFrame(),
+                    meter->worstAt().first * kMeterScale, meter->worstAt().second * kMeterScale);
       }
-      if (o.wcag > 0.0F && meter->worst() > o.wcag) {
+      if (o.wcag > 0.0F && meter->worstWindow(0) > o.wcag) {
         std::fprintf(stderr, "over the limit of %.2f%%\n", static_cast<double>(o.wcag) * 100.0);
         status = EXIT_FAILURE;
       }
@@ -453,7 +519,7 @@ int run(const Options& o) {
 int main(int argc, char* argv[]) {
   Options options;
   if (!parse(argc, argv, options)) {
-    std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt|storm> <out_prefix>"
+    std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt|storm|domes> <out_prefix>"
                " [--plain] [--reduce-motion] [--every N] [--frames N] [--skip N] [--time] [--gpu]\n",
                stderr);
     return EXIT_FAILURE;

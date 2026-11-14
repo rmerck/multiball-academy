@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "core/AssetManifest.hpp"
+#include "core/Polygon.hpp"
 #include "core/TableLayout.hpp"
 #include "generated/ArtPalette.hpp"
 #include "platform/EmbeddedManifest.hpp"
@@ -245,50 +246,17 @@ class Mesh {
     polyline(points, width, color, true);
   }
   // A simple polygon, filled, by clipping ears. Either winding.
-  void polygon(std::span<const Vec2> outline, SDL_FColor color) {
-    std::vector<Vec2> points(outline.begin(), outline.end());
-    const auto cross = [](Vec2 o, Vec2 a, Vec2 b) {
-      return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-    };
-    float doubleArea = 0.0F;
-    for (std::size_t i = 0; i < points.size(); ++i) {
-      const Vec2 a = points[i];
-      const Vec2 b = points[(i + 1) % points.size()];
-      doubleArea += a.x * b.y - b.x * a.y;
+  // A simple polygon, filled (core/Polygon.hpp). False, with nothing
+  // drawn, if it is not one.
+  bool polygon(std::span<const Vec2> outline, SDL_FColor color) {
+    const auto triangles = polygon::triangulate(outline);
+    if (!triangles) {
+      return false;
     }
-    const float turn = doubleArea >= 0.0F ? 1.0F : -1.0F;
-    while (points.size() > 3) {
-      bool clipped = false;
-      for (std::size_t i = 0; i < points.size() && !clipped; ++i) {
-        const Vec2 a = points[(i + points.size() - 1) % points.size()];
-        const Vec2 b = points[i];
-        const Vec2 c = points[(i + 1) % points.size()];
-        if (cross(a, b, c) * turn <= 0.0F) {
-          continue;  // A reflex corner is not an ear.
-        }
-        bool empty = true;
-        for (const Vec2 p : points) {
-          const bool corner = (p.x == a.x && p.y == a.y) || (p.x == b.x && p.y == b.y) ||
-                              (p.x == c.x && p.y == c.y);
-          if (!corner && cross(a, b, p) * turn >= 0.0F && cross(b, c, p) * turn >= 0.0F &&
-              cross(c, a, p) * turn >= 0.0F) {
-            empty = false;
-            break;
-          }
-        }
-        if (empty) {
-          triangle(a, b, c, color);
-          points.erase(points.begin() + static_cast<std::ptrdiff_t>(i));
-          clipped = true;
-        }
-      }
-      if (!clipped) {
-        return;  // Not a simple polygon: leave the rest unfilled.
-      }
+    for (const polygon::Triangle& t : *triangles) {
+      triangle(t[0], t[1], t[2], color);
     }
-    if (points.size() == 3) {
-      triangle(points[0], points[1], points[2], color);
-    }
+    return true;
   }
 
  private:
@@ -395,43 +363,18 @@ TexturePtr makePlayfieldTexture(SDL_Renderer* r) {
   return texture;
 }
 
-// What lies outside the playfield's shell, as triangles textured with the
-// background: drawn over the light show, it trims every glow at the
-// cabinet's edge. The shell runs below the playfield's bottom edge, so the
-// outside is one simple polygon: the playfield's frame down to that edge,
-// and the shell back the other way. Made once; drawing it allocates
-// nothing and needs no texture of its own.
+// What lies outside the playfield's shell, and the lane island inside it,
+// as triangles textured with the background: drawn over the light show, it
+// trims every glow at the cabinet's edge and off the island. Made once;
+// drawing it allocates nothing and needs no texture of its own. Empty if a
+// polygon could not be filled: the renderer is then refused, loudly.
 std::vector<SDL_Vertex> makeOutsideMesh() {
-  std::vector<Vec2> outline{{0.0F, table::kHeight}, {0.0F, 0.0F}, {table::kWidth, 0.0F},
-                            {table::kWidth, table::kHeight}};
-  // The shell, from where it rises through the bottom edge on the right,
-  // over the arch, to where it goes back down through it on the left.
-  const auto& shell = table::kShell;
-  const std::size_t n = shell.size();
-  std::vector<Vec2> inside;
-  for (std::size_t k = 0; k < n; ++k) {
-    const Vec2 a = shell[k];
-    const Vec2 b = shell[(k + 1) % n];
-    if (a.y <= table::kHeight) {
-      inside.push_back(a);
-    }
-    if ((a.y > table::kHeight) != (b.y > table::kHeight)) {
-      const float t = (table::kHeight - a.y) / (b.y - a.y);
-      inside.push_back({a.x + (b.x - a.x) * t, table::kHeight});
-    }
-  }
-  // inside now runs round the shell from the right crossing; it must end
-  // at the left one, nearest the frame's bottom-left corner.
-  std::size_t start = 0;
-  for (std::size_t k = 0; k < inside.size(); ++k) {
-    if (inside[k].y == table::kHeight && inside[k].x > table::kWidth * 0.5F) {
-      start = k;
-    }
-  }
-  std::rotate(inside.begin(), inside.begin() + static_cast<std::ptrdiff_t>(start), inside.end());
-  outline.insert(outline.end(), inside.begin(), inside.end());
   std::vector<SDL_Vertex> mesh;
-  Mesh(mesh).polygon(outline, SDL_FColor{1.0F, 1.0F, 1.0F, 1.0F});
+  const std::vector<Vec2> outside = polygon::outsideOfShell();
+  if (outside.empty() || !Mesh(mesh).polygon(outside, SDL_FColor{1.0F, 1.0F, 1.0F, 1.0F}) ||
+      !Mesh(mesh).polygon(table::kLaneIsland, SDL_FColor{1.0F, 1.0F, 1.0F, 1.0F})) {
+    return {};
+  }
   for (SDL_Vertex& v : mesh) {
     v.tex_coord = {v.position.x / table::kWidth, v.position.y / table::kHeight};
   }
@@ -616,12 +559,21 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   const char* const rendererName = SDL_GetRendererName(renderer);
   const bool software =
       rendererName != nullptr && std::string_view(rendererName) == SDL_SOFTWARE_RENDERER;
-  auto drawer = std::unique_ptr<TableRenderer>(new TableRenderer(std::move(t)));
+  std::vector<SDL_Vertex> outside = makeOutsideMesh();
+  if (outside.empty()) {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                 "The outline outside the playfield's shell is not a simple polygon "
+                 "(core/Polygon.hpp): the table cannot be drawn");
+    return nullptr;
+  }
+  auto drawer =
+      std::unique_ptr<TableRenderer>(new TableRenderer(std::move(t), std::move(outside)));
   drawer->setEffectsEconomy(software);
   return drawer;
 }
 
-TableRenderer::TableRenderer(Textures textures) : textures_(std::move(textures)) {
+TableRenderer::TableRenderer(Textures textures, std::vector<SDL_Vertex> outside)
+    : textures_(std::move(textures)), outsideMesh_(std::move(outside)) {
   effects_.setTextures({.glow = textures_.glow.get(),
                         .flare = textures_.flare.get(),
                         .ring = textures_.ring.get(),
@@ -797,7 +749,7 @@ float slingStrike(const Game& /*game*/, const LightShow& show, std::size_t i) no
 // The bumper lamps' idle pulse, 0 to 1, each a third of a turn after the
 // one before; slow with reduce motion.
 float bumperPulse(const LightShow& show, std::size_t i) noexcept {
-  const float period = show.reduceMotion() ? 360.0F : 96.0F;
+  const float period = show.reduceMotion() ? 480.0F : 240.0F;
   const float phase = static_cast<float>(show.step() % static_cast<std::uint64_t>(period)) / period +
                       static_cast<float>(i) / 3.0F;
   return 0.5F + 0.5F * std::sin(2.0F * table::kPi * phase);
@@ -835,7 +787,7 @@ void TableRenderer::drawLitBumpers(SDL_Renderer* r, const Game& game,
     const float radius = bumper.shape.radius;
     const Vec2 at = bumper.shape.center;
     // A real machine's bumper lamps are always on, pulsing under the cap.
-    effects_.addGlow(r, at, radius * 2.4F, art::kFxOrange, (0.22F + 0.28F * bumperPulse(show, i)) * gi);
+    effects_.addGlow(r, at, radius * 2.4F, art::kFxOrange, (0.26F + 0.14F * bumperPulse(show, i)) * gi);
     if (flash > 0.0F) {
       effects_.addGlow(r, at, 120.0F, art::kFxGi, 0.40F * flash);  // The local GI pop.
       effects_.addGlow(r, at, radius * 4.0F, art::kFxYellow, 0.9F * flash);
@@ -1098,9 +1050,8 @@ void TableRenderer::drawTable(SDL_Renderer* r, const Game& game, float alpha, in
       effects_.drawShow(r, game, balls.span(), alpha, *show);
       // Every glow stops at the cabinet: what lies outside the shell is
       // drawn back over them, from the background itself.
-      static const std::vector<SDL_Vertex> kOutside = makeOutsideMesh();
-      SDL_RenderGeometry(r, textures_.background.get(), kOutside.data(),
-                         static_cast<int>(kOutside.size()), nullptr, 0);
+      SDL_RenderGeometry(r, textures_.background.get(), outsideMesh_.data(),
+                         static_cast<int>(outsideMesh_.size()), nullptr, 0);
       effects_.drawBallPools(r, balls.span(), *show);
     }
     drawBalls(r, balls.span());

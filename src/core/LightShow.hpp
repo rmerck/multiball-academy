@@ -43,7 +43,7 @@ inline constexpr std::uint64_t kBlinkSteps = 60;      // Twice a second.
 inline constexpr std::uint64_t kFastBlinkSteps = 24;  // Five times a second: hurry up.
 // The shortest gap between the starts of two large flashes: 42 steps is
 // 2.86 a second, under the three of WCAG 2.3.1.
-inline constexpr std::uint64_t kMinLargeFlashSteps = 90;
+inline constexpr std::uint64_t kMinLargeFlashSteps = 120;
 // With reduce motion: well under once a second.
 inline constexpr std::uint64_t kMinLargeFadeSteps = 150;
 // Steps a ball's trail remembers.
@@ -60,13 +60,15 @@ inline constexpr float kChaseTail = 0.60F;
 // kMinHitSteps (with reduce motion, kMinLargeFadeSteps); a hit sooner lets
 // the flash already lit run on.
 inline constexpr std::uint32_t kHitFlashSteps = 26;
-inline constexpr std::uint64_t kMinHitSteps = 80;
+inline constexpr std::uint64_t kMinHitSteps = 90;
 // A flasher dome draws glow.png out to this many times its radius: what
 // decides whether it is large.
 inline constexpr float kDomeReach = 1.6F;
 // Small bursts started within kMinLargeFlashSteps may cover this share of
 // the table between them; one more and it is treated as large.
 inline constexpr float kSmallAreaShare = 0.12F;
+// A dome starts a flash at most once in this many steps, whatever its size.
+inline constexpr std::uint64_t kMinDomeSteps = 90;
 // Bursts in flight at once (pending or lit).
 inline constexpr std::size_t kMaxBursts = 24;
 
@@ -276,7 +278,6 @@ class LightShow {
     kGateSlingLeft,
     kGateSlingRight,
     kGateDoors,
-    kGateTopLanes,
     kGateLanesLeft,
     kGateLanesRight,
     kGateHole,  // Four, one a hole.
@@ -324,6 +325,11 @@ class LightShow {
   // The small bursts started lately: one more than the step, and the area.
   std::array<std::pair<std::uint64_t, float>, 16> smallAreas_{};
   std::size_t smallNext_ = 0;
+  // One more than the step each dome last started a flash; 0 for never.
+  std::array<std::uint64_t, static_cast<std::size_t>(Flasher::Count)> domeGates_{};
+  // The running drain or tilt started without its dip (limiter or reduce
+  // motion): its lights fade slowly instead.
+  bool quiet_ = false;
   std::array<Sweep, kMaxSweeps> sweeps_{};
   std::uint64_t lastLarge_ = 0;  // One more than the step of the latest large flash.
   std::uint32_t largeFlashes_ = 0;
