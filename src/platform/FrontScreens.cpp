@@ -505,6 +505,9 @@ void drawSettings(SDL_Renderer* r, const screen::Layout& layout, const FrontView
   toggle(SettingsRow::Music, "MUSIC: ON", "MUSIC: OFF", settings.music);
   if (view.config.hapticsShown) {
     toggle(SettingsRow::Haptics, "HAPTICS: ON", "HAPTICS: OFF", settings.haptics);
+    button(r, art, rowRect(SettingsRow::TestHaptics), "TEST HAPTICS",
+           settings.haptics ? kButtonOrchid : kButtonOff,
+           pressedRow(SettingsRow::TestHaptics), focused(SettingsRow::TestHaptics));
   }
   if (view.state.confirmReset) {
     button(r, art, rowRect(SettingsRow::Reset),

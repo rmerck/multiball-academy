@@ -404,7 +404,7 @@ elseif(PINBALL_IOS)
   # Named here, not left to SDL's own list, which follows SDL's options.
   target_link_libraries(pinball_platform PRIVATE
     "-framework Foundation" "-framework UIKit" "-framework AVFoundation"
-    "-framework StoreKit")
+    "-framework StoreKit" "-framework CoreHaptics")
 endif()
 
 if(PINBALL_MACOS)

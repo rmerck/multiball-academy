@@ -4,6 +4,7 @@
 // any screen, no sound and no score file.
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -25,6 +26,7 @@
 
 #include "Check.hpp"
 #include "core/Args.hpp"
+#include "core/Feedback.hpp"
 #include "core/FrontLayout.hpp"
 #include "core/FrontMenu.hpp"
 #include "core/Game.hpp"
@@ -2220,6 +2222,154 @@ void testTitleReduceMotion() {
   }
 }
 
+// The haptics through a stand-in for the device (AppOptions::hapticHook):
+// a flipper, the table's hits and a drain each reach it, as the frame's
+// sounds say; TEST HAPTICS plays every kind, in order; the HAPTICS
+// setting stops both; and a device without haptics gets
+// none and shows neither row.
+void testHapticsReachTheDevice() {
+  using pinball::Haptic;
+  std::vector<Haptic> played;
+  const auto count = [&played](Haptic kind) {
+    return std::count(played.begin(), played.end(), kind);
+  };
+  {
+    AppOptions options = playerOptions(pinball::screen::Idiom::Desktop);
+    options.haptics = true;
+    options.hapticHook = [&played](Haptic kind) { played.push_back(kind); };
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(frames(*app, 5));
+    // A flipper: one each press, the rate limit past between them (on the
+    // test's clock, which frames alone do not move).
+    for (int i = 0; i < 3; ++i) {
+      advanceClock(pinball::HapticGate::kFlipperMs);
+      key(*app, SDLK_Z, SDL_SCANCODE_Z);
+      CHECK(frames(*app, 3));
+    }
+    // Held to the same instant, a press is limited.
+    key(*app, SDLK_Z, SDL_SCANCODE_Z);
+    CHECK(frames(*app, 3));
+    CHECK(count(Haptic::Flipper) == 3);
+    CHECK(app->status().hapticsPlayed == played.size());
+    // Balls played out with the plunger, flippers idle: each drain is felt.
+    // (Whether a plunged ball touches a bumper or a slingshot on the way
+    // down is the table's business; which sounds make a hit is tested in
+    // FrontTest, testHapticGate.)
+    CHECK(playToGameOver(*app, [&app] { key(*app, SDLK_SPACE, SDL_SCANCODE_SPACE); },
+                         [] { advanceClock(pinball::HapticGate::kDrainMs); }));
+    CHECK(count(Haptic::Drain) > 0);
+    CHECK(app->status().hapticsPlayed == played.size());
+    CHECK(app->finish() == 0);
+  }
+
+  // From the title: the setting, and the test button.
+  played.clear();
+  {
+    AppOptions options = titleOptions(pinball::screen::Idiom::Touch);
+    options.haptics = true;
+    options.hapticHook = [&played](Haptic kind) { played.push_back(kind); };
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(untilIntroDone(*app));
+    const pinball::screen::Layout layout = app->status().layout;
+    const pinball::FrontConfig config{.hapticsShown = true, .guideShown = true};
+    const pinball::screen::TitleLayout title = pinball::screen::titleLayout(layout, config);
+    tap(*app, centreOf(title.items[static_cast<std::size_t>(TitleItem::Settings)]));
+    CHECK(app->status().front.page == FrontPage::Settings);
+    const pinball::screen::SettingsLayout settings = pinball::screen::settingsLayout(layout, config);
+    const auto row = [&settings](SettingsRow which) {
+      return centreOf(settings.rows[static_cast<std::size_t>(which)]);
+    };
+    // Attract mode's game behind the title plays no haptics.
+    CHECK(frames(*app, 60));
+    CHECK(played.empty());
+    // The test with HAPTICS on: every kind, lightest first, each kGapMs
+    // after the last.
+    CHECK(app->status().settings.haptics);
+    tap(*app, row(SettingsRow::TestHaptics));
+    constexpr std::uint64_t kGap = pinball::HapticTest::kGapMs;
+    CHECK(frames(*app, 1));
+    CHECK(played.size() == 1 && played.front() == Haptic::Flipper);
+    // Nothing more until the gap has passed, however many frames.
+    CHECK(frames(*app, 30));
+    CHECK(played.size() == 1);
+    for (std::size_t i = 2; i <= 4; ++i) {
+      advanceClock(kGap - 1);
+      CHECK(frames(*app, 2));
+      CHECK(played.size() == i - 1);
+      advanceClock(1);
+      CHECK(frames(*app, 1));
+      CHECK(played.size() == i);
+    }
+    CHECK(played == std::vector<Haptic>(pinball::HapticTest::kOrder.begin(),
+                                        pinball::HapticTest::kOrder.end()));
+    advanceClock(2 * kGap);
+    CHECK(frames(*app, 2));
+    CHECK(played.size() == 4);
+    // Switched off part way through a test: the rest is dropped.
+    played.clear();
+    tap(*app, row(SettingsRow::TestHaptics));
+    CHECK(frames(*app, 1));
+    CHECK(played.size() == 1);
+    tap(*app, row(SettingsRow::Haptics));
+    CHECK(!app->status().settings.haptics);
+    advanceClock(6 * kGap);
+    CHECK(frames(*app, 2));
+    CHECK(played.size() == 1);
+    // HAPTICS: OFF holds for the test too.
+    played.clear();
+    tap(*app, row(SettingsRow::TestHaptics));
+    advanceClock(6 * kGap);
+    CHECK(frames(*app, 2));
+    CHECK(played.empty());
+    // With the setting off, a game plays none.
+    tap(*app, centreOf(settings.page.back));
+    CHECK(app->status().front.page == FrontPage::Title);
+    played.clear();
+    tap(*app, centreOf(title.items[static_cast<std::size_t>(TitleItem::Play)]));
+    // (The first touch may only put away the touch guide.)
+    for (int i = 0; i < 4; ++i) {
+      advanceClock(pinball::HapticGate::kFlipperMs);
+      tap(*app, flipperPoint(layout, true));
+      CHECK(frames(*app, 3));
+    }
+    CHECK(app->status().steps > 0);
+    CHECK(played.empty());
+    CHECK(app->finish() == 0);
+  }
+
+  // No haptics on the device: none played, neither row on the page.
+  played.clear();
+  {
+    AppOptions options = titleOptions(pinball::screen::Idiom::Touch);
+    options.haptics = false;
+    options.hapticHook = [&played](Haptic kind) { played.push_back(kind); };
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(untilIntroDone(*app));
+    const pinball::screen::Layout layout = app->status().layout;
+    const pinball::FrontConfig config{.guideShown = true};
+    const pinball::screen::TitleLayout title = pinball::screen::titleLayout(layout, config);
+    tap(*app, centreOf(title.items[static_cast<std::size_t>(TitleItem::Play)]));
+    for (int i = 0; i < 4; ++i) {
+      tap(*app, flipperPoint(layout, true));
+      CHECK(frames(*app, 3));
+    }
+    CHECK(played.empty() && app->status().hapticsPlayed == 0);
+    CHECK(app->finish() == 0);
+  }
+}
+
 void runFront() {
   testTitleReduceMotion();
   testTitleKeys();
@@ -2230,6 +2380,7 @@ void runFront() {
   testTouchGameOverGuard();
   testReviewAsksOnce();
   testAttractKeepsNoScore();
+  testHapticsReachTheDevice();
 }
 
 void runAll() {
