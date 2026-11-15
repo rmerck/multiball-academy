@@ -238,28 +238,92 @@ def make_altitude():
     save(img, "inserts_altitude")
     sheet("inserts_altitude", (cw, ch), len(labels), labels,
           note="greyscale lenses; GI colour per rung: DAY, CLEAR, DUSK, SUNSET, NIGHTV (STYLE.md)")
-    # the printed plate behind the ladder: an altimeter strip with ticks and the title, floor-dark
-    pw, ph = 60 * PPU, 100 * PPU
-    p = new_image(pw, ph)
-    base = layer(p, "plate")
-    p.select_round_rectangle(Gimp.ChannelOps.REPLACE, 0, 0, pw, ph, 24, 24)
-    gradient_sel(base, "#1A2152", "#12123A", 0, 0, 0, ph)
-    edge = layer(p, "edge")
-    ring(p, lambda op: p.select_round_rectangle(op, 0, 0, pw, ph, 24, 24), 6)
-    fill_sel(edge, "#2C3A7C")
-    ticks = layer(p, "ticks")
-    none(p)
-    for k in range(21):
-        y = 40 + k * (ph - 80) / 20
-        L = 28 if k % 5 == 0 else 14
-        p.select_rectangle(Gimp.ChannelOps.ADD, 12, y - 2, L, 4)
-    fill_sel(ticks, "#3E4670")
-    none(p)
-    title = text_layer(p, "ALTITUDE", "Saira Stencil One Regular", 9 * PPU, "#3E4670", pw / 2 + 10, ph / 2, "title")
-    title.transform_rotate_simple(Gimp.RotationType.DEGREES270, True, 0, 0)
-    title.set_offsets(int(pw - title.get_width() - 14), int((ph - title.get_height()) / 2))
-    save(p, "altitude_plate")
-    sheet("altitude_plate", (60, 100), 1, ["plate"], note="printed floor art (deck-dark), under the five rungs")
+    # the altimeter: a cockpit-style tape the five rungs sit in. Frames: base, then the pointer at each level.
+    make_altimeter()
+
+
+ALT_PLATE_UNITS = (64, 112)
+ALT_SOCKET = (46, 14)          # each rung socket, units; the rung lens (inserts_altitude) is 44 x 12 in it
+ALT_SOCKET_X = 38.0            # socket centre from the plate's left edge, units
+ALT_SOCKET_Y = [92.0 - 18.0 * k for k in range(5)]   # FL100 (bottom) .. FL500, from the plate's top edge
+
+
+def make_altimeter():
+    import random
+    pw, ph = ALT_PLATE_UNITS[0] * PPU, ALT_PLATE_UNITS[1] * PPU
+    labels = ["base", "fl100", "fl200", "fl300", "fl400", "fl500"]
+    img = new_image(pw * len(labels), ph)
+    for i, lab in enumerate(labels):
+        ox = i * pw
+
+        def plate(op, ox=ox):
+            img.select_round_rectangle(op, ox + 2, 2, pw - 4, ph - 4, 28, 28)
+
+        body = layer(img, lab + " plate")
+        plate(Gimp.ChannelOps.REPLACE)
+        gradient_sel(body, "#161C48", "#0C1032", ox, 0, ox, ph)
+        # brushed texture: fixed-seed horizontal hairlines, faint
+        brush = layer(img, lab + " brushed", 45.0)
+        rnd = random.Random(1994)
+        none(img)
+        for y in range(8, ph - 8, 3):
+            if rnd.random() < 0.55:
+                x0 = ox + 10 + rnd.random() * 30
+                img.select_rectangle(Gimp.ChannelOps.ADD, x0, y, pw - 20 - (x0 - ox) - rnd.random() * 30, 1)
+        plate(Gimp.ChannelOps.INTERSECT)
+        fill_sel(brush, "#222C66")
+        bezel = layer(img, lab + " bezel")
+        ring(img, plate, 9)
+        gradient_sel(bezel, "#4A5470", "#1C2238", ox, 0, ox + pw, ph)
+        inner = layer(img, lab + " bezel ink")
+        ring(img, lambda op, ox=ox: img.select_round_rectangle(op, ox + 11, 11, pw - 22, ph - 22, 20, 20), 3)
+        fill_sel(inner, INK)
+        # tick scale up the left side: a major tick at each rung, minors between
+        ticks = layer(img, lab + " ticks")
+        none(img)
+        for k in range(5):
+            yc = ALT_SOCKET_Y[k] * PPU
+            img.select_rectangle(Gimp.ChannelOps.ADD, ox + 16, yc - 2, 18, 4)
+            if k < 4:
+                for m in (1, 2):
+                    ym = yc - m * 18 * PPU / 3
+                    img.select_rectangle(Gimp.ChannelOps.ADD, ox + 22, ym - 1, 10, 2)
+        fill_sel(ticks, "#4A5684")
+        # ladder rails and the five rung sockets
+        rails = layer(img, lab + " rails")
+        sx = ox + ALT_SOCKET_X * PPU
+        sw, sh_ = ALT_SOCKET[0] * PPU, ALT_SOCKET[1] * PPU
+        img.select_rectangle(Gimp.ChannelOps.REPLACE, sx - sw / 2 - 6, ALT_SOCKET_Y[4] * PPU, 4, (ALT_SOCKET_Y[0] - ALT_SOCKET_Y[4]) * PPU)
+        img.select_rectangle(Gimp.ChannelOps.ADD, sx + sw / 2 + 2, ALT_SOCKET_Y[4] * PPU, 4, (ALT_SOCKET_Y[0] - ALT_SOCKET_Y[4]) * PPU)
+        fill_sel(rails, "#2E3866")
+        for k in range(5):
+            yc = ALT_SOCKET_Y[k] * PPU
+            sock = layer(img, "%s socket %d" % (lab, k + 1))
+            img.select_round_rectangle(Gimp.ChannelOps.REPLACE, sx - sw / 2, yc - sh_ / 2, sw, sh_, 12, 12)
+            fill_sel(sock, "#05061A")
+            lip = layer(img, "%s socket %d lip" % (lab, k + 1), 80.0)
+            img.select_round_rectangle(Gimp.ChannelOps.REPLACE, sx - sw / 2, yc + sh_ / 2 - 3, sw, 3, 2, 2)
+            fill_sel(lip, "#3A4470")
+        none(img)
+        title = text_layer(img, "ALTITUDE", "Saira Stencil One Regular", 6 * PPU, "#3A4470", pw / 2 + ox,
+                           ph - 6.5 * PPU, lab + " title")
+        _ = title
+        if lab != "base":
+            k = int(lab[2]) - 1
+            yc = ALT_SOCKET_Y[k] * PPU
+            ptr = layer(img, lab + " pointer")
+            poly(img, [(ox + 14, yc - 13), (ox + 40, yc), (ox + 14, yc + 13)])
+            fill_sel(ptr, "#B8C4DC")
+            shadow_of(img, ptr, 3, 3, INK, lab + " pointer shadow")
+            hi = layer(img, lab + " pointer light", 70.0)
+            poly(img, [(ox + 16, yc - 10), (ox + 34, yc - 1), (ox + 16, yc - 2)])
+            fill_sel(hi, "#FFFFFF")
+            none(img)
+    save(img, "altitude_plate")
+    sheet("altitude_plate", ALT_PLATE_UNITS, len(labels), labels,
+          sockets={"centreXUnits": ALT_SOCKET_X, "centreYUnits": ALT_SOCKET_Y, "sizeUnits": list(ALT_SOCKET)},
+          note="printed floor art (deck-dark): an altimeter tape whose five sockets hold inserts_altitude rungs "
+               "(FL100 bottom); frame fl<N>00 adds the pointer at that level")
 
 
 # ---- shot arrows: chunky arrow (28 long), Mission arrow (34), progress pip (10) ----------------------------
