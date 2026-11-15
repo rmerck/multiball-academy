@@ -104,9 +104,8 @@ __weak UIView* gView = nil;
 // it, playing patterns whose intensity and sharpness the game sets itself
 // (core/Feedback.cpp). Where the hardware has no Core Haptics, or the
 // engine cannot be made or started, UIKit's feedback generators instead,
-// made without a view (a generator attached to a view plays only through
-// that view's interaction) and prepared again whenever a window becomes
-// key. Every call here is on the main thread, where SDL runs the game's
+// made without a view (build 2's generators, made for SDL's view, were
+// never felt on a phone) and prepared again whenever a window becomes key. Every call here is on the main thread, where SDL runs the game's
 // loop; the engine's handlers come on threads of their own and hand their
 // work to the main queue.
 
@@ -139,10 +138,10 @@ NSArray<CHHapticPattern*>* gPatterns = nil;
 // Set by the start and cleared by the stopped and reset handlers, which
 // the engine calls on threads of its own.
 std::atomic<bool> gEngineRunning{false};
-// Starts that failed in a row; after kMaxStartFailures the generators
-// take over.
+// Starts that failed in a row (for the log). While the engine will not
+// start, each haptic goes to the generators instead, and the engine is
+// tried again, no more than once every kRetryMs.
 int gStartFailures = 0;
-constexpr int kMaxStartFailures = 3;
 // When a start last failed (SDL's ms), so a broken engine is not asked
 // again every frame.
 std::uint64_t gLastFailureMs = 0;
@@ -157,14 +156,13 @@ UIImpactFeedbackGenerator* gHitGenerator = nil;
 UIImpactFeedbackGenerator* gDrainGenerator = nil;
 UINotificationFeedbackGenerator* gJackpotGenerator = nil;
 
-void useGenerators(const char* why) {
-  gPath = HapticPath::Generators;
-  gEngine = nil;
-  gPatterns = nil;
-  gEngineRunning.store(false);
-  // Made without a view: the deprecation the SDK announces for this
-  // initialiser has no date, and a generator made for a view plays only
-  // through the view's interaction.
+// Makes the generators once. Main thread.
+void makeGenerators() {
+  if (gFlipperGenerator != nil) {
+    return;
+  }
+  // Made without a view, unlike build 2's (see above). The SDK marks this
+  // initialiser as to be deprecated, with no date.
   gFlipperGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
   gHitGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleRigid];
   gDrainGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleHeavy];
@@ -173,11 +171,19 @@ void useGenerators(const char* why) {
   [gHitGenerator prepare];
   [gDrainGenerator prepare];
   [gJackpotGenerator prepare];
+}
+
+void useGenerators(const char* why) {
+  gPath = HapticPath::Generators;
+  gEngine = nil;
+  gPatterns = nil;
+  gEngineRunning.store(false);
+  makeGenerators();
   os_log(hapticsLog(), "Haptics path: UIKit feedback generators (%{public}s)", why);
 }
 
 void prepareGenerators() {
-  if (gPath != HapticPath::Generators) {
+  if (gFlipperGenerator == nil) {
     return;
   }
   [gFlipperGenerator prepare];
@@ -223,7 +229,7 @@ NSArray<CHHapticPattern*>* makePatterns() {
 }
 
 // Starts the engine if it is not running. Main thread. False if it could
-// not be started (then, after a few failures, the generators take over).
+// not be started, or a recent failure says not to try yet.
 bool startEngine(const char* why) {
   if (gPath != HapticPath::Engine || gEngine == nil) {
     return false;
@@ -241,9 +247,6 @@ bool startEngine(const char* why) {
     gLastFailureMs = now;
     os_log_error(hapticsLog(), "Haptic engine failed to start (%{public}s, try %d): %{public}@",
                  why, gStartFailures, error.localizedDescription);
-    if (gStartFailures >= kMaxStartFailures) {
-      useGenerators("the engine would not start");
-    }
     return false;
   }
   gStartFailures = 0;
@@ -406,18 +409,20 @@ void haptic(Haptic kind) noexcept {
   @autoreleasepool {
     setUpHaptics();
     const auto index = static_cast<std::size_t>(std::to_underlying(kind));
-    bool played = false;
-    if (gPath == HapticPath::Engine) {
-      played = playOnEngine(kind);
+    if (gPath == HapticPath::None || gPath == HapticPath::Off) {
+      return;
     }
-    if (gPath == HapticPath::Generators && !played) {
+    const bool engine = gPath == HapticPath::Engine && playOnEngine(kind);
+    if (!engine) {
+      // No engine, or it is not running now (it is tried again later):
+      // UIKit's nearest feedback for this one.
+      makeGenerators();
       playOnGenerators(kind);
-      played = gFlipperGenerator != nil;
     }
-    if (played && !gLoggedKind[index]) {
+    if (!gLoggedKind[index]) {
       gLoggedKind[index] = true;
       os_log(hapticsLog(), "First %{public}s haptic played (%{public}s)", kindName(kind),
-             gPath == HapticPath::Engine ? "Core Haptics" : "UIKit");
+             engine ? "Core Haptics" : "UIKit");
     }
   }
 }
