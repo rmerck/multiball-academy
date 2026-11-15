@@ -29,7 +29,7 @@
 
 namespace pinball::save {
 
-inline constexpr std::uint16_t kFormatVersion = 2;
+inline constexpr std::uint16_t kFormatVersion = 3;
 
 // The longest a build id may be ("2.0.0+123456789" is 15).
 inline constexpr std::size_t kMaxBuildIdLength = 32;
@@ -135,6 +135,7 @@ struct RulesRecord {
   std::int32_t gradRampsNeeded = 0;
   std::array<bool, kShotCount> examMade{};
   std::int32_t graduations = 0;
+  std::uint8_t altitude = 0;  // progression::Altitude, 0 to kTopLevel.
   bool commencementThisTime = false;
 
   bool briefingVisited = false;

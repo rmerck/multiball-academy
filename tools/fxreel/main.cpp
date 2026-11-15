@@ -22,6 +22,8 @@
 //                     every 20
 // options  --plain           draw without the light show (the look before it)
 //          --reduce-motion   the light show with reduce motion on
+//          --altitude N      the light show held at Altitude level N (0, FL100,
+//                            to 4, FL500); default: the game's own
 //          --every N         a frame every N steps (default 4: 30 a second)
 //          --frames N        how many frames (default 90)
 //          --skip N          steps before the first frame (default 0)
@@ -117,6 +119,7 @@ struct Options {
   bool time = false;
   bool gpu = false;
   float wcag = -1.0F;  // Negative: not measured.
+  int altitude = -1;   // Negative: the game's own.
   bool everyGiven = false;
   std::string mapPath;  // --wcag-map: where to write the worst frame's failing pixels.
   std::uint32_t every = 4;
@@ -282,6 +285,12 @@ bool parse(int argc, char* argv[], Options& o) {
       o.plain = true;
     } else if (a == "--reduce-motion") {
       o.reduceMotion = true;
+    } else if (a == "--altitude") {
+      std::uint32_t level = 0;
+      if (!number(level) || level > static_cast<std::uint32_t>(pinball::progression::kTopLevel)) {
+        return false;
+      }
+      o.altitude = static_cast<int>(level);
     } else if (a == "--gpu") {
       o.gpu = true;
       o.time = true;
@@ -372,6 +381,7 @@ int run(const Options& o) {
     Game game;
     pinball::LightShow show;
     show.setReduceMotion(o.reduceMotion);
+    show.setAltitudeOverride(o.altitude);
     Script script(o);
     if (!script.setUp(game)) {
       std::fputs("the scene could not be set up\n", stderr);
@@ -553,7 +563,7 @@ int main(int argc, char* argv[]) {
   Options options;
   if (!parse(argc, argv, options)) {
     std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt|storm|domes|mix> <out_prefix>"
-               " [--plain] [--reduce-motion] [--every N] [--frames N] [--skip N] [--time] [--gpu]\n",
+               " [--plain] [--reduce-motion] [--altitude 0-4] [--every N] [--frames N] [--skip N] [--time] [--gpu]\n",
                stderr);
     return EXIT_FAILURE;
   }

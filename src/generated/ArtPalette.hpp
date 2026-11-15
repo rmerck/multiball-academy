@@ -105,7 +105,8 @@ inline constexpr float kRoundGlowRadiusPerDiameter = 1.10F;
 inline constexpr float kBallSpriteUnits = 32.0F;    // ball.png covers this; the disc is two ball radii
 inline constexpr float kBallShadowOffsetX = 4.0F;
 inline constexpr float kBallShadowOffsetY = 6.0F;
-inline constexpr float kBallShadowAlpha = 0.80F;
+inline constexpr float kBallShadowAlpha = 0.50F;
+inline constexpr float kBallShadowRadii = 1.3F;    // the contact shadow, in ball radii
 
 // Light show: lit lamps in the neon of their colour, LampId order, with the lens level for each.
 inline constexpr std::array<Rgb, 29> kLampNeon{{
@@ -155,9 +156,21 @@ inline constexpr Rgb kFxGiBulb{255, 217, 160};
 inline constexpr Rgb kFxTrail{159, 244, 255};
 inline constexpr float kNeonGlowStrength = 0.95F;
 inline constexpr float kFlasherStrengthMax = 0.95F;
-inline constexpr float kGiStrength = 0.75F;
-inline constexpr float kBallPoolAlpha = 0.70F;  // the dark pool round each ball
-inline constexpr float kBallPoolRadii = 2.4F;  // its radius in ball radii
+inline constexpr float kGiStrength = 0.85F;
+inline constexpr float kGiStrengthTop = 1.00F;  // at the Altitude's top level
+inline constexpr int kGiBulbs = 40;
+inline constexpr float kGiBulbStrength = 0.30F;
+inline constexpr float kGiBulbStrengthTop = 0.45F;
+// The GI bulbs' colour at each Altitude level, FL100 to FL500.
+inline constexpr std::array<Rgb, 5> kAltitudeGi{{
+    {111, 180, 255},
+    {242, 244, 255},
+    {255, 176, 80},
+    {255, 138, 92},
+    {154, 107, 255},
+}};
+inline constexpr float kBallPoolAlpha = 0.50F;  // the dark pool round each ball
+inline constexpr float kBallPoolRadii = 2.2F;  // its radius in ball radii
 inline constexpr float kFlareUnits = 64.0F;    // flare.png and ring.png at scale 1
 
 }  // namespace pinball::art

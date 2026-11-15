@@ -171,6 +171,9 @@ class TableRenderer {
   // Every ball that is in sight, those on the table first and those riding
   // a ramp's rail over them.
   void drawBalls(SDL_Renderer* renderer, std::span<const BallView> balls) const;
+  // The balls' contact shadows: those on the table (on the playfield, under
+  // the elements) or those up on a rail.
+  void drawBallShadows(SDL_Renderer* renderer, std::span<const BallView> balls, bool raised) const;
 
   Textures textures_;
   // The light show's drawing, with its fixed batches.

@@ -129,15 +129,15 @@ longer than the moment before suspension. Little-endian:
 | Bytes | Field |
 | --- | --- |
 | 8 | `MBA-SAVE` |
-| 2 | format version (`save::kFormatVersion`, now 2) |
+| 2 | format version (`save::kFormatVersion`, now 3) |
 | 1 + n | build id: version and build number, `2.0.0+1` |
 | 32 | layout fingerprint: SHA-256 of the geometry a saved ball depends on (walls, flippers, bumpers, targets, doors, rollovers, holes and their exits, bays, sensors, kickback, plunger) |
 | 14 | the count of each kind of element (balls, bumpers, slingshots, targets, doors, rollovers, holes, sensors, bays, flippers, courses, shots, features, ranks) |
 | 4 | payload size |
-| 1117 | the records, fixed size |
+| 1118 | the records, fixed size |
 | 32 | SHA-256 of everything before it |
 
-1,217 bytes in all for build `2.0.0+1`. Everything is keyed to element ids
+1,218 bytes in all for build `2.0.0+1`. Everything is keyed to element ids
 of `core/TableLayout.hpp` (a hole is its index in `kHoles`, a bay its index
 in `kLockBays`), never to a shape or a body.
 
