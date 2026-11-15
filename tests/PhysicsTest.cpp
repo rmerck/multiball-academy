@@ -346,7 +346,7 @@ void testSeveralBalls() {
     PhysicsWorld world;
     constexpr std::size_t kChute = table::kScoopHole;
     const table::Hole& hole = table::kHoles[kChute];
-    world.resetBall(0, hole.center, {0.0F, 0.0F});
+    world.resetBall(0, hole.cup, {0.0F, 0.0F});
     world.step(kStep);
     CHECK(world.ballHeld(0) && world.heldHole(0) == kChute);
     CHECK(countEvents(world, PhysicsEvent::Type::Capture, 0) == 1);
@@ -360,13 +360,13 @@ void testSeveralBalls() {
       firstTakenAgain = firstTakenAgain || world.ballHeld(0);
     }
     CHECK(length(world.ballPosition(0) - hole.center) < table::kHoleRearmDistance);
-    CHECK(world.activateBall(1, hole.center + Vec2{0.0F, -14.0F}, {0.0F, 0.0F}));
+    CHECK(world.activateBall(1, hole.cup + Vec2{0.0F, -8.0F}, {0.0F, 0.0F}));
     world.step(kStep);
     CHECK(world.ballHeld(1) && world.heldHole(1) == kChute);
     CHECK(countEvents(world, PhysicsEvent::Type::Capture, 1) == 1);
     CHECK(!firstTakenAgain && !world.ballHeld(0));
     // Both can be held at once, by the same hole or by different ones.
-    world.resetBall(0, table::kHoles[table::kHangarHole].center, {0.0F, 0.0F});
+    world.resetBall(0, table::kHoles[table::kHangarHole].cup, {0.0F, 0.0F});
     world.step(kStep);
     CHECK(world.ballHeld(0) && world.heldHole(0) == table::kHangarHole && world.ballHeld(1));
     // Releasing one leaves the other where it is.

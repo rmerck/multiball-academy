@@ -48,7 +48,7 @@ float distance(Vec2 a, Vec2 b) {
 // (-ffp-contract=off, as Box2D is), the physics uses only exactly rounded
 // arithmetic, and the table's curves are point tables written out in
 // TableLayout.hpp, not computed with the C library.
-constexpr std::uint64_t kSoakTrajectory = 0x9dfaf92d8104927dULL;
+constexpr std::uint64_t kSoakTrajectory = 0x1cb50251cc53d2f3ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {
@@ -90,6 +90,12 @@ void testHoles() {
       // the exit must be where that works: within the rearm distance of its
       // own box, or well away from it.
       for (const table::Hole& other : table::kHoles) {
+        // A hole that kicks the ball back out of its own cup lets it go
+        // there: it ignores the ball until it is clear (kHoleRearmDistance).
+        if (&other == &hole && table::hasCup(hole) && hole.exitPosition.x == hole.cup.x &&
+            hole.exitPosition.y == hole.cup.y) {
+          continue;
+        }
         const bool inBox = std::fabs(hole.exitPosition.x - other.center.x) <
                                other.halfSize.x + table::kBallRadius &&
                            std::fabs(hole.exitPosition.y - other.center.y) <
@@ -154,7 +160,9 @@ void testHoles() {
       const table::ElementRef captured = stepUntil(world, PhysicsEvent::Type::Capture, 60);
       CHECK(captured.kind == table::ElementKind::Hole && captured.index == table::kScoopHole);
     }
-    CHECK(scoop.exitPosition.y > table::kScoopFlareLeft.b.y + table::kBallRadius);
+    // It kicks the ball out of its own cup, down through its mouth.
+    CHECK(scoop.exitPosition.x == scoop.cup.x && scoop.exitPosition.y == scoop.cup.y);
+    CHECK(scoop.exitVelocity.y > 0.0F);
   }
 
   // A ramp takes only a ball moving up the table fast enough, anywhere
@@ -303,6 +311,8 @@ void testHoles() {
       const float dv = (static_cast<float>(j / 4) - 1.0F) * 8.0F;
       world.resetBall({hole.exitPosition.x + dx, hole.exitPosition.y},
                       {hole.exitVelocity.x + dv, hole.exitVelocity.y});
+      // As the hole lets it go: it does not take it straight back.
+      world.disarmHolesNear(0, hole.exitPosition);
       bool safe = false;
       for (int s = 0; s < 120 * 6 && !safe; ++s) {
         world.step(kStep);

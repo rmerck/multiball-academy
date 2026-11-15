@@ -100,6 +100,16 @@ class Game {
   // The simulation always advances by exactly this much. A fixed step keeps
   // physics deterministic, so the caller cannot choose it.
   static constexpr double kStepSeconds = 1.0 / 120.0;
+  // The pull-in and the rise of a hole with a cup, and a locked ball's roll
+  // between its bay and the cup (table::kHoleSinkSeconds and the rest), in
+  // whole steps. A locked ball let go leaves kLockRollSteps +
+  // kHoleRiseSteps - 1 steps after its roll starts.
+  static constexpr auto kHoleSinkSteps =
+      static_cast<std::uint32_t>(table::kHoleSinkSeconds / kStepSeconds + 0.5);
+  static constexpr auto kHoleRiseSteps =
+      static_cast<std::uint32_t>(table::kHoleRiseSeconds / kStepSeconds + 0.5);
+  static constexpr auto kLockRollSteps =
+      static_cast<std::uint32_t>(table::kLockRollSeconds / kStepSeconds + 0.5);
   // Most balls on the table at once.
   static constexpr std::size_t kMaxBalls = table::kMaxBalls;
 
@@ -183,6 +193,17 @@ class Game {
   [[nodiscard]] bool bayTaken(std::size_t bay) const noexcept;
   [[nodiscard]] std::uint32_t lockCount() const noexcept { return lockCount_; }
   [[nodiscard]] std::uint32_t lockReleaseCount() const noexcept { return lockReleaseCount_; }
+
+  // --- Subway exits ----------------------------------------------------------
+  // How open the exit of a hole with a cup is, from 0 (shut, not drawn) to
+  // 1, when the hole lets its ball up somewhere other than its cup
+  // (table::holeRisePoint, a subway's exit): it opens over the steps before
+  // the ball comes up, stays open while the ball rises, and closes over as
+  // many steps after it leaves. The table's art draws every cup, but a
+  // subway's exit only appears while a ball uses it, so that the ball is
+  // seen to come up out of a hole and not out of the floor. 0 for any other
+  // hole. Read from the game's own saved state, so it needs no saving.
+  [[nodiscard]] float holeExitOpening(std::size_t hole) const noexcept;
 
   // --- Spinner -------------------------------------------------------------
   // Turns counted so far, and turns a passing ball has earned that are

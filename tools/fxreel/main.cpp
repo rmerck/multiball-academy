@@ -11,6 +11,9 @@
 //          drain      a ball let go down the middle between still flippers
 //          attract    the attract sequence over the scripted game
 //          tilt       the table shoved until it tilts
+//          scoop      a ball sent gently up into the Briefing room, taken at
+//                     its cup and kicked back out (no multiball)
+//          hangar     the same for the open Hangar (doors down, no lock)
 //          storm      the worst case for photosensitivity: multiball, a jackpot
 //                     every 30 steps, a ball sent into the bumper nest every 20
 //          mix        multiball, domes in turn (top lanes 90, Turbine 100,
@@ -145,7 +148,11 @@ class Script {
       // No ball saver: the ball is lost and the next one served.
       Seam::rules(game).setBallSaveEnabled(false);
     }
-    if (s == "hits" || s == "drain" || s == "tilt") {
+    if (s == "scoop" || s == "hangar") {
+      // Holes pass the ball through: no lock, no multiball.
+      Seam::rules(game).setMultiballEnabled(false);
+    }
+    if (s == "hits" || s == "drain" || s == "tilt" || s == "scoop" || s == "hangar") {
       // A ball in play first.
       for (std::uint32_t i = 0; i < 400 && !game.rules().ballInPlay(); ++i) {
         game.step(flipping(i));
@@ -250,6 +257,17 @@ class Script {
     }
     if (s == "jackpot" && (t == 20 || t == 200)) {
       jackpot(game, slot);
+    }
+    if (s == "scoop" && t == 10) {
+      Seam::placeBall(game, slot, {350.0F, 450.0F}, {20.0F, -420.0F});
+      Seam::putInPlay(game, slot);
+    }
+    if (s == "hangar" && t == 6) {
+      Seam::dropDoorBank(game);
+    }
+    if (s == "hangar" && t == 10) {
+      Seam::placeBall(game, slot, {285.0F, 450.0F}, {-10.0F, -470.0F});
+      Seam::putInPlay(game, slot);
     }
     if (s == "drain" && t == 10) {
       Seam::placeBall(game, slot, {table::kWidth * 0.5F - 8.0F, 780.0F}, {0.0F, 400.0F});
@@ -434,7 +452,13 @@ int run(const Options& o) {
                            kFieldPhone / kMeterScale});
     }
     for (std::uint32_t frameIndex = 0; t < steps; ++t) {
+      const bool heldBefore = game.ballHeld();
       game.step(script.before(game, t));
+      if ((o.scene == "scoop" || o.scene == "hangar") && game.ballHeld() != heldBefore) {
+        // Which frames to look at: the step the hole took the ball, and the
+        // step it let it go.
+        std::printf("%s: step %u\n", game.ballHeld() ? "taken" : "let go", t);
+      }
       if (script.domeWanted) {
         script.domeWanted = false;
         constexpr std::array<pinball::fx::Flasher, 4> kRotation{
@@ -470,6 +494,7 @@ int run(const Options& o) {
       SDL_RenderClear(r);
       pinball::DrawOptions options;
       options.lightShow = o.plain ? nullptr : &show;
+      options.reduceMotion = o.reduceMotion;
       drawer->draw(r, game, 1.0F, layout, options);
       SDL_FlushRenderer(r);
       if (o.gpu) {

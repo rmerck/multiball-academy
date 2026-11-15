@@ -534,6 +534,8 @@ Sha256Digest layoutFingerprint() noexcept {
     add(static_cast<float>(std::to_underlying(h.type)));
     addPoint(h.exitPosition);
     addPoint(h.exitVelocity);
+    addPoint(h.cup);
+    add(h.cupRadius);
   }
   for (const Vec2 p : table::kLockBays) {
     addPoint(p);

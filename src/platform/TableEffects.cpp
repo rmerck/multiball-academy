@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string_view>
 
+#include "core/HoleLook.hpp"
 #include "core/TableLayout.hpp"
 
 namespace pinball {
@@ -18,9 +19,8 @@ float length(Vec2 v) noexcept { return std::sqrt(v.x * v.x + v.y * v.y); }
 
 // Where and how large a ball is drawn: a hole drawing it in or out moves
 // it off its place and shrinks it (Game.hpp, BallView::drawnAt).
-float drawnRadius(const BallView& ball) noexcept {
-  return table::kBallRadius * ball.scale *
-         (1.0F - table::kHoleSinkShrink * std::clamp(ball.sink, 0.0F, 1.0F));
+float drawnRadius(const BallView& ball, bool reduceMotion) noexcept {
+  return table::kBallRadius * ball.scale * holeLook(ball.sink, reduceMotion).scale;
 }
 float shown(const BallView& ball) noexcept { return 1.0F - std::clamp(ball.sink, 0.0F, 1.0F); }
 
@@ -424,7 +424,7 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
     if (trail.count < 3 || fast <= 0.0F) {
       continue;
     }
-    const float radius = drawnRadius(ball);
+    const float radius = drawnRadius(ball, show.reduceMotion());
     for (std::size_t k = 1; k < trail.count; ++k) {
       const float age = static_cast<float>(k) / static_cast<float>(trail.count);
       glow_.add(r, glow, trail.points[k], radius * (1.25F - 0.6F * age), art::kFxTrail,
@@ -505,7 +505,7 @@ void TableEffects::drawBallPools(SDL_Renderer* r, std::span<const BallView> ball
       continue;
     }
     SDL_SetTextureAlphaModFloat(pool, alpha);
-    const float radius = drawnRadius(ball) * art::kBallPoolRadii;
+    const float radius = drawnRadius(ball, show.reduceMotion()) * art::kBallPoolRadii;
     const SDL_FRect dst{at.x - radius, at.y - radius, radius * 2.0F, radius * 2.0F};
     SDL_RenderTexture(r, pool, nullptr, &dst);
   }
@@ -523,7 +523,7 @@ void TableEffects::drawBallGlints(SDL_Renderer* r, const Game& /*game*/,
     if (!ball.visible) {
       continue;
     }
-    const float radius = drawnRadius(ball);
+    const float radius = drawnRadius(ball, show.reduceMotion());
     const float seen = shown(ball);
     const Vec2 here = ball.drawnAt();
     const Vec2 toLamp = unit(lamp - here);
