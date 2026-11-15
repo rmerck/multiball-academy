@@ -195,6 +195,9 @@ void Rules::startGame() noexcept {
   altitude_.reset();
   bonusTally_ = {};
   taxiLit_.fill(false);
+  radarLit_.fill(false);
+  bogeyMarked_.fill(false);
+  bogeyCleared_ = false;
   aceLit_.fill(false);
   aceDone_ = false;
   aceSets_ = 0;
@@ -407,8 +410,6 @@ void Rules::onTarget(std::size_t index) noexcept {
     extraCreditLit_ = true;
     say(display::Message("EXTRA CREDIT IS LIT"));
     cue(Sound::SetComplete);
-    // Stands in for BOGEY until geometry builds the bank (G2).
-    qualifyCourse(CourseId::NightLanding);
   }
   addTurbo(tuning::kTurboPerTarget);
 }
@@ -482,8 +483,7 @@ void Rules::onStandup(std::size_t index, float /*speed*/) noexcept {
   }
   noteSwitch();
   if (index < table::kTaxiStandups) {
-    // T-A-X-I: dead stand-ups round the field. All four stand in for RADAR
-    // (geometry G2) as FORMATION's qualifier.
+    // T-A-X-I: dead stand-ups round the field.
     award(points::kTaxiLetter, Feature::TurboTargets);
     if (index >= taxiLit_.size() || taxiLit_[index]) {
       return;
@@ -495,6 +495,23 @@ void Rules::onStandup(std::size_t index, float /*speed*/) noexcept {
       ++laneSetsThisBall_;
       cue(Sound::SetComplete);
       say(display::Message("T-A-X-I COMPLETE"));
+    }
+    return;
+  }
+  if (index >= table::kRadarStandup) {
+    // RADAR: all three light FORMATION.
+    const std::size_t letter = index - table::kRadarStandup;
+    award(points::kTaxiLetter, Feature::TurboTargets);
+    if (letter >= radarLit_.size() || radarLit_[letter]) {
+      return;
+    }
+    radarLit_[letter] = true;
+    if (std::ranges::all_of(radarLit_, [](bool lit) { return lit; })) {
+      radarLit_.fill(false);
+      award(points::kTaxiComplete, Feature::TurboTargets);
+      ++laneSetsThisBall_;
+      cue(Sound::SetComplete);
+      say(display::Message("RADAR COMPLETE"));
       qualifyCourse(CourseId::Formation);
     }
     return;
@@ -525,12 +542,26 @@ void Rules::onStandup(std::size_t index, float /*speed*/) noexcept {
 }
 
 void Rules::onBogey(std::size_t index) noexcept {
-  // Stub (G5: BOGEY complete lights Night Landing, adds to the lock at FL300+).
-  if (dead() || index >= table::kBogeys.size()) {
+  // The BOGEY drops: all three cleared light NIGHT LANDING and are what the
+  // lock asks for beside the bay doors (DECISIONS.md 10).
+  if (dead() || index >= table::kBogeys.size() || index >= bogeyMarked_.size()) {
     return;
   }
   noteSwitch();
-  award(1'000, Feature::TurboTargets);
+  award(points::kTaxiLetter, Feature::TurboTargets);
+  bogeyMarked_[index] = true;
+  if (!std::ranges::all_of(bogeyMarked_, [](bool marked) { return marked; })) {
+    return;
+  }
+  bogeyMarked_.fill(false);
+  award(points::kTaxiComplete, Feature::TurboTargets);
+  ++laneSetsThisBall_;
+  cue(Sound::SetComplete);
+  const bool wasCleared = bogeyCleared_;
+  bogeyCleared_ = true;
+  say(lockLit() && !wasCleared ? display::Message("BOGEY CLEARED  LOCK IS LIT")
+                               : display::Message("BOGEY CLEARED"));
+  qualifyCourse(CourseId::NightLanding);
 }
 
 void Rules::onPylon() noexcept {
@@ -613,6 +644,10 @@ void Rules::addBank() noexcept {
   }
   banks_ = 0;
   doorsOpen_ = true;
+  if (lockNeedsBogey_ && !bogeyCleared_ && multiballEnabled_ && !multiballRunning()) {
+    say(display::Message("CLEAR BOGEY FOR LOCK"));
+    return;
+  }
   say(lockLit() ? display::Message("LOCK IS LIT") : display::Message("BAY DOORS OPEN"));
 }
 
@@ -994,7 +1029,8 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
       // CAT SHOT spots a lock: its ball is locked whatever the doors say
       // (it came in behind them), while a lock could be lit at all.
       const bool catLock =
-          cat && doorsOpen_ && multiballEnabled_ && !multiballRunning() && !superLit_;
+          cat && doorsOpen_ && (bogeyCleared_ || !lockNeedsBogey_) && multiballEnabled_ &&
+          !multiballRunning() && !superLit_;
       if (catLock && locksHeld_ < kLocksNeeded) {
         return HoleResult::Lock;
       }
@@ -1004,6 +1040,7 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
           return HoleResult::Lock;
         }
         // The third ball in: all three go.
+        bogeyCleared_ = false;
         ++hangarHolding_;
         academyMultiball_ = true;
         turboMultiball_ = false;
@@ -1048,6 +1085,7 @@ void Rules::onBallLocked(std::size_t bay, bool served) noexcept {
   }
   locksHeld_ = std::min(locksHeld_ + 1, kLocksNeeded);
   status_.locked = std::min(status_.locked + 1, kLocksNeeded);
+  bogeyCleared_ = false;  // Each lock asks for the BOGEY bank again.
   status_.live = std::max(status_.live - 1, 0);
   // Free balls are live balls (setTable keeps it so; this must too).
   status_.free = std::min(status_.free, status_.live);
@@ -1118,8 +1156,8 @@ bool Rules::dogfightJackpotLit() const noexcept {
 }
 
 bool Rules::lockLit() const noexcept {
-  return doorsOpen_ && multiballEnabled_ && !dead() && !multiballRunning() && !superLit_ &&
-         !dogfightJackpotLit();
+  return doorsOpen_ && (bogeyCleared_ || !lockNeedsBogey_) && multiballEnabled_ && !dead() &&
+         !multiballRunning() && !superLit_ && !dogfightJackpotLit();
 }
 
 // --- Turbo meter, overdrive, awards at the Briefing room -----------------------

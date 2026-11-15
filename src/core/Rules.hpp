@@ -361,6 +361,9 @@ class Rules {
   bool taxiLit(std::size_t letter) const noexcept {
     return letter < taxiLit_.size() && taxiLit_[letter];
   }
+  bool radarLit(std::size_t letter) const noexcept {
+    return letter < radarLit_.size() && radarLit_[letter];
+  }
   bool aceLit(std::size_t letter) const noexcept {
     return letter < aceLit_.size() && aceLit_[letter];
   }
@@ -469,6 +472,14 @@ class Rules {
   // Completed bay-door banks that light the lock (tuning::kBanksPerLock in
   // play): 1 for tests and benches of the bank and the lock themselves.
   void setBanksPerLock(int banks) noexcept { banksPerLock_ = std::clamp(banks, 1, tuning::kBanksPerLock); }
+  // Whether the lock also needs the BOGEY bank cleared (DECISIONS.md 10; on
+  // in play): off for tests of the doors and the lock themselves.
+  void setLockNeedsBogey(bool needs) noexcept { lockNeedsBogey_ = needs; }
+  // The BOGEY bank has been cleared since the last lock.
+  bool bogeyCleared() const noexcept { return bogeyCleared_; }
+  bool bogeyMarked(std::size_t index) const noexcept {
+    return index < bogeyMarked_.size() && bogeyMarked_[index];
+  }
   // The Altitude never below this level (0 to progression::kTopLevel), now
   // and at every new game: for measuring each level's table with the bots,
   // and for the tools' stills.
@@ -900,6 +911,10 @@ class Rules {
   std::uint64_t jackpotAdd_ = 0;
   int banks_ = 0;
   int banksPerLock_ = tuning::kBanksPerLock;
+  bool lockNeedsBogey_ = true;
+  std::array<bool, 3> bogeyMarked_{};
+  bool bogeyCleared_ = false;
+  std::array<bool, 3> radarLit_{};
 
   // The rules' own source of chance: the same events give the same game.
   std::uint64_t random_ = 0xD1B54A32D192ED03ULL;

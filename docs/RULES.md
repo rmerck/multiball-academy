@@ -14,9 +14,11 @@ Multiball Academy is a flight academy on a pinball table. You have three balls t
 | Flight Deck | Top right, with its own flipper (right button) | Reached by the Skyway when its diverter is lit. A-C-E stand-ups; the CAT SHOT rides the ball to the Hangar and locks it |
 | R-A-D lanes | Three lanes at the top | Skill shot; all three light overdrive |
 | Jets | Under the R-A-D lanes | Boost meter; choose the sortie on offer |
-| Nest targets | Two, beside the jets | Boost meter; both light extra credit and NIGHT LANDING |
+| Nest targets | Two, beside the jets | Boost meter; both light extra credit |
+| BOGEY | Three drop targets, left of the field | All three: NIGHT LANDING, and the BOGEY bank the lock asks for |
+| RADAR | Three stand-ups, right of the field | All three light FORMATION |
 | G-FORCE | The captive ball, upper left | Each hit 1G (a hard one 2G). 3G lights DOGFIGHT; 5G pays 50,000 |
-| T-A-X-I | Four stand-ups round the field | All four light FORMATION |
+| T-A-X-I | Four stand-ups round the field | All four: 25,000 and a set for the bonus |
 | F-L-A-P-S | Five rollovers in the middle of the field | All five relight the Mission and add bonus X |
 | W-I-N-G lanes | The two inlanes and two outlanes | All four relight the kickback |
 | Kickback | Left outlane | Lit at the start of a game: returns one ball to the left flipper |
@@ -41,8 +43,8 @@ Six sorties, each lit by its own kind of shot and started at the Mission. At the
 | LOOP DRILL | 3 loops | 3 loops; the other side from the last pays double | 40 s | 25,000 | 125,000 |
 | RAMP RUNS | 4 ramps | 4 ramps, the lit one moving to the other side after each | 40 s | 20,000 | 125,000 |
 | GUNNERY | 3 Bandit hits | 4 Bandit hits, each adding 5 seconds; BANDIT DOWN during it doubles the pass | 30 s | 15,000 | 100,000 (200,000) |
-| FORMATION | T-A-X-I | The lit arrow 3 times; it moves on every 5 seconds | 45 s | 30,000 | 150,000 |
-| NIGHT LANDING | both nest targets | The Runway (the approach), then the Skyway (the landing) | 40 s | 10,000 | a hurry-up from 300,000, 7,500 less each second, at least 100,000 |
+| FORMATION | RADAR | The lit arrow 3 times; it moves on every 5 seconds | 45 s | 30,000 | 150,000 |
+| NIGHT LANDING | BOGEY | The Runway (the approach), then the Skyway (the landing) | 40 s | 10,000 | a hurry-up from 300,000, 7,500 less each second, at least 100,000 |
 | DOGFIGHT | 3G on G-FORCE | Two balls. A Bandit hit lights the Hangar: DOGFIGHT JACKPOT 100,000, twice | 45 s | 25,000 | 200,000 |
 
 - A qualified sortie blinks its lamp and holds the Mission's offer; the Mission starts the qualified ones first. From the second sortie started in a round, each qualifier asks for twice as many.
@@ -60,7 +62,7 @@ Jets, spins, Bandit hits, the nest targets and CAT SHOTs fill the boost meter (t
 
 ## Squadron multiball (three balls)
 
-Hit all three bay doors to complete a bank. Three banks light the lock (`BAY DOORS  2 MORE FOR LOCK`, then 1 more); the third drops the doors: the Hangar is open and `LOCK IS LIT`. A ball shot into it is locked in view (`BALL 1 LOCKED`) and you get a new ball; the doors come back up and the next lock needs three banks again. A CAT SHOT from the Flight Deck counts as a bank, and when it lights the lock its own ball, arriving by the rail, is locked. With two locked, the third ball in starts `SQUADRON MULTIBALL`: all three are let go, with 10 seconds of grace.
+Hit all three bay doors to complete a bank. Three banks drop the doors (`BAY DOORS  2 MORE FOR LOCK`, then 1 more), and the lock is lit once the BOGEY bank is cleared too (`CLEAR BOGEY FOR LOCK`, then `LOCK IS LIT`); every lock asks for BOGEY again. A ball shot into it is locked in view (`BALL 1 LOCKED`) and you get a new ball; the doors come back up and the next lock needs three banks again. A CAT SHOT from the Flight Deck counts as a bank, and when the lock is lit its own ball, arriving by the rail, is locked. With two locked, the third ball in starts `SQUADRON MULTIBALL`: all three are let go, with 10 seconds of grace.
 
 Ramps and loops are lit for jackpots: 50,000, 75,000, 100,000, then 150,000. A pylon hit adds 25,000 to the next. Knock down the Bandit (or make three jackpots) and the Hangar is lit for the `SUPER JACKPOT`, 500,000.
 

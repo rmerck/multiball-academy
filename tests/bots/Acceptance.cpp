@@ -849,6 +849,7 @@ LockBurstResult lockBursts(int bursts) {
     // Open the Hangar with the lock lit, as three door hits do (one bank
     // lighting the lock here).
     GameTestAccess::rules(game).setBanksPerLock(1);
+    GameTestAccess::rules(game).setLockNeedsBogey(false);
     for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
       GameTestAccess::rules(game).onDropTarget(door);
     }

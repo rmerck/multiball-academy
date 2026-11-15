@@ -37,7 +37,8 @@ namespace pinball::save {
 // with concept A's 6.
 // 8: the BOGEY drop targets. 9: concept A's rules (G5): sorties, multiballs,
 // Wings Ceremony, Air Show.
-inline constexpr std::uint16_t kFormatVersion = 9;
+// 10: the lock's BOGEY bank and RADAR letters (DECISIONS.md 10).
+inline constexpr std::uint16_t kFormatVersion = 10;
 
 // The longest a build id may be ("2.0.0+123456789" is 15).
 inline constexpr std::size_t kMaxBuildIdLength = 32;
@@ -178,6 +179,9 @@ struct RulesRecord {
   bool finaleBanditDown = false;
   std::uint64_t jackpotAdd = 0;
   std::int32_t banks = 0;
+  std::array<bool, 3> radarLit{};
+  std::array<bool, 3> bogeyMarked{};
+  bool bogeyCleared = false;
 
   std::uint64_t random = 0xD1B54A32D192ED03ULL;
 };

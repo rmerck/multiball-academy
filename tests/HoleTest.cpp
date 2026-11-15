@@ -66,7 +66,10 @@ float distance(Vec2 a, Vec2 b) {
 // 0x09482ffd3c224202 for the new rules the script reaches): re-recorded on
 // the merge (0x9671ef8fc1d10394); then the one-shape door bank was
 // reverted (it moved B4): 0x72134c8bea581229. Was 0x4213a29dab26e639.)
-constexpr std::uint64_t kSoakTrajectory = 0x72134c8bea581229ULL;
+// Then the lock asking for the BOGEY bank and RADAR/BOGEY as the sortie
+// qualifiers (DECISIONS.md 10): re-recorded deliberately. Was
+// 0x72134c8bea581229.
+constexpr std::uint64_t kSoakTrajectory = 0x1cc96e44b0f34524ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {

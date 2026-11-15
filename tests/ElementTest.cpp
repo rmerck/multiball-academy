@@ -115,6 +115,7 @@ bool near(Vec2 a, Vec2 b) { return distance(a, b) < 0.01F; }
 void markDoors(Game& game) {
   // One bank lights the lock for these tests (three in play).
   Seam::rules(game).setBanksPerLock(1);
+  Seam::rules(game).setLockNeedsBogey(false);
   for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
     Seam::rules(game).onDropTarget(i);
   }
@@ -257,6 +258,7 @@ void testDoorBank() {
      // one door hit again and again opens nothing.
     Game game;
     Seam::rules(game).setBanksPerLock(1);
+    Seam::rules(game).setLockNeedsBogey(false);
     run(game, 2);
     CHECK(game.doorBankUp());
     for (int i = 0; i < 5; ++i) {

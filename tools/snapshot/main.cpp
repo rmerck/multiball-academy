@@ -1283,6 +1283,7 @@ int run(const Request& request) {
         // The doors marked, as three hits would: the bank drops (one bank
         // lights the lock here; concept A's rules ask for several).
         Seam::rules(game).setBanksPerLock(1);
+        Seam::rules(game).setLockNeedsBogey(false);
         for (std::size_t door = 0; door < pinball::table::kDropTargets.size(); ++door) {
           Seam::rules(game).onDropTarget(door);
         }
@@ -1382,6 +1383,7 @@ int run(const Request& request) {
       // Concept A's rules light the lock after several banks: one is
       // enough for the picture.
       Seam::rules(game).setBanksPerLock(1);
+      Seam::rules(game).setLockNeedsBogey(false);
       for (std::size_t door = 0; door < pinball::table::kDropTargets.size(); ++door) {
         Seam::rules(game).onDropTarget(door);
       }

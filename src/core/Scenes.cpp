@@ -64,6 +64,10 @@ struct SceneStage {
         break;
       }
     }
+    // And the BOGEY bank, which the lock also asks for (as its drops tell it).
+    for (std::size_t bogey = 0; bogey < table::kBogeys.size(); ++bogey) {
+      rules().onBogey(bogey);
+    }
     return runUntil(10, [this] { return !game.doorBankUp(); });
   }
 
