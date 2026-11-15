@@ -32,7 +32,7 @@ const char* touchName(Touch touch) noexcept {
       "right circuit", "bumper",       "slingshot",     "roll call",    "left inlane",
       "right inlane",  "left outlane", "right outlane", "centre drain", "flipper",     "drone",         "TAXI",
       "G-force",       "deck target",  "CAT SHOT",      "deck drain",   "pylon",
-      "FLAPS"};
+      "FLAPS",         "BOGEY",        "RADAR"};
   const auto index = static_cast<std::size_t>(touch);
   return index < kNames.size() ? kNames[index] : "?";
 }
@@ -332,10 +332,17 @@ Touch TableHarness::advance() {
         break;
       case Standup:
         ++standupHits[i];
-        log(i >= table::kTaxiStandups ? Touch::DeckTarget : Touch::Standup, event.speed, ball);
+        log(i >= table::kRadarStandup     ? Touch::Radar
+            : i >= table::kTaxiStandups ? Touch::DeckTarget
+                                        : Touch::Standup,
+            event.speed, ball);
         break;
       case Pylon:
         log(Touch::Pylon, event.speed, ball);
+        break;
+      case Bogey:
+        ++bogeyHits[i];
+        log(Touch::Bogey, event.speed, ball);
         break;
       case CaptiveBall:
         // Struck: a G-force touch, as the post's hits were. The switch

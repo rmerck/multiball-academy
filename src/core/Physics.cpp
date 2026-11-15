@@ -53,7 +53,7 @@ table::ElementRef unpackElement(const void* data) noexcept {
   for (const table::ElementKind kind :
        {table::ElementKind::Bumper, table::ElementKind::Slingshot, table::ElementKind::Target,
         table::ElementKind::DropTarget, table::ElementKind::Drone, table::ElementKind::Standup,
-        table::ElementKind::CaptiveBall}) {
+        table::ElementKind::CaptiveBall, table::ElementKind::Bogey}) {
     if (kindValue == std::to_underlying(kind)) {
       const table::ElementRef ref{kind, index};
       return table::isValid(ref) ? ref : table::ElementRef{};
@@ -188,6 +188,7 @@ PhysicsWorld::PhysicsWorld() {
     buildBall(slot, false);
   }
   buildDoorBank();
+  buildBogeys();
   buildStandups();
   buildDrone();
   buildPylon();
@@ -253,9 +254,11 @@ void PhysicsWorld::buildTable() {
   addOneSided(table::kInnerArch, material);
 
   const b2ShapeDef shapeDef = wallShapeDef();
+  b2ShapeDef slickDef = wallShapeDef();
+  slickDef.material.friction = 0.0F;
   for (const table::Capsule& wall : table::kAllWalls) {
     const b2Capsule capsule{toMeters(wall.a), toMeters(wall.b), toMeters(wall.radius)};
-    b2CreateCapsuleShape(table_, &shapeDef, &capsule);
+    b2CreateCapsuleShape(table_, table::isSlickWall(wall) ? &slickDef : &shapeDef, &capsule);
   }
   b2ShapeDef deadDef = wallShapeDef();
   deadDef.material.restitution = table::kDeadPostRestitution;
@@ -439,15 +442,18 @@ void PhysicsWorld::buildDoorBank() {
   b2BodyDef bodyDef = b2DefaultBodyDef();
   bodyDef.type = b2_staticBody;
   doorBank_ = b2CreateBody(world_, &bodyDef);
+  // One capsule across all three doors (G2): with a shape per door a ball
+  // striking a seam touched two shapes of the body at once, and Box2D could
+  // meet the two contacts in either order (a restored game parted from its
+  // original there). Which door was struck is told from where the ball was
+  // (doorAt), in collectEvents.
   b2ShapeDef shapeDef = wallShapeDef();
   shapeDef.material.restitution = kRubberRestitution;
-  for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
-    const table::Capsule& c = table::kDropTargets[i];
-    shapeDef.userData =
-        packElement({table::ElementKind::DropTarget, static_cast<std::uint8_t>(i)});
-    const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
-    b2CreateCapsuleShape(doorBank_, &shapeDef, &capsule);
-  }
+  shapeDef.userData = packElement({table::ElementKind::DropTarget, 0});
+  const table::Capsule& first = table::kDropTargets.front();
+  const table::Capsule& last = table::kDropTargets.back();
+  const b2Capsule capsule{toMeters(first.a), toMeters(last.b), toMeters(first.radius)};
+  b2CreateCapsuleShape(doorBank_, &shapeDef, &capsule);
 }
 
 void PhysicsWorld::buildStandups() {
@@ -528,6 +534,58 @@ void PhysicsWorld::setPylon(bool up) {
   } else {
     b2Body_Disable(pylon_);
   }
+}
+
+void PhysicsWorld::buildBogeys() {
+  // Each target its own static body, so that it drops (is disabled) alone.
+  b2ShapeDef deadDef = wallShapeDef();
+  deadDef.material.restitution = table::kDeadPostRestitution;
+  deadDef.material.userMaterialId = kDeadMaterial;
+  for (std::size_t i = 0; i < table::kBogeys.size(); ++i) {
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    bodyDef.type = b2_staticBody;
+    bogey_[i] = b2CreateBody(world_, &bodyDef);
+    b2ShapeDef def = deadDef;
+    def.userData = packElement({table::ElementKind::Bogey, static_cast<std::uint8_t>(i)});
+    const table::Capsule& c = table::kBogeys[i];
+    const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
+    b2CreateCapsuleShape(bogey_[i], &def, &capsule);
+    bogeyUp_[i] = true;
+  }
+}
+
+void PhysicsWorld::setBogey(std::size_t index, bool up) {
+  if (index >= bogeyUp_.size() || bogeyUp_[index] == up) {
+    return;
+  }
+  bogeyUp_[index] = up;
+  if (up) {
+    b2Body_Enable(bogey_[index]);
+  } else {
+    b2Body_Disable(bogey_[index]);
+  }
+}
+
+bool PhysicsWorld::bogeySpotClear(std::size_t index) const {
+  if (index >= table::kBogeys.size()) {
+    return false;
+  }
+  const table::Capsule& c = table::kBogeys[index];
+  const float reach = c.radius + table::kBallRadius + 2.0F;
+  for (std::size_t slot = 0; slot < balls_.size(); ++slot) {
+    if (!balls_[slot].active || balls_[slot].held) {
+      continue;
+    }
+    const Vec2 p = ballPosition(slot);
+    const Vec2 ab = c.b - c.a;
+    const float lengthSquared = ab.x * ab.x + ab.y * ab.y;
+    const float t = std::clamp(((p.x - c.a.x) * ab.x + (p.y - c.a.y) * ab.y) / lengthSquared, 0.0F, 1.0F);
+    const Vec2 d = p - (c.a + ab * t);
+    if (d.x * d.x + d.y * d.y < reach * reach) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool PhysicsWorld::pylonSpotClear() const {
@@ -910,7 +968,7 @@ void PhysicsWorld::collectEvents() {
     const std::size_t slot = ballIsA ? slotA : slotB;
     const b2BodyId body = balls_[slot].body;
     const b2ShapeId other = ballIsA ? touch.shapeIdB : touch.shapeIdA;
-    const table::ElementRef element = unpackElement(b2Shape_GetUserData(other));
+    table::ElementRef element = unpackElement(b2Shape_GetUserData(other));
     if (element.kind == table::ElementKind::None) {
       continue;
     }
@@ -936,6 +994,10 @@ void PhysicsWorld::collectEvents() {
       if (!fieldSide) {
         continue;
       }
+    }
+    if (element.kind == table::ElementKind::DropTarget) {
+      element = {table::ElementKind::DropTarget,
+                 static_cast<std::uint8_t>(table::doorAt(ballPosition(slot).x))};
     }
     if (element.kind == table::ElementKind::CaptiveBall) {
       // The switch, when the captive ball reaches it, is this ball's.

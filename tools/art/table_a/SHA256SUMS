@@ -1,0 +1,48 @@
+# SHA-256 of the Table A masters (tools/art/table_a/out) and their sources (.blend, .xcf).
+# Blender and GIMP files: made on macOS arm64 (Blender 5.3.0 Cycles CPU, GIMP 3.2); re-running blender/toys.py or
+# gimp/finish.py there reproduces them byte for byte (verified, and from the .blend files alone).
+# floor_a.png, background_a.png, gi_a.png, lamp_plan.json: made by make_floor.py on Linux x86_64 with the hash-pinned
+# tools/art/requirements.txt (CPython 3.13); byte-identical on re-run there. Other platforms: check by eye.
+54d5efaacf6f7d465a9e42d44c819f5553c10625a1303b725629760ecadc1704  tools/art/table_a/blender/bay_door.blend
+9abffe64fd762eaf7c49c8e8d9dd2a08fa4702ebbc9fda2ee407b210fb24022a  tools/art/table_a/blender/drone.blend
+b70b17aa61ecea071e5cc372493de17090dc248b7b9fea502e42f307dc64a7a6  tools/art/table_a/blender/flasher_domes.blend
+30933b9adc0aba70bb366264f08b988da87f8e06abb2a31d75f42ee12ed98b99  tools/art/table_a/blender/flight_deck.blend
+001e062799bb483e59cf0fa16f5ddfcf79eba6289cc7520c261cd6ce4eeeabe5  tools/art/table_a/blender/gforce.blend
+c2c7295d757d9698db8856a98b53facfb1955780e1d366f3b53698b856e9c015  tools/art/table_a/blender/jet_caps.blend
+cf6d2deb8151b7c4fd4e3464e91ac9a463c8b4a8cfeee155f779b66c1d81abbf  tools/art/table_a/blender/propwash.blend
+e65156990a4d37054a81e2acc82033493a5dd3cf0236c7d7eda83814e41c93e9  tools/art/table_a/blender/propwash_ring.blend
+a258c228069996a023f62c535345dfc95d9d35a1c811b4255dfef4489a82944e  tools/art/table_a/blender/pylon.blend
+f43bce851f12b3a7a447699da604b407211867c7ef55bd229d79a406071b51ec  tools/art/table_a/blender/ramp_runway.blend
+37a3523b96b4a562433ef00220f6fe511b45d51ae24f5e9d9b8be7aa1c39167d  tools/art/table_a/blender/ramp_skyway.blend
+aa4d8cdf7e777effec15312f444f9d1f35a60437aa474736e944b81cb16d0b57  tools/art/table_a/gimp/xcf/altitude_plate.xcf
+34669aa1eba3c257c04231ecbb2b42924a2812cf7cd953e73017fe8b59d550a1  tools/art/table_a/gimp/xcf/decals_nameplates.xcf
+e5c19c5c8231956e229c06251312da382ab49d077a21e413ed9c0fc7e4090487  tools/art/table_a/gimp/xcf/inserts_altitude.xcf
+4c79d7f4ab4643a606ba30ced0872144efd74c962e2372d945384cdc94aff04e  tools/art/table_a/gimp/xcf/inserts_arrows.xcf
+a13a1d736819d48d2e787c6be2f6d62ef0ba99f7db208256717da5eea1f54072  tools/art/table_a/gimp/xcf/inserts_flaps.xcf
+6fe7b8e37be136e5844d5f05ab361f287407891e0c8e2d9785fb5f5642d2a9ca  tools/art/table_a/gimp/xcf/plastic_sling_left.xcf
+d8edaff2531200016bd701f8aed2aa4cfdc7b4c2f4c613349cd6813abb051075  tools/art/table_a/gimp/xcf/plastic_sling_right.xcf
+11b9bc3a7655b8009556c89ed3b328669dbc168204d0409fdc54ebd415ecc182  tools/art/table_a/out/altitude_plate.png
+bee8c55b82ce822f3787c23eb054122e4bfd4a7eb3f3f434c074ea53a1ffcfbb  tools/art/table_a/out/background_a.png
+e55a9b0e2640ce8f9a6bdcd144a4ed223cd1a8e9e00944e4e59dfabd67e2d59c  tools/art/table_a/out/bay_door.png
+fbe432b83883a518b6322dda2aaa92f4fd0fc577568d5436fbf47b0d4b0ac145  tools/art/table_a/out/decals_nameplates.png
+4c7a1d29fca780f2fe85dabaa4d13223dd6b5bd4a07485d5e8b9df40f87f62b9  tools/art/table_a/out/drone.png
+a221609df9611a9dc9e8c83240b7b9cb664639eef670f793bf97d9173af98100  tools/art/table_a/out/flasher_domes.png
+7a8c0598d1e212da62a894f0f6ea71c9e18eb96b2e4d062d2f7b5e0a054cf1dd  tools/art/table_a/out/flight_deck.png
+df16fefe73aa4daa4e7d8b2f5b7f03090803fd68acfae172214a8227c31aae16  tools/art/table_a/out/floor_a.png
+f6d65994108c08d3b3cacbb2cc5b1a3d52b75e841e7f5846abfa00189af9549f  tools/art/table_a/out/gforce.png
+a28c4bd3f10215336711d98803637eeeecc89a3915a8a7ba3cd04309743e35e0  tools/art/table_a/out/gi_a.png
+6e8076d68130588846bb99bf115c89f308f1a2005d460524310c03487dddb699  tools/art/table_a/out/gimp_sheets.json
+b1d74b2556eb16a92ec8801b61fea9d452bde1321a0718a85a60694427aaee70  tools/art/table_a/out/inserts_altitude.png
+ea2f0fde0a8a0497da37eed3f201bd878be0b7af06218ce8626fba643b493023  tools/art/table_a/out/inserts_arrows.png
+ca88e9f5795457038707a2ec0485a90f1204942096dd9b282fa51a6fb5a87b34  tools/art/table_a/out/inserts_flaps.png
+6dda880f24fed229953d5eb009c7f0bd3ca30295b333716a0fe3c4739a9d0fd9  tools/art/table_a/out/jet_caps.png
+bb784ad672e38df1765c2ce9777f9756c9776e71412400f7ea5e58682396c253  tools/art/table_a/out/lamp_plan.json
+c50e5d08475f7c122de8abeb474e9887efb8be32bf385df8f558e24877ac6aa4  tools/art/table_a/out/plastic_sling_left.png
+f399616add0fdafe76037ce14d8d8ecd1a8cc56735408089bebdaed0d32fa47d  tools/art/table_a/out/plastic_sling_right.png
+88d3061c7f9c7356591e54899b3e0ce218bde10fe6c9be8bf3a95228fbeef305  tools/art/table_a/out/propwash.png
+152c9fbb3eb5b5a1befcd3ce57cf671ed8bb5a6bb2a628be62c9517088b35e17  tools/art/table_a/out/propwash_blur.png
+b5f768c3ee9b0d382dd87c757f5759567705f43c5bbe2e9ae82591d7dc78926b  tools/art/table_a/out/propwash_ring.png
+d5a959295916accee9bff807163839ea8aeadf740441484e4eea9fd48d7da1c0  tools/art/table_a/out/pylon.png
+da5b5e7feb189e44f697e4f96f0f18bba1586d4e9bd635718d5fffd4a2773367  tools/art/table_a/out/ramp_runway.png
+4fd30188d01af089ce5df5a89fb282657f0f44127debbf73f7692328678097a6  tools/art/table_a/out/ramp_skyway.png
+23ca0a783b5fbabf6f3adf6f12c14e0745c1dd294421e813c9930608568f7cb3  tools/art/table_a/out/sheets.json

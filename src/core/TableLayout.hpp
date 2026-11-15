@@ -243,14 +243,40 @@ inline constexpr Capsule kStandupX{{237.0F, 372.0F}, {237.0F, 397.0F}, kWallRadi
 // flipper. They keep the stand-ups' dead bounce.
 inline constexpr std::size_t kTaxiStandups = 4;
 inline constexpr std::size_t kDeckStandupA = 4;
-inline constexpr std::array<Capsule, 7> kStandups{{
+// Concept A G2: RADAR, three dead stand-ups (lesson 6) on CONCEPT.md's line
+// mirrored, (548, 492) to (538, 552), struck from the left flipper.
+[[nodiscard]] constexpr Capsule bogeyTarget(std::size_t i) noexcept {
+  const float t0 = static_cast<float>(i) / 3.0F + 0.03F;
+  const float t1 = static_cast<float>(i + 1) / 3.0F - 0.03F;
+  return {{163.0F + 10.0F * t0, 492.0F + 60.0F * t0}, {163.0F + 10.0F * t1, 492.0F + 60.0F * t1}, 5.0F};
+}
+// BOGEY itself cannot stand on CONCEPT.md's line: the Hangar's exit lobs
+// its ball down that line to the left inlane. It stands lower and to the
+// right of the lob, (200, 562) to (210, 622), facing the right flipper.
+[[nodiscard]] constexpr Capsule bogeyDrop(std::size_t i) noexcept {
+  const float t0 = static_cast<float>(i) / 3.0F + 0.03F;
+  const float t1 = static_cast<float>(i + 1) / 3.0F - 0.03F;
+  return {{200.0F + 10.0F * t0, 562.0F + 60.0F * t0}, {200.0F + 10.0F * t1, 562.0F + 60.0F * t1}, 5.0F};
+}
+inline constexpr std::array<Capsule, 3> kBogeys{{bogeyDrop(0), bogeyDrop(1), bogeyDrop(2)}};
+// A struck BOGEY target drops; the bank comes up again kBogeyResetSeconds
+// after the third is down, and (from the Altitude's autoReset level) any
+// target down kBogeyAutoResetSeconds rises on its own. Each rises only when
+// no ball is over it.
+inline constexpr double kBogeyResetSeconds = 3.0;
+inline constexpr double kBogeyAutoResetSeconds = 30.0;
+inline constexpr std::size_t kRadarStandup = 7;  // RADAR are kStandups 7, 8, 9.
+inline constexpr std::array<Capsule, 10> kStandups{{
     kRimLeftFoot,
     mirrored(kRimLeftFoot),
     kStandupX,
     kRailEnd,
-    {{482.0F, 228.0F}, {482.0F, 244.0F}, 4.0F},
+    {{482.0F, 236.0F}, {482.0F, 252.0F}, 4.0F},  // A (G2: 8 lower, the CAT SHOT window 3+ on every feed)
     {{518.5F, 200.5F}, {528.3F, 213.0F}, 4.0F},
     {{538.4F, 228.3F}, {547.2F, 246.3F}, 4.0F},
+    mirrored(bogeyTarget(0)),
+    mirrored(bogeyTarget(1)),
+    mirrored(bogeyTarget(2)),
 }};
 // --- The captive ball (G-force test, revision 3) --------------------------------
 // A ball of its own in a short channel between the nest and the left rim,
@@ -342,14 +368,14 @@ inline constexpr Vec2 kDeckHalfSize{45.0F, 80.0F};
          p.y > kDeckCenter.y - kDeckHalfSize.y && p.y < kDeckCenter.y + kDeckHalfSize.y;
 }
 // Where the Skyway's diverter sets a ball down on the deck: over the deck
-// flipper's base, so it rolls down the bat towards its tip; high enough to
-// clear the bat raised as well (the right button held), which a ball set
-// down at y 252 overlapped by 7 units.
-inline constexpr Vec2 kDeckSetDown{532.0F, 236.0F};
+// flipper, moving right onto the bat, which it rolls down towards its tip.
+// 10 clear of every solid on the deck and of the bat raised or at rest (G2:
+// (532, 252) was inside the raised bat, (532, 236) inside the E stand-up).
+inline constexpr Vec2 kDeckSetDown{507.0F, 228.0F};
 // A ball may stay this long on the deck; then the deck's bat stays down
 // until it has left (no stall under a held button).
 inline constexpr double kDeckVisitSeconds = 10.0;
-inline constexpr Vec2 kDeckSetDownVelocity{0.0F, 40.0F};
+inline constexpr Vec2 kDeckSetDownVelocity{100.0F, 0.0F};
 
 inline constexpr std::array<Capsule, 20> kWalls{{
     kLeftDividerUpper,
@@ -376,6 +402,19 @@ inline constexpr std::array<Capsule, 20> kWalls{{
 // Every static capsule wall with the ordinary wall surface: kWalls, then the
 // rim arcs, a left part and its mirror in turn. (Dead posts are apart.)
 inline constexpr std::size_t kRimArcParts = kRimLeftArc.size() - 1;
+// The Hangar roof's two walls meet in a rounded apex. With friction a ball that
+// crept over it could stop a little off the top and stay (G1, P2 E=3 at FL100:
+// at rest at (277.7, 279.0), freed by the ball search). Frictionless, a ball
+// on that convex corner always has a sideways pull and rolls off: no shelf.
+inline constexpr std::array<Capsule, 2> kSlickWalls{{kHangarRoofLeft, kHangarRoofRight}};
+[[nodiscard]] constexpr bool isSlickWall(const Capsule& c) noexcept {
+  for (const Capsule& s : kSlickWalls) {
+    if (s.a.x == c.a.x && s.a.y == c.a.y && s.b.x == c.b.x && s.b.y == c.b.y) {
+      return true;
+    }
+  }
+  return false;
+}
 inline constexpr std::array<Capsule, kWalls.size() + 2 * kRimArcParts> kAllWalls = [] {
   std::array<Capsule, kWalls.size() + 2 * kRimArcParts> walls{};
   std::size_t n = 0;
@@ -494,6 +533,20 @@ inline constexpr std::array<Capsule, 3> kDropTargets{{
     {{297.0F, kDoorY}, {310.5F, kDoorY}, 5.0F},
 }};
 
+// The door a ball at x strikes: the nearest door's (the bank is one shape).
+[[nodiscard]] constexpr std::size_t doorAt(float x) noexcept {
+  std::size_t best = 0;
+  float bestDistance = 1.0e9F;
+  for (std::size_t i = 0; i < kDropTargets.size(); ++i) {
+    const float mid = 0.5F * (kDropTargets[i].a.x + kDropTargets[i].b.x);
+    const float d = x > mid ? x - mid : mid - x;
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = i;
+    }
+  }
+  return best;
+}
 // The bank does not come up onto a ball: it waits until no free ball's centre
 // is inside this box in front of and behind the door line.
 inline constexpr Vec2 kDoorMouthCenter{279.0F, kDoorY};
@@ -709,9 +762,9 @@ inline constexpr std::array<Vec2, 9> kDeckRail{{
     {524.0F, 340.0F},
     {534.0F, 312.0F},
     {548.0F, 290.0F},
-    {558.0F, 262.0F},
-    {554.0F, 246.0F},
-    {543.0F, 238.0F},
+    {552.0F, 262.0F},
+    {540.0F, 242.0F},
+    {522.0F, 231.0F},
     kDeckSetDown,
 }};
 [[nodiscard]] constexpr const std::array<Vec2, 9>& rampRail(HoleType type) noexcept {
@@ -1013,13 +1066,60 @@ enum class LampId : std::uint8_t {
   Bonus3X,
   Bonus4X,
   Bonus5X,
+  // Concept A (G6): the art's proposed lamps (tools/art/table_a lamp_plan.json,
+  // adopted at G1), then the Flight Deck's letters. Each shot's progress
+  // ladder: three pips below its arrow, the first nearest the arrow.
+  LadderCircuitLeft1,
+  LadderCircuitLeft2,
+  LadderCircuitLeft3,
+  LadderRunway1,
+  LadderRunway2,
+  LadderRunway3,
+  LadderHangar1,
+  LadderHangar2,
+  LadderHangar3,
+  LadderBriefing1,
+  LadderBriefing2,
+  LadderBriefing3,
+  LadderTurbine1,
+  LadderTurbine2,
+  LadderTurbine3,
+  LadderSkyway1,
+  LadderSkyway2,
+  LadderSkyway3,
+  LadderCircuitRight1,
+  LadderCircuitRight2,
+  LadderCircuitRight3,
+  AltitudeFL100,  // The altimeter, bottom (FL100) to top (FL500).
+  AltitudeFL200,
+  AltitudeFL300,
+  AltitudeFL400,
+  AltitudeFL500,
+  FlapsF,  // One under each F-L-A-P-S rollover (kRollovers order).
+  FlapsL,
+  FlapsA,
+  FlapsP,
+  FlapsS,
+  Bogey1,  // Beside the BOGEY drops and the RADAR stand-ups (G2 builds them).
+  Bogey2,
+  Bogey3,
+  Radar1,
+  Radar2,
+  Radar3,
+  SafetyPost,
+  Multiball,
+  DeckLit,  // The Skyway's diverter sends the next ball to the deck.
+  DeckA,    // On the field side of the deck's A-C-E stand-ups.
+  DeckC,
+  DeckE,
+  CatShot,  // Below the CAT SHOT cup.
   Count,
 };
 struct Lamp {
   LampId id;
   Vec2 position;
 };
-inline constexpr std::array<Lamp, 58> kLamps{{
+inline constexpr std::array<Lamp, 102> kLamps{{
     {LampId::ArrowCircuitLeft, {118.0F, 512.0F}},
     {LampId::ArrowRunway, {204.0F, 470.0F}},
     {LampId::ArrowHangar, {282.0F, 440.0F}},
@@ -1084,6 +1184,54 @@ inline constexpr std::array<Lamp, 58> kLamps{{
     {LampId::Bonus3X, {433.0F, 658.0F}},
     {LampId::Bonus4X, {417.0F, 652.0F}},
     {LampId::Bonus5X, {401.0F, 646.0F}},
+    // Concept A (G6). Where the art placed them (lamp_plan.json), except the
+    // Afterburner's pips (G1: clear of TurboCharge) and, G2, the altimeter
+    // (x 175, clear of the BOGEY drops), the BOGEY lamps (beside the drops'
+    // new line) and DeckLit (clear of the RADAR stand-ups).
+    {LampId::LadderCircuitLeft1, {118.0F, 535.0F}},
+    {LampId::LadderCircuitLeft2, {118.0F, 548.0F}},
+    {LampId::LadderCircuitLeft3, {118.0F, 561.0F}},
+    {LampId::LadderRunway1, {209.9F, 492.2F}},
+    {LampId::LadderRunway2, {213.3F, 504.8F}},
+    {LampId::LadderRunway3, {216.6F, 517.3F}},
+    {LampId::LadderHangar1, {283.4F, 463.0F}},
+    {LampId::LadderHangar2, {284.2F, 475.9F}},
+    {LampId::LadderHangar3, {285.1F, 488.9F}},
+    {LampId::LadderBriefing1, {429.0F, 490.8F}},
+    {LampId::LadderBriefing2, {427.3F, 503.7F}},
+    {LampId::LadderBriefing3, {425.6F, 516.6F}},
+    {LampId::LadderTurbine1, {356.0F, 476.0F}},
+    {LampId::LadderTurbine2, {356.0F, 486.0F}},
+    {LampId::LadderTurbine3, {356.0F, 496.0F}},
+    {LampId::LadderSkyway1, {501.1F, 492.2F}},
+    {LampId::LadderSkyway2, {497.7F, 504.8F}},
+    {LampId::LadderSkyway3, {494.4F, 517.3F}},
+    {LampId::LadderCircuitRight1, {593.0F, 535.0F}},
+    {LampId::LadderCircuitRight2, {593.0F, 548.0F}},
+    {LampId::LadderCircuitRight3, {593.0F, 561.0F}},
+    {LampId::AltitudeFL100, {175.0F, 676.0F}},
+    {LampId::AltitudeFL200, {175.0F, 658.0F}},
+    {LampId::AltitudeFL300, {175.0F, 640.0F}},
+    {LampId::AltitudeFL400, {175.0F, 622.0F}},
+    {LampId::AltitudeFL500, {175.0F, 604.0F}},
+    {LampId::FlapsF, {291.0F, 626.0F}},
+    {LampId::FlapsL, {323.0F, 618.0F}},
+    {LampId::FlapsA, {355.5F, 616.0F}},
+    {LampId::FlapsP, {388.0F, 618.0F}},
+    {LampId::FlapsS, {420.0F, 626.0F}},
+    {LampId::Bogey1, {226.0F, 575.0F}},
+    {LampId::Bogey2, {230.0F, 595.0F}},
+    {LampId::Bogey3, {234.0F, 615.0F}},
+    {LampId::Radar1, {523.0F, 505.0F}},
+    {LampId::Radar2, {521.0F, 525.0F}},
+    {LampId::Radar3, {519.0F, 545.0F}},
+    {LampId::SafetyPost, {355.5F, 904.0F}},
+    {LampId::Multiball, {312.0F, 530.0F}},
+    {LampId::DeckLit, {520.0F, 575.0F}},
+    {LampId::DeckA, {493.0F, 236.0F}},
+    {LampId::DeckC, {514.7F, 213.6F}},
+    {LampId::DeckE, {532.9F, 242.1F}},
+    {LampId::CatShot, {497.0F, 220.0F}},
 }};
 static_assert(kLamps.size() == static_cast<std::size_t>(LampId::Count), "one lamp per id");
 [[nodiscard]] constexpr bool isArrowLamp(LampId id) noexcept {
@@ -1099,6 +1247,33 @@ static_assert(kLamps.size() == static_cast<std::size_t>(LampId::Count), "one lam
   return static_cast<LampId>(static_cast<std::size_t>(LampId::TaxiT) +
                              (standup < kTaxiStandups ? standup : 0));
 }
+// Concept A's lamp groups (G6). Each shot's arrow (LampId order, the first
+// seven lamps) has a ladder of three pips; k is 0 (nearest the arrow) to 2.
+inline constexpr std::size_t kShotLadderPips = 3;
+[[nodiscard]] constexpr LampId ladderLamp(std::size_t arrow, std::size_t k) noexcept {
+  return static_cast<LampId>(static_cast<std::size_t>(LampId::LadderCircuitLeft1) +
+                             (arrow < 7 ? arrow : 0) * kShotLadderPips +
+                             (k < kShotLadderPips ? k : 0));
+}
+[[nodiscard]] constexpr bool isPipLamp(LampId id) noexcept {
+  return id >= LampId::LadderCircuitLeft1 && id <= LampId::LadderCircuitRight3;
+}
+// The altimeter's rung for a level, 0 (FL100) to 4 (FL500).
+[[nodiscard]] constexpr LampId altitudeLamp(std::size_t level) noexcept {
+  return static_cast<LampId>(static_cast<std::size_t>(LampId::AltitudeFL100) +
+                             (level < 5 ? level : 4));
+}
+// F-L-A-P-S letter 0 to 4.
+[[nodiscard]] constexpr LampId flapsLamp(std::size_t letter) noexcept {
+  return static_cast<LampId>(static_cast<std::size_t>(LampId::FlapsF) + (letter < 5 ? letter : 0));
+}
+// A deck stand-up's letter (kStandups index kDeckStandupA to kDeckStandupA + 2).
+[[nodiscard]] constexpr LampId deckLetterLamp(std::size_t standup) noexcept {
+  return static_cast<LampId>(static_cast<std::size_t>(LampId::DeckA) +
+                             (standup >= kDeckStandupA && standup < kDeckStandupA + 3
+                                  ? standup - kDeckStandupA
+                                  : 0));
+}
 
 // --- Flasher domes (revision 3, TABLE_REV3.md 3.10) ------------------------------------
 // Each stands on a solid where no ball rolls; the art bakes its base unlit
@@ -1113,9 +1288,13 @@ enum class FlasherId : std::uint8_t {
   Nest,
   SlingLeft,
   SlingRight,
+  // Concept A (G1): on the top of the deck's left wall, and on the top of
+  // the left rim straight (the Left Loop's arch).
+  Deck,
+  LeftArch,
   Count,
 };
-inline constexpr std::array<Vec2, 8> kFlasherDomes{{
+inline constexpr std::array<Vec2, 10> kFlasherDomes{{
     {279.0F, 296.0F},
     {473.0F, 357.0F},
     {391.0F, 360.0F},
@@ -1124,6 +1303,8 @@ inline constexpr std::array<Vec2, 8> kFlasherDomes{{
     {324.0F, 168.0F},
     {150.0F, 692.0F},
     {561.0F, 692.0F},
+    {476.0F, 165.0F},
+    {145.0F, 300.0F},
 }};
 static_assert(kFlasherDomes.size() == static_cast<std::size_t>(FlasherId::Count));
 
@@ -1215,6 +1396,7 @@ enum class ElementKind : std::uint8_t {
   Standup,      // Revision 3: T-A-X-I (0 to 3).
   CaptiveBall,  // Revision 3: the captive ball (0) struck, its switch (1) closed.
   Pylon,        // Concept A: the pop-up pylon.
+  Bogey,        // Concept A G2: the BOGEY drop targets (0 to 2).
 };
 struct ElementRef {
   ElementKind kind = ElementKind::None;
@@ -1247,6 +1429,8 @@ struct ElementRef {
       return 1;
     case Standup:
       return kStandups.size();
+    case Bogey:
+      return kBogeys.size();
     case CaptiveBall:
       return 2;
     case None:

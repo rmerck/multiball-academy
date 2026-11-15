@@ -58,14 +58,16 @@ float distance(Vec2 a, Vec2 b) {
 // CAT SHOT and deck drain, the deck's set-down moved clear of the raised
 // deck bat (532, 236), and the shelf under the resting deck bat. Two runs on
 // x86-64 give the same value; arm64 is checked by the macOS CI job. The soak
-// plays at FL100, where the Air Pocket and the Prop Wash are idle.)
-// Concept A rules (G5, feat/a-rules): re-recorded deliberately from
-// 0x4213a29dab26e639 for the new rules the script reaches: the scoring of
-// the Bandit, stand-ups, G-meter and CAT SHOT, the Flight Deck's diverter
-// lit by two ramps (no longer every other Skyway), the 10 s saver, the
-// pylon up during sorties and three banks per lock. Same value on two runs
-// on x86-64; arm64 is checked by the macOS CI job.
-constexpr std::uint64_t kSoakTrajectory = 0x09482ffd3c224202ULL;
+// plays at FL100, where the Air Pocket and the Prop Wash are idle.
+// G2: re-recorded for the frictionless Hangar roof, the one-shape bay door
+// bank, deck stand-up A lowered, the deck set-down (507, 228) moving right,
+// the BOGEY drops and the RADAR stand-ups. Was 0x4213a29dab26e639.)
+// Concept A rules (G5, feat/a-rules): re-recorded deliberately for the rules
+// the script reaches (Bandit, stand-up, G-meter and CAT SHOT scoring, the
+// deck diverter lit by two ramps, the 10 s saver, the pylon in sorties,
+// banks and the BOGEY bank toward the lock, RADAR and BOGEY as qualifiers).
+// Was 0xa1fa4e7df9970e85 (G2).
+constexpr std::uint64_t kSoakTrajectory = 0xebb404fdfb628623ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {

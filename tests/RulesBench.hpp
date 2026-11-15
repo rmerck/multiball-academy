@@ -36,6 +36,7 @@ struct RulesBench {
   RulesBench() {
     // One bank lights the lock here; the play value (three) has its own test.
     rules.setBanksPerLock(1);
+    rules.setLockNeedsBogey(false);
     apply();
     rules.onBallInPlay();
   }

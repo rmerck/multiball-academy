@@ -1,0 +1,163 @@
+{
+ "note": "made by tools/art/table_a/gimp/finish.py",
+ "pixelsPerUnit": 4,
+ "sheets": {
+  "altitude_plate": {
+   "anchor": "centre",
+   "cellPixels": [
+    256,
+    448
+   ],
+   "cellUnits": [
+    64,
+    112
+   ],
+   "columns": 6,
+   "file": "altitude_plate.png",
+   "frames": [
+    "base",
+    "fl100",
+    "fl200",
+    "fl300",
+    "fl400",
+    "fl500"
+   ],
+   "note": "printed floor art (deck-dark): an altimeter tape whose five sockets hold inserts_altitude rungs (FL100 bottom); frames fl<N>00 are overlays holding only the pointer at that level",
+   "sockets": {
+    "centreXUnits": 38.0,
+    "centreYUnits": [
+     92.0,
+     74.0,
+     56.0,
+     38.0,
+     20.0
+    ],
+    "sizeUnits": [
+     46,
+     14
+    ]
+   }
+  },
+  "decals_nameplates": {
+   "anchor": "centre",
+   "cellPixels": [
+    256,
+    72
+   ],
+   "cellUnits": [
+    64,
+    18
+   ],
+   "columns": 1,
+   "file": "decals_nameplates.png",
+   "frames": [
+    "HANGAR",
+    "MISSION",
+    "AFTERBURNER",
+    "FLIGHT DECK"
+   ],
+   "note": "printed plates, own colours"
+  },
+  "inserts_altitude": {
+   "anchor": "centre",
+   "cellPixels": [
+    192,
+    64
+   ],
+   "cellUnits": [
+    48,
+    16
+   ],
+   "columns": 5,
+   "file": "inserts_altitude.png",
+   "frames": [
+    "FL100",
+    "FL200",
+    "FL300",
+    "FL400",
+    "FL500"
+   ],
+   "note": "greyscale lenses; GI colour per rung: DAY, CLEAR, DUSK, SUNSET, NIGHTV (STYLE.md)"
+  },
+  "inserts_arrows": {
+   "anchor": "centre",
+   "cellPixels": [
+    192,
+    192
+   ],
+   "cellUnits": [
+    48,
+    48
+   ],
+   "columns": 3,
+   "file": "inserts_arrows.png",
+   "frames": [
+    "arrow",
+    "arrow_mission",
+    "pip"
+   ],
+   "note": "greyscale lenses pointing up (rotate to the shot); arrow 28 long, Mission 34, pip 10"
+  },
+  "inserts_flaps": {
+   "anchor": "centre",
+   "cellPixels": [
+    128,
+    128
+   ],
+   "cellUnits": [
+    32,
+    32
+   ],
+   "columns": 5,
+   "file": "inserts_flaps.png",
+   "frames": [
+    "F",
+    "L",
+    "A",
+    "P",
+    "S"
+   ],
+   "note": "greyscale lenses, tinted by the game; letter in ink"
+  },
+  "plastic_sling_left": {
+   "anchor": [
+    120.0,
+    656.0
+   ],
+   "cellPixels": [
+    400,
+    512
+   ],
+   "cellUnits": [
+    100,
+    128
+   ],
+   "columns": 1,
+   "file": "plastic_sling_left.png",
+   "frames": [
+    "plastic"
+   ],
+   "note": "over slingshots[0], inset 7"
+  },
+  "plastic_sling_right": {
+   "anchor": [
+    491.0,
+    656.0
+   ],
+   "cellPixels": [
+    400,
+    512
+   ],
+   "cellUnits": [
+    100,
+    128
+   ],
+   "columns": 1,
+   "file": "plastic_sling_right.png",
+   "frames": [
+    "plastic"
+   ],
+   "note": "over slingshots[1], mirror of the left"
+  }
+ }
+}

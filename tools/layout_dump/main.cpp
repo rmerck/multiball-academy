@@ -366,7 +366,8 @@ int main() {
     list("standups", table::kStandups, [&letter](const table::Capsule& c) {
       std::printf("{\"shape\": ");
       capsule(c);
-      std::printf(", \"letter\": \"%c\"}", "TAXI"[letter++ % 4]);
+      // T-A-X-I, the deck's A-C-E, RADAR.
+      std::printf(", \"letter\": \"%c\"}", "TAXIACERAD"[letter++ % 10]);
     });
   }
   std::printf("  \"drone\": {\"radius\": %.1f, \"y\": %.1f, \"leftX\": %.1f, \"rightX\": %.1f, "
@@ -385,6 +386,7 @@ int main() {
     std::printf(", \"id\": \"%s\"}", name(t.id));
   });
   list("bayDoors", table::kDropTargets, [](const table::Capsule& c) { capsule(c); });
+  list("bogeys", table::kBogeys, [](const table::Capsule& c) { capsule(c); });
   list("lockBays", table::kLockBays, [](Vec2 p) { point(p); });
   list("rollovers", table::kRollovers, [](const table::Rollover& r) {
     const Vec2 half = table::rolloverHalfSize(r);

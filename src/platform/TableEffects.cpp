@@ -77,6 +77,8 @@ art::Rgb holeColour(std::size_t hole) noexcept {
       return art::kFxOrange;
     case table::kRunwayHole:
       return art::kFxViolet;
+    case table::kCatHole:
+      return art::kFxOrange;
     default:
       return art::kFxMagenta;
   }
@@ -235,8 +237,17 @@ void TableEffects::drawUnderlay(SDL_Renderer* r, const LightShow& show, bool lig
     // Brighter the higher the game (steady light, eased: not a flash).
     const float strength =
         art::kGiStrength + (art::kGiStrengthTop - art::kGiStrength) * show.energy();
-    SDL_SetTextureColorMod(textures_.gi, 255, 255, 255);
-    SDL_SetTextureAlphaModFloat(textures_.gi, std::min(1.0F, strength * gi));
+    if (textures_.giGrey) {
+      // Table A: one light, the Altitude's colour (day blue at FL100 to
+      // night violet at FL500), over the grey map.
+      const art::Rgb colour = altitudeGiColour(show.giColour());
+      const float a = art::kAGiStrength + (art::kAGiStrengthTop - art::kAGiStrength) * show.energy();
+      SDL_SetTextureColorMod(textures_.gi, colour.r, colour.g, colour.b);
+      SDL_SetTextureAlphaModFloat(textures_.gi, std::min(1.0F, a * gi));
+    } else {
+      SDL_SetTextureColorMod(textures_.gi, 255, 255, 255);
+      SDL_SetTextureAlphaModFloat(textures_.gi, std::min(1.0F, strength * gi));
+    }
     SDL_RenderTexture(r, textures_.gi, nullptr, &field);
   }
   // The GI bulbs round the rim, in the Altitude's colour: day blue at
@@ -310,9 +321,11 @@ void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const L
   for (std::size_t i = 0; i < table::kRollovers.size(); ++i) {
     const float f = show.rolloverFlash(i);
     if (f > 0.0F) {
-      const bool top = table::kRollovers[i].group == table::RolloverGroup::TopLane;
-      glow_.add(r, glow, table::kRollovers[i].zone.center, 40.0F,
-                top ? art::kFxYellow : art::kFxCyan, 0.8F * f);
+      const table::RolloverGroup group = table::kRollovers[i].group;
+      const art::Rgb colour = group == table::RolloverGroup::TopLane ? art::kFxYellow
+                              : group == table::RolloverGroup::Flaps ? art::kFxWhite
+                                                                     : art::kFxCyan;
+      glow_.add(r, glow, table::kRollovers[i].zone.center, 40.0F, colour, 0.8F * f);
     }
   }
   // Revision 3. The training drone: its armour lights as it is struck,
@@ -329,7 +342,10 @@ void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const L
     if (const float f = show.standupFlash(i); f > 0.0F) {
       const table::Capsule& shape = table::kStandups[i];
       const Vec2 mid = (shape.a + shape.b) * 0.5F;
-      glow_.add(r, glow, mid, 50.0F, art::kFxYellow, 0.8F * f);
+      // T-A-X-I in yellow, the deck's A-C-E in its pink.
+      const bool deck = i >= table::kDeckStandupA;
+      glow_.add(r, glow, mid, deck ? 36.0F : 50.0F, deck ? art::kFxMagenta : art::kFxYellow,
+                0.8F * f);
       glow_.add(r, glow, mid, 14.0F, art::kFxWhite, 0.6F * f);
     }
   }
@@ -337,6 +353,36 @@ void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const L
     const Vec2 mid = table::kCaptiveHome;
     glow_.add(r, glow, mid, 60.0F, art::kFxLime, 0.8F * f);
     ring_.add(r, ring, mid, 12.0F + 30.0F * (1.0F - f), art::kFxWhite, 0.6F * f);
+  }
+  // Concept A's devices. The Flight Deck glows while a ball is on it, and
+  // the Prop Wash with its spin (steady lights, eased: never flashes).
+  if (const float d = show.deckLevel(); d > 0.0F) {
+    glow_.add(r, glow, table::kDeckCenter, table::kDeckHalfSize * 1.25F, art::kFxMagenta,
+              0.32F * d);
+  }
+  if (const float w = show.propWashLevel(); w > 0.0F) {
+    glow_.add(r, glow, table::kPropWash.center, table::kPropWash.radius * 1.9F, art::kFxCyan,
+              0.30F * w);
+    glow_.add(r, glow, table::kPropWash.center, table::kPropWash.radius * 0.7F, art::kFxWhite,
+              0.18F * w);
+  }
+  // The Air Pocket: a soft violet pool while it is on, a ring when it
+  // catches a ball.
+  if (game.airPocketOn()) {
+    glow_.add(r, glow, table::kAirPocketCenter, 40.0F, art::kFxViolet, 0.22F);
+  }
+  if (const float f = show.airPocketFlash(); f > 0.0F) {
+    glow_.add(r, glow, table::kAirPocketCenter, 64.0F, art::kFxViolet, 0.8F * f);
+    ring_.add(r, ring, table::kAirPocketCenter, 14.0F + 40.0F * (1.0F - f), art::kFxMagenta,
+              0.7F * f);
+  }
+  // The pylon: a yellow glow while it stands, a flash when struck.
+  if (game.pylonUp()) {
+    glow_.add(r, glow, table::kPylon.center, 30.0F, art::kFxYellow, 0.30F);
+  }
+  if (const float f = show.pylonFlash(); f > 0.0F) {
+    glow_.add(r, glow, table::kPylon.center, 56.0F, art::kFxYellow, 0.85F * f);
+    ring_.add(r, ring, table::kPylon.center, 12.0F + 30.0F * (1.0F - f), art::kFxWhite, 0.6F * f);
   }
   // The spinners glow with their turns: the lane's lime, the circuits'
   // (revision 3) cyan, at their mouths.
@@ -406,7 +452,27 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
   }
   // The domes themselves, lit in their colour (their unlit bases are in
   // the art), under their light.
-  if (textures_.dome != nullptr) {
+  if (textures_.domeSheet != nullptr) {
+    // Table A: the dome's own lit cell (28 units, two pixels each).
+    constexpr float kCell = art::sheet::kFlasherDomes.cellW;
+    for (const fx::BurstView& b : bursts.span()) {
+      const table::FlasherId dome = fx::domeOf(b.where);
+      if (dome == table::FlasherId::Count) {
+        continue;
+      }
+      const auto k = static_cast<std::size_t>(dome);
+      const int frame = art::flasher_domes::kHangarOn + static_cast<int>(k);
+      const auto columns = art::sheet::kFlasherDomes.columns;
+      const SDL_FRect src{static_cast<float>(frame % columns) * kCell * 2.0F,
+                          static_cast<float>(frame / columns) * kCell * 2.0F, kCell * 2.0F,
+                          kCell * 2.0F};
+      SDL_SetTextureAlphaModFloat(textures_.domeSheet, std::min(1.0F, b.level * 1.4F));
+      const Vec2 at = table::kFlasherDomes[k];
+      const SDL_FRect dst{at.x - kCell * 0.5F, at.y - kCell * 0.5F, kCell, kCell};
+      SDL_RenderTexture(r, textures_.domeSheet, &src, &dst);
+    }
+    SDL_SetTextureAlphaMod(textures_.domeSheet, 255);
+  } else if (textures_.dome != nullptr) {
     for (const fx::BurstView& b : bursts.span()) {
       const table::FlasherId dome = fx::domeOf(b.where);
       if (dome == table::FlasherId::Count) {

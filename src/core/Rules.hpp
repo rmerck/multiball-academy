@@ -231,6 +231,11 @@ struct BonusTally {
   std::uint64_t total = 0;  // The sum times the multiplier: what was paid.
 };
 
+class Rules;
+// Concept A's lamps (the ladders, the altimeter, F-L-A-P-S, the deck): what
+// Rules::lampState answers for them, from the rules' public queries alone.
+[[nodiscard]] LampState conceptLampState(const Rules& rules, table::LampId lamp) noexcept;
+
 // The rules of the game: scoring, balls, sorties, multiball and messages.
 // Concept A (docs/RULES.md): the code's "course" is a sortie, "Briefing" the
 // Mission scoop, "circuit" a loop, "Turbine" the Afterburner lane, "turbo"
@@ -346,6 +351,8 @@ class Rules {
   }
   void setPylonPolicy(int policy) noexcept { pylonPolicy_ = policy < 0 || policy > 2 ? 0 : policy; }
   void onPylon() noexcept;
+  // Concept A G2 stub (G5 owns the BOGEY rules): a target struck down.
+  void onBogey(std::size_t index) noexcept;
   // F-L-A-P-S: letters lit this ball.
   bool flapLit(std::size_t letter) const noexcept {
     return letter < flapsLit_.size() && flapsLit_[letter];
@@ -353,6 +360,9 @@ class Rules {
   // T-A-X-I (stand-ups 0 to 3) and the deck's A-C-E (stand-ups 4 to 6).
   bool taxiLit(std::size_t letter) const noexcept {
     return letter < taxiLit_.size() && taxiLit_[letter];
+  }
+  bool radarLit(std::size_t letter) const noexcept {
+    return letter < radarLit_.size() && radarLit_[letter];
   }
   bool aceLit(std::size_t letter) const noexcept {
     return letter < aceLit_.size() && aceLit_[letter];
@@ -462,6 +472,14 @@ class Rules {
   // Completed bay-door banks that light the lock (tuning::kBanksPerLock in
   // play): 1 for tests and benches of the bank and the lock themselves.
   void setBanksPerLock(int banks) noexcept { banksPerLock_ = std::clamp(banks, 1, tuning::kBanksPerLock); }
+  // Whether the lock also needs the BOGEY bank cleared (DECISIONS.md 10; on
+  // in play): off for tests of the doors and the lock themselves.
+  void setLockNeedsBogey(bool needs) noexcept { lockNeedsBogey_ = needs; }
+  // The BOGEY bank has been cleared since the last lock.
+  bool bogeyCleared() const noexcept { return bogeyCleared_; }
+  bool bogeyMarked(std::size_t index) const noexcept {
+    return index < bogeyMarked_.size() && bogeyMarked_[index];
+  }
   // The Altitude never below this level (0 to progression::kTopLevel), now
   // and at every new game: for measuring each level's table with the bots,
   // and for the tools' stills.
@@ -893,6 +911,10 @@ class Rules {
   std::uint64_t jackpotAdd_ = 0;
   int banks_ = 0;
   int banksPerLock_ = tuning::kBanksPerLock;
+  bool lockNeedsBogey_ = true;
+  std::array<bool, 3> bogeyMarked_{};
+  bool bogeyCleared_ = false;
+  std::array<bool, 3> radarLit_{};
 
   // The rules' own source of chance: the same events give the same game.
   std::uint64_t random_ = 0xD1B54A32D192ED03ULL;

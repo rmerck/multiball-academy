@@ -48,6 +48,8 @@ enum class Touch : std::uint8_t {
   DeckDrain,    // Concept A: taken by the deck drain.
   Pylon,        // Concept A: the pop-up pylon.
   Flaps,        // Concept A: an F-L-A-P-S rollover (flush; passed through).
+  Bogey,        // Concept A G2: a BOGEY drop target.
+  Radar,        // Concept A G2: a RADAR stand-up.
   Count,
 };
 inline constexpr std::size_t kTouchCount = static_cast<std::size_t>(Touch::Count);
@@ -108,6 +110,7 @@ class TableHarness {
   std::array<std::uint64_t, table::kDropTargets.size()> doorHits{};
   std::array<std::uint64_t, table::kRollovers.size()> rolloverHits{};
   std::array<std::uint64_t, table::kHoles.size()> holeHits{};
+  std::array<std::uint64_t, table::kBogeys.size()> bogeyHits{};
   std::uint32_t deckRidesSeen_ = 0;
   std::array<std::uint64_t, table::kSlingshots.size()> slingHits{};
   // T-A-X-I, then the captive ball's switch.

@@ -253,7 +253,7 @@ void testCourses() {
     CHECK(rules.course() == idx(CourseId::Gunnery) && rules.coursesStarted() == 1);
   }
 
-  {  // Qualifiers: each sortie is lit by its own shots, which hold the
+  {  // Qualifiers (RADAR for FORMATION, BOGEY for NIGHT LANDING): each sortie is lit by its own shots, which hold the
      // Mission's offer, and the scoop starts the qualified sortie.
     RulesBench bench = single();
     Rules& rules = bench.rules;
@@ -284,16 +284,21 @@ void testCourses() {
       rules.onDrone();
     }
     CHECK(rules.courseQualified(idx(CourseId::Gunnery)));
-    rules.onStandup(0, 100.0F);
-    rules.onStandup(0, 100.0F);  // A letter lit already counts once.
-    rules.onStandup(1, 100.0F);
-    rules.onStandup(2, 100.0F);
-    CHECK(rules.taxiLit(0) && !rules.courseQualified(idx(CourseId::Formation)));
-    rules.onStandup(3, 100.0F);
-    CHECK(rules.courseQualified(idx(CourseId::Formation)) && !rules.taxiLit(0));
-    rules.onTarget(0);
-    rules.onTarget(1);
-    CHECK(rules.courseQualified(idx(CourseId::NightLanding)) && rules.extraCreditLit());
+    for (std::size_t i = 0; i < 4; ++i) {  // T-A-X-I scores and lights nothing.
+      rules.onStandup(i, 100.0F);
+    }
+    CHECK(!rules.courseQualified(idx(CourseId::Formation)));
+    rules.onStandup(table::kRadarStandup, 100.0F);
+    rules.onStandup(table::kRadarStandup, 100.0F);  // A letter lit already counts once.
+    rules.onStandup(table::kRadarStandup + 1, 100.0F);
+    CHECK(rules.radarLit(0) && !rules.courseQualified(idx(CourseId::Formation)));
+    rules.onStandup(table::kRadarStandup + 2, 100.0F);
+    CHECK(rules.courseQualified(idx(CourseId::Formation)) && !rules.radarLit(0));
+    rules.onBogey(0);
+    rules.onBogey(1);
+    CHECK(rules.bogeyMarked(1) && !rules.courseQualified(idx(CourseId::NightLanding)));
+    rules.onBogey(2);
+    CHECK(rules.courseQualified(idx(CourseId::NightLanding)) && rules.bogeyCleared());
     rules.onCaptiveBall(100.0F);
     CHECK(rules.gForce() == 1 && rules.lampState(LampId::GForce1) == LampState::On &&
           rules.lampState(LampId::GForce2) == LampState::Blink);

@@ -294,6 +294,7 @@ void testSound() {
     {
       pinball::Game game;
       Seam::rules(game).setBanksPerLock(1);
+      Seam::rules(game).setLockNeedsBogey(false);
       for (std::size_t door = 0; door < pinball::table::kDropTargets.size(); ++door) {
         Seam::rules(game).onDropTarget(door);
       }

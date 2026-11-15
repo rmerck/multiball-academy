@@ -8,6 +8,7 @@
 #include <memory>
 #include <span>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -196,6 +197,14 @@ std::array<LampSprite, table::kLamps.size()> makeLampSprites() noexcept {
           sprites[i] = {.insert = {centred(lamp.position, size, size), 0.0},
                         .kind = InsertKind::Round,
                         .glowRadius = art::kLadderDiameter * art::kRoundGlowRadiusPerDiameter};
+          break;
+        }
+        case art::InsertShape::Pip: {
+          // Concept A's progress pips and deck letters: a smaller round insert.
+          const float size = art::kPipDiameter * art::kInsertRoundPerDiameter;
+          sprites[i] = {.insert = {centred(lamp.position, size, size), 0.0},
+                        .kind = InsertKind::Round,
+                        .glowRadius = art::kPipDiameter * art::kRoundGlowRadiusPerDiameter};
           break;
         }
       }
@@ -558,6 +567,51 @@ float drawnScale(const BallView& ball, bool reduceMotion) noexcept {
   return ball.scale * holeLook(ball.sink, reduceMotion).scale;
 }
 
+// --- Table A's sheets ------------------------------------------------------------------
+// A cell of a sheet (generated/ArtPalette.hpp art::sheet: two pixels to the
+// unit), at its place: centred on at (turned by angle degrees, scaled), or
+// at the sheet's own corner.
+void drawCell(SDL_Renderer* r, SDL_Texture* texture, const art::Sheet& sheet, int frame, Vec2 at,
+              double angle = 0.0, float scale = 1.0F) noexcept {
+  if (texture == nullptr || frame < 0 || frame >= sheet.frames) {
+    return;
+  }
+  const float pw = sheet.cellW * 2.0F;
+  const float ph = sheet.cellH * 2.0F;
+  const SDL_FRect src{static_cast<float>(frame % sheet.columns) * pw,
+                      static_cast<float>(frame / sheet.columns) * ph, pw, ph};
+  const SDL_FRect dst = sheet.centred
+                            ? centred(at, sheet.cellW * scale, sheet.cellH * scale)
+                            : SDL_FRect{sheet.x, sheet.y, sheet.cellW, sheet.cellH};
+  if (angle == 0.0) {
+    SDL_RenderTexture(r, texture, &src, &dst);
+  } else {
+    SDL_RenderTextureRotated(r, texture, &src, &dst, angle, nullptr, SDL_FLIP_NONE);
+  }
+}
+
+// A jet bumper's cap, bumper i, drawn for a bumper of the given radius:
+// unlit, with its lit cell over it at lit (0 to 1).
+void drawJetCap(SDL_Renderer* r, SDL_Texture* caps, std::size_t i, float radius, float lit) noexcept {
+  const float scale = radius / art::kAJetCapRadii[i];
+  const Vec2 at = table::kBumpers[i].shape.center;
+  const int off = art::jet_caps::kJet1Off + 2 * static_cast<int>(i);
+  drawCell(r, caps, art::sheet::kJetCaps, off, at, 0.0, scale);
+  lit = std::clamp(lit, 0.0F, 1.0F);
+  if (lit > 0.01F) {
+    SDL_SetTextureAlphaModFloat(caps, lit);
+    drawCell(r, caps, art::sheet::kJetCaps, off + 1, at, 0.0, scale);
+    SDL_SetTextureAlphaMod(caps, 255);
+  }
+}
+
+// The Flight Deck's plate: its middle, and the share of the plate the flood
+// of light covers (art::sheet::kFlightDeck: the cell is the plate).
+constexpr Vec2 kDeckMiddle{art::sheet::kFlightDeck.x + art::sheet::kFlightDeck.cellW * 0.5F,
+                           art::sheet::kFlightDeck.y + art::sheet::kFlightDeck.cellH * 0.5F};
+// The deck's own flasher dome (art: on the top of the deck's left wall).
+constexpr Vec2 kDeckDome{476.0F, 165.0F};
+
 }  // namespace
 
 std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
@@ -584,12 +638,28 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
     failed = failed || !texture;
     return texture;
   };
-  // The playfield art belongs to one layout of the table. A build without
-  // it draws the table from the layout itself. Concept A (G0/G1): the art in
-  // the bundle is revision 3's, so the table is drawn from the layout until
-  // the art is redrawn for the new geometry (G7).
-  constexpr bool kArtMatchesLayout = false;
-  t.background = kArtMatchesLayout ? optional("table/background.png") : nullptr;
+  // The playfield art belongs to one layout of the table: Table A's
+  // (assets/table_a, drawn from tools/art/table_a/layout_a.json). A build
+  // without it draws the table from the layout itself.
+  t.background = optional("table_a/background.png");
+  t.tableA = t.background != nullptr;
+  if (t.tableA) {
+    t.a.drone = required(art::sheet::kDrone.file);
+    t.a.propwash = required(art::sheet::kPropwash.file);
+    t.a.propwashBlur = required(art::sheet::kPropwashBlur.file);
+    t.a.pylon = required(art::sheet::kPylon.file);
+    t.a.bayDoor = required(art::sheet::kBayDoor.file);
+    t.a.flightDeck = required(art::sheet::kFlightDeck.file);
+    t.a.rampRunway = required(art::sheet::kRampRunway.file);
+    t.a.rampSkyway = required(art::sheet::kRampSkyway.file);
+    t.a.jetCaps = required(art::sheet::kJetCaps.file);
+    t.a.domes = required(art::sheet::kFlasherDomes.file);
+    t.a.arrows = required(art::sheet::kInsertsArrows.file);
+    t.a.flaps = required(art::sheet::kInsertsFlaps.file);
+    t.a.rungs = required(art::sheet::kInsertsAltitude.file);
+    t.a.plate = required(art::sheet::kAltitudePlate.file);
+    t.a.captiveBall = required("sprites/captive_ball.png");
+  }
   if (!t.background && !failed) {
     t.background = makePlayfieldTexture(renderer);
     failed = !t.background;
@@ -602,7 +672,7 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
   t.glow = required("sprites/glow.png");
   t.flare = required("sprites/flare.png");
   t.ring = required("sprites/ring.png");
-  t.gi = required("sprites/gi.png");
+  t.gi = required(t.tableA ? "table_a/gi.png" : "sprites/gi.png");
   t.pool = required("sprites/pool.png");
   t.flasherDome = required("sprites/flasher_dome.png");
   t.bar = required("sprites/bar.png");
@@ -685,7 +755,9 @@ TableRenderer::TableRenderer(Textures textures, std::vector<SDL_Vertex> outside)
                         .ring = textures_.ring.get(),
                         .gi = textures_.gi.get(),
                         .pool = textures_.pool.get(),
-                        .dome = textures_.flasherDome.get()});
+                        .dome = textures_.flasherDome.get(),
+                        .domeSheet = textures_.a.domes.get(),
+                        .giGrey = textures_.tableA});
 }
 
 OverlayArt TableRenderer::overlayArt() const noexcept {
@@ -726,7 +798,12 @@ void TableRenderer::drawBumpers(SDL_Renderer* r, const Game& game, const LightSh
     const SDL_FRect dst = centred(bumper.shape.center, half * 2.0F, half * 2.0F);
     setTint(body, blendRgb(art::kTintBumper, art::kTintBumperFlash, flash), 1.0F);
     SDL_RenderTexture(r, body, nullptr, &dst);
-    SDL_RenderTexture(r, cap, nullptr, &dst);
+    if (textures_.tableA) {
+      drawJetCap(r, textures_.a.jetCaps.get(), i, bumper.shape.radius * (1.0F + kBumperPop * flash),
+                 flash);
+    } else {
+      SDL_RenderTexture(r, cap, nullptr, &dst);
+    }
     drawGlow(r, bumper.shape.center, bumper.shape.radius * kBumperGlowPerRadius,
              art::kTintBumperFlash, flash * kBumperGlowStrength);
   }
@@ -784,6 +861,13 @@ void TableRenderer::drawElements(SDL_Renderer* r, const Game& game,
                                  const TableLights& lights) const {
   elements_.clear();
   Mesh mesh(elements_);
+  // Concept A G2: the BOGEY drop targets that stand (placeholder colour);
+  // down, nothing is drawn where they stood.
+  for (std::size_t i = 0; i < table::kBogeys.size(); ++i) {
+    if (game.bogeyUp(i)) {
+      mesh.capsule(table::kBogeys[i], kSwitchColor);
+    }
+  }
   // Doors that have dropped lie flat: an outline where each stood.
   if (!game.doorBankUp()) {
     for (const table::Capsule& door : table::kDropTargets) {
@@ -949,6 +1033,10 @@ void TableRenderer::drawTargets(SDL_Renderer* r, const Game& game,
   }
   // The bay doors stand while the bank is up: steel, or orange with a light
   // of their own once marked. Down, the art's door track shows.
+  if (textures_.tableA) {
+    drawDoorsA(r, game, lights);
+    return;
+  }
   if (!game.doorBankUp()) {
     return;
   }
@@ -1022,6 +1110,13 @@ void TableRenderer::drawLitBumpers(SDL_Renderer* r, const Game& game,
     SDL_RenderTexture(r, body, nullptr, &dst);
     const float capScale =
         radius / kBumperSpriteRadius * (1.0F + 0.03F * pulse * gi + 0.22F * flash);
+    if (textures_.tableA) {
+      // The jet's intake glows with its lamp's pulse and lights up whole
+      // when struck.
+      drawJetCap(r, textures_.a.jetCaps.get(), i, capScale * kBumperSpriteRadius,
+                 std::max(flash, 0.35F * pulse * gi));
+      continue;
+    }
     const SDL_FRect capDst = centred(bumper.shape.center, 64.0F * capScale, 64.0F * capScale);
     SDL_RenderTexture(r, cap, nullptr, &capDst);
   }
@@ -1174,13 +1269,20 @@ void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls,
   // round, over what is under the rail. The ball carries its own dark rim,
   // so it needs no halo: nothing lighter than it is drawn after it.
   for (const bool raised : {false, true}) {
+    drawBallRound(r, balls, raised, reduceMotion);
+  }
+}
+
+void TableRenderer::drawBallRound(SDL_Renderer* r, std::span<const BallView> balls, bool raised,
+                                  bool reduceMotion, float through) const {
+  {
     const auto inRound = [raised](const BallView& ball) noexcept {
       return ball.visible && ball.raised == raised;
     };
     if (std::ranges::none_of(balls, inRound)) {
-      continue;
+      return;
     }
-    if (raised) {
+    if (raised && through >= 1.0F) {
       drawBallShadows(r, balls, true, reduceMotion);
     }
 
@@ -1198,7 +1300,7 @@ void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls,
       const SDL_FRect dst = centred(ball.drawnAt(), size, size);
       const auto shade = static_cast<Uint8>(std::lround(255.0F * look.shade));
       SDL_SetTextureColorMod(sprite, shade, shade, shade);
-      SDL_SetTextureAlphaMod(sprite, toByte(look.alpha));
+      SDL_SetTextureAlphaMod(sprite, toByte(look.alpha * through));
       SDL_RenderTexture(r, sprite, nullptr, &dst);
     }
     SDL_SetTextureColorMod(sprite, 255, 255, 255);
@@ -1326,6 +1428,13 @@ void TableRenderer::drawTable(SDL_Renderer* r, const Game& game, float alpha, in
   drawSubway(r, balls.span());
   if (textures_.backgroundFromLayout) {
     drawElements(r, game, lights);
+  } else if (textures_.tableA) {
+    // Flush: the altimeter's pointer, the turning Prop Wash, then the lit
+    // inserts over the art's unlit ones; the raised Flight Deck over them.
+    drawFloorA(r, game, show);
+    drawInsertsA(r, game, lights, show);
+    drawDeckA(r, game, show);
+    drawSpinnerAndKickback(r, game);
   } else {
     drawLamps(r, lights, show);
     drawSpinnerAndKickback(r, game);
@@ -1339,12 +1448,20 @@ void TableRenderer::drawTable(SDL_Renderer* r, const Game& game, float alpha, in
     effects_.drawBallPools(r, balls.span(), *show);
   }
   drawBallShadows(r, balls.span(), false, options.reduceMotion);
+  if (textures_.tableA) {
+    drawStandupsA(r, game);
+  }
   drawTargets(r, game, lights);
   if (show != nullptr) {
     effects_.drawElementFlashes(r, game, *show);
   }
   drawBumpers(r, game, show);
-  drawDrone(r, game, show);
+  if (textures_.tableA) {
+    drawPylonA(r, game);
+    drawDroneA(r, game, show);
+  } else {
+    drawDrone(r, game, show);
+  }
   drawLaneGate(r, balls.span());
   drawSlingshotFlashes(r, game, show);
   drawPlunger(r, game);
@@ -1356,7 +1473,17 @@ void TableRenderer::drawTable(SDL_Renderer* r, const Game& game, float alpha, in
     SDL_RenderGeometry(r, textures_.background.get(), outsideMesh_.data(),
                        static_cast<int>(outsideMesh_.size()), nullptr, 0);
   }
-  drawBalls(r, balls.span(), options.reduceMotion);
+  if (textures_.tableA) {
+    // The clear ramps pass over the balls on the table; a ball riding one
+    // goes over it.
+    drawBallRound(r, balls.span(), false, options.reduceMotion);
+    drawRampsA(r, game, lights, show);
+    // A ball under the plastic still reads as the ball: seen through it.
+    drawBallRound(r, balls.span(), false, options.reduceMotion, art::kABallThrough);
+    drawBallRound(r, balls.span(), true, options.reduceMotion);
+  } else {
+    drawBalls(r, balls.span(), options.reduceMotion);
+  }
   if (show != nullptr) {
     effects_.drawBallGlints(r, game, balls.span(), *show);
   }
@@ -1431,6 +1558,412 @@ void TableRenderer::drawAttract(SDL_Renderer* r, const Game& game, float alpha,
     SDL_RenderFillRect(r, &to);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
   }
+}
+
+
+// --- Table A -----------------------------------------------------------------------------
+
+float TableRenderer::Toggle::progress(bool now, std::uint64_t step, std::uint64_t length) noexcept {
+  if (!seen || step < since) {
+    // First look, or a game started again: settled where it is.
+    seen = true;
+    on = now;
+    since = step >= length ? step - length : 0;
+    return 1.0F;
+  }
+  if (now != on) {
+    on = now;
+    since = step;
+  }
+  const std::uint64_t gone = step - since;
+  return gone >= length ? 1.0F : static_cast<float>(gone) / static_cast<float>(length);
+}
+
+int TableRenderer::altitudeOf(const Game& game, const LightShow* show) noexcept {
+  const int level = show != nullptr ? show->altitude() : game.rules().altitude();
+  return std::clamp(level, 0, 4);
+}
+
+void TableRenderer::drawFloorA(SDL_Renderer* r, const Game& game, const LightShow* show) const {
+  const int altitude = altitudeOf(game, show);
+  // The altimeter's pointer at the level: an overlay on the plate the art
+  // bakes, whose top-left corner is the plate's.
+  const art::Sheet& plate = art::sheet::kAltitudePlate;
+  drawCell(r, textures_.a.plate.get(), plate, art::altitude_plate::kFl100 + altitude,
+           {art::kAAltitudePlateX + plate.cellW * 0.5F, art::kAAltitudePlateY + plate.cellH * 0.5F});
+  // The Prop Wash: its sheets loop over a third of a turn (three blades),
+  // sharp 5 degrees a frame; at FL400 and over, where it spins at its
+  // fastest, the motion-blurred sheet, 10 degrees a frame.
+  constexpr float kPeriod = 120.0F;
+  const float degrees = std::fmod(game.propWashAngle() * kRadiansToDegrees, kPeriod);
+  const float turn = degrees < 0.0F ? degrees + kPeriod : degrees;
+  const bool blur = altitude >= 3 && game.rules().altitudeKnobs().propWashSpin > 0.0F;
+  const art::Sheet& sheet = blur ? art::sheet::kPropwashBlur : art::sheet::kPropwash;
+  const int frame =
+      static_cast<int>(turn / kPeriod * static_cast<float>(sheet.frames)) % sheet.frames;
+  drawCell(r, (blur ? textures_.a.propwashBlur : textures_.a.propwash).get(), sheet, frame,
+           table::kPropWash.center);
+}
+
+void TableRenderer::drawInsertsA(SDL_Renderer* r, const Game& game, const TableLights& lights,
+                                 const LightShow* show) const {
+  const Rules& rules = game.rules();
+  const int altitude = altitudeOf(game, show);
+  const std::uint64_t step = show != nullptr ? show->step() : game.stepCount();
+  const bool still = show == nullptr || show->reduceMotion();
+  const float gi = show != nullptr ? show->giLevel() : 1.0F;
+  const auto layoutLevel = [&](std::size_t id) noexcept {
+    const auto lamp = static_cast<table::LampId>(id);
+    if (show != nullptr) {
+      return std::pair{show->lampLevel(lamp), show->lampLit(lamp)};
+    }
+    return std::pair{lights.lamps[id] ? 1.0F : 0.0F, lights.lamps[id]};
+  };
+  // A slow wave, 0 to 1, for the lamps the renderer runs itself: never a
+  // blink (WCAG 2.3.1), under Reduce Motion a steady half.
+  const auto wave = [&](float periodSeconds, float phase) noexcept {
+    if (still) {
+      return 0.5F;
+    }
+    const float t = static_cast<float>(static_cast<double>(step) * Game::kStepSeconds) / periodSeconds;
+    return 0.5F + 0.5F * std::sin(2.0F * table::kPi * (t + phase));
+  };
+  for (const art::AInsert& insert : art::kAInserts) {
+    float level = 0.0F;
+    bool lit = false;
+    switch (insert.group) {
+      case art::AGroup::Layout: {
+        std::tie(level, lit) = layoutLevel(static_cast<std::size_t>(insert.index));
+        break;
+      }
+      case art::AGroup::Ladder: {
+        // The progress pips behind a shot's arrow run toward it while the
+        // arrow is lit, and follow its level otherwise.
+        const auto arrow = static_cast<std::size_t>(insert.index / 3);
+        const int pip = insert.index % 3;
+        const auto [arrowLevel, arrowLit] = layoutLevel(arrow);
+        level = arrowLit ? 0.45F + 0.55F * wave(1.2F, -0.22F * static_cast<float>(pip))
+                         : arrowLevel * 0.6F;
+        break;
+      }
+      case art::AGroup::Altitude:
+        // The ladder up to the Altitude: the level itself full, those below
+        // it held.
+        if (insert.index <= altitude) {
+          level = insert.index == altitude ? 1.0F : 0.7F;
+          lit = insert.index == altitude;
+        }
+        break;
+      case art::AGroup::Flaps:
+        lit = rules.flapLit(static_cast<std::size_t>(insert.index));
+        level = lit ? 1.0F : 0.0F;
+        break;
+      case art::AGroup::Multiball:
+        lit = rules.ballsLive() > 1;
+        level = lit ? 0.6F + 0.4F * wave(1.0F, 0.0F) : 0.0F;
+        break;
+      case art::AGroup::DeckLit:
+        lit = rules.deckLit();
+        level = lit ? 1.0F : 0.0F;
+        break;
+      case art::AGroup::Approach: {
+        // The rabbit: a light running up the runway's approach rows, bottom
+        // to top, once every 1.5 s, in the Altitude's colour.
+        if (show == nullptr || gi <= 0.0F) {
+          break;
+        }
+        constexpr int kRows = 6;
+        if (still) {
+          level = art::kAApproach * 0.5F * gi;
+          break;
+        }
+        const float t = std::fmod(static_cast<float>(static_cast<double>(step) * Game::kStepSeconds) /
+                                      1.5F,
+                                  1.0F);
+        const float head = static_cast<float>(kRows) * (1.0F - t);  // Row 5 (bottom) to 0.
+        const float behind = static_cast<float>(insert.index) - head;  // Rows the head has passed.
+        const float tail = behind >= 0.0F && behind < 2.5F ? 1.0F - behind / 2.5F : 0.0F;
+        level = art::kAApproach * gi * tail;
+        break;
+      }
+      case art::AGroup::Bogey:
+      case art::AGroup::Radar:
+      case art::AGroup::SafetyPost:
+        break;  // Provisional until the geometry builds them (TABLE_A_G1.md): the art's lens alone.
+    }
+    if (level <= art::kAUnlitFloor * 0.5F) {
+      continue;  // The art's unlit lens.
+    }
+    level = std::min(level, 1.0F);
+    art::Rgb neon = insert.neon;
+    float neonLevel = insert.neonLevel;
+    if (insert.group == art::AGroup::Approach && show != nullptr) {
+      neon = mixRgb(altitudeGiColour(show->giColour()), art::kFxWhite, 0.25F);
+      neonLevel = 1.0F;
+    }
+    SDL_Texture* texture = nullptr;
+    const art::Sheet* sheet = nullptr;
+    int frame = 0;
+    float glowRadius = insert.size * art::kRoundGlowRadiusPerDiameter;
+    switch (insert.shape) {
+      case art::AShape::Arrow:
+      case art::AShape::ArrowMission:
+        texture = textures_.a.arrows.get();
+        sheet = &art::sheet::kInsertsArrows;
+        frame = insert.shape == art::AShape::Arrow ? art::inserts_arrows::kArrow
+                                                   : art::inserts_arrows::kArrowMission;
+        glowRadius = insert.size * art::kArrowGlowRadiusPerSize;
+        break;
+      case art::AShape::Pip:
+        texture = textures_.a.arrows.get();
+        sheet = &art::sheet::kInsertsArrows;
+        frame = art::inserts_arrows::kPip;
+        break;
+      case art::AShape::Rung:
+        texture = textures_.a.rungs.get();
+        sheet = &art::sheet::kInsertsAltitude;
+        frame = insert.index;
+        glowRadius = 20.0F;
+        break;
+      case art::AShape::Flaps:
+        texture = textures_.a.flaps.get();
+        sheet = &art::sheet::kInsertsFlaps;
+        frame = insert.index;
+        glowRadius = 14.0F;
+        break;
+      case art::AShape::Round:
+      case art::AShape::Hex:
+      case art::AShape::Chevron:
+        break;
+    }
+    const Vec2 at{insert.x, insert.y};
+    if (sheet != nullptr) {
+      setTint(texture, neon, neonLevel);
+      SDL_SetTextureAlphaModFloat(texture, level);
+      drawCell(r, texture, *sheet, frame, at, static_cast<double>(insert.angle));
+      SDL_SetTextureAlphaMod(texture, 255);
+    } else {
+      // The round, hex and chevron lenses: main's insert sprites, as
+      // makeLampSprites sizes them.
+      SDL_Texture* const lens = insert.shape == art::AShape::Hex       ? textures_.insertHex.get()
+                                : insert.shape == art::AShape::Chevron ? textures_.insertChevron.get()
+                                                                       : textures_.insertRound.get();
+      float w = insert.size * art::kInsertRoundPerDiameter;
+      float h = w;
+      if (insert.shape == art::AShape::Hex) {
+        w = h = 16.0F * (insert.size + 3.0F) / 11.0F;
+      } else if (insert.shape == art::AShape::Chevron) {
+        w = insert.size + 6.0F;
+        h = w * 56.0F / 96.0F;
+      }
+      setTint(lens, neon, neonLevel);
+      SDL_SetTextureAlphaModFloat(lens, level);
+      const SDL_FRect dst = centred(at, w, h);
+      SDL_RenderTexture(r, lens, nullptr, &dst);
+      SDL_SetTextureAlphaMod(lens, 255);
+    }
+    // Its light: a halo, and for a lamp lit by the rules a hot core and a
+    // star, as drawLitLamps gives main's lamps.
+    if (show != nullptr) {
+      const float above = std::clamp((std::max(level, lit ? 0.65F : 0.0F) - fx::kUnlitFloor) /
+                                         (1.0F - fx::kUnlitFloor),
+                                     0.0F, 1.0F);
+      const float halo = above * std::sqrt(above);
+      const float strength = art::kNeonGlowStrength * (lit ? 1.0F : 0.7F);
+      effects_.addGlow(r, at, glowRadius * (lit ? 3.0F : 2.0F), neon, 0.5F * strength * halo);
+      effects_.addGlow(r, at, glowRadius * 1.5F, neon, strength * halo);
+      if (lit) {
+        effects_.addGlow(r, at, glowRadius * 0.6F, mixRgb(neon, art::kFxWhite, 0.55F), 0.55F);
+        effects_.addFlare(r, at, glowRadius * 1.4F, neon, 0.4F);
+      }
+    } else if (lit) {
+      drawGlow(r, at, glowRadius, neon, art::kLampGlowStrength);
+    }
+  }
+  if (show != nullptr) {
+    effects_.endLayer(r);
+  }
+}
+
+void TableRenderer::drawDeckA(SDL_Renderer* r, const Game& game, const LightShow* show) const {
+  const bool open = game.rules().deckLit();
+  const int altitude = altitudeOf(game, show);
+  drawCell(r, textures_.a.flightDeck.get(), art::sheet::kFlightDeck,
+           open ? art::flight_deck::kLitFl100 + altitude : art::flight_deck::kOff, {});
+  // The deck's interior would read as a dark hole under the table's light:
+  // a flood in the GI's colour over the plate, stronger while it is open.
+  const art::Rgb colour = show != nullptr ? altitudeGiColour(show->giColour())
+                                          : art::kAltitudeGi[static_cast<std::size_t>(altitude)];
+  const float gi = show != nullptr ? show->giLevel() : 1.0F;
+  const float flood = (open ? art::kADeckFloodOn : art::kADeckFloodOff) * gi;
+  if (flood > 0.0F) {
+    const float h = art::sheet::kFlightDeck.cellH;
+    for (const float dy : {-0.28F, 0.0F, 0.28F}) {
+      drawGlow(r, {kDeckMiddle.x, kDeckMiddle.y + dy * h}, art::sheet::kFlightDeck.cellW * 0.62F,
+               colour, flood);
+    }
+  }
+  // Its flasher dome stands on the deck's wall, over the plate: unlit, or
+  // glowing steadily while the deck is open.
+  SDL_Texture* const domes = textures_.a.domes.get();
+  drawCell(r, domes, art::sheet::kFlasherDomes, art::flasher_domes::kDeckOff, kDeckDome);
+  if (open) {
+    SDL_SetTextureAlphaModFloat(domes, 0.75F);
+    drawCell(r, domes, art::sheet::kFlasherDomes, art::flasher_domes::kDeckOn, kDeckDome);
+    SDL_SetTextureAlphaMod(domes, 255);
+    drawGlow(r, kDeckDome, 26.0F, art::kAqua, 0.30F);
+  }
+}
+
+void TableRenderer::drawStandupsA(SDL_Renderer* r, const Game& game) const {
+  // The deck's A-C-E stand-ups stand on the deck plate, which covers the
+  // art's playfield there: drawn over it, as the art draws stand-ups.
+  SDL_Texture* const bar = textures_.bar.get();
+  setTint(bar, art::kYellow, 0.85F);
+  for (std::size_t i = table::kDeckStandupA; i < table::kStandups.size(); ++i) {
+    const table::Capsule& shape = table::kStandups[i];
+    const Vec2 run = shape.b - shape.a;
+    const float length = std::sqrt(run.x * run.x + run.y * run.y);
+    const float width = (kBarSpriteLength + 2.0F * (kBarSpriteRadius + kBarSpriteMargin)) *
+                        (length / kBarSpriteLength);
+    const float height = 2.0F * (shape.radius + kBarSpriteMargin) * 1.1F;
+    const SDL_FRect dst = centred((shape.a + shape.b) * 0.5F, width, height);
+    SDL_RenderTextureRotated(r, bar, nullptr, &dst,
+                             static_cast<double>(std::atan2(run.y, run.x) * kRadiansToDegrees),
+                             nullptr, SDL_FLIP_NONE);
+  }
+  // G2: the BOGEY drop targets, while each stands (down, the art's slot
+  // shows), on the same bar, orange.
+  setTint(bar, art::kOrange, 0.85F);
+  for (std::size_t i = 0; i < table::kBogeys.size(); ++i) {
+    if (!game.bogeyUp(i)) {
+      continue;
+    }
+    const table::Capsule& shape = table::kBogeys[i];
+    const Vec2 run = shape.b - shape.a;
+    const float length = std::sqrt(run.x * run.x + run.y * run.y);
+    const float width = (kBarSpriteLength + 2.0F * (kBarSpriteRadius + kBarSpriteMargin)) *
+                        (length / kBarSpriteLength);
+    const float height = 2.0F * (shape.radius + kBarSpriteMargin) * 1.1F;
+    const SDL_FRect dst = centred((shape.a + shape.b) * 0.5F, width, height);
+    SDL_RenderTextureRotated(r, bar, nullptr, &dst,
+                             static_cast<double>(std::atan2(run.y, run.x) * kRadiansToDegrees),
+                             nullptr, SDL_FLIP_NONE);
+  }
+  // The captive ball, in its channel (the G-FORCE housing is in the art).
+  const Vec2 at = game.captivePosition();
+  const float size = art::kCaptiveBallSpriteUnits;
+  const SDL_FRect ball = centred(at, size, size);
+  SDL_RenderTexture(r, textures_.a.captiveBall.get(), nullptr, &ball);
+}
+
+void TableRenderer::drawDoorsA(SDL_Renderer* r, const Game& game, const TableLights& lights) const {
+  // Standing, closed; dropping for a fifth of a second; then the open slot.
+  constexpr std::uint64_t kDropSteps = 24;
+  const bool up = game.doorBankUp();
+  const float settled = doorToggle_.progress(up, game.stepCount(), kDropSteps);
+  const int frame = up ? (settled < 1.0F ? art::bay_door::kDropping : art::bay_door::kClosed)
+                       : (settled < 1.0F ? art::bay_door::kDropping : art::bay_door::kOpen);
+  SDL_Texture* const door = textures_.a.bayDoor.get();
+  for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
+    const table::Capsule& shape = table::kDropTargets[i];
+    const Vec2 centre{(shape.a.x + shape.b.x) * 0.5F, shape.a.y};
+    const bool marked = up && lights.doorsMarked[i];
+    setTint(door, marked ? art::kTintDoorMarked : art::kTintDoor, 1.0F);
+    drawCell(r, door, art::sheet::kBayDoor, frame, centre);
+    if (marked) {
+      drawGlow(r, centre, kDoorGlowRadius, art::kOrange, kDoorGlowStrength);
+    }
+  }
+  SDL_SetTextureColorMod(door, 255, 255, 255);
+}
+
+void TableRenderer::drawPylonA(SDL_Renderer* r, const Game& game) const {
+  // Rising through its bezel over a sixth of a second, and sinking back.
+  constexpr std::uint64_t kRiseSteps = 20;
+  const bool up = game.pylonUp();
+  const float t = pylonToggle_.progress(up, game.stepCount(), kRiseSteps);
+  const float height = up ? t : 1.0F - t;  // 0 down, 1 up.
+  const int frame = height >= 0.999F  ? art::pylon::kUp
+                    : height >= 0.5F  ? art::pylon::kRise2
+                    : height > 0.001F ? art::pylon::kRise1
+                                      : art::pylon::kDown;
+  drawCell(r, textures_.a.pylon.get(), art::sheet::kPylon, frame, table::kPylon.center);
+}
+
+void TableRenderer::drawDroneA(SDL_Renderer* r, const Game& game, const LightShow* show) const {
+  const DroneView drone = game.drone();
+  const float sink = std::clamp(drone.sink, 0.0F, 1.0F);
+  if (sink >= 1.0F) {
+    return;
+  }
+  const float struck = std::clamp(show != nullptr ? show->droneFlash() : drone.recoil, 0.0F, 1.0F);
+  int frame = art::drone::kArmour6;
+  float scale = 1.0F;
+  if (drone.knocked) {
+    // Knocked down: its armour gone, tilting and sinking into the floor.
+    frame = sink < 0.5F ? art::drone::kDown1 : art::drone::kDown2;
+  } else if (!drone.up) {
+    frame = art::drone::kDive;  // Diving out of play (or coming back up).
+    scale = 1.0F - table::kHoleSinkShrink * sink;
+  } else if (struck > 0.5F) {
+    frame = art::drone::kHit;
+  } else {
+    // Six plates, for the five hits that knock it down.
+    const int hits = std::clamp(game.rules().droneHits(), 0, 5);
+    frame = art::drone::kArmour6 + (hits * 6 + 2) / 5;
+  }
+  // Small on a busy table: a lock-on reticle round it while it is up, a
+  // slow-turning ring in the drone's orange, steady (never a flash).
+  if (drone.up && sink < 0.5F) {
+    const bool still = show == nullptr || show->reduceMotion();
+    const double seconds = static_cast<double>(game.stepCount()) * Game::kStepSeconds;
+    const float spin = still ? 0.0F : static_cast<float>(std::fmod(seconds * 0.25, 1.0)) * 360.0F;
+    const float reach = table::kDroneRadius * 2.1F;
+    drawGlow(r, drone.position, reach * 1.3F, art::kOrange, 0.22F + 0.2F * struck);
+    motion_.clear();
+    Mesh mesh(motion_);
+    SDL_FColor bracket = rgb(art::kFxOrange.r, art::kFxOrange.g, art::kFxOrange.b);
+    bracket.a = art::kAReticle;
+    for (int k = 0; k < 4; ++k) {
+      const float a = (spin + 45.0F + 90.0F * static_cast<float>(k)) / kRadiansToDegrees;
+      const float b = a + 0.42F;
+      const Vec2 p{drone.position.x + reach * std::cos(a), drone.position.y + reach * std::sin(a)};
+      const Vec2 q{drone.position.x + reach * std::cos(b), drone.position.y + reach * std::sin(b)};
+      const Vec2 in{drone.position.x + (reach - 7.0F) * std::cos(a),
+                    drone.position.y + (reach - 7.0F) * std::sin(a)};
+      mesh.line(p, q, 3.2F, bracket);
+      mesh.line(in, p, 3.2F, bracket);
+      mesh.disc(p, 1.6F, bracket);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_RenderGeometry(r, nullptr, motion_.data(), static_cast<int>(motion_.size()), nullptr, 0);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+  }
+  SDL_Texture* const sprite = textures_.a.drone.get();
+  const auto shade = static_cast<Uint8>(std::lround(255.0F * (1.0F - table::kHoleSinkDarken * sink)));
+  SDL_SetTextureColorMod(sprite, shade, shade, shade);
+  drawCell(r, sprite, art::sheet::kDrone, frame, drone.position, 0.0, scale);
+  SDL_SetTextureColorMod(sprite, 255, 255, 255);
+  if (show == nullptr && drone.recoil > 0.0F) {
+    drawGlow(r, drone.position, table::kDroneRadius * 3.0F, art::kOrange,
+             art::kMaxGlowStrength * std::clamp(drone.recoil, 0.0F, 1.0F));
+  }
+}
+
+void TableRenderer::drawRampsA(SDL_Renderer* r, const Game& game, const TableLights& lights,
+                               const LightShow* show) const {
+  const auto lit = [&](table::LampId id) noexcept {
+    return show != nullptr ? show->lampLit(id) : lights.lit(id);
+  };
+  drawCell(r, textures_.a.rampRunway.get(), art::sheet::kRampRunway,
+           lit(table::LampId::ArrowRunway) ? art::ramp_runway::kLit : art::ramp_runway::kNormal, {});
+  // The Skyway's diverter flap shows where its next ball goes.
+  const bool toDeck = game.rules().deckLit();
+  const bool skyLit = lit(table::LampId::ArrowSkyway);
+  const int frame = toDeck ? (skyLit ? art::ramp_skyway::kToDeckLit : art::ramp_skyway::kToDeck)
+                           : (skyLit ? art::ramp_skyway::kLit : art::ramp_skyway::kNormal);
+  drawCell(r, textures_.a.rampSkyway.get(), art::sheet::kRampSkyway, frame, {});
 }
 
 }  // namespace pinball

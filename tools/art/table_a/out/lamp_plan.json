@@ -1,0 +1,1490 @@
+{
+ "counts": {
+  "decor": 24,
+  "layout": 58,
+  "proposed": 40
+ },
+ "lamps": [
+  {
+   "aim": [
+    118.0,
+    440.0
+   ],
+   "c": [
+    118.0,
+    512.0
+   ],
+   "colour": "#63E6D8",
+   "id": 0,
+   "name": "ArrowCircuitLeft",
+   "shape": "arrow",
+   "source": "layout"
+  },
+  {
+   "aim": [
+    192.0,
+    425.0
+   ],
+   "c": [
+    204.0,
+    470.0
+   ],
+   "colour": "#B98CFF",
+   "id": 1,
+   "name": "ArrowRunway",
+   "shape": "arrow",
+   "source": "layout"
+  },
+  {
+   "aim": [
+    279.0,
+    392.0
+   ],
+   "c": [
+    282.0,
+    440.0
+   ],
+   "colour": "#FF6B1A",
+   "id": 2,
+   "name": "ArrowHangar",
+   "shape": "arrow",
+   "source": "layout"
+  },
+  {
+   "aim": [
+    441.0,
+    400.0
+   ],
+   "c": [
+    432.0,
+    468.0
+   ],
+   "colour": "#FFD23C",
+   "id": 3,
+   "name": "ArrowBriefing",
+   "shape": "arrow_mission",
+   "source": "layout"
+  },
+  {
+   "aim": [
+    356.0,
+    415.0
+   ],
+   "c": [
+    356.0,
+    458.0
+   ],
+   "colour": "#2ED16B",
+   "id": 4,
+   "name": "ArrowTurbine",
+   "shape": "arrow",
+   "source": "layout"
+  },
+  {
+   "aim": [
+    519.0,
+    425.0
+   ],
+   "c": [
+    507.0,
+    470.0
+   ],
+   "colour": "#FF2E88",
+   "id": 5,
+   "name": "ArrowSkyway",
+   "shape": "arrow",
+   "source": "layout"
+  },
+  {
+   "aim": [
+    593.0,
+    440.0
+   ],
+   "c": [
+    593.0,
+    512.0
+   ],
+   "colour": "#63E6D8",
+   "id": 6,
+   "name": "ArrowCircuitRight",
+   "shape": "arrow",
+   "source": "layout"
+  },
+  {
+   "c": [
+    262.0,
+    416.0
+   ],
+   "colour": "#FF6B1A",
+   "d": 20.0,
+   "id": 7,
+   "name": "Lock1",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    296.0,
+    416.0
+   ],
+   "colour": "#FF6B1A",
+   "d": 20.0,
+   "id": 8,
+   "name": "Lock2",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    262.0,
+    560.0
+   ],
+   "colour": "#B98CFF",
+   "d": 22.0,
+   "id": 9,
+   "name": "Course1",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    293.0,
+    584.0
+   ],
+   "colour": "#B98CFF",
+   "d": 22.0,
+   "id": 10,
+   "name": "Course2",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    327.0,
+    596.0
+   ],
+   "colour": "#B98CFF",
+   "d": 22.0,
+   "id": 11,
+   "name": "Course3",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    384.0,
+    596.0
+   ],
+   "colour": "#B98CFF",
+   "d": 22.0,
+   "id": 12,
+   "name": "Course4",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    418.0,
+    584.0
+   ],
+   "colour": "#B98CFF",
+   "d": 22.0,
+   "id": 13,
+   "name": "Course5",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    449.0,
+    560.0
+   ],
+   "colour": "#B98CFF",
+   "d": 22.0,
+   "id": 14,
+   "name": "Course6",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    355.5,
+    572.0
+   ],
+   "colour": "#FFD23C",
+   "d": 22.0,
+   "id": 15,
+   "name": "Graduation",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    334.0,
+    498.0
+   ],
+   "colour": "#63E6D8",
+   "d": 20.0,
+   "id": 16,
+   "name": "ExtraCredit",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    378.0,
+    498.0
+   ],
+   "colour": "#FF2E88",
+   "d": 20.0,
+   "id": 17,
+   "name": "ExtraBall",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    402.0,
+    520.0
+   ],
+   "colour": "#FFD23C",
+   "d": 20.0,
+   "id": 18,
+   "name": "Overdrive",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    356.0,
+    520.0
+   ],
+   "colour": "#2ED16B",
+   "d": 20.0,
+   "id": 19,
+   "name": "TurboCharge",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    59.0,
+    662.0
+   ],
+   "colour": "#FFD23C",
+   "d": 20.0,
+   "id": 20,
+   "name": "Kickback",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    355.5,
+    930.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 20.0,
+   "id": 21,
+   "name": "ShootAgain",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    293.0,
+    150.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 20.0,
+   "id": 22,
+   "name": "RollCall1",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    355.5,
+    150.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 20.0,
+   "id": 23,
+   "name": "RollCall2",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    418.0,
+    150.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 20.0,
+   "id": 24,
+   "name": "RollCall3",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    59.0,
+    705.0
+   ],
+   "colour": "#63E6D8",
+   "d": 20.0,
+   "id": 25,
+   "name": "WingW",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    107.0,
+    705.0
+   ],
+   "colour": "#63E6D8",
+   "d": 20.0,
+   "id": 26,
+   "name": "WingI",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    604.0,
+    705.0
+   ],
+   "colour": "#63E6D8",
+   "d": 20.0,
+   "id": 27,
+   "name": "WingN",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    652.0,
+    705.0
+   ],
+   "colour": "#63E6D8",
+   "d": 20.0,
+   "id": 28,
+   "name": "WingG",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    356.0,
+    386.0
+   ],
+   "colour": "#2F8CFF",
+   "d": 11.0,
+   "id": 29,
+   "name": "DroneArmour1",
+   "shape": "hex",
+   "source": "layout"
+  },
+  {
+   "c": [
+    356.0,
+    373.5
+   ],
+   "colour": "#2F8CFF",
+   "d": 11.0,
+   "id": 30,
+   "name": "DroneArmour2",
+   "shape": "hex",
+   "source": "layout"
+  },
+  {
+   "c": [
+    356.0,
+    361.0
+   ],
+   "colour": "#2F8CFF",
+   "d": 11.0,
+   "id": 31,
+   "name": "DroneArmour3",
+   "shape": "hex",
+   "source": "layout"
+  },
+  {
+   "c": [
+    356.0,
+    348.5
+   ],
+   "colour": "#2F8CFF",
+   "d": 11.0,
+   "id": 32,
+   "name": "DroneArmour4",
+   "shape": "hex",
+   "source": "layout"
+  },
+  {
+   "c": [
+    356.0,
+    336.0
+   ],
+   "colour": "#2F8CFF",
+   "d": 11.0,
+   "id": 33,
+   "name": "DroneArmour5",
+   "shape": "hex",
+   "source": "layout"
+  },
+  {
+   "c": [
+    212.0,
+    370.0
+   ],
+   "colour": "#2ED16B",
+   "d": 12.0,
+   "id": 34,
+   "name": "GForce1",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    212.0,
+    356.0
+   ],
+   "colour": "#2ED16B",
+   "d": 12.0,
+   "id": 35,
+   "name": "GForce2",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    212.0,
+    342.0
+   ],
+   "colour": "#FFD23C",
+   "d": 12.0,
+   "id": 36,
+   "name": "GForce3",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    212.0,
+    328.0
+   ],
+   "colour": "#FF6B1A",
+   "d": 12.0,
+   "id": 37,
+   "name": "GForce4",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    212.0,
+    314.0
+   ],
+   "colour": "#FF2E88",
+   "d": 12.0,
+   "id": 38,
+   "name": "GForce5",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    176.0,
+    462.0
+   ],
+   "colour": "#FFD23C",
+   "d": 12.0,
+   "id": 39,
+   "name": "TaxiT",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    535.0,
+    462.0
+   ],
+   "colour": "#FFD23C",
+   "d": 12.0,
+   "id": 40,
+   "name": "TaxiA",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    221.0,
+    392.0
+   ],
+   "colour": "#FFD23C",
+   "d": 12.0,
+   "id": 41,
+   "name": "TaxiX",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    487.0,
+    450.0
+   ],
+   "colour": "#FFD23C",
+   "d": 12.0,
+   "id": 42,
+   "name": "TaxiI",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    500.0,
+    662.0
+   ],
+   "colour": "#B98CFF",
+   "d": 18.0,
+   "id": 43,
+   "name": "Rank1",
+   "shape": "chevron",
+   "source": "layout"
+  },
+  {
+   "c": [
+    500.0,
+    650.0
+   ],
+   "colour": "#B98CFF",
+   "d": 18.0,
+   "id": 44,
+   "name": "Rank2",
+   "shape": "chevron",
+   "source": "layout"
+  },
+  {
+   "c": [
+    500.0,
+    638.0
+   ],
+   "colour": "#B98CFF",
+   "d": 18.0,
+   "id": 45,
+   "name": "Rank3",
+   "shape": "chevron",
+   "source": "layout"
+  },
+  {
+   "c": [
+    500.0,
+    626.0
+   ],
+   "colour": "#B98CFF",
+   "d": 18.0,
+   "id": 46,
+   "name": "Rank4",
+   "shape": "chevron",
+   "source": "layout"
+  },
+  {
+   "c": [
+    500.0,
+    614.0
+   ],
+   "colour": "#B98CFF",
+   "d": 18.0,
+   "id": 47,
+   "name": "Rank5",
+   "shape": "chevron",
+   "source": "layout"
+  },
+  {
+   "c": [
+    500.0,
+    602.0
+   ],
+   "colour": "#B98CFF",
+   "d": 18.0,
+   "id": 48,
+   "name": "Rank6",
+   "shape": "chevron",
+   "source": "layout"
+  },
+  {
+   "c": [
+    500.0,
+    590.0
+   ],
+   "colour": "#B98CFF",
+   "d": 18.0,
+   "id": 49,
+   "name": "Rank7",
+   "shape": "chevron",
+   "source": "layout"
+  },
+  {
+   "c": [
+    262.0,
+    664.0
+   ],
+   "colour": "#63E6D8",
+   "d": 12.0,
+   "id": 50,
+   "name": "Combo2X",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    278.0,
+    658.0
+   ],
+   "colour": "#63E6D8",
+   "d": 12.0,
+   "id": 51,
+   "name": "Combo3X",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    294.0,
+    652.0
+   ],
+   "colour": "#63E6D8",
+   "d": 12.0,
+   "id": 52,
+   "name": "Combo4X",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    310.0,
+    646.0
+   ],
+   "colour": "#63E6D8",
+   "d": 12.0,
+   "id": 53,
+   "name": "Combo5X",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    449.0,
+    664.0
+   ],
+   "colour": "#FF2E88",
+   "d": 12.0,
+   "id": 54,
+   "name": "Bonus2X",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    433.0,
+    658.0
+   ],
+   "colour": "#FF2E88",
+   "d": 12.0,
+   "id": 55,
+   "name": "Bonus3X",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    417.0,
+    652.0
+   ],
+   "colour": "#FF2E88",
+   "d": 12.0,
+   "id": 56,
+   "name": "Bonus4X",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    401.0,
+    646.0
+   ],
+   "colour": "#FF2E88",
+   "d": 12.0,
+   "id": 57,
+   "name": "Bonus5X",
+   "shape": "round",
+   "source": "layout"
+  },
+  {
+   "c": [
+    118.0,
+    535.0
+   ],
+   "colour": "#63E6D8",
+   "d": 10.0,
+   "id": 100,
+   "name": "LadderCircuitLeft1",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    118.0,
+    548.0
+   ],
+   "colour": "#63E6D8",
+   "d": 10.0,
+   "id": 101,
+   "name": "LadderCircuitLeft2",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    118.0,
+    561.0
+   ],
+   "colour": "#63E6D8",
+   "d": 10.0,
+   "id": 102,
+   "name": "LadderCircuitLeft3",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    209.9,
+    492.2
+   ],
+   "colour": "#B98CFF",
+   "d": 10.0,
+   "id": 103,
+   "name": "LadderRunway1",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    213.3,
+    504.8
+   ],
+   "colour": "#B98CFF",
+   "d": 10.0,
+   "id": 104,
+   "name": "LadderRunway2",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    216.6,
+    517.3
+   ],
+   "colour": "#B98CFF",
+   "d": 10.0,
+   "id": 105,
+   "name": "LadderRunway3",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    283.4,
+    463.0
+   ],
+   "colour": "#FF6B1A",
+   "d": 10.0,
+   "id": 106,
+   "name": "LadderHangar1",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    284.2,
+    475.9
+   ],
+   "colour": "#FF6B1A",
+   "d": 10.0,
+   "id": 107,
+   "name": "LadderHangar2",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    285.1,
+    488.9
+   ],
+   "colour": "#FF6B1A",
+   "d": 10.0,
+   "id": 108,
+   "name": "LadderHangar3",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    429.0,
+    490.8
+   ],
+   "colour": "#FFD23C",
+   "d": 10.0,
+   "id": 109,
+   "name": "LadderBriefing1",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    427.3,
+    503.7
+   ],
+   "colour": "#FFD23C",
+   "d": 10.0,
+   "id": 110,
+   "name": "LadderBriefing2",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    425.6,
+    516.6
+   ],
+   "colour": "#FFD23C",
+   "d": 10.0,
+   "id": 111,
+   "name": "LadderBriefing3",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    356.0,
+    476.0
+   ],
+   "colour": "#2ED16B",
+   "d": 10.0,
+   "id": 112,
+   "name": "LadderTurbine1",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    356.0,
+    486.0
+   ],
+   "colour": "#2ED16B",
+   "d": 10.0,
+   "id": 113,
+   "name": "LadderTurbine2",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    356.0,
+    496.0
+   ],
+   "colour": "#2ED16B",
+   "d": 10.0,
+   "id": 114,
+   "name": "LadderTurbine3",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    501.1,
+    492.2
+   ],
+   "colour": "#FF2E88",
+   "d": 10.0,
+   "id": 115,
+   "name": "LadderSkyway1",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    497.7,
+    504.8
+   ],
+   "colour": "#FF2E88",
+   "d": 10.0,
+   "id": 116,
+   "name": "LadderSkyway2",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    494.4,
+    517.3
+   ],
+   "colour": "#FF2E88",
+   "d": 10.0,
+   "id": 117,
+   "name": "LadderSkyway3",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    593.0,
+    535.0
+   ],
+   "colour": "#63E6D8",
+   "d": 10.0,
+   "id": 118,
+   "name": "LadderCircuitRight1",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    593.0,
+    548.0
+   ],
+   "colour": "#63E6D8",
+   "d": 10.0,
+   "id": 119,
+   "name": "LadderCircuitRight2",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    593.0,
+    561.0
+   ],
+   "colour": "#63E6D8",
+   "d": 10.0,
+   "id": 120,
+   "name": "LadderCircuitRight3",
+   "shape": "pip",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    211.0,
+    676.0
+   ],
+   "colour": "#6FB4FF",
+   "id": 121,
+   "name": "AltitudeFL100",
+   "shape": "rung",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    211.0,
+    658.0
+   ],
+   "colour": "#F2F4FF",
+   "id": 122,
+   "name": "AltitudeFL200",
+   "shape": "rung",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    211.0,
+    640.0
+   ],
+   "colour": "#FFB050",
+   "id": 123,
+   "name": "AltitudeFL300",
+   "shape": "rung",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    211.0,
+    622.0
+   ],
+   "colour": "#FF8A5C",
+   "id": 124,
+   "name": "AltitudeFL400",
+   "shape": "rung",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    211.0,
+    604.0
+   ],
+   "colour": "#9A6BFF",
+   "id": 125,
+   "name": "AltitudeFL500",
+   "shape": "rung",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    291.0,
+    626.0
+   ],
+   "colour": "#FFF4D6",
+   "id": 126,
+   "letter": "F",
+   "name": "FlapsF",
+   "shape": "flaps",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    323.0,
+    618.0
+   ],
+   "colour": "#FFF4D6",
+   "id": 127,
+   "letter": "L",
+   "name": "FlapsL",
+   "shape": "flaps",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    355.5,
+    616.0
+   ],
+   "colour": "#FFF4D6",
+   "id": 128,
+   "letter": "A",
+   "name": "FlapsA",
+   "shape": "flaps",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    388.0,
+    618.0
+   ],
+   "colour": "#FFF4D6",
+   "id": 129,
+   "letter": "P",
+   "name": "FlapsP",
+   "shape": "flaps",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    420.0,
+    626.0
+   ],
+   "colour": "#FFF4D6",
+   "id": 130,
+   "letter": "S",
+   "name": "FlapsS",
+   "shape": "flaps",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    188.0,
+    505.0
+   ],
+   "colour": "#FF6B1A",
+   "d": 12.0,
+   "id": 131,
+   "name": "Bogey1",
+   "shape": "round",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    523.0,
+    505.0
+   ],
+   "colour": "#63E6D8",
+   "d": 12.0,
+   "id": 132,
+   "name": "Radar1",
+   "shape": "round",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    190.0,
+    525.0
+   ],
+   "colour": "#FF6B1A",
+   "d": 12.0,
+   "id": 133,
+   "name": "Bogey2",
+   "shape": "round",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    521.0,
+    525.0
+   ],
+   "colour": "#63E6D8",
+   "d": 12.0,
+   "id": 134,
+   "name": "Radar2",
+   "shape": "round",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    192.0,
+    545.0
+   ],
+   "colour": "#FF6B1A",
+   "d": 12.0,
+   "id": 135,
+   "name": "Bogey3",
+   "shape": "round",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    519.0,
+    545.0
+   ],
+   "colour": "#63E6D8",
+   "d": 12.0,
+   "id": 136,
+   "name": "Radar3",
+   "shape": "round",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    311.5,
+    848.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 137,
+   "name": "Approach1Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    848.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 138,
+   "name": "Approach1Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    848.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 139,
+   "name": "Approach1Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    848.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 140,
+   "name": "Approach1Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    311.5,
+    866.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 141,
+   "name": "Approach2Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    866.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 142,
+   "name": "Approach2Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    866.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 143,
+   "name": "Approach2Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    866.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 144,
+   "name": "Approach2Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    311.5,
+    884.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 145,
+   "name": "Approach3Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    884.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 146,
+   "name": "Approach3Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    884.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 147,
+   "name": "Approach3Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    884.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 148,
+   "name": "Approach3Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    311.5,
+    902.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 149,
+   "name": "Approach4Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    902.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 150,
+   "name": "Approach4Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    902.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 151,
+   "name": "Approach4Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    902.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 152,
+   "name": "Approach4Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    311.5,
+    920.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 153,
+   "name": "Approach5Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    920.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 154,
+   "name": "Approach5Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    920.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 155,
+   "name": "Approach5Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    920.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 156,
+   "name": "Approach5Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    311.5,
+    938.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 157,
+   "name": "Approach6Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    938.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 158,
+   "name": "Approach6Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    938.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 159,
+   "name": "Approach6Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    938.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 160,
+   "name": "Approach6Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    355.5,
+    904.0
+   ],
+   "colour": "#2ED16B",
+   "d": 14.0,
+   "id": 161,
+   "name": "SafetyPost",
+   "shape": "round",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    312.0,
+    530.0
+   ],
+   "colour": "#FFD23C",
+   "d": 14.0,
+   "id": 162,
+   "name": "Multiball",
+   "shape": "round",
+   "source": "proposed"
+  },
+  {
+   "c": [
+    540.0,
+    498.0
+   ],
+   "colour": "#FF2E88",
+   "d": 14.0,
+   "id": 163,
+   "name": "DeckLit",
+   "shape": "round",
+   "source": "proposed"
+  }
+ ],
+ "note": "every insert of concept A; source 'proposed' = not yet in table/a-geometry kLamps; 'decor' = lit by the renderer alone (approach lights)"
+}
