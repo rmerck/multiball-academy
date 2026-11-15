@@ -825,7 +825,7 @@ def build_flasher_domes():
         d = sphere(6.3, (0, 0, 2.0), gm, 48)
         d.scale = (1, 1, 0.95)
         parts.append(d)
-        core_m = mat("Core%d" % k, HEX["WHITE"], emit=HEX["CREAM"], strength=0.0)
+        core_m = mat("Core%d" % k, HEX["WHITE"], emit=HEX[cname], strength=0.0)
         parts.append(sphere(2.2, (0, 0, 4.0), core_m, 24))
         roots.append((group(parts, "Dome%d" % k), gm, core_m))
     frames = SHEETS["flasher_domes"]["frames"]
@@ -835,8 +835,8 @@ def build_flasher_domes():
         on = label.endswith("_on")
         for k, (root, gm, core_m) in enumerate(roots):
             key_show(root, f, k == i)
-            key_emit(gm, f, 7.0 if (on and k == i) else 0.25)
-            key_emit(core_m, f, 30.0 if (on and k == i) else 0.0)
+            key_emit(gm, f, 2.2 if (on and k == i) else 0.15)
+            key_emit(core_m, f, 6.0 if (on and k == i) else 0.0)
 
 
 BUILD = {
