@@ -308,7 +308,9 @@ void testSeveralBalls() {
   {  // Each ball has its own bumper latch: two balls on one bumper at the
      // same moment are both kicked, once each.
     PhysicsWorld world;
-    constexpr std::size_t kThruster = 1;  // The right-hand thruster, clear on both sides.
+    // The left-hand thruster, clear on both sides (concept A's right one has
+    // the Flight Deck's wall close on its right).
+    constexpr std::size_t kThruster = 0;
     const table::Circle& bumper = table::kBumpers[kThruster].shape;
     const float reach = bumper.radius + table::kBallRadius + 0.5F;
     world.resetBall(0, bumper.center + Vec2{-reach, 0.0F}, {0.0F, 0.0F});

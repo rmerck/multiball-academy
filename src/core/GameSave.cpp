@@ -82,6 +82,9 @@ save::RulesRecord Rules::record() const noexcept {
   r.doorCommand = std::to_underlying(doorCommand_);
   r.doorRaiseSteps = doorRaiseSteps_;
   r.droneHits = droneHits_;
+  r.altitude = altitude_;
+  r.deckLit = deckLit_;
+  r.flapsLit = flapsLit_;
   r.hangarHolding = hangarHolding_;
   r.locksHeld = locksHeld_;
   r.bayFull = bayFull_;
@@ -196,6 +199,9 @@ void Rules::restore(const save::RulesRecord& r) noexcept {
                      : DoorCommand::None;
   doorRaiseSteps_ = r.doorRaiseSteps;
   droneHits_ = r.droneHits;
+  altitude_ = r.altitude;
+  deckLit_ = r.deckLit;
+  flapsLit_ = r.flapsLit;
   hangarHolding_ = r.hangarHolding;
   locksHeld_ = r.locksHeld;
   bayFull_ = r.bayFull;
@@ -303,6 +309,7 @@ void PhysicsWorld::saveTable(save::TableRecord& r) const {
   r.plungerPull = plungerPull_;
   r.plungerReleaseSpeed = plungerReleaseSpeed_;
   r.doorBankUp = doorBankUp_;
+  r.pylonUp = pylonUp_;
   r.kickbackArmed = kickbackArmed_;
   r.droneUp = droneUp_;
   r.droneClock = droneClock_;
@@ -408,6 +415,7 @@ void PhysicsWorld::restoreTable(const save::TableRecord& r) {
   b2Body_SetTransform(plunger_, b2ToPos(toMeters(top)), b2MakeRot(0.0F));
   b2Body_SetLinearVelocity(plunger_, {0.0F, 0.0F});
   setDoorBank(r.doorBankUp);
+  setPylon(r.pylonUp);
   kickbackArmed_ = r.kickbackArmed;
   droneClock_ = r.droneClock;
   droneDownSteps_ = r.droneDownSteps;
@@ -478,6 +486,7 @@ save::Snapshot Game::snapshot() const {
     const BallState& ball = balls_[slot];
     r.holder = ball.holder;
     r.heldSteps = ball.heldSteps;
+    r.deckSteps = ball.deckSteps;
     r.wasHeld = ball.wasHeld;
     r.arrival = ball.arrival;
     r.lockBay = ball.lockBay;
@@ -551,6 +560,7 @@ bool Game::restore(const save::Snapshot& s) {
     }
     ball.holder = r.holder;
     ball.heldSteps = r.heldSteps;
+    ball.deckSteps = r.deckSteps;
     ball.wasHeld = r.wasHeld;
     ball.arrival = r.arrival;
     ball.lockBay = r.lockBay;

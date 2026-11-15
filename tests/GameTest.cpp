@@ -408,21 +408,25 @@ void testSeveralBalls() {
   }
 
   {  // The right of the nest, under the arch, is field that inPlayArea leaves
-     // out (the launch channel crosses those coordinates). A ball there is
-     // in play, for the rules and for the game alike, from its first hit.
+     // out (the launch channel crosses those coordinates); concept A's Flight
+     // Deck is there. A ball there is in play, for the rules and for the
+     // game alike, from its first hit (here the deck's E stand-up).
     Game game;
     const InputState input;
-    const Vec2 aboveBumper = table::kBumpers[1].shape.center + Vec2{10.0F, -40.0F};
-    CHECK(!table::inPlayArea(aboveBumper));
-    Seam::placeBall(game, aboveBumper);
+    const table::Capsule& e = table::kStandups[table::kDeckStandupA + 2];
+    // 24 from the stand-up's middle along its inward normal, sent at it.
+    const Vec2 inward{-0.897F, 0.442F};
+    const Vec2 aboveE = (e.a + e.b) * 0.5F + inward * 24.0F;
+    CHECK(!table::inPlayArea(aboveE) && table::onDeck(aboveE));
+    Seam::placeBall(game, 0, aboveE, inward * -200.0F);
     game.step(input);
     CHECK(!game.ballInPlay(0) && !game.rules().ballInPlay());
     int steps = 0;
-    while (game.bumperHits() == 0 && steps < 240) {
+    while (!game.ballInPlay(0) && steps < 240) {
       game.step(input);
       ++steps;
     }
-    CHECK(game.bumperHits() == 1);
+    CHECK(steps < 240);
     CHECK(!table::inPlayArea(game.ball().position));
     CHECK(game.ballInPlay(0) && game.rules().ballInPlay());
   }
@@ -917,9 +921,143 @@ void testSeveralBalls() {
   }
 }
 
+
+// Concept A (G1): the Flight Deck's holes and rides, and the Rev A.2 devices.
+void testConceptA() {
+  const InputState idle;
+  const auto stepUntil = [&idle](Game& game, int limit, auto&& done) {
+    int steps = 0;
+    while (!done() && steps < limit) {
+      game.step(idle);
+      ++steps;
+    }
+    return steps < limit;
+  };
+  {  // The Skyway's diverter: lit (forced), a Skyway rides to the deck and
+     // is set down on it; the stub rules otherwise send every other one.
+    Game game;
+    game.setDeckPolicy(1);
+    Seam::putInPlay(game);
+    const table::Hole& skyway = table::kHoles[table::kSkywayHole];
+    Seam::placeBall(game, 0, skyway.center + Vec2{0.0F, 12.0F}, {0.0F, -900.0F});
+    CHECK(stepUntil(game, 30, [&] { return game.ballHeld(); }));
+    CHECK(game.holeCount(table::kSkywayHole) == 1 && game.holeCount(table::kDeckRampHole) == 1);
+    CHECK(stepUntil(game, 240, [&] { return !game.ballHeld(); }));
+    CHECK(distance(game.ball().position, table::kDeckSetDown) < 2.0F);
+    CHECK(table::onDeck(game.ball().position));
+
+    Game alternate;
+    Seam::putInPlay(alternate);
+    for (int shot = 0; shot < 2; ++shot) {
+      Seam::placeBall(alternate, 0, skyway.center + Vec2{0.0F, 12.0F}, {0.0F, -900.0F});
+      CHECK(stepUntil(alternate, 30, [&] { return alternate.ballHeld(); }));
+      CHECK(stepUntil(alternate, 240, [&] { return !alternate.ballHeld(); }));
+    }
+    CHECK(alternate.holeCount(table::kSkywayHole) == 2);
+    CHECK(alternate.holeCount(table::kDeckRampHole) == 1);
+  }
+  {  // CAT SHOT: taken in the deck's corner, carried over the nest, and taken
+     // by the Hangar as if shot in (it locks or returns the ball).
+    Game game;
+    Seam::putInPlay(game);
+    Seam::placeBall(game, 0, table::kHoles[table::kCatHole].center, {});
+    CHECK(stepUntil(game, 10, [&] { return game.holeCount(table::kCatHole) == 1; }));
+    CHECK(game.holeCount(table::kHangarHole) == 0);
+    CHECK(stepUntil(game, 240, [&] { return game.holeCount(table::kHangarHole) == 1; }));
+    CHECK(game.ballHeld() || game.lockedBalls() == 1);
+    CHECK(stepUntil(game, 360, [&] { return !game.ballHeld() || game.lockedBalls() == 1; }));
+  }
+  {  // The deck drain: a subway to the left inlane's set-down.
+    Game game;
+    Seam::putInPlay(game);
+    Seam::placeBall(game, 0, table::kHoles[table::kDeckDrainHole].center, {});
+    CHECK(stepUntil(game, 10, [&] { return game.holeCount(table::kDeckDrainHole) == 1; }));
+    for (int i = 0; i < 40; ++i) {
+      game.step(idle);
+    }
+    const BallView riding = game.ball();
+    CHECK(!riding.visible || riding.underground);
+    CHECK(stepUntil(game, 240, [&] { return !game.ballHeld(); }));
+    CHECK(distance(game.ball().position, table::kHoles[table::kDeckDrainHole].exitPosition) < 2.0F);
+  }
+  {  // A held right button never stalls a ball on the deck: past the visit
+     // cap the deck's bat stays down, and the ball leaves the deck.
+    Game game;
+    Seam::putInPlay(game);
+    Seam::placeBall(game, 0, table::kDeckSetDown, table::kDeckSetDownVelocity);
+    InputState held;
+    held.rightFlipper = true;
+    int steps = 0;
+    while (table::onDeck(game.ball().position) && !game.ballHeld() && steps < 120 * 20) {
+      game.step(held);
+      ++steps;
+    }
+    CHECK(steps <= 120 * (static_cast<int>(table::kDeckVisitSeconds) + 3));
+  }
+  {  // The pylon: up only when wanted, never onto a ball, flush at once
+     // when not wanted.
+    Game game;
+    Seam::putInPlay(game);
+    game.step(idle);
+    CHECK(!game.pylonUp());
+    Seam::placeBall(game, 0, table::kPylon.center + Vec2{0.0F, -4.0F}, {});
+    game.setPylonPolicy(1);
+    game.step(idle);
+    CHECK(!game.pylonUp());
+    CHECK(stepUntil(game, 240, [&] { return game.pylonUp(); }));
+    CHECK(distance(game.ball().position, table::kPylon.center) >
+          table::kPylon.radius + table::kBallRadius);
+    game.setPylonPolicy(2);
+    game.step(idle);
+    CHECK(!game.pylonUp());
+  }
+  {  // The Air Pocket: off at FL100 and FL200; at FL500 it catches a ball
+     // rolling over it and lets it go up the table, never down.
+    for (const int altitude : {0, 1, 4}) {
+      Game game;
+      game.setAltitude(altitude);
+      Seam::rules(game).setBallSaveEnabled(false);
+      Seam::putInPlay(game);
+      float fastestUp = 0.0F;
+      for (int i = 0; i < 120 * 8; ++i) {
+        if (i % 120 == 0) {
+          Seam::placeBall(game, 0, table::kAirPocketCenter + Vec2{0.0F, -16.0F}, {0.0F, 60.0F});
+        }
+        game.step(idle);
+        fastestUp = std::max(fastestUp, -Seam::velocity(game, 0).y);
+      }
+      if (altitude < 2) {
+        CHECK(game.airPocketCatches() == 0);
+      } else {
+        CHECK(game.airPocketCatches() >= 2);
+        CHECK(fastestUp > 0.5F * table::kAirPocketKickSpeed);
+      }
+    }
+  }
+  {  // The Prop Wash: still at FL100; turning, it drags a slow ball on it
+     // round with the disc (clockwise on screen).
+    for (const int altitude : {0, 3}) {
+      Game game;
+      game.setAltitude(altitude);
+      Seam::putInPlay(game);
+      const Vec2 start = table::kPropWash.center + Vec2{20.0F, 0.0F};
+      Seam::placeBall(game, 0, start, {});
+      Game still;
+      Seam::putInPlay(still);
+      Seam::placeBall(still, 0, start, {});
+      for (int i = 0; i < 6; ++i) {
+        game.step(idle);
+        still.step(idle);
+      }
+      const float extraDown = Seam::velocity(game, 0).y - Seam::velocity(still, 0).y;
+      CHECK(altitude == 0 ? std::fabs(extraDown) < 1.0e-3F : extraDown > 20.0F);
+    }
+  }
+}
 }  // namespace
 
 void testGame() {
+  testConceptA();
   {  // Time is derived from the step count and does not drift.
     Game game;
     const InputState input;
@@ -1008,6 +1146,8 @@ void testGame() {
     constexpr float kLongestMove = 3000.0F / 120.0F + 8.0F;
 
     Game game;
+    // The Skyway's diverter off: the Flight Deck's ride has its own test.
+    game.setDeckPolicy(2);
     std::uint32_t drains = 0;
     std::uint32_t captures = 0;
     std::uint32_t rampRides = 0;

@@ -33,7 +33,7 @@ namespace pinball::save {
 // and its look (recoil, sinking). 5: the captive ball (table revision 3
 // integrated: the captive and motion branches each called their own record
 // format 4; neither shipped, so one version, 5, holds both).
-inline constexpr std::uint16_t kFormatVersion = 5;
+inline constexpr std::uint16_t kFormatVersion = 6;
 
 // The longest a build id may be ("2.0.0+123456789" is 15).
 inline constexpr std::size_t kMaxBuildIdLength = 32;
@@ -95,6 +95,10 @@ struct RulesRecord {
   std::uint8_t doorCommand = 0;
   std::uint32_t doorRaiseSteps = 0;
   std::int32_t droneHits = 0;  // Format 3.
+  // Format 6 (concept A): altitude 0 to 4, the deck diverter, F-L-A-P-S.
+  std::int32_t altitude = 0;
+  bool deckLit = false;
+  std::array<bool, 5> flapsLit{};
   std::int32_t hangarHolding = 0;
   std::int32_t locksHeld = 0;
   std::array<bool, Rules::kLocksNeeded> bayFull{};
@@ -176,6 +180,7 @@ struct BallRecord {
   // Game.
   table::ElementRef holder{};
   std::uint32_t heldSteps = 0;
+  std::uint32_t deckSteps = 0;  // Format 6 (concept A): steps on the Flight Deck.
   bool wasHeld = false;
   std::uint64_t arrival = 0;
   std::uint8_t lockBay = 0;  // One more than the bay; 0 if not locked.
@@ -206,6 +211,7 @@ struct TableRecord {
   std::uint32_t droneDownSteps = 0;
   float droneX = table::kDroneLeftX;
   bool droneKnocked = false;  // Format 4.
+  bool pylonUp = false;       // Format 6 (concept A).
 };
 
 // Format 5 (table revision 3): the captive ball. Its body exactly as Box2D

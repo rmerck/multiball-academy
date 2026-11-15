@@ -43,6 +43,11 @@ enum class Touch : std::uint8_t {
   Drone,        // Revision 3: the training drone.
   Standup,      // Revision 3: T-A-X-I.
   GForce,       // Revision 3: the captive ball struck.
+  DeckTarget,   // Concept A: a Flight Deck stand-up (A-C-E).
+  CatShot,      // Concept A: taken by the CAT SHOT hole.
+  DeckDrain,    // Concept A: taken by the deck drain.
+  Pylon,        // Concept A: the pop-up pylon.
+  Flaps,        // Concept A: an F-L-A-P-S rollover (flush; passed through).
   Count,
 };
 inline constexpr std::size_t kTouchCount = static_cast<std::size_t>(Touch::Count);

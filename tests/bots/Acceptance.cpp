@@ -29,7 +29,8 @@ bool isSafeFirstTouch(Touch touch) noexcept {
 }
 
 bool isPassedThrough(Touch touch) noexcept {
-  return touch == Touch::CircuitLeft || touch == Touch::CircuitRight || touch == Touch::Turbine;
+  return touch == Touch::CircuitLeft || touch == Touch::CircuitRight || touch == Touch::Turbine ||
+         touch == Touch::Flaps;
 }
 
 float speedOf(Vec2 v) noexcept { return std::sqrt(v.x * v.x + v.y * v.y); }
@@ -458,7 +459,8 @@ Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bo
     const bool isCircuit = result.shot == Touch::CircuitLeft || result.shot == Touch::CircuitRight;
     if (i >= pressStep && !dry && !decided) {
       for (const TouchEvent& event : std::span(harness.events).subspan(eventsBefore)) {
-        if (event.touch == Touch::InlaneLeft || event.touch == Touch::InlaneRight) {
+        if (event.touch == Touch::InlaneLeft || event.touch == Touch::InlaneRight ||
+            event.touch == Touch::Flaps) {
           continue;
         }
         result.shot = event.touch;
@@ -492,9 +494,50 @@ Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bo
 }  // namespace
 
 char touchChar(Touch touch) noexcept {
-  static constexpr char kChars[] = ".OLwDHSPWRQbs^ijxyc*dTG";
+  static constexpr char kChars[] = ".OLwDHSPWRQbs^ijxyc*dTGeKkYf";
   const auto index = static_cast<std::size_t>(touch);
   return index < sizeof(kChars) - 1 ? kChars[index] : '?';
+}
+
+std::string deckFan(int variant) {
+  std::string fan;
+  const float dx = static_cast<float>((variant * 3) % 7 - (variant == 0 ? 0 : 3)) * 1.5F;
+  const float dv = static_cast<float>((variant * 5) % 9 - (variant == 0 ? 0 : 4)) * 8.0F;
+  for (int press = 0; press < 120; ++press) {
+    TableHarness harness;
+    harness.put(0, {table::kDeckSetDown.x + dx, table::kDeckSetDown.y},
+                {table::kDeckSetDownVelocity.x, table::kDeckSetDownVelocity.y + dv}, true);
+    harness.events.clear();
+    char got = 0;
+    for (int i = 0; i < kStepsPerSecond * 5 && got == 0; ++i) {
+      harness.right = i >= press && i < press + ScriptedBot::kPressSteps;
+      const auto standups = harness.standupHits;
+      const std::size_t before = harness.events.size();
+      harness.advance();
+      for (std::size_t s = table::kDeckStandupA; s < table::kStandups.size(); ++s) {
+        if (harness.standupHits[s] > standups[s] && i >= press) {
+          got = "ACE"[s - table::kDeckStandupA];
+        }
+      }
+      if (got != 0) {
+        break;
+      }
+      for (const TouchEvent& e : std::span(harness.events).subspan(before)) {
+        if (e.touch == Touch::CatShot) {
+          got = 'K';
+        } else if (e.touch == Touch::DeckDrain) {
+          got = 'k';
+        } else if (e.touch != Touch::DeckTarget && i >= press) {
+          got = '?';
+        }
+        if (got != 0) {
+          break;
+        }
+      }
+    }
+    fan.push_back(got == 0 ? '.' : got);
+  }
+  return fan;
 }
 
 ShotMap shotSweep(int variants, bool bankDown) {

@@ -1685,7 +1685,8 @@ void testKickback() {
     rules.onKickback();
     CHECK(!rules.kickbackLit());
     for (std::size_t i = 0; i < table::kRollovers.size(); ++i) {
-      if (table::kRollovers[i].group != table::RolloverGroup::TopLane) {
+      if (table::kRollovers[i].group != table::RolloverGroup::TopLane &&
+          table::kRollovers[i].group != table::RolloverGroup::Flaps) {
         CHECK(!rules.kickbackLit());
         rules.onRollover(i);
       }

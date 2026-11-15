@@ -94,6 +94,12 @@ void testHoles() {
       CHECK(hole.exitPosition.x > table::kWallLeft + table::kBallRadius);
       CHECK(hole.exitPosition.x < table::kLaneWallX - table::kBallRadius);
       CHECK(hole.exitPosition.y > 60.0F && hole.exitPosition.y < table::kHeight);
+      // The Skyway's diverted ride (concept A) is never taken from the
+      // field: its box has no size.
+      if (hole.type == table::HoleType::DeckRamp) {
+        CHECK(hole.halfSize.x == 0.0F && hole.halfSize.y == 0.0F);
+        continue;
+      }
       CHECK(hole.halfSize.x > 0.0F && hole.halfSize.y >= 9.0F);
       // A hole ignores the ball it has just returned until it is clear, so
       // the exit must be where that works: within the rearm distance of its
@@ -224,6 +230,9 @@ void testHoles() {
         }
       }
     }
+    if (enters != 1) {
+      std::printf("rollover %zu entered %zu times\n", i, enters);
+    }
     CHECK(enters == 1);
   }
 
@@ -307,6 +316,11 @@ void testHoles() {
   // each time.
   for (std::size_t h = 0; h < table::kHoles.size(); ++h) {
     const table::Hole& hole = table::kHoles[h];
+    // The Flight Deck's set-down is on the deck, above its own flipper
+    // (concept A: GameTest's deck block checks it).
+    if (hole.type == table::HoleType::DeckRamp) {
+      continue;
+    }
     for (int j = 0; j < 12; ++j) {
       PhysicsWorld world;
       const float dx = (static_cast<float>(j % 4) - 1.5F) * 0.3F;

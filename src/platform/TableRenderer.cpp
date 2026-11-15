@@ -395,6 +395,14 @@ std::vector<SDL_Vertex> makePlayfieldMesh() {
     mesh.capsule(standup, kSwitchColor);
   }
   mesh.capsule(table::kCaptiveSwitch, kSwitchColor);
+  // Concept A: the CAT SHOT's rail and the deck drain's subway; the Prop
+  // Wash disc, the Air Pocket and the pylon's socket (each drawn live in
+  // drawElements as well).
+  mesh.polyline(table::kCatRail, 3.0F, kRampColor, false);
+  mesh.polyline(table::kDeckSubway, 2.0F, kMarkColor, false);
+  mesh.ring(table::kPropWash.center, table::kPropWash.radius, 2.0F, kMarkColor);
+  mesh.ring(table::kAirPocketCenter, table::kAirPocketRadius, 2.0F, kMarkColor);
+  mesh.ring(table::kPylon.center, table::kPylon.radius, 2.0F, kMarkColor);
 
   for (const table::Capsule& wall : table::kAllWalls) {
     mesh.capsule(wall, kWallColor);
@@ -569,8 +577,11 @@ std::unique_ptr<TableRenderer> TableRenderer::create(SDL_Renderer* renderer,
     return texture;
   };
   // The playfield art belongs to one layout of the table. A build without
-  // it draws the table from the layout itself.
-  t.background = optional("table/background.png");
+  // it draws the table from the layout itself. Concept A (G0/G1): the art in
+  // the bundle is revision 3's, so the table is drawn from the layout until
+  // the art is redrawn for the new geometry (G7).
+  constexpr bool kArtMatchesLayout = false;
+  t.background = kArtMatchesLayout ? optional("table/background.png") : nullptr;
   if (!t.background && !failed) {
     t.background = makePlayfieldTexture(renderer);
     failed = !t.background;
@@ -785,6 +796,21 @@ void TableRenderer::drawElements(SDL_Renderer* r, const Game& game,
     const float turn = 2.0F * table::kPi * game.spinnerPhase(i);
     mesh.line(table::kSpinners[i].a, table::kSpinners[i].b,
               2.0F + (kBladeDepth - 2.0F) * std::fabs(std::cos(turn)), kBladeColor);
+  }
+  // Concept A (placeholder drawing): the pylon standing, the Air Pocket
+  // pulling, the Prop Wash's three blades turning.
+  if (game.pylonUp()) {
+    mesh.disc(table::kPylon.center, table::kPylon.radius, kLitColor);
+  }
+  if (game.airPocketOn()) {
+    mesh.ring(table::kAirPocketCenter, table::kAirPocketRadius, 4.0F, kLitColor);
+  }
+  const float prop = game.propWashAngle();
+  for (int blade = 0; blade < 3; ++blade) {
+    const float a = prop + static_cast<float>(blade) * 2.0F * table::kPi / 3.0F;
+    const Vec2 tip{table::kPropWash.center.x + std::cos(a) * table::kPropWash.radius * 0.85F,
+                   table::kPropWash.center.y + std::sin(a) * table::kPropWash.radius * 0.85F};
+    mesh.line(table::kPropWash.center, tip, 5.0F, kBladeColor);
   }
   SDL_RenderGeometry(r, nullptr, elements_.data(), static_cast<int>(elements_.size()), nullptr, 0);
 }
@@ -1060,14 +1086,17 @@ void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game, float alpha,
     if (atRest) {
       flipper.angle = table::kFlippers[i].restAngle;
     }
-    const SDL_FRect dst{flipper.pivot.x - pivotInSprite.x, flipper.pivot.y - pivotInSprite.y,
-                        kFlipperSpriteWidth, kFlipperSpriteHeight};
+    // A shorter bat (the Flight Deck's) is the same sprite drawn smaller.
+    const float scale = table::kFlippers[i].length / table::kFlipperLength;
+    const SDL_FPoint pivotAt{pivotInSprite.x * scale, pivotInSprite.y * scale};
+    const SDL_FRect dst{flipper.pivot.x - pivotAt.x, flipper.pivot.y - pivotAt.y,
+                        kFlipperSpriteWidth * scale, kFlipperSpriteHeight * scale};
     // The right flipper points left, so its sprite is mirrored top to bottom
-    // to keep the highlight on the upper edge.
-    const SDL_FlipMode flip = i == table::kRightFlipperIndex ? SDL_FLIP_VERTICAL : SDL_FLIP_NONE;
+    // to keep the highlight on the upper edge (the deck's bat points left too).
+    const SDL_FlipMode flip = i != table::kLeftFlipperIndex ? SDL_FLIP_VERTICAL : SDL_FLIP_NONE;
     SDL_RenderTextureRotated(r, sprite, nullptr, &dst,
-                             static_cast<double>(flipper.angle * kRadiansToDegrees),
-                             &pivotInSprite, flip);
+                             static_cast<double>(flipper.angle * kRadiansToDegrees), &pivotAt,
+                             flip);
   }
 }
 

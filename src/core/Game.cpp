@@ -496,7 +496,9 @@ void Game::step(const InputState& input) {
     sounds_ |= soundBit(Sound::Launch);
   }
 
-  physics_.setFlippers(playable && input.leftFlipper, playable && input.rightFlipper);
+  physics_.setFlippers(playable && input.leftFlipper, playable && input.rightFlipper,
+                       deckFlipperAllowed());
+  driveDevices(playable);
   physics_.setPlunger(playable && input.plunger);
   physics_.step(static_cast<float>(kStepSeconds));
 
@@ -626,6 +628,12 @@ void Game::handleEvents() {
       case Standup:
         hitSounds |= soundBit(Sound::Target);
         rules_.onStandup(index, event.speed);
+        break;
+      case Pylon:
+        if (physics_.pylonUp()) {
+          hitSounds |= soundBit(Sound::Target);
+          rules_.onPylon();
+        }
         break;
       case CaptiveBall:
         hitSounds |= soundBit(Sound::Target);
@@ -783,12 +791,26 @@ void Game::tellRulesOfCapture(std::size_t slot) {
   if (by.kind != table::ElementKind::Hole || by.index >= table::kHoles.size()) {
     return;
   }
-  ++holeCounts_[by.index];
   if (live) {
     sounds_ |= soundBit(Sound::HoleIn);
   }
-  const Rules::HoleResult result = rules_.onHole(by.index, slot);
-  if (table::kHoles[by.index].type != table::HoleType::Hangar) {
+  tellRulesOfHole(slot, by.index);
+}
+
+void Game::tellRulesOfHole(std::size_t slot, std::size_t hole) {
+  ++holeCounts_[hole];
+  // Concept A: the Skyway's diverter, as lit before this Skyway was made.
+  const bool toDeck = table::kHoles[hole].type == table::HoleType::RampRight && rules_.deckLit();
+  const Rules::HoleResult result = rules_.onHole(hole, slot);
+  if (toDeck) {
+    const table::ElementRef deck{table::ElementKind::Hole,
+                                 static_cast<std::uint8_t>(table::kDeckRampHole)};
+    balls_[slot].holder = deck;
+    physics_.setHeldBy(slot, deck);
+    ++holeCounts_[table::kDeckRampHole];
+    return;
+  }
+  if (table::kHoles[hole].type != table::HoleType::Hangar) {
     return;  // Only the Hangar can do anything but return the ball.
   }
   if (result == Rules::HoleResult::Lock) {
@@ -828,6 +850,24 @@ void Game::updateHeldBall(std::size_t slot) {
 
   const std::size_t index = ball.holder.index;
   const table::Hole& hole = table::kHoles[index];
+  if (hole.type == table::HoleType::CatShot) {
+    // Concept A: the CAT SHOT rides over the nest; at the end of the ride
+    // the Hangar takes the ball as if it had been shot in, and locks or
+    // returns it.
+    ++ball.heldSteps;
+    if (static_cast<double>(ball.heldSteps) * kStepSeconds >= table::kCatRideSeconds) {
+      const table::ElementRef hangar{table::ElementKind::Hole,
+                                     static_cast<std::uint8_t>(table::kHangarHole)};
+      ball.holder = hangar;
+      physics_.setHeldBy(slot, hangar);
+      ball.heldSteps = 0;
+      ball.arrival = ++arrivals_;
+      ball.takenAt = table::kHoles[table::kHangarHole].center;
+      ball.takenStep = stepCount_ + 1;
+      tellRulesOfHole(slot, table::kHangarHole);
+    }
+    return;
+  }
   if (table::isRamp(hole.type)) {
     // Each ball rides the rail on its own clock.
     ++ball.heldSteps;
@@ -866,7 +906,10 @@ void Game::updateHeldBall(std::size_t slot) {
                    hangar ? table::kLockReleaseSpacingSeconds : kHoleReleaseSpacingSeconds)) {
     return;
   }
-  const Vec2 velocity = hangar ? nextHangarExitVelocity() : nextScoopExitVelocity();
+  const Vec2 velocity = hangar ? nextHangarExitVelocity()
+                               : (hole.type == table::HoleType::DeckDrain
+                                      ? jittered(hole.exitVelocity)
+                                      : nextScoopExitVelocity());
   returnBall(slot, index, hole.exitPosition, velocity);
   ball.ejectStep = stepCount_ + 1;
   ball.ejectFromBay = locked;
@@ -927,6 +970,15 @@ void Game::applyRules() {
     rules_.onDoorBank(true);
   }
   physics_.setKickbackArmed(rules_.kickbackLit());
+  // Concept A: the pylon rises when the rules want it and nothing is over
+  // it; it goes flush at once when they do not.
+  if (rules_.pylonWanted()) {
+    if (!physics_.pylonUp() && physics_.pylonSpotClear()) {
+      physics_.setPylon(true);
+    }
+  } else if (physics_.pylonUp()) {
+    physics_.setPylon(false);
+  }
   // Locked balls the rules let go without a ball entering the Hangar, and
   // balls they want launched. A request past the three-ball limit is
   // refused, never kept.
@@ -1054,6 +1106,75 @@ void Game::updateDrone() {
   }
   droneWasUp_ = up;
   droneWasKnocked_ = knocked;
+}
+
+namespace {
+// The Air Pocket's kicks: up the table at 25 to 65 degrees above level, to
+// either side (written out: no library trigonometry in the physics' path).
+constexpr std::array<Vec2, 5> kKickDirections{{
+    {0.906308F, -0.422618F},
+    {0.819152F, -0.573576F},
+    {0.707107F, -0.707107F},
+    {0.573576F, -0.819152F},
+    {0.422618F, -0.906308F},
+}};
+}  // namespace
+
+bool Game::deckFlipperAllowed() {
+  // The Flight Deck's visit cap (CONCEPT.md risk 1): a ball may stay on the
+  // deck for kDeckVisitSeconds; past that the deck's bat stays down whatever
+  // the button does, until the ball has left (by the drain, or the CAT
+  // SHOT). A held button can never stall the deck.
+  bool allowed = true;
+  const std::uint32_t cap = stepsIn(table::kDeckVisitSeconds);
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    BallState& ball = balls_[slot];
+    if (!physics_.ballActive(slot) || physics_.ballHeld(slot) ||
+        !table::onDeck(physics_.ballPosition(slot))) {
+      ball.deckSteps = 0;
+      continue;
+    }
+    ball.deckSteps = std::min(ball.deckSteps + 1U, cap + 1U);
+    allowed = allowed && ball.deckSteps <= cap;
+  }
+  return allowed;
+}
+
+void Game::driveDevices(bool playable) {
+  using AirPocket = PhysicsWorld::AirPocket;
+  const int altitude = rules_.altitude();
+  AirPocket mode = AirPocket::Off;
+  Vec2 kick{};
+  const double period = table::airPocketPeriodSeconds(altitude);
+  // Never while a drain would be saved (the saver, a multiball's grace).
+  if (period > 0.0 && playable && !rules_.ballSaveActive()) {
+    const std::uint64_t periodSteps = stepsIn(period);
+    const std::uint64_t onSteps = stepsIn(table::kAirPocketOnSeconds);
+    const std::uint64_t now = stepCount_ + 1;
+    const std::uint64_t phase = now % periodSteps;
+    if (phase < onSteps) {
+      mode = AirPocket::Pull;
+    } else if (phase == onSteps) {
+      mode = AirPocket::Release;
+      // Side and angle from the pulse's number: the same every run.
+      std::uint64_t h = now / periodSteps + 0x9E3779B97F4A7C15ULL;
+      h = (h ^ (h >> 30U)) * 0xBF58476D1CE4E5B9ULL;
+      h = (h ^ (h >> 27U)) * 0x94D049BB133111EBULL;
+      h ^= h >> 31U;
+      const Vec2 d = kKickDirections[(h >> 1U) % kKickDirections.size()];
+      kick = Vec2{(h & 1U) != 0U ? d.x : -d.x, d.y} * table::kAirPocketKickSpeed;
+    }
+  }
+  airPocketOn_ = mode == AirPocket::Pull;
+  physics_.setDevices(mode, kick, table::propWashSpin(altitude));
+}
+
+float Game::propWashAngle() const noexcept {
+  const float spin = table::propWashSpin(rules_.altitude());
+  const double turns = static_cast<double>(spin) * static_cast<double>(stepCount_) * kStepSeconds /
+                       (2.0 * static_cast<double>(table::kPi));
+  return static_cast<float>((turns - static_cast<double>(static_cast<std::int64_t>(turns))) * 2.0 *
+                            static_cast<double>(table::kPi));
 }
 
 DroneView Game::drone() const noexcept {
@@ -1202,17 +1323,27 @@ BallView Game::ballView(std::size_t slot) const {
     view.drawOffset = (state.takenAt - view.position) * (1.0F - easeOut(in));
     return view;
   }
-  if (!table::isRamp(hole.type)) {
+  const bool cat = hole.type == table::HoleType::CatShot;
+  if (!table::isRamp(hole.type) && !cat) {
     // Drawn rolling on from where it was taken to the hole's centre and
     // dropping in; then out of sight until it is returned.
     if (in >= 1.0F) {
       view.visible = false;
-      if (hole.type == table::HoleType::Subway) {
+      if (hole.type == table::HoleType::Subway || hole.type == table::HoleType::DeckDrain) {
         // Under the playfield: a glow building under the room while the
         // ball waits its turn and its time there, then running along the
         // subway to the set-down, fast at first and slowing to it.
         view.underground = true;
-        if (state.heldSteps < kSubwayWaitSteps) {
+        if (hole.type == table::HoleType::DeckDrain) {
+          // Concept A: the deck drain's subway to the left inlane.
+          const auto wait = stepsIn(table::kDeckDrainWaitSeconds);
+          const float ride = state.heldSteps < wait
+                                 ? 0.0F
+                                 : static_cast<float>(state.heldSteps - wait) /
+                                       static_cast<float>(stepsIn(table::kDeckDrainRideSeconds));
+          view.glowAt = alongPolyline(table::kDeckSubway, easeOut(std::min(ride, 1.0F)));
+          view.glow = 1.0F;
+        } else if (state.heldSteps < kSubwayWaitSteps) {
           view.glowAt = table::kBriefingSubway.front();
           view.glow = static_cast<float>(state.heldSteps) / static_cast<float>(kSubwayWaitSteps);
         } else {
@@ -1232,15 +1363,16 @@ BallView Game::ballView(std::size_t slot) const {
   // exit at a steady speed. The ride starts from where the ball was taken,
   // which can be anywhere across the ramp's mouth, and joins the rail at its
   // second point.
-  const std::array<Vec2, 9>& rail = table::rampRail(hole.type);
+  const std::array<Vec2, 9>& rail = cat ? table::kCatRail : table::rampRail(hole.type);
+  const double rideSeconds = cat ? table::kCatRideSeconds : table::kRampRideSeconds;
   const auto point = [&rail, &state](std::size_t i) { return i == 0 ? state.takenAt : rail[i]; };
   float length = 0.0F;
   for (std::size_t i = 1; i < rail.size(); ++i) {
     length += lengthOf(point(i) - point(i - 1));
   }
-  const float t = std::clamp(static_cast<float>(static_cast<double>(state.heldSteps) *
-                                                kStepSeconds / table::kRampRideSeconds),
-                             0.0F, 1.0F);
+  const float t = std::clamp(
+      static_cast<float>(static_cast<double>(state.heldSteps) * kStepSeconds / rideSeconds), 0.0F,
+      1.0F);
   view.raised = true;
   // Larger while it rides; a ball kept waiting at the end for the exit to
   // clear is drawn there full size.

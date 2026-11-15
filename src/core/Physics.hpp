@@ -103,7 +103,10 @@ class PhysicsWorld {
   static constexpr float kFlipperDownSpeed = 12.0F;
 
   // Sets which flipper buttons are held. Applied on the next step.
-  void setFlippers(bool leftHeld, bool rightHeld) noexcept;
+  // The right button drives the right flipper and the Flight Deck's
+  // flipper; deckAllowed false holds the deck flipper down whatever the
+  // button does (Game: no cradle on the deck).
+  void setFlippers(bool leftHeld, bool rightHeld, bool deckAllowed = true) noexcept;
   // Current angle of a flipper in radians. Index 0 is left, 1 is right, 2
   // the upper flipper (driven with the right one).
   [[nodiscard]] float flipperAngle(std::size_t index) const noexcept;
@@ -193,6 +196,24 @@ class PhysicsWorld {
   // down, they are not there at all. The caller keeps the bank from coming
   // up onto a ball (Game waits for table::kDoorMouthCenter's box to clear).
   void setDoorBank(bool up);
+  // Concept A, Rev A.2 devices (TableLayout.hpp). The pylon: up is solid,
+  // down is flush. pylonSpotClear: no free ball over it (it never rises
+  // onto a ball).
+  void setPylon(bool up);
+  [[nodiscard]] bool pylonUp() const noexcept { return pylonUp_; }
+  [[nodiscard]] bool pylonSpotClear() const;
+  // The Air Pocket for the next step: Off, Pull (draw and hold free balls
+  // in its reach that are not rising fast), or Release (each ball in its
+  // reach is given kick, in px/s). The Prop Wash's spin in radians per
+  // second (0: still). Game sets both every step from the step count and
+  // the altitude; neither keeps state of its own.
+  enum class AirPocket : std::uint8_t { Off, Pull, Release };
+  void setDevices(AirPocket airPocket, Vec2 kick, float propWashSpin) noexcept {
+    airPocket_ = airPocket;
+    airPocketKick_ = kick;
+    propWashSpin_ = propWashSpin;
+  }
+  [[nodiscard]] std::uint32_t airPocketCatches() const noexcept { return airPocketCatches_; }
   [[nodiscard]] bool doorBankUp() const noexcept { return doorBankUp_; }
 
   // The training drone (table::kDroneY): patrols, dives, rises again when
@@ -229,6 +250,13 @@ class PhysicsWorld {
   // for the kickback; the ball is held until releaseBall()) and the kickback
   // disarms itself. Two balls arriving in the same slice: the lower slot is
   // taken, the other falls through.
+  // A held ball's holder changes (concept A: the Skyway diverted to the
+  // Flight Deck; the CAT SHOT's ride ending in the Hangar).
+  void setHeldBy(std::size_t ball, table::ElementRef by) noexcept {
+    if (ballHeld(ball)) {
+      balls_[ball].heldBy = by;
+    }
+  }
   void setKickbackArmed(bool armed) noexcept { kickbackArmed_ = armed; }
   [[nodiscard]] bool kickbackArmed() const noexcept { return kickbackArmed_; }
   // Returns a held ball to play at position with velocity. The hole it was
@@ -287,6 +315,8 @@ class PhysicsWorld {
   void buildDoorBank();
   void buildStandups();
   void buildDrone();
+  void buildPylon();
+  void driveDevices(float seconds, bool endOfStep);
   void buildCaptive();
   // A new joint every step (see Physics.cpp), then the captive ball's
   // checks after every slice.
@@ -377,6 +407,13 @@ class PhysicsWorld {
   // that closes the switch was struck.
   float captivePeakSpeed_ = 0.0F;
   std::uint32_t captiveResets_ = 0;
+  b2BodyId pylon_{};
+  bool pylonUp_ = false;
+  AirPocket airPocket_ = AirPocket::Off;
+  Vec2 airPocketKick_{};
+  float propWashSpin_ = 0.0F;
+  std::uint32_t airPocketCatches_ = 0;  // For measuring only; not saved.
+  bool deckAllowed_ = true;
   bool kickbackArmed_ = false;
   // The next slice's touches are the restored world finding contacts that
   // were already there (restoreBalls).

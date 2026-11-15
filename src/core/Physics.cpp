@@ -190,6 +190,7 @@ PhysicsWorld::PhysicsWorld() {
   buildDoorBank();
   buildStandups();
   buildDrone();
+  buildPylon();
   buildCaptive();
 }
 
@@ -325,13 +326,12 @@ void PhysicsWorld::buildFlippers() {
   // In the flipper's own frame the pivot is the origin and the bat lies along
   // +x: a large circle at the pivot, a small one at the tip, and a tapered
   // quad joining them.
-  const float baseRadius = toMeters(table::kFlipperBaseRadius);
-  const float tipRadius = toMeters(table::kFlipperTipRadius);
-  const b2Circle base{{0.0F, 0.0F}, baseRadius};
-
   for (std::size_t i = 0; i < flippers_.size(); ++i) {
     const table::Flipper& layout = table::kFlippers[i];
     FlipperState& flipper = flippers_[i];
+    const float baseRadius = toMeters(layout.baseRadius);
+    const float tipRadius = toMeters(layout.tipRadius);
+    const b2Circle base{{0.0F, 0.0F}, baseRadius};
     const float length = toMeters(layout.length);
     const b2Circle tip{{length, 0.0F}, tipRadius};
     const b2Vec2 quad[4] = {
@@ -357,9 +357,10 @@ void PhysicsWorld::buildFlippers() {
   }
 }
 
-void PhysicsWorld::setFlippers(bool leftHeld, bool rightHeld) noexcept {
+void PhysicsWorld::setFlippers(bool leftHeld, bool rightHeld, bool deckAllowed) noexcept {
   flippers_[table::kLeftFlipperIndex].held = leftHeld;
   flippers_[table::kRightFlipperIndex].held = rightHeld;
+  flippers_[table::kDeckFlipperIndex].held = rightHeld && deckAllowed;
 }
 
 float PhysicsWorld::flipperAngle(std::size_t index) const noexcept {
@@ -500,6 +501,99 @@ bool PhysicsWorld::droneSpotClear(Vec2 at) const {
     }
   }
   return true;
+}
+
+void PhysicsWorld::buildPylon() {
+  // A static body of its own, so that disabling it makes it flush.
+  b2BodyDef bodyDef = b2DefaultBodyDef();
+  bodyDef.type = b2_staticBody;
+  bodyDef.isEnabled = false;
+  pylon_ = b2CreateBody(world_, &bodyDef);
+  b2ShapeDef shapeDef = wallShapeDef();
+  shapeDef.material.restitution = table::kDeadPostRestitution;
+  shapeDef.material.userMaterialId = kDeadMaterial;
+  shapeDef.userData = packElement({table::ElementKind::Pylon, 0});
+  const b2Circle circle{toMeters(table::kPylon.center), toMeters(table::kPylon.radius)};
+  b2CreateCircleShape(pylon_, &shapeDef, &circle);
+  pylonUp_ = false;
+}
+
+void PhysicsWorld::setPylon(bool up) {
+  if (up == pylonUp_) {
+    return;
+  }
+  pylonUp_ = up;
+  if (up) {
+    b2Body_Enable(pylon_);
+  } else {
+    b2Body_Disable(pylon_);
+  }
+}
+
+bool PhysicsWorld::pylonSpotClear() const {
+  const float reach = table::kPylon.radius + table::kBallRadius + 2.0F;
+  for (std::size_t slot = 0; slot < balls_.size(); ++slot) {
+    if (!balls_[slot].active || balls_[slot].held) {
+      continue;
+    }
+    const Vec2 d = ballPosition(slot) - table::kPylon.center;
+    if (d.x * d.x + d.y * d.y < reach * reach) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void PhysicsWorld::driveDevices(float seconds, bool endOfStep) {
+  // The Prop Wash drags a ball on it towards the disc's surface speed, by at
+  // most the grip times the time (friction); the Air Pocket holds balls in
+  // its reach while it pulls and kicks them away when it lets go.
+  const bool still = propWashSpin_ == 0.0F;
+  if (still && airPocket_ == AirPocket::Off) {
+    return;
+  }
+  for (std::size_t slot = 0; slot < balls_.size(); ++slot) {
+    BallSlot& ball = balls_[slot];
+    if (!ball.active || ball.held) {
+      continue;
+    }
+    const Vec2 p = ballPosition(slot);
+    Vec2 v = ballVelocity(slot);
+    bool changed = false;
+    if (!still) {
+      const Vec2 r = p - table::kPropWash.center;
+      const float rr = table::kPropWash.radius;
+      if (r.x * r.x + r.y * r.y < rr * rr) {
+        // Clockwise on screen (y down): surface velocity = spin x (-r.y, r.x).
+        const Vec2 surface{-propWashSpin_ * r.y, propWashSpin_ * r.x};
+        const Vec2 slip = surface - v;
+        const float slipSpeed = std::sqrt(slip.x * slip.x + slip.y * slip.y);
+        const float most = table::kPropWashGrip * seconds;
+        if (slipSpeed > 1.0e-3F) {
+          const float scale = slipSpeed <= most ? 1.0F : most / slipSpeed;
+          v = v + slip * scale;
+          changed = true;
+        }
+      }
+    }
+    if (airPocket_ != AirPocket::Off) {
+      const Vec2 r = table::kAirPocketCenter - p;
+      const float reach = table::kAirPocketRadius;
+      if (r.x * r.x + r.y * r.y < reach * reach) {
+        if (airPocket_ == AirPocket::Pull && v.y > table::kAirPocketRisingLimit) {
+          v = r * table::kAirPocketPull;
+          changed = true;
+        } else if (airPocket_ == AirPocket::Release && endOfStep) {
+          v = airPocketKick_;
+          ++airPocketCatches_;
+          changed = true;
+        }
+      }
+    }
+    if (changed && isFinite(v)) {
+      b2Body_SetLinearVelocity(ball.body, toMeters(v));
+    }
+  }
 }
 
 void PhysicsWorld::knockDroneDown(std::uint32_t steps) noexcept {
@@ -1054,6 +1148,8 @@ void PhysicsWorld::step(float stepSeconds) {
     for (int j = 0; j < parts; ++j) {
       driveFlippers(part);
       drivePlunger(part);
+      // The Air Pocket's kick is given once, at the start of its step.
+      driveDevices(part, i == 0 && j == 0);
       b2World_Step(world_, part, kSubSteps);
       if (skipTouches_) {
         // Contacts the restored world found already touching (restoreBalls).

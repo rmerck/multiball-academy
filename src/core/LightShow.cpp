@@ -137,10 +137,17 @@ std::uint64_t showLength(Show show) noexcept {
 }
 
 // The lamp an element lights when struck.
+// Concept A's deck holes light the Skyway's and the Hangar's arrows until
+// the deck has lamps of its own (G6).
 constexpr std::array<LampId, table::kHoles.size()> kHoleLamps{
-    {LampId::ArrowBriefing, LampId::ArrowHangar, LampId::ArrowRunway, LampId::ArrowSkyway}};
+    {LampId::ArrowBriefing, LampId::ArrowHangar, LampId::ArrowRunway, LampId::ArrowSkyway,
+     LampId::ArrowSkyway, LampId::ArrowHangar, LampId::ArrowSkyway}};
 static_assert(table::kScoopHole == 0 && table::kHangarHole == 1 && table::kRunwayHole == 2 &&
-              table::kSkywayHole == 3);
+              table::kSkywayHole == 3 && table::kDeckRampHole == 4 && table::kCatHole == 5 &&
+              table::kDeckDrainHole == 6);
+// The rollovers with a lamp: the roll call lanes and W-I-N-G (F-L-A-P-S
+// get theirs in G6).
+constexpr std::size_t kLitRollovers = 7;
 constexpr std::array<LampId, table::kRollovers.size()> kRolloverLamps{
     {LampId::RollCall1, LampId::RollCall2, LampId::RollCall3, LampId::WingW, LampId::WingI,
      LampId::WingN, LampId::WingG}};
@@ -342,7 +349,8 @@ void LightShow::readEvents(const Game& game) noexcept {
         }
         break;
       case PhysicsEvent::Type::Enter:
-        if (event.element.kind == table::ElementKind::Rollover && i < rolloverHit_.size()) {
+        if (event.element.kind == table::ElementKind::Rollover && i < kLitRollovers &&
+            i < rolloverHit_.size()) {
           // The roll call lanes light the same part of the table as the nest.
           strike(i < 3 ? kGateNest : (i < 5 ? kGateLanesLeft : kGateLanesRight),
                  rolloverHit_[i]);
@@ -1194,7 +1202,7 @@ void LightShow::updateLamps(const Game& game) noexcept {
   // In a blackout only the show itself lights a lamp.
   const bool blackout = factor < 0.5F && !rules.tilted() && show_ != Show::Drain;
   std::array<float, kLampCount> hits{};
-  for (std::size_t k = 0; k < rolloverHit_.size(); ++k) {
+  for (std::size_t k = 0; k < kLitRollovers && k < rolloverHit_.size(); ++k) {
     float& level = hits[lampIndex(kRolloverLamps[k])];
     level = std::max(level, rolloverFlash(k));
   }
@@ -1215,7 +1223,7 @@ void LightShow::updateLamps(const Game& game) noexcept {
     const std::size_t k = lampIndex(LampId::DroneArmour1) + static_cast<std::size_t>(won - 1);
     hits[k] = std::max(hits[k], droneFlash());
   }
-  for (std::size_t k = 0; k < standupHit_.size(); ++k) {
+  for (std::size_t k = 0; k < table::kTaxiStandups && k < standupHit_.size(); ++k) {
     float& level = hits[lampIndex(table::taxiLamp(k))];
     level = std::max(level, standupFlash(k));
   }

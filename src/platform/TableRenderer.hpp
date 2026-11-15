@@ -170,13 +170,6 @@ class TableRenderer {
   // the lane's one-way gate, its flap lifting as a ball goes up through it.
   void drawSubway(SDL_Renderer* renderer, std::span<const BallView> balls) const;
   void drawDrone(SDL_Renderer* renderer, const Game& game, const LightShow* show) const;
-  void drawSpinnerAndKickback(SDL_Renderer* renderer, const Game& game) const;
-  // Table revision 3's moving parts: the glow of a ball riding the Briefing
-  // room's subway under the playfield, and the lit tube it runs in; the
-  // training drone, patrolling, recoiling from a hit, sinking and coming up;
-  // the lane's one-way gate, its flap lifting as a ball goes up through it.
-  void drawSubway(SDL_Renderer* renderer, std::span<const BallView> balls) const;
-  void drawDrone(SDL_Renderer* renderer, const Game& game, const LightShow* show) const;
   void drawLaneGate(SDL_Renderer* renderer, std::span<const BallView> balls) const;
   void drawBumpers(SDL_Renderer* renderer, const Game& game, const LightShow* show) const;
   void drawTargets(SDL_Renderer* renderer, const Game& game, const TableLights& lights) const;

@@ -294,12 +294,12 @@ class LightShow {
     kGateDoors,
     kGateLanesLeft,
     kGateLanesRight,
-    kGateHole,  // Four, one a hole.
-    kGateBays = kGateHole + 4,
+    kGateHole,  // One a hole.
+    kGateBays = kGateHole + table::kHoles.size(),
     kGateKickback,
     kGateDrone,     // The drone and its armour lamps.
-    kGateStandup,   // Four, one a stand-up (and its T-A-X-I lamp).
-    kGateGForce = kGateStandup + 4,
+    kGateStandup,   // One a stand-up (T-A-X-I and the deck's A-C-E).
+    kGateGForce = kGateStandup + table::kStandups.size(),
     kGateCount
   };
   [[nodiscard]] bool gateOpen(std::uint8_t gate) const noexcept;

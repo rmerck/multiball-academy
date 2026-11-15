@@ -225,6 +225,9 @@ void testAcceptance() {
      // a flipper or an inlane first. Never a slingshot, an outlane or the
      // drain.
     for (std::size_t hole = 0; hole < table::kHoles.size(); ++hole) {
+      if (table::kHoles[hole].type == table::HoleType::DeckRamp) {
+        continue;  // Set down on the Flight Deck, over its own flipper.
+      }
       const ExitResult exit = exitOf(hole, 10);
       CHECK(exit.releases == 10);
       CHECK(exit.safe == 10);

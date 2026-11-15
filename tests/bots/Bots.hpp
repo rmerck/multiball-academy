@@ -152,7 +152,12 @@ class ReflexBot final : public Bot {
         side.seen = false;
         continue;
       }
-      const float along = furthestFoot(sense, i);
+      // The right button also drives the Flight Deck's flipper (concept A):
+      // the right side watches both bats.
+      float along = furthestFoot(sense, i);
+      if (i == table::kRightFlipperIndex) {
+        along = std::max(along, furthestFoot(sense, table::kDeckFlipperIndex));
+      }
       if (along < 0.0F) {
         side.seen = false;
         continue;

@@ -41,11 +41,12 @@ void testTargets() {
     CHECK(table::elementCount(table::ElementKind::Slingshot) == 2);
     CHECK(table::elementCount(table::ElementKind::Target) == 2);
     CHECK(table::elementCount(table::ElementKind::DropTarget) == 3);
-    // The two turbo targets mirror each other.
+    // Concept A: the left turbo target is set into the rim; the right one
+    // stands on the nest face of the Flight Deck's left wall.
     CHECK(table::kTargets[0].id == table::TargetId::NestLeft);
     CHECK(table::kTargets[1].id == table::TargetId::NestRight);
-    CHECK(midpoint(table::kTargets[0].shape).x + midpoint(table::kTargets[1].shape).x ==
-          2.0F * table::kFieldCenterX);
+    CHECK(midpoint(table::kTargets[1].shape).x <
+          table::kDeckLeftWall.a.x - table::kWallRadius + table::kTargetRadius);
   }
 
   // A square shot at each turbo target reports a hit on exactly that target
@@ -220,7 +221,11 @@ void testTargets() {
      // off into a lane beside them; it cannot rest there. (Revision 3: the
      // gate over the lane and the Briefing room's roof carry it right, past
      // the drone, which may hold it back for a patrol: 8 s.)
-    for (float x = table::kHangarLeft.a.x - 6.0F; x <= table::kBriefingRoof.b.x + 6.0F; x += 7.5F) {
+    // Concept A: up to the right turbo target on the Flight Deck's wall; the
+    // roof's right end is under the deck's floor, and a ball rolls on under
+    // it and off the rail.
+    const float last = table::kNestTargetRight.a.x - table::kTargetRadius - table::kBallRadius - 1.0F;
+    for (float x = table::kHangarLeft.a.x - 6.0F; x <= last; x += 7.5F) {
       PhysicsWorld world;
       world.resetBall({x, 270.0F}, {0.0F, 0.0F});
       for (int step = 0; step < 120 * 8; ++step) {

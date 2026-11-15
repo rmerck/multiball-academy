@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "bots/Acceptance.hpp"
 #include "bots/Bots.hpp"
 #include "bots/TableHarness.hpp"
 #include "core/Rules.hpp"
@@ -65,7 +66,7 @@ std::string cradleFan(bool rightSide, int maxPress) {
         continue;
       }
       for (const TouchEvent& e : std::span(h.events).subspan(before)) {
-        if (e.touch != Touch::InlaneLeft && e.touch != Touch::InlaneRight) {
+        if (e.touch != Touch::InlaneLeft && e.touch != Touch::InlaneRight && e.touch != Touch::Flaps) {
           got = e.touch;
           break;
         }
@@ -74,7 +75,7 @@ std::string cradleFan(bool rightSide, int maxPress) {
         got = drain;
       }
     }
-    static constexpr char kChars[] = ".OLwDHSPWRQbs^ijxyc*dTG";
+    static constexpr char kChars[] = ".OLwDHSPWRQbs^ijxyc*dTGeKkYf";
     fan += kChars[static_cast<std::size_t>(got)];
   }
   return fan;
@@ -396,7 +397,7 @@ Stats playGames(const std::string& kind, int error, int games, std::uint64_t see
             st.briefingRepeatNoFlip += t.flippedSinceBriefing ? 0U : 1U;
           }
         }
-        if (e.touch != Touch::InlaneLeft && e.touch != Touch::InlaneRight &&
+        if (e.touch != Touch::InlaneLeft && e.touch != Touch::InlaneRight && e.touch != Touch::Flaps &&
             e.touch != Touch::CircuitLeft && e.touch != Touch::CircuitRight &&
             e.touch != Touch::Turbine && e.touch != Touch::OutlaneLeft &&
             e.touch != Touch::OutlaneRight) {
@@ -644,7 +645,7 @@ int main(int argc, char** argv) {
           const Touch drain = h.advance();
           if (i >= k) path.push_back(h.position(0));
           for (const TouchEvent& e : std::span(h.events).subspan(before)) {
-            if (i >= k && e.touch != Touch::InlaneLeft && e.touch != Touch::InlaneRight) { first = e.touch; break; }
+            if (i >= k && e.touch != Touch::InlaneLeft && e.touch != Touch::InlaneRight && e.touch != Touch::Flaps) { first = e.touch; break; }
           }
           if (drain != Touch::None && first == Touch::None) first = drain;
         }
@@ -683,10 +684,33 @@ int main(int argc, char** argv) {
         }
         Touch first = Touch::None;
         for (const TouchEvent& e : h.events) {
-          if (e.step > static_cast<std::uint64_t>(k + 5) && e.touch != Touch::InlaneLeft && e.touch != Touch::InlaneRight) { first = e.touch; break; }
+          if (e.step > static_cast<std::uint64_t>(k + 5) && e.touch != Touch::InlaneLeft && e.touch != Touch::InlaneRight && e.touch != Touch::Flaps) { first = e.touch; break; }
         }
         std::printf("%c k=%2d x@440=%6.1f v=(%6.0f,%6.0f) first=%s\n", side ? 'R' : 'L', k, cross, vx, vy, touchName(first));
       }
+    }
+    return 0;
+  }
+  if (mode == "deckhold") {
+    TableHarness h;
+    h.put(0, table::kDeckSetDown, table::kDeckSetDownVelocity, true);
+    h.right = true;
+    for (int i = 0; i < kHz * 6; ++i) {
+      h.advance();
+      if (i % 30 == 0) {
+        std::printf("t=%.2f p=(%.1f,%.1f) v=(%.1f,%.1f) held=%d flip=%.2f\n", i / 120.0,
+                    static_cast<double>(h.position(0).x), static_cast<double>(h.position(0).y),
+                    static_cast<double>(h.velocity(0).x), static_cast<double>(h.velocity(0).y),
+                    h.held(0) ? 1 : 0, static_cast<double>(h.game().flipper(2).angle));
+      }
+    }
+    return 0;
+  }
+  if (mode == "deck") {
+    for (int v = 0; v < 5; ++v) {
+      const std::string fan = acceptance::deckFan(v);
+      std::printf("deck v%d: %s  widest A %d C %d E %d K %d\n", v, fan.c_str(), widest(fan, 'A'),
+                  widest(fan, 'C'), widest(fan, 'E'), widest(fan, 'K'));
     }
     return 0;
   }

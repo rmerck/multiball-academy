@@ -239,6 +239,9 @@ void visit(V& v, RulesRecord& r) {
   v.integer(r.doorCommand, std::uint8_t{0}, std::to_underlying(Rules::DoorCommand::Raise));
   v.integer(r.doorRaiseSteps, 0U, kMaxTimerSteps);
   v.integer(r.droneHits, 0, 4);
+  v.integer(r.altitude, 0, table::kAltitudeLevels - 1);
+  v.flag(r.deckLit);
+  visit(v, r.flapsLit);
   v.integer(r.hangarHolding, 0, kMaxBalls);
   v.integer(r.locksHeld, 0, Rules::kLocksNeeded);
   visit(v, r.bayFull);
@@ -361,6 +364,7 @@ void visit(V& v, TableRecord& t) {
   v.real(t.plungerPull, 0.0F, table::kPlungerTravel);
   v.real(t.plungerReleaseSpeed, 0.0F, kMaxPlungerSpeedPixels * 1.01F);
   v.flag(t.doorBankUp);
+  v.flag(t.pylonUp);
   v.flag(t.kickbackArmed);
   v.flag(t.droneUp);
   v.integer(t.droneClock, 0U, 120U * 3600U);
@@ -391,6 +395,7 @@ void visit(V& v, BallRecord& b) {
   visit(v, b.holeArmed);
   v.element(b.holder);
   v.integer(b.heldSteps, 0U, kMaxHeldSteps);
+  v.integer(b.deckSteps, 0U, kAnyU32);
   v.flag(b.wasHeld);
   v.integer(b.arrival, std::uint64_t{0}, kMaxStepCount);
   v.integer(b.lockBay, std::uint8_t{0}, static_cast<std::uint8_t>(table::kLockBays.size()));
@@ -595,6 +600,17 @@ Sha256Digest layoutFingerprint() noexcept {
   }
   add(table::kFlipperBaseRadius);
   add(table::kFlipperTipRadius);
+  for (const table::Flipper& f : table::kFlippers) {
+    add(f.baseRadius);
+    add(f.tipRadius);
+  }
+  // Concept A's devices.
+  addPoint(table::kPylon.center);
+  add(table::kPylon.radius);
+  addPoint(table::kPropWash.center);
+  add(table::kPropWash.radius);
+  addPoint(table::kAirPocketCenter);
+  add(table::kAirPocketRadius);
   for (const table::Bumper& b : table::kBumpers) {
     addPoint(b.shape.center);
     add(b.shape.radius);

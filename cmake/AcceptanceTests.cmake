@@ -57,7 +57,7 @@ if(PINBALL_ACCEPTANCE_TESTS)
 endif()
 
 # Table review instrument (local only).
-add_executable(table_stats tests/TableStats.cpp tests/bots/TableHarness.cpp)
+add_executable(table_stats tests/TableStats.cpp tests/bots/TableHarness.cpp tests/bots/Acceptance.cpp)
 target_include_directories(table_stats PRIVATE tests)
 target_link_libraries(table_stats PRIVATE pinball_core)
 set_target_properties(table_stats PROPERTIES EXCLUDE_FROM_ALL TRUE)

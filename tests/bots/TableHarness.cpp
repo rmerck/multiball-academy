@@ -1,5 +1,6 @@
 #include "bots/TableHarness.hpp"
 
+#include <cstdlib>
 #include <box2d/math_functions.h>
 
 #include <algorithm>
@@ -29,7 +30,8 @@ const char* touchName(Touch touch) noexcept {
       "Hangar",        "Briefing",     "Turbine",       "right target", "Skyway",
       "right circuit", "bumper",       "slingshot",     "roll call",    "left inlane",
       "right inlane",  "left outlane", "right outlane", "centre drain", "flipper",     "drone",         "TAXI",
-      "G-force"};
+      "G-force",       "deck target",  "CAT SHOT",      "deck drain",   "pylon",
+      "FLAPS"};
   const auto index = static_cast<std::size_t>(touch);
   return index < kNames.size() ? kNames[index] : "?";
 }
@@ -40,6 +42,16 @@ TableHarness::TableHarness() {
   balls_[0].anchor = table::kBallStart;
   // The bench counts every ball that leaves the table: see setSaver().
   setSaver(false);
+  // Concept A's measuring knobs, for a whole run: PINBALL_ALTITUDE 0 to 4
+  // (FL100 to FL500), PINBALL_DECK and PINBALL_PYLON (0 rules, 1 always,
+  // 2 never). Unset: FL100 and the stub rules.
+  const auto knob = [](const char* name) {
+    const char* value = std::getenv(name);
+    return value == nullptr ? 0 : std::atoi(value);
+  };
+  game_.setAltitude(knob("PINBALL_ALTITUDE"));
+  game_.setDeckPolicy(knob("PINBALL_DECK"));
+  game_.setPylonPolicy(knob("PINBALL_PYLON"));
 }
 
 Vec2 TableHarness::position(std::size_t slot) const { return Seam::position(game_, slot); }
@@ -202,12 +214,18 @@ Touch TableHarness::advance() {
             ++circuitDone[0];
             state.circuitLeft = false;
           }
+        } else if (rollover.group == table::RolloverGroup::Flaps) {
+          touch = Touch::Flaps;
         } else if (rollover.group == table::RolloverGroup::Outlane) {
           touch = leftSide ? Touch::OutlaneLeft : Touch::OutlaneRight;
           balls_[ball].outlaneStep = step_ + 1;
           balls_[ball].outlane = touch;
         }
-        log(touch, event.speed, ball);
+        // F-L-A-P-S are flush: they never turn a ball, so they are never a
+        // first touch (counted in rolloverHits only).
+        if (touch != Touch::Flaps) {
+          log(touch, event.speed, ball);
+        }
         break;
       }
       case Hole: {
@@ -223,7 +241,14 @@ Touch TableHarness::advance() {
             touch = Touch::Runway;
             break;
           case table::HoleType::RampRight:
+          case table::HoleType::DeckRamp:
             touch = Touch::Skyway;
+            break;
+          case table::HoleType::CatShot:
+            touch = Touch::CatShot;
+            break;
+          case table::HoleType::DeckDrain:
+            touch = Touch::DeckDrain;
             break;
         }
         if (table::kHoles[i].type == table::HoleType::Hangar) {
@@ -272,7 +297,10 @@ Touch TableHarness::advance() {
         break;
       case Standup:
         ++standupHits[i];
-        log(Touch::Standup, event.speed, ball);
+        log(i >= table::kTaxiStandups ? Touch::DeckTarget : Touch::Standup, event.speed, ball);
+        break;
+      case Pylon:
+        log(Touch::Pylon, event.speed, ball);
         break;
       case CaptiveBall:
         // Struck: a G-force touch, as the post's hits were. The switch

@@ -131,6 +131,8 @@ void Rules::clearModes() noexcept {
 
 void Rules::startGame() noexcept {
   score_ = 0;
+  deckLit_ = false;
+  flapsLit_.fill(false);
   featureScore_.fill(0);
   ball_ = 1;
   gameOver_ = false;
@@ -401,6 +403,15 @@ void Rules::onStandup(std::size_t index, float /*speed*/) noexcept {
   award(500, Feature::Slingshots);
 }
 
+void Rules::onPylon() noexcept {
+  // Stub (G5: a sortie step or a jackpot add).
+  if (dead()) {
+    return;
+  }
+  noteSwitch();
+  award(2'500, Feature::Slingshots);
+}
+
 void Rules::onCaptiveBall(float /*speed*/) noexcept {
   // Stub (phase 3 brings the G-meter): what phase 1's post paid for a hard hit.
   if (dead()) {
@@ -455,6 +466,22 @@ void Rules::onRollover(std::size_t index, std::size_t ball) noexcept {
   const bool skill = skillOffered_;
   noteSwitch();
   const auto ballNumber = static_cast<std::uint64_t>(ball_);
+  if (rollover.group == table::RolloverGroup::Flaps) {
+    // Stub (G5: completing F-L-A-P-S lights the Mission scoop and +1 bonus X).
+    const std::size_t letter =
+        std::to_underlying(rollover.id) - std::to_underlying(table::RolloverId::FlapF);
+    if (letter < flapsLit_.size()) {
+      award(250, Feature::ReturnLanes);
+      flapsLit_[letter] = true;
+      if (std::ranges::all_of(flapsLit_, [](bool lit) { return lit; })) {
+        flapsLit_.fill(false);
+        award(10'000, Feature::ReturnLanes);
+        addBonusMultiplier();
+        say(display::Message("FLAPS SET  BONUS X"));
+      }
+    }
+    return;
+  }
   if (rollover.group == table::RolloverGroup::TopLane) {
     const std::size_t lane = std::to_underlying(rollover.id);
     if (lane >= rollCallLit_.size()) {
@@ -661,6 +688,18 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
       break;
     case RampRight:
       rampMade(Shot::Skyway);
+      // The diverter (stub): the next Skyway goes to the Flight Deck.
+      deckLit_ = !deckLit_;
+      break;
+    case DeckRamp:
+      break;  // Never taken from the field: Game diverts a Skyway to it.
+    case CatShot:
+      // Stub (G5): the ride ends in the Hangar, which Game tells as a
+      // Hangar capture of its own.
+      award(5'000, Feature::Hangar);
+      break;
+    case DeckDrain:
+      award(1'000, Feature::Hangar);
       break;
     case Subway: {
       if (graduationRunning()) {

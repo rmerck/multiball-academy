@@ -106,6 +106,13 @@ struct ShotMap {
 [[nodiscard]] ShotMap shotSweep(int variants, bool bankDown = false);
 [[nodiscard]] char touchChar(Touch touch) noexcept;
 
+// Concept A: the Flight Deck's fan. A ball set down by the Skyway's diverter
+// (variant 0 as the layout has it; others a little apart), the right button
+// pressed for 30 steps at each step from 0 to 119: the first deck element
+// met, one character a press: A, C, E (stand-ups), K (CAT SHOT), k (deck
+// drain), '.' (nothing within 5 s), '?' anything else.
+[[nodiscard]] std::string deckFan(int variant);
+
 // --- A5, A6: lanes and ramps at a speed --------------------------------------------
 struct LaneResult {
   int balls = 0;

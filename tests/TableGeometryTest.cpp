@@ -184,22 +184,48 @@ constexpr Opening kNestSide{
     {210.0F, 150.0F},
     {260.0F, 200.0F},
     40.5F};
-constexpr Opening kTargetNotch{
-    "turbo target notch",
-    "Not a passage: the corner between a turbo target and the rim it stands out from. It "
-    "opens down the table, so a ball that enters it rolls out again.",
-    {150.0F, 230.0F},
-    {190.0F, 270.0F},
-    24.0F};
 constexpr std::array kOpenings{
     kOutlane,
     mirroredOpening(kOutlane),
     kInlane,
     mirroredOpening(kInlane),
     kNestSide,
-    mirroredOpening(kNestSide),
-    // (On the left the captive ball's channel closes the notch.)
-    mirroredOpening(kTargetNotch),
+    // Concept A: the right of the nest is the Flight Deck. (On the left the
+    // captive ball's channel closes the turbo target's notch; the right
+    // target stands on the deck's wall, which leaves none.)
+    Opening{"right roll call lane's foot",
+            "A passage, 33.4 wide: between the right lane post's foot and the right bumper.",
+            {385.0F, 172.0F},
+            {415.0F, 198.0F},
+            33.4F},
+    Opening{"right bumper and the rim's end",
+            "A passage, 37.9 wide, from the right roll call lane to the deck wall channel.",
+            {445.0F, 178.0F},
+            {455.0F, 188.0F},
+            37.8F},
+    Opening{"deck wall channel",
+            "A passage, 28 wide: between the right bumper and the Flight Deck's left wall, down "
+            "to the right turbo target. A ball that touches the bumper is kicked.",
+            {440.0F, 198.0F},
+            {462.0F, 252.0F},
+            28.0F},
+    Opening{"between the centre and right bumpers",
+            "A passage, 32.5 wide. A ball that touches either bumper is kicked.",
+            {378.0F, 210.0F},
+            {404.0F, 252.0F},
+            32.5F},
+    Opening{"under the Flight Deck",
+            "A passage, 34.6 wide: between the deck's floor and the Briefing room's roof and rail, "
+            "where the nest empties to the right flipper.",
+            {450.0F, 322.0F},
+            {496.0F, 342.0F},
+            34.5F},
+    Opening{"CAT SHOT pocket",
+            "Not a resting place: the Flight Deck's top left corner is the CAT SHOT's hole; its box "
+            "takes any ball that goes in.",
+            {451.0F, 150.0F},
+            {505.0F, 212.0F},
+            25.0F},
     Opening{"under the captive ball's channel",
             "Not a passage: the corner between the captive ball channel's lower wall and the "
             "rim. It opens down the table, so a ball that enters it rolls out again.",
@@ -364,7 +390,8 @@ void testTableGeometry() {
       CHECK(near(table::kLeftSlingshot.points[i].x + table::kRightSlingshot.points[i].x, twice));
       CHECK(table::kLeftSlingshot.points[i].y == table::kRightSlingshot.points[i].y);
     }
-    CHECK(near(table::kBumpers[0].shape.center.x + table::kBumpers[1].shape.center.x, twice));
+    // (Concept A: the right bumper stands where the Flight Deck leaves room
+    // for it, not mirrored; the outer bumpers' gaps are checked below.)
     CHECK(table::kBumpers[2].shape.center.x == table::kFieldCenterX);
     CHECK(table::kRollovers[1].zone.center.x == table::kFieldCenterX);
     CHECK(near(table::kRollovers[0].zone.center.x + table::kRollovers[2].zone.center.x, twice));
@@ -493,7 +520,8 @@ void testTableGeometry() {
   {  // Revision 3: the dead posts are the lane's right flare and the
      // Briefing room's rail, the T-A-X-I stand-ups keep their bounce, and
      // none of them is also a plain wall.
-    CHECK(table::kDeadPosts.size() == 2 && table::kStandups.size() == 4);
+    CHECK(table::kDeadPosts.size() == 2 && table::kStandups.size() == 7 &&
+          table::kTaxiStandups == 4);
     for (const table::Capsule& post : table::kDeadPosts) {
       for (const table::Capsule& wall : table::kAllWalls) {
         CHECK(distance(midpoint(post), midpoint(wall)) > 1.0F);
@@ -505,8 +533,9 @@ void testTableGeometry() {
   {  // Element references.
     using table::ElementKind;
     CHECK(table::elementCount(ElementKind::Bumper) == 3);
-    CHECK(table::elementCount(ElementKind::Rollover) == 7);
-    CHECK(table::elementCount(ElementKind::Hole) == 4);
+    CHECK(table::elementCount(ElementKind::Rollover) == 12);
+    CHECK(table::elementCount(ElementKind::Hole) == 7);
+    CHECK(table::elementCount(ElementKind::Pylon) == 1);
     CHECK(table::elementCount(ElementKind::DropTarget) == 3);
     CHECK(table::elementCount(ElementKind::None) == 0);
     CHECK(table::isRamp(table::HoleType::RampLeft) && table::isRamp(table::HoleType::RampRight));

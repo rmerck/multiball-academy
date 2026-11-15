@@ -238,11 +238,19 @@ inline constexpr std::array<Capsule, 2> kDeadPosts{{
 // path of every early flip from the right flipper and dropped those balls
 // down the middle (B2), so the lane has no left flare.
 inline constexpr Capsule kStandupX{{237.0F, 372.0F}, {237.0F, 397.0F}, kWallRadius};
-inline constexpr std::array<Capsule, 4> kStandups{{
+// Concept A: the Flight Deck's A-C-E stand-ups (indices 4 to 6): A on the
+// deck's left wall, C and E set 8 inside the rim arc, all facing the deck
+// flipper. They keep the stand-ups' dead bounce.
+inline constexpr std::size_t kTaxiStandups = 4;
+inline constexpr std::size_t kDeckStandupA = 4;
+inline constexpr std::array<Capsule, 7> kStandups{{
     kRimLeftFoot,
     mirrored(kRimLeftFoot),
     kStandupX,
     kRailEnd,
+    {{482.0F, 228.0F}, {482.0F, 244.0F}, 4.0F},
+    {{518.5F, 200.5F}, {528.3F, 213.0F}, 4.0F},
+    {{538.4F, 228.3F}, {547.2F, 246.3F}, 4.0F},
 }};
 // --- The captive ball (G-force test, revision 3) --------------------------------
 // A ball of its own in a short channel between the nest and the left rim,
@@ -310,7 +318,33 @@ inline constexpr std::uint8_t kCaptiveBallSwitch = 1;
 // it counts as out of its channel (the joint is soft by a fraction of this).
 inline constexpr float kCaptiveSlack = 3.0F;
 
-inline constexpr std::array<Capsule, 17> kWalls{{
+// --- Concept A: the Flight Deck (an enclosed mini-playfield) ---------------------
+// Inside the right rim arc, where revision 3 had its right bumper. The rim
+// arc is its roof and right side; a straight left wall (x 476) and a floor
+// (y 312) close it. Its only ways in are the Skyway's diverter (a ride that
+// sets the ball down inside) and its only ways out are two holes: the deck
+// drain (a subway to the left inlane) and the CAT SHOT (a ride over the nest
+// into the Hangar). The left wall stands 28 clear of the right bumper, so a
+// ball always passes between them; the floor stands 13 above a ball rolling
+// off the Briefing room's roof, so the nest still empties to the right.
+inline constexpr Capsule kDeckLeftWall{{476.0F, 157.0F}, {476.0F, 312.0F}, kWallRadius};
+inline constexpr Capsule kDeckFloor{{476.0F, 312.0F}, {566.0F, 312.0F}, kWallRadius};
+// The box a ball's centre is inside while it is on the deck.
+inline constexpr Vec2 kDeckCenter{521.0F, 232.0F};
+inline constexpr Vec2 kDeckHalfSize{45.0F, 80.0F};
+[[nodiscard]] constexpr bool onDeck(Vec2 p) noexcept {
+  return p.x > kDeckCenter.x - kDeckHalfSize.x && p.x < kDeckCenter.x + kDeckHalfSize.x &&
+         p.y > kDeckCenter.y - kDeckHalfSize.y && p.y < kDeckCenter.y + kDeckHalfSize.y;
+}
+// Where the Skyway's diverter sets a ball down on the deck: over the deck
+// flipper's base, so it rolls down the bat towards its tip.
+inline constexpr Vec2 kDeckSetDown{532.0F, 252.0F};
+// A ball may stay this long on the deck; then the deck's bat stays down
+// until it has left (no stall under a held button).
+inline constexpr double kDeckVisitSeconds = 10.0;
+inline constexpr Vec2 kDeckSetDownVelocity{0.0F, 40.0F};
+
+inline constexpr std::array<Capsule, 19> kWalls{{
     kLeftDividerUpper,
     kLeftDividerLower,
     mirrored(kLeftDividerUpper),
@@ -328,6 +362,8 @@ inline constexpr std::array<Capsule, 17> kWalls{{
     kLanePostRight,
     kCaptiveWallUpper,
     kCaptiveWallLower,
+    kDeckLeftWall,
+    kDeckFloor,
 }};
 // Every static capsule wall with the ordinary wall surface: kWalls, then the
 // rim arcs, a left part and its mirror in turn. (Dead posts are apart.)
@@ -374,27 +410,32 @@ inline constexpr std::array<Vec2, 4> kSlingVaneRight{
 // because y points down). The flipper extends from its pivot along the
 // direction of its angle.
 inline constexpr float kFlipperLength = 98.0F;  // The lower flippers: pivot to tip centre.
+inline constexpr float kFlipperBaseRadius = 11.0F;
+inline constexpr float kFlipperTipRadius = 6.0F;
 struct Flipper {
   Vec2 pivot;
   float restAngle;
   float activeAngle;
   float length = kFlipperLength;  // Pivot to tip centre.
+  float baseRadius = kFlipperBaseRadius;
+  float tipRadius = kFlipperTipRadius;
 };
-inline constexpr float kFlipperBaseRadius = 11.0F;
-inline constexpr float kFlipperTipRadius = 6.0F;
 inline constexpr float kFlipperSwing = kPi / 6.0F;  // 30 degrees either side of level.
 // The gap between the resting tips is 36 units.
 inline constexpr Flipper kLeftFlipper{{246.5F, 852.0F}, kFlipperSwing, -kFlipperSwing};
 inline constexpr Flipper kRightFlipper{mirrored(kLeftFlipper.pivot), kPi - kFlipperSwing,
                                        kPi + kFlipperSwing};
-// Revision 3 has no upper flipper (phase 1b study, TABLE_REV3_PHASE1.md and
-// notes.md): at the foot of the right circuit lane it cut that shot's window
-// and sent slow descents through the flipper gap; raised to (572, 498) it kept
-// B1/B1d clean but caught ~9 balls a minute, fed mostly the Skyway, cut the
-// right circuit from 1.7 to 0.7 shots a minute and raised quick drains (B2).
-inline constexpr std::array<Flipper, 2> kFlippers{{kLeftFlipper, kRightFlipper}};
+// Concept A: the deck flipper, a small right-hand bat inside the Flight Deck,
+// driven by the right button. Its base closes the gap to the rim; at rest
+// its tip lies on the deck floor, 28 clear of the deck's left wall: the deck
+// drain. (Revision 3's upper flipper in the right circuit's lane was cut:
+// a third flipper is fair only with its own feed and exit, TABLE_LESSONS 7.)
+inline constexpr Flipper kDeckFlipper{{556.0F, 278.0F}, kPi - kFlipperSwing, kPi + kFlipperSwing,
+                                      48.0F, 8.0F, 5.0F};
+inline constexpr std::array<Flipper, 3> kFlippers{{kLeftFlipper, kRightFlipper, kDeckFlipper}};
 inline constexpr std::size_t kLeftFlipperIndex = 0;
 inline constexpr std::size_t kRightFlipperIndex = 1;
+inline constexpr std::size_t kDeckFlipperIndex = 2;
 
 // --- Thruster bumpers ------------------------------------------------------------
 // Round posts that kick the ball away when touched: a wide triangle in the
@@ -403,9 +444,14 @@ inline constexpr std::size_t kRightFlipperIndex = 1;
 struct Bumper {
   Circle shape;
 };
+// Concept A: the right one moves in from (449, 222), which is now inside the
+// Flight Deck, to (423, 214), and is smaller (20): more than a ball's width
+// and 8 to spare (32) clear of the centre bumper (32.5), of the right lane
+// post's foot (33.4) and of the right turbo target (32.6), and 28 clear of
+// the deck's left wall, so no pocket forms between any of them.
 inline constexpr std::array<Bumper, 3> kBumpers{{
     {{{262.0F, 222.0F}, 24.0F}},
-    {{{449.0F, 222.0F}, 24.0F}},
+    {{{423.0F, 214.0F}, 20.0F}},
     {{{355.5F, 250.0F}, 24.0F}},
 }};
 
@@ -420,9 +466,12 @@ struct Target {
 };
 inline constexpr float kTargetRadius = 5.0F;
 inline constexpr Capsule kNestTargetLeft{{175.5F, 218.8F}, {191.0F, 240.0F}, kTargetRadius};
+// Concept A: the right one stands on the outer (nest) face of the Flight
+// Deck's left wall, below the right bumper (32 clear of it).
+inline constexpr Capsule kNestTargetRight{{468.0F, 250.0F}, {468.0F, 276.0F}, kTargetRadius};
 inline constexpr std::array<Target, 2> kTargets{{
     {kNestTargetLeft, TargetId::NestLeft},
-    {mirrored(kNestTargetLeft), TargetId::NestRight},
+    {kNestTargetRight, TargetId::NestRight},
 }};
 
 // --- Bay doors -------------------------------------------------------------------
@@ -445,9 +494,24 @@ inline constexpr Vec2 kDoorMouthHalfSize{54.0F, 32.0F};
 // --- Rollovers -------------------------------------------------------------------
 // Switches in the playfield that register a ball passing over: the three
 // roll call lanes at the top and the four return lanes at the bottom.
-enum class RolloverGroup : std::uint8_t { TopLane, Inlane, Outlane };
+// Flaps (concept A, Rev A.2): five flush rollovers in an arc across the
+// insert field, F-L-A-P-S. Flush: they never touch the ball.
+enum class RolloverGroup : std::uint8_t { TopLane, Inlane, Outlane, Flaps };
 // Which switch it is: the rules light a lamp for each.
-enum class RolloverId : std::uint8_t { RollCall1, RollCall2, RollCall3, WingW, WingI, WingN, WingG };
+enum class RolloverId : std::uint8_t {
+  RollCall1,
+  RollCall2,
+  RollCall3,
+  WingW,
+  WingI,
+  WingN,
+  WingG,
+  FlapF,
+  FlapL,
+  FlapA,
+  FlapP,
+  FlapS,
+};
 struct Rollover {
   Circle zone;
   RolloverGroup group;
@@ -458,7 +522,8 @@ inline constexpr float kTopLaneY = 150.0F;
 inline constexpr float kReturnLaneY = 705.0F;
 inline constexpr Vec2 kLeftOutlane{59.0F, kReturnLaneY};
 inline constexpr Vec2 kLeftInlane{107.0F, kReturnLaneY};
-inline constexpr std::array<Rollover, 7> kRollovers{{
+inline constexpr float kFlapsY = 616.0F;
+inline constexpr std::array<Rollover, 12> kRollovers{{
     {{{293.0F, kTopLaneY}, kRolloverRadius}, RolloverGroup::TopLane, RolloverId::RollCall1},
     {{{355.5F, kTopLaneY}, kRolloverRadius}, RolloverGroup::TopLane, RolloverId::RollCall2},
     {{{418.0F, kTopLaneY}, kRolloverRadius}, RolloverGroup::TopLane, RolloverId::RollCall3},
@@ -466,6 +531,11 @@ inline constexpr std::array<Rollover, 7> kRollovers{{
     {{kLeftInlane, kRolloverRadius}, RolloverGroup::Inlane, RolloverId::WingI},
     {{mirrored(kLeftInlane), kRolloverRadius}, RolloverGroup::Inlane, RolloverId::WingN},
     {{mirrored(kLeftOutlane), kRolloverRadius}, RolloverGroup::Outlane, RolloverId::WingG},
+    {{{291.0F, kFlapsY + 10.0F}, kRolloverRadius}, RolloverGroup::Flaps, RolloverId::FlapF},
+    {{{323.0F, kFlapsY + 2.0F}, kRolloverRadius}, RolloverGroup::Flaps, RolloverId::FlapL},
+    {{{355.5F, kFlapsY}, kRolloverRadius}, RolloverGroup::Flaps, RolloverId::FlapA},
+    {{{388.0F, kFlapsY + 2.0F}, kRolloverRadius}, RolloverGroup::Flaps, RolloverId::FlapP},
+    {{{420.0F, kFlapsY + 10.0F}, kRolloverRadius}, RolloverGroup::Flaps, RolloverId::FlapS},
 }};
 // A rollover is a switch across its lane, a strip and not the drawn circle.
 // Its half width is the lane's half width less the ball's edge, so a ball
@@ -476,6 +546,9 @@ inline constexpr float kRolloverReach = 26.0F;
 inline constexpr float kOutlaneReach = 19.0F;
 inline constexpr float kTopLaneHalfLength = 18.0F;
 [[nodiscard]] constexpr Vec2 rolloverHalfSize(const Rollover& rollover) noexcept {
+  if (rollover.group == RolloverGroup::Flaps) {
+    return {rollover.zone.radius, rollover.zone.radius};
+  }
   return {rollover.group == RolloverGroup::Outlane ? kOutlaneReach : kRolloverReach,
           rollover.group == RolloverGroup::TopLane ? kTopLaneHalfLength : rollover.zone.radius};
 }
@@ -485,7 +558,11 @@ inline constexpr float kTopLaneHalfLength = 18.0F;
 // is carried under the playfield, out of sight but shown by a glow moving
 // along kBriefingSubway, to a set-down far from the room. (Revision 2's
 // Scoop, a hole that kicked the ball back out of its own mouth, is gone.)
-enum class HoleType : std::uint8_t { Subway, Hangar, RampLeft, RampRight };
+// Concept A adds: DeckRamp, the Skyway's ride diverted to the Flight Deck
+// (never taken from the field: the Skyway's capture is switched to it);
+// CatShot, the deck's hole whose ride ends in the Hangar; DeckDrain, the
+// deck's drain, a subway to the left inlane.
+enum class HoleType : std::uint8_t { Subway, Hangar, RampLeft, RampRight, DeckRamp, CatShot, DeckDrain };
 struct Hole {
   Vec2 center;
   Vec2 halfSize;  // The ball's centre is taken inside this box.
@@ -495,7 +572,7 @@ struct Hole {
   Vec2 exitVelocity;
 };
 [[nodiscard]] constexpr bool isRamp(HoleType type) noexcept {
-  return type == HoleType::RampLeft || type == HoleType::RampRight;
+  return type == HoleType::RampLeft || type == HoleType::RampRight || type == HoleType::DeckRamp;
 }
 // A ramp takes only a ball moving up the table at least this fast; a slower
 // one rolls on over the mouth into the nest.
@@ -513,7 +590,10 @@ inline constexpr std::size_t kScoopHole = 0;
 inline constexpr std::size_t kHangarHole = 1;
 inline constexpr std::size_t kRunwayHole = 2;
 inline constexpr std::size_t kSkywayHole = 3;
-inline constexpr std::array<Hole, 4> kHoles{{
+inline constexpr std::size_t kDeckRampHole = 4;
+inline constexpr std::size_t kCatHole = 5;
+inline constexpr std::size_t kDeckDrainHole = 6;
+inline constexpr std::array<Hole, 7> kHoles{{
     // Briefing room (revision 3): off centre; returned by its subway, set
     // down above the right inlane like the Skyway's rail, to the right
     // flipper: a repeat needs a transfer.
@@ -523,6 +603,16 @@ inline constexpr std::array<Hole, 4> kHoles{{
     // Runway and Skyway: set down at the far end of the rail, above an inlane.
     {{192.0F, 425.0F}, {27.0F, 9.0F}, HoleType::RampLeft, {107.0F, 672.0F}, {0.0F, 80.0F}},
     {{519.0F, 425.0F}, {27.0F, 9.0F}, HoleType::RampRight, {604.0F, 672.0F}, {0.0F, 80.0F}},
+    // Concept A. The Skyway diverted: a box of no size (the field never
+    // takes a ball into it), set down on the Flight Deck.
+    {{519.0F, 425.0F}, {0.0F, 0.0F}, HoleType::DeckRamp, kDeckSetDown, kDeckSetDownVelocity},
+    // CAT SHOT: the deck's top left corner, between its wall and C. Its
+    // ride ends in the Hangar, which locks or returns the ball as if it had
+    // been shot in (exit: the Hangar's).
+    {{495.0F, 196.0F}, {14.0F, 16.0F}, HoleType::CatShot, {279.0F, 420.0F}, {-211.0F, -60.0F}},
+    // Deck drain: past the deck flipper's tip, on the floor; a subway sets
+    // the ball down where the Runway's rail does, above the left inlane.
+    {{495.0F, 292.0F}, {14.0F, 12.0F}, HoleType::DeckDrain, {107.0F, 672.0F}, {0.0F, 80.0F}},
 }};
 // Ramp rails: where a ball taken by a ramp is drawn while it rides. It moves
 // along the polyline at constant speed over kRampRideSeconds and is set down
@@ -553,15 +643,62 @@ inline constexpr std::array<Vec2, 9> kSkywayRail = [] {
   }
   return rail;
 }();
+// The Skyway's branch to the Flight Deck (concept A): up the Skyway, then
+// over the deck to its set-down.
+inline constexpr std::array<Vec2, 9> kDeckRail{{
+    {519.0F, 425.0F},
+    {519.0F, 372.0F},
+    {524.0F, 340.0F},
+    {534.0F, 312.0F},
+    {548.0F, 290.0F},
+    {556.0F, 270.0F},
+    {552.0F, 258.0F},
+    {543.0F, 253.0F},
+    kDeckSetDown,
+}};
 [[nodiscard]] constexpr const std::array<Vec2, 9>& rampRail(HoleType type) noexcept {
-  return type == HoleType::RampRight ? kSkywayRail : kRunwayRail;
+  return type == HoleType::RampRight ? kSkywayRail
+                                     : (type == HoleType::DeckRamp ? kDeckRail : kRunwayRail);
 }
+// The CAT SHOT's ride: out of the deck's corner, over the top lanes and
+// down onto the Hangar's roof into the Hangar (drawn above the field).
+inline constexpr double kCatRideSeconds = 0.9;
+inline constexpr std::array<Vec2, 9> kCatRail{{
+    {495.0F, 196.0F},
+    {482.0F, 140.0F},
+    {440.0F, 108.0F},
+    {380.0F, 96.0F},
+    {324.0F, 100.0F},
+    {290.0F, 128.0F},
+    {280.0F, 180.0F},
+    {279.0F, 260.0F},
+    {279.0F, 349.0F},
+}};
+// The deck drain's subway: under the field from the drain to the left
+// inlane's set-down; the ball waits kDeckDrainWaitSeconds in the drain, then
+// rides for kDeckDrainRideSeconds (the glow).
+inline constexpr double kDeckDrainWaitSeconds = 0.3;
+inline constexpr double kDeckDrainRideSeconds = 0.6;
+inline constexpr std::array<Vec2, 6> kDeckSubway{{
+    {495.0F, 296.0F},
+    {470.0F, 380.0F},
+    {360.0F, 470.0F},
+    {200.0F, 560.0F},
+    {120.0F, 620.0F},
+    {107.0F, 672.0F},
+}};
 // How long the Briefing room and the Hangar keep a ball before returning
 // it, in seconds. One ball at a time: a second ball that arrives meanwhile
 // is taken too and waits its turn behind the first.
 inline constexpr double kScoopHoldSeconds = 0.9;
 inline constexpr double kHangarHoldSeconds = 0.9;
 [[nodiscard]] constexpr double holdSeconds(HoleType type) noexcept {
+  if (type == HoleType::CatShot) {
+    return kCatRideSeconds;
+  }
+  if (type == HoleType::DeckDrain) {
+    return kDeckDrainWaitSeconds + kDeckDrainRideSeconds;
+  }
   return isRamp(type) ? kRampRideSeconds
                       : (type == HoleType::Hangar ? kHangarHoldSeconds : kScoopHoldSeconds);
 }
@@ -612,7 +749,8 @@ inline constexpr Vec2 kScoopDropPoint{441.0F, 390.0F};
 // Where a ball is seen to come up when a hole returns it: out of the hole
 // itself for the Hangar, out of the floor at the set-down for the subway.
 [[nodiscard]] constexpr Vec2 holeRisePoint(const Hole& hole) noexcept {
-  return hole.type == HoleType::Subway ? hole.exitPosition : holeDropPoint(hole);
+  return hole.type == HoleType::Subway || hole.type == HoleType::DeckDrain ? hole.exitPosition
+                                                                             : holeDropPoint(hole);
 }
 static_assert(kBriefingSubway.front().x == kScoopDropPoint.x &&
               kBriefingSubway.front().y == kScoopDropPoint.y);
@@ -889,7 +1027,8 @@ static_assert(kLamps.size() == static_cast<std::size_t>(LampId::Count), "one lam
 [[nodiscard]] constexpr bool isLadderLamp(LampId id) noexcept { return id >= LampId::DroneArmour1; }
 // The lamp beside a stand-up (kStandups order).
 [[nodiscard]] constexpr LampId taxiLamp(std::size_t standup) noexcept {
-  return static_cast<LampId>(static_cast<std::size_t>(LampId::TaxiT) + (standup < 4 ? standup : 0));
+  return static_cast<LampId>(static_cast<std::size_t>(LampId::TaxiT) +
+                             (standup < kTaxiStandups ? standup : 0));
 }
 
 // --- Flasher domes (revision 3, TABLE_REV3.md 3.10) ------------------------------------
@@ -954,6 +1093,46 @@ inline constexpr double kDroneRiseSeconds = 0.15;
 // Hits that knock it down (the rules count them: Rules::onDrone).
 inline constexpr int kDroneArmour = 5;
 
+// --- Concept A, Rev A.2: the centre devices --------------------------------------------
+// Altitude (the game's progression, FL100 to FL500) is 0 to 4: the rules
+// own it; the devices below read it. Every one of them sits off the eight
+// shot lines and, idle, does nothing to the ball.
+inline constexpr int kAltitudeLevels = 5;
+
+// Air Pocket: a magnet under the insert field. It pulses: once every
+// airPocketPeriodSeconds(altitude) it is on for kAirPocketOnSeconds, and
+// any free ball whose centre is within kAirPocketRadius and which is not
+// rising fast (a ball just flipped is never robbed) is drawn to its centre
+// and held; at the end of the pulse each held ball is let go with a kick of
+// kAirPocketKickSpeed up the table to the left or right (never down at the
+// flippers), the side and angle drawn from the step count. Off at FL100 and
+// FL200 (period 0). Its clock is the game's step count: nothing to save.
+inline constexpr Vec2 kAirPocketCenter{355.5F, 652.0F};
+inline constexpr float kAirPocketRadius = 26.0F;
+inline constexpr double kAirPocketOnSeconds = 0.35;
+inline constexpr float kAirPocketPull = 9.0F;  // Per second: velocity = pull x offset.
+inline constexpr float kAirPocketRisingLimit = -250.0F;  // px/s; faster upward is not taken.
+inline constexpr float kAirPocketKickSpeed = 420.0F;
+[[nodiscard]] constexpr double airPocketPeriodSeconds(int altitude) noexcept {
+  return altitude >= 4 ? 3.0 : (altitude == 3 ? 5.0 : (altitude == 2 ? 9.0 : 0.0));
+}
+
+// Prop Wash: a flat disc turning in the field. A ball rolling on it is
+// dragged towards the disc's own surface speed, at most kPropWashGrip px/s
+// per second (friction, not a kick: a fast shot across it bends a little, a
+// slow ball is spun off). Still at FL100; it turns faster with altitude.
+inline constexpr Circle kPropWash{{355.5F, 712.0F}, 38.0F};
+inline constexpr float kPropWashGrip = 700.0F;
+[[nodiscard]] constexpr float propWashSpin(int altitude) noexcept {
+  // Radians per second, clockwise on screen.
+  return altitude >= 3 ? 9.0F : (altitude >= 1 ? 4.5F : 0.0F);
+}
+
+// Pylon: a pop-up target in the centre of the insert field. Flush (not in
+// play) unless the rules raise it (sorties and multiballs); it rises only
+// when no free ball is over it. Dead material: a hit drops the ball.
+inline constexpr Circle kPylon{{355.5F, 548.0F}, 10.0F};
+
 // --- Elements --------------------------------------------------------------------------
 // Identifies one interactive element of the table. Stored in physics shapes
 // and carried by events.
@@ -970,6 +1149,7 @@ enum class ElementKind : std::uint8_t {
   Drone,        // Revision 3: the training drone.
   Standup,      // Revision 3: T-A-X-I (0 to 3).
   CaptiveBall,  // Revision 3: the captive ball (0) struck, its switch (1) closed.
+  Pylon,        // Concept A: the pop-up pylon.
 };
 struct ElementRef {
   ElementKind kind = ElementKind::None;
@@ -998,6 +1178,7 @@ struct ElementRef {
       return kSensors.size();
     case Kickback:
     case Drone:
+    case Pylon:
       return 1;
     case Standup:
       return kStandups.size();

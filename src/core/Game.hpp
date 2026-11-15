@@ -298,6 +298,19 @@ class Game {
 
   // Score, lights, balls and messages.
   [[nodiscard]] const Rules& rules() const noexcept { return rules_; }
+  // Concept A measuring knobs (Rules::setAltitude, setDeckPolicy,
+  // setPylonPolicy): the progression level and the stub policies.
+  void setAltitude(int level) noexcept { rules_.setAltitude(level); }
+  void setDeckPolicy(int policy) noexcept { rules_.setDeckPolicy(policy); }
+  void setPylonPolicy(int policy) noexcept { rules_.setPylonPolicy(policy); }
+  [[nodiscard]] bool pylonUp() const noexcept { return physics_.pylonUp(); }
+  [[nodiscard]] std::uint32_t airPocketCatches() const noexcept {
+    return physics_.airPocketCatches();
+  }
+  // The Air Pocket is pulling (drawing), and the Prop Wash's angle (drawing,
+  // radians; from the step count).
+  [[nodiscard]] bool airPocketOn() const noexcept { return airPocketOn_; }
+  [[nodiscard]] float propWashAngle() const noexcept;
   [[nodiscard]] bool gameOver() const noexcept { return rules_.gameOver(); }
   // 1 just after a slingshot fired, fading to 0.
   [[nodiscard]] float slingshotFlash(std::size_t index) const noexcept {
@@ -427,6 +440,9 @@ class Game {
   // A ball has just been taken by a hole or the kickback: the rules hear of
   // it and the Hangar's answer is carried out.
   void tellRulesOfCapture(std::size_t slot);
+  void tellRulesOfHole(std::size_t slot, std::size_t hole);
+  void driveDevices(bool playable);
+  [[nodiscard]] bool deckFlipperAllowed();
   void updateSpinners();
   void addSpins(std::size_t spinner, float speedAcross, int direction) noexcept;
   // The drone: a hit by the ball in a slot (for its recoil and events), and
@@ -463,12 +479,15 @@ class Game {
   std::array<float, table::kSlingshots.size()> slingshotFlash_{};
   std::array<std::uint32_t, table::kRollovers.size()> rolloverCounts_{};
   std::array<std::uint32_t, table::kHoles.size()> holeCounts_{};
+  bool airPocketOn_ = false;  // Drawing only; set from the step count each step.
   // What the game keeps for each ball slot, beside the physics state.
   struct BallState {
     // What is holding the ball (a hole or the kickback), and for how many
     // steps its hold has run so far.
     table::ElementRef holder{};
     std::uint32_t heldSteps = 0;
+    // Concept A: steps this ball has spent on the Flight Deck in one visit.
+    std::uint32_t deckSteps = 0;
     bool wasHeld = false;
     // The order in which held balls were taken: lower came first.
     std::uint64_t arrival = 0;

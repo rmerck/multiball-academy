@@ -438,8 +438,12 @@ void testEveryStateSaves() {
 
 // The same save put on two new tables gives two games that never part: a
 // restore is as deterministic as the game itself.
-void testRestoreIsDeterministic() {
+// Concept A: also at FL500 (altitude 4), where the Air Pocket pulses and the
+// Prop Wash turns: both run on the step count and the altitude, which the
+// save carries.
+void testRestoreIsDeterministic(int altitude) {
   Player player(8);
+  player.harness.game().setAltitude(altitude);
   for (int i = 0; i < 120 * 120; ++i) {
     player.step();
   }
@@ -504,11 +508,12 @@ save::Snapshot withoutBodies(save::Snapshot s) {
 // one field differs, which shows that nothing the game depends on is left
 // out of the save; and the worlds must keep together for two seconds at
 // least.
-void testContinuesAsTheOriginal() {
+void testContinuesAsTheOriginal(int altitude) {
   int compared = 0;
   int shortest = 1 << 30;
   for (std::uint64_t seed = 1; seed <= 8 && compared < 4; ++seed) {
     Player player(seed + 40U);
+    player.harness.game().setAltitude(altitude);
     for (int i = 0; i < 120 * 400 && compared < 4; ++i) {
       player.step();
       Game& game = player.harness.game();
@@ -551,8 +556,8 @@ void testContinuesAsTheOriginal() {
       player.waited = 0;
     }
   }
-  std::fprintf(stderr, "saved games: restored games kept with their originals for %d steps "
-                       "at least\n", shortest);
+  std::fprintf(stderr, "saved games (altitude %d): restored games kept with their originals "
+                       "for %d steps at least\n", altitude, shortest);
   CHECK(compared >= 4);
   CHECK(shortest >= 240);
 }
@@ -984,8 +989,10 @@ void testSaveGame() {
   testRejectsBadFields();
   testInFlight();
   testCaptiveMidStroke();
-  testContinuesAsTheOriginal();
+  testContinuesAsTheOriginal(0);
+  testContinuesAsTheOriginal(4);
   testEveryStateSaves();
-  testRestoreIsDeterministic();
+  testRestoreIsDeterministic(0);
+  testRestoreIsDeterministic(4);
   testFast();
 }

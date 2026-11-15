@@ -269,6 +269,34 @@ class Rules {
   void onStandup(std::size_t index, float speed) noexcept;
   void onCaptiveBall(float speed) noexcept;
   int droneHits() const noexcept { return droneHits_; }
+  // --- Concept A (G1 stubs; the full rules are G5) ----------------------------
+  // Altitude, FL100 (0) to FL500 (4): the progression the devices read
+  // (table::airPocketPeriodSeconds, table::propWashSpin). Set by the rules
+  // as the game climbs; settable here so each level can be measured.
+  int altitude() const noexcept { return altitude_; }
+  void setAltitude(int level) noexcept {
+    altitude_ = level < 0 ? 0 : (level >= table::kAltitudeLevels ? table::kAltitudeLevels - 1 : level);
+  }
+  // The Skyway's diverter sends its next ball to the Flight Deck. Stub:
+  // every other Skyway (lit by one that went to the inlane), or always or
+  // never when forced for measuring (setDeckPolicy: 0 alternate, 1 always,
+  // 2 never).
+  bool deckLit() const noexcept {
+    return deckPolicy_ == 1 || (deckPolicy_ == 0 && deckLit_);
+  }
+  void setDeckPolicy(int policy) noexcept { deckPolicy_ = policy < 0 || policy > 2 ? 0 : policy; }
+  // The pylon is wanted up: during a multiball (a sortie, G5, will add its
+  // own), or forced for measuring (setPylonPolicy: 0 rules, 1 always up,
+  // 2 never).
+  bool pylonWanted() const noexcept {
+    return pylonPolicy_ == 1 || (pylonPolicy_ == 0 && !gameOver_ && multiballRunning());
+  }
+  void setPylonPolicy(int policy) noexcept { pylonPolicy_ = policy < 0 || policy > 2 ? 0 : policy; }
+  void onPylon() noexcept;
+  // F-L-A-P-S: letters lit this ball.
+  bool flapLit(std::size_t letter) const noexcept {
+    return letter < flapsLit_.size() && flapsLit_[letter];
+  }
   void onRollover(std::size_t index, std::size_t ball = 0) noexcept;
   // A ball was taken by a hole (Game tells it from the physics state, once
   // per capture). The answer matters for the Hangar only; any other hole
@@ -713,6 +741,13 @@ class Rules {
   bool messageFresh_ = false;  // Said since the last step.
   std::array<display::Text, kMessageQueue> waiting_{};
   std::size_t waitingCount_ = 0;
+
+  // Concept A (G1 stubs).
+  int altitude_ = 0;
+  bool deckLit_ = false;
+  int deckPolicy_ = 0;
+  int pylonPolicy_ = 0;
+  std::array<bool, 5> flapsLit_{};
 
   // The rules' own source of chance: the same events give the same game.
   std::uint64_t random_ = 0xD1B54A32D192ED03ULL;
