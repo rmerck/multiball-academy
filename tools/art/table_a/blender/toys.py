@@ -39,8 +39,8 @@ HEX = {
     "DAY": "#6FB4FF", "CLEAR": "#F2F4FF", "DUSK": "#FFB050", "SUNSET": "#FF8A5C", "NIGHTV": "#9A6BFF",
     "CORAL": "#FF5A4E", "SLATE": "#2A3048",
     # floor paint for flush pieces under ball paths: deck-dark so the ball keeps 3:1 (palette LUM_DECK_MAX)
-    "F_DECK": "#161B3C", "F_PAINT_W": "#3E4670", "F_PAINT_Y": "#5A4A1E", "F_BLADE": "#363E74",
-    "F_BAND": "#6E2A2E", "F_TIP": "#6A5A1C", "F_RING1": "#164A52", "F_RING2": "#24406E", "F_RING3": "#3A2C66",
+    "F_DECK": "#161B3C", "F_PAINT_W": "#3E4670", "F_PAINT_Y": "#5A4A1E", "F_BLADE": "#262C58",
+    "F_BAND": "#5E2228", "F_TIP": "#5A4C18", "F_RING1": "#164A52", "F_RING2": "#24406E", "F_RING3": "#3A2C66",
     "F_STENCIL": "#262C52",
 }
 
@@ -223,7 +223,10 @@ def mat(name, colour, metallic=0.0, rough=0.35, coat=0.0, trans=0.0, ior=1.45, e
     return m
 
 
-def chrome():
+def chrome(floor=False):
+    """Polished chrome; floor=True: the duller trim of flush pieces (highlights held under LUM_STATIC_MAX)."""
+    if floor:
+        return mat("FloorChrome", "#6E7A90", metallic=1.0, rough=0.30)
     return mat("Chrome", "#E8F0FA", metallic=1.0, rough=0.12)
 
 
@@ -432,7 +435,7 @@ def build_propwash():
     bpy.context.scene.collection.objects.link(rot)
     parts = []
     parts.append(cyl(R, 1.0, (0, 0, -0.5), 128, mat("Disc", HEX["F_DECK"], rough=0.4, coat=0.5)))
-    ring = cyl(R, 1.2, (0, 0, -0.4), 128, chrome())
+    ring = cyl(R, 1.2, (0, 0, -0.4), 128, chrome(True))
     inner = cyl(R - 2.2, 1.6, (0, 0, -0.4), 128, mat("Disc2", HEX["NIGHT"], rough=0.45, coat=0.4))
     parts += [ring, inner]
     # airflow rings: printed arcs that rotate with the disc
@@ -541,7 +544,7 @@ def build_flight_deck():
     deck_m.node_tree.links.new(noise.outputs["Fac"], bump.inputs["Height"])
     deck_m.node_tree.links.new(bump.outputs["Normal"], nodes.get("Principled BSDF").inputs["Normal"])
     plate = prism(pts, -1.0, 0.0, deck_m, "Deck")
-    edge = prism(pts, -1.2, -0.05, chrome(), "Edge")
+    edge = prism(pts, -1.2, -0.05, chrome(True), "Edge")
     edge.scale = (1.0, 1.0, 1.0)
     paint_w = plastic("F_PAINT_W", 0.6, 0.0)
     paint_y = plastic("F_PAINT_Y", 0.6, 0.0)
@@ -563,11 +566,11 @@ def build_flight_deck():
         t0, t1 = k / 9.0, k / 9.0 + 0.055
         stripe(sx + (ex - sx) * t0, sy + (ey - sy) * t0, sx + (ex - sx) * t1, sy + (ey - sy) * t1, 1.6, paint_w)
     # catapult track: chrome slot from the set-down towards the CAT SHOT
-    stripe(532.0, 252.0, 498.0, 212.0, 2.4, chrome(), 0.08)
+    stripe(532.0, 252.0, 498.0, 212.0, 2.4, chrome(True), 0.08)
     stripe(532.0, 252.0, 498.0, 212.0, 1.0, mat("TrackSlot", HEX["INK"], rough=0.9), 0.12)
     # recesses: CAT SHOT (495,196, 14x16) and deck drain (495,292, 14x12)
     for (hx, hy, ax, ay) in ((495.0, 196.0, 14.0, 16.0), (495.0, 292.0, 14.0, 12.0)):
-        box((2 * ax + 3, 2 * ay + 3, 0.3), (hx, -hy, 0.05), chrome())
+        box((2 * ax + 3, 2 * ay + 3, 0.3), (hx, -hy, 0.05), chrome(True))
         box((2 * ax, 2 * ay, 0.4), (hx, -hy, 0.1), mat("Recess", HEX["INK"], rough=0.95))
     # hazard chevrons at the drain's lip
     for k in range(4):
