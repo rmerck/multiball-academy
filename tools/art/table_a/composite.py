@@ -91,18 +91,27 @@ def flipper(c, f, col):
 
 
 def main(dst, level):
+    im = render(level, PX_W / L["width"])
+    im.save(dst, optimize=True)
+    print("composite", level, im.size, dst)
+
+
+def render(level, scale, worst=False, balls=True, ramps=True):
+    """The table as the game draws it, in a sample state at level fl100 or fl500, `scale` pixels per unit.
+    worst: every insert lit, every jet and dome on, the deck open, doors marked (tools/art/visibility_full.py
+    --table-a); balls: the sample balls; ramps: the clear ramps on top (else left out)."""
     top = level == "fl500"
     k = 4 if top else 0
     gi_col = P.ALTITUDE_GI[k]
-    st = Stage(L["width"], L["height"], PX_W / L["width"], 1)
+    st = Stage(L["width"], L["height"], scale, 1)
     c = st.c
     out = os.path.join(HERE, "out")
     bg = skia.Image.open(os.path.join(out, "background_a.png"))
     c.drawImageRect(bg, skia.Rect.MakeWH(L["width"], L["height"]), skia.SamplingOptions(skia.FilterMode.kLinear,
                                                                                          skia.MipmapMode.kLinear))
-    # general illumination: the grey light map in the Altitude colour, additive
+    # general illumination: the grey light map in the Altitude colour, additive (TableEffects, giGrey)
     gi = np.asarray(Image.open(os.path.join(out, "gi_a.png")).convert("L"), np.float32) / 255.0
-    strength = 0.42 if top else 0.34
+    strength = P.TABLE_A_GI_STRENGTH[1] if top else P.TABLE_A_GI_STRENGTH[0]
     r, g, b = hexrgb(gi_col)
     rgba = np.zeros(gi.shape + (4,), np.uint8)
     rgba[..., 0] = np.clip(gi * r * strength, 0, 255)
@@ -113,14 +122,25 @@ def main(dst, level):
     p = skia.Paint(); p.setBlendMode(skia.BlendMode.kPlus)
     c.drawImageRect(gimg, skia.Rect.MakeWH(L["width"], L["height"]), skia.SamplingOptions(skia.FilterMode.kLinear,
                                                                                           skia.MipmapMode.kNone), p)
-    # altimeter pointer at the current level, the turntable, the deck
+    # altimeter pointer at the current level, the turntable, the deck (open when worst, or at FL500)
     draw_frame(c, "altitude_plate", "fl%d00" % (k + 1), *F.ALT_PLATE_AT, centre=False)
     pw = L["propWash"]["c"]
     draw_frame(c, "propwash_blur" if top else "propwash", "blur030" if top else "rot015", *pw)
-    draw_frame(c, "flight_deck", "lit_fl500" if top else "off", *META["flight_deck"]["anchor"], centre=False)
+    deck_open = top or worst
+    draw_frame(c, "flight_deck", "lit_fl%d00" % (k + 1) if deck_open else "off", *META["flight_deck"]["anchor"],
+               centre=False)
+    if deck_open or True:
+        # the deck flood (TableRenderer::drawDeckA): three soft lights in the GI colour over the plate
+        dx, dy = META["flight_deck"]["anchor"]
+        cw, ch = META["flight_deck"]["cellUnits"]
+        a = P.TABLE_A_DECK_FLOOD[1 if deck_open else 0]
+        for f in (-0.28, 0.0, 0.28):
+            glow(c, dx + cw / 2, dy + ch / 2 + f * ch, cw * 0.62, gi_col, a)
     # lit lamps for a sample state
     plan = F.lamp_plan()
-    if top:
+    if worst:
+        lit = {e["name"] for e in plan}
+    elif top:
         lit = {e["name"] for e in plan if e["source"] == "layout" and not e["name"].startswith(("Rank6", "Rank7", "Bonus5", "Combo4", "Combo5", "DroneArmour"))}
         lit |= {e["name"] for e in plan if e["name"].startswith(("Altitude", "Flaps", "Bogey", "Radar", "Multiball", "DeckLit"))}
         lit |= {e["name"] for e in plan if e["name"].startswith("Ladder") and e["name"][-1] in "12"}
@@ -130,41 +150,59 @@ def main(dst, level):
                "FlapsF", "FlapsL", "AltitudeFL100", "LadderHangar1", "GForce1", "TaxiT"}
     for e in plan:
         if e["name"] in lit:
+            if e["source"] == "decor":
+                e = dict(e, colour=gi_col)
             lit_lamp(c, e)
     # toys
     for d in L["bayDoors"]:
-        draw_frame(c, "bay_door", "closed", (d["a"][0] + d["b"][0]) / 2, d["a"][1])
-    draw_frame(c, "pylon", "up" if top else "down", *L["pylon"]["c"])
+        draw_frame(c, "bay_door", "closed", (d["a"][0] + d["b"][0]) / 2, d["a"][1],
+                   tint=P.TINT["door_marked"] if worst else P.TINT["door"])
+    draw_frame(c, "pylon", "up" if (top or worst) else "down", *L["pylon"]["c"])
     sprites = os.path.join(ROOT, "assets", "sprites")
     for i, bmp in enumerate(L["bumpers"]):
         (x, y), rr = bmp["c"], bmp["r"]
         sprite_file(c, os.path.join(sprites, "bumper.png"), x, y, 2 * rr + 6, tint=P.ORANGE)
-        on = top and i == 1
+        on = worst or (top and i == 1)
         draw_frame(c, "jet_caps", "jet%d_%s" % (i + 1, "on" if on else "off"), x, y)
         if on:
             glow(c, x, y, rr * 1.8, neon(P.AQUA), 0.35)
     dr = L["drone"]
     draw_frame(c, "drone", "armour1" if top else "armour6", (dr["leftX"] + dr["rightX"]) / 2 + (14 if top else -10), dr["y"])
     domes = [(279.0, 296.0, "hangar"), (473.0, 357.0, "mission"), (391.0, 360.0, "afterburner"),
-             (145.0, 392.0, "runway"), (566.0, 392.0, "skyway"), (324.0, 168.0, "nest")]
+             (145.0, 392.0, "runway"), (566.0, 392.0, "skyway"), (324.0, 168.0, "nest"),
+             (150.0, 692.0, "sling_left"), (561.0, 692.0, "sling_right"), (476.0, 165.0, "deck")]
+    dome_col = dict(hangar=P.ORANGE, mission=P.YELLOW, afterburner=P.GREEN, runway=P.ORCHID, skyway=P.PINK,
+                    nest=P.CREAM, sling_left=P.AQUA, sling_right=P.AQUA, deck=P.AQUA)
     for x, y, n in domes:
-        if top and n in ("hangar", "skyway", "nest"):
+        if n == "deck":
+            draw_frame(c, "flasher_domes", "deck_off", x, y)
+        if worst or (top and n in ("hangar", "skyway", "nest")):
             draw_frame(c, "flasher_domes", n + "_on", x, y)
-            glow(c, x, y, 34, neon(dict(hangar=P.ORANGE, skyway=P.PINK, nest=P.CREAM)[n]), 0.4)
+            glow(c, x, y, 34, neon(dome_col[n]), 0.4)
     for f, col in zip(L["flippers"], (P.PINK, P.PINK, P.AQUA)):
         flipper(c, f, col)
     cb = L["captiveBall"]
     sprite_file(c, os.path.join(sprites, "ball.png"), cb["home"][0], cb["home"][1], 2 * cb["r"] * 4 / 3)
     # balls: one on the floor, one passing under the Runway's plastic; three in play at FL500
-    balls = [(300.0, 640.0), (192.0, 392.0)] + ([(470.0, 560.0)] if top else [])
-    for x, y in balls:
-        c.drawCircle(x + 4, y + 6, 15, blur(fill(C(P.INK, 120)), 3))
-        sprite_file(c, os.path.join(sprites, "ball.png"), x, y, 32.0)
+    if balls:
+        for x, y in [(300.0, 640.0), (192.0, 392.0)] + ([(470.0, 560.0)] if top else []):
+            c.drawCircle(x + 4, y + 6, 15, blur(fill(C(P.INK, 120)), 3))
+            sprite_file(c, os.path.join(sprites, "ball.png"), x, y, 32.0)
+    if ramps:
+        draw_ramps(c, top)
+    return st.image()
+
+
+def draw_ramps(c, top):
     draw_frame(c, "ramp_runway", "lit" if top else "normal", *META["ramp_runway"]["anchor"], centre=False)
     draw_frame(c, "ramp_skyway", "to_deck_lit" if top else "lit", *META["ramp_skyway"]["anchor"], centre=False)
-    im = st.image()
-    im.save(dst, optimize=True)
-    print("composite", level, im.size, dst)
+
+
+def ramp_layer(level, scale):
+    """The ramps alone, straight-alpha RGBA, for measuring a ball under their plastic."""
+    st = Stage(L["width"], L["height"], scale, 1, transparent=True)
+    draw_ramps(st.c, level == "fl500")
+    return st.image()
 
 
 if __name__ == "__main__":

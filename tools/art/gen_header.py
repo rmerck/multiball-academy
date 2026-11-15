@@ -147,6 +147,7 @@ def table_a():
              "inline constexpr float kADeckFloodOn = %.2fF;" % P.TABLE_A_DECK_FLOOD[1],
              "inline constexpr float kAApproach = %.2fF;" % P.TABLE_A_APPROACH,
              "inline constexpr float kAReticle = %.2fF;" % P.TABLE_A_RETICLE,
+             "inline constexpr float kABallThrough = %.2fF;" % P.TABLE_A_BALL_THROUGH,
              "inline constexpr float kAGiStrength = %.2fF;" % P.TABLE_A_GI_STRENGTH[0],
              "inline constexpr float kAGiStrengthTop = %.2fF;" % P.TABLE_A_GI_STRENGTH[1],
              "inline constexpr float kAAltitudePlateX = %.1fF;  // its top-left corner" % P.TABLE_A_ALT_PLATE[0],

@@ -210,8 +210,10 @@ class TableRenderer {
   void drawBalls(SDL_Renderer* renderer, std::span<const BallView> balls, bool reduceMotion) const;
   // One of drawBalls' two rounds: the balls on the table, or those up on a
   // rail (with their shadows). Table A draws its ramps between the two.
+  // through: the balls alone (no shadows) at that share of their alpha,
+  // for a ball seen through a ramp's plastic.
   void drawBallRound(SDL_Renderer* renderer, std::span<const BallView> balls, bool raised,
-                     bool reduceMotion) const;
+                     bool reduceMotion, float through = 1.0F) const;
 
   // --- Table A (concept A's art) ---------------------------------------------------
   // What is flush with the playfield and moves or lights: the altimeter's

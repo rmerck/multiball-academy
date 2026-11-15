@@ -197,3 +197,4 @@ TABLE_A_APPROACH = 0.95       # strongest approach light (the "rabbit" running u
 TABLE_A_RETICLE = 0.85        # the drone's lock-on reticle (ring.png alpha, steady, slow turn)
 TABLE_A_ALT_PLATE = (173.0, 584.0)   # top-left of the altimeter plate (units); its pointer frames go over it
 TABLE_A_GI_STRENGTH = (0.40, 0.52)   # table_a/gi.png in the Altitude GI colour, additive: FL100 / FL500
+TABLE_A_BALL_THROUGH = 0.80   # a ball under a ramp shows through its plastic: drawn again over it at this alpha

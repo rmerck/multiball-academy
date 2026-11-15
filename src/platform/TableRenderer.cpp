@@ -1259,7 +1259,7 @@ void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls,
 }
 
 void TableRenderer::drawBallRound(SDL_Renderer* r, std::span<const BallView> balls, bool raised,
-                                  bool reduceMotion) const {
+                                  bool reduceMotion, float through) const {
   {
     const auto inRound = [raised](const BallView& ball) noexcept {
       return ball.visible && ball.raised == raised;
@@ -1267,7 +1267,7 @@ void TableRenderer::drawBallRound(SDL_Renderer* r, std::span<const BallView> bal
     if (std::ranges::none_of(balls, inRound)) {
       return;
     }
-    if (raised) {
+    if (raised && through >= 1.0F) {
       drawBallShadows(r, balls, true, reduceMotion);
     }
 
@@ -1285,7 +1285,7 @@ void TableRenderer::drawBallRound(SDL_Renderer* r, std::span<const BallView> bal
       const SDL_FRect dst = centred(ball.drawnAt(), size, size);
       const auto shade = static_cast<Uint8>(std::lround(255.0F * look.shade));
       SDL_SetTextureColorMod(sprite, shade, shade, shade);
-      SDL_SetTextureAlphaMod(sprite, toByte(look.alpha));
+      SDL_SetTextureAlphaMod(sprite, toByte(look.alpha * through));
       SDL_RenderTexture(r, sprite, nullptr, &dst);
     }
     SDL_SetTextureColorMod(sprite, 255, 255, 255);
@@ -1463,6 +1463,8 @@ void TableRenderer::drawTable(SDL_Renderer* r, const Game& game, float alpha, in
     // goes over it.
     drawBallRound(r, balls.span(), false, options.reduceMotion);
     drawRampsA(r, game, lights, show);
+    // A ball under the plastic still reads as the ball: seen through it.
+    drawBallRound(r, balls.span(), false, options.reduceMotion, art::kABallThrough);
     drawBallRound(r, balls.span(), true, options.reduceMotion);
   } else {
     drawBalls(r, balls.span(), options.reduceMotion);

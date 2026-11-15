@@ -21,7 +21,8 @@
 //     PINBALL_IOS_TEST_EXIT. A release build ignores them, so the build
 //     that is submitted has no path that ends the process on purpose.
 // The other launch argument, "--scene NAME", starts the game in a staged
-// moment for screenshots (core/Scenes.hpp). It is read under the same rule.
+// moment for screenshots (core/Scenes.hpp), and "--altitude N" (0 to 4)
+// pins concept A's Altitude for them. Both are read under the same rule.
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -107,6 +108,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
           SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                        "--scene needs one of: table multiball hangar course graduation");
           return SDL_APP_FAILURE;
+        }
+      } else if (argv[i] != nullptr && std::string_view(argv[i]) == "--altitude" && i + 1 < argc &&
+                 argv[i + 1] != nullptr) {
+        // 0 (FL100) to 4 (FL500), for screenshots; anything else is ignored.
+        const std::string_view level(argv[++i]);
+        if (level.size() == 1 && level[0] >= '0' && level[0] <= '4') {
+          options.altitude = level[0] - '0';
         }
       }
     }

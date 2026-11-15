@@ -320,6 +320,7 @@ inline constexpr float kADeckFloodOff = 0.16F;
 inline constexpr float kADeckFloodOn = 0.30F;
 inline constexpr float kAApproach = 0.95F;
 inline constexpr float kAReticle = 0.85F;
+inline constexpr float kABallThrough = 0.80F;
 inline constexpr float kAGiStrength = 0.40F;
 inline constexpr float kAGiStrengthTop = 0.52F;
 inline constexpr float kAAltitudePlateX = 173.0F;  // its top-left corner
