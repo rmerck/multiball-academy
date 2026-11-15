@@ -207,11 +207,11 @@ NSArray<CHHapticPattern*>* makePatterns() {
           pulse.continuous()
               ? [[CHHapticEvent alloc] initWithEventType:CHHapticEventTypeHapticContinuous
                                               parameters:parameters
-                                            relativeTime:pulse.atSeconds
-                                                duration:pulse.durationSeconds]
+                                            relativeTime:static_cast<NSTimeInterval>(pulse.atSeconds)
+                                                duration:static_cast<NSTimeInterval>(pulse.durationSeconds)]
               : [[CHHapticEvent alloc] initWithEventType:CHHapticEventTypeHapticTransient
                                               parameters:parameters
-                                            relativeTime:pulse.atSeconds];
+                                            relativeTime:static_cast<NSTimeInterval>(pulse.atSeconds)];
       [events addObject:event];
     }
     NSError* error = nil;
