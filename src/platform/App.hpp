@@ -84,9 +84,16 @@ struct AppOptions {
   // which give a scratch directory so that the player's files are never
   // touched; no command line sets it.
   std::string dataDirectory;
+  // Whether the device has haptics: given, it is used instead of the
+  // system's answer (ios::hapticsAvailable). For tests.
+  std::optional<bool> haptics;
+  // Given, every haptic the game plays goes here instead of to the device.
+  // For tests, which check that each event of the table reaches it.
+  std::function<void(Haptic)> hapticHook;
   // For tests: the clock, in milliseconds, that the game's own guards and
   // repeats go by: the initials prompt's guard, a held arrow's repeat, the
-  // cursor's blink and the haptics' rate. A test moves it itself, so what
+  // cursor's blink, the haptics' rate and the TEST HAPTICS run. A test
+  // moves it itself, so what
   // these do never depends on how fast the machine runs. Unset, SDL's.
   // Frame pacing and the audio device's retries keep SDL's clock.
   std::function<std::uint64_t()> clockMs;
@@ -326,6 +333,10 @@ class App {
   void setMusic(bool on);
   // A haptic for what the frame's sounds say happened, if one is due.
   void playHaptics(SoundSet sounds);
+  // The TEST HAPTICS button's run, one kind at a time as each falls due.
+  void stepHapticTest();
+  // One haptic to the device, or to the test's hook.
+  void playHaptic(Haptic kind);
   // At the title, after a game, now and then: the system's review prompt.
   void maybeRequestReview();
   // What VoiceOver finds on the screen, when that has changed.
@@ -556,6 +567,8 @@ class App {
   // Whether the device has haptics.
   bool hapticsAvailable_ = false;
   HapticGate hapticGate_;
+  // The TEST HAPTICS run, on nowMs() like the rate limit.
+  HapticTest hapticTest_;
   unsigned hapticsPlayed_ = 0;
   // A player's game ended in this run: the review may be asked for.
   bool gameEndedThisRun_ = false;

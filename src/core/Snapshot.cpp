@@ -286,6 +286,7 @@ void visit(V& v, RulesRecord& r) {
   v.integer(r.gradRampsNeeded, 0, 100);
   visit(v, r.examMade);
   v.integer(r.graduations, 0, kMaxCounter);
+  v.integer(r.altitude, std::uint8_t{0}, static_cast<std::uint8_t>(progression::kTopLevel));
   v.flag(r.commencementThisTime);
 
   v.flag(r.briefingVisited);

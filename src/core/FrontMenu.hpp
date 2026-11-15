@@ -17,10 +17,11 @@ enum class FrontPage : std::uint8_t { Title, Scores, HowTo, Settings, Guide };
 enum class TitleItem : std::uint8_t { Continue, Play, Scores, HowTo, Settings, About };
 inline constexpr std::size_t kTitleItemCount = 6;
 
-// The rows of the settings page, top to bottom. Haptics is shown only where
-// the device has them to give (FrontConfig::hapticsShown).
-enum class SettingsRow : std::uint8_t { Sound, Volume, Music, Haptics, Reset, Back };
-inline constexpr std::size_t kSettingsRowCount = 6;
+// The rows of the settings page, top to bottom. Haptics, and the button that
+// plays each kind to feel them, are shown only where the device has them
+// to give (FrontConfig::hapticsShown).
+enum class SettingsRow : std::uint8_t { Sound, Volume, Music, Haptics, TestHaptics, Reset, Back };
+inline constexpr std::size_t kSettingsRowCount = 7;
 
 // The pages of HOW TO PLAY.
 inline constexpr std::size_t kHowToPageCount = 6;
@@ -29,7 +30,7 @@ inline constexpr std::size_t kHowToPageCount = 6;
 struct FrontConfig {
   // A saved game exists to go back to (filled in by the resume feature).
   bool continueShown = false;
-  // The device has haptics to switch.
+  // The device has haptics to switch and to test.
   bool hapticsShown = false;
   // A touch screen: the guide to its controls can be replayed.
   bool guideShown = false;
@@ -53,6 +54,7 @@ enum class FrontAction : std::uint8_t {
   VolumeUp,
   ToggleMusic,
   ToggleHaptics,
+  TestHaptics,  // Play every kind of haptic once, to feel them.
   AskReset,     // The reset button now waits for a second press.
   ResetScores,  // Confirmed: empty the high score table.
   ShowGuide,    // The touch guide is up, from HOW TO PLAY.

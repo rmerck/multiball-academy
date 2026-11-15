@@ -128,6 +128,7 @@ save::RulesRecord Rules::record() const noexcept {
   r.gradRampsNeeded = gradRampsNeeded_;
   r.examMade = examMade_;
   r.graduations = graduations_;
+  r.altitude = static_cast<std::uint8_t>(altitude_.level());
   r.commencementThisTime = commencementThisTime_;
 
   r.briefingVisited = briefingVisited_;
@@ -241,6 +242,7 @@ void Rules::restore(const save::RulesRecord& r) noexcept {
   gradRampsNeeded_ = r.gradRampsNeeded;
   examMade_ = r.examMade;
   graduations_ = r.graduations;
+  altitude_.restore(r.altitude);
   commencementThisTime_ = r.commencementThisTime;
 
   briefingVisited_ = r.briefingVisited;

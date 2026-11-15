@@ -231,9 +231,12 @@ while IFS= read -r line; do
   fi
 done < <(grep -E '^[[:space:]]+/usr/lib/swift/' <<<"$libraries" || true)
 frameworks=$(grep -v -E '^[[:space:]]+/usr/lib/swift/' <<<"$libraries" || true)
-if grep -E 'CoreBluetooth|CoreMotion|CoreHaptics|OpenGLES|CoreLocation|Vulkan' <<<"$frameworks"; then
+# CoreHaptics is the game's own (src/platform/ios/IosSystem.mm, the phone's
+# haptics), and needs no purpose string.
+if grep -E 'CoreBluetooth|CoreMotion|OpenGLES|CoreLocation|Vulkan' <<<"$frameworks"; then
   fail "a framework the game has no use for is linked"
 fi
+grep -q 'CoreHaptics.framework' <<<"$frameworks" || fail "CoreHaptics, for the haptics, is not linked"
 undefined=$(nm -u "$exe")
 [ -n "$undefined" ] || fail "nm lists no undefined symbol for the executable"
 all_strings=$(strings -a "$exe")

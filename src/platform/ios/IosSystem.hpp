@@ -57,13 +57,17 @@ bool otherAudioPlaying() noexcept;
 // Other route changes, such as the session's own when the device is
 // opened, are not counted.
 unsigned audioRouteChanges() noexcept;
-// The window the game draws in: the haptics and the accessibility elements
-// belong to its view. Call once it exists.
+// The window the game draws in: the accessibility elements belong to its
+// view. Also sets up the haptics (Core Haptics' engine, started now and
+// whenever the application becomes active again) and logs which path they
+// take. Call once the window exists.
 void attachWindow(SDL_Window* window) noexcept;
 // Whether this device has haptics to give (a phone; not an iPad).
 bool hapticsAvailable() noexcept;
-// Plays one haptic. Does nothing where there are none. The caller limits
-// the rate (HapticGate).
+// Plays one haptic: core/Feedback.cpp's pattern for the kind on Core
+// Haptics, or the nearest UIKit feedback where the hardware has no Core
+// Haptics. Does nothing where there are none. Main thread (another hands
+// it there). The caller limits the rate (HapticGate).
 void haptic(Haptic kind) noexcept;
 // Asks the system to show its store review prompt, which it may or may not
 // do (it limits how often). The game never draws one of its own.

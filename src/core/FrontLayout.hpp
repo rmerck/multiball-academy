@@ -42,8 +42,9 @@ struct PageLayout {
 
 struct SettingsLayout {
   PageLayout page;
-  // One per SettingsRow; Volume's is the whole row, Back is page.back, a
-  // row that is not shown is empty.
+  // One per SettingsRow; Volume's is the whole row, Back is page.back,
+  // Haptics and TestHaptics are the two halves of one row, a row that is
+  // not shown is empty.
   std::array<Rect, kSettingsRowCount> rows;
   Rect volumeDown;
   Rect volumeUp;

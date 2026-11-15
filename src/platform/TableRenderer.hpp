@@ -171,6 +171,10 @@ class TableRenderer {
   // Every ball that is in sight, those on the table first and those riding
   // a ramp's rail over them.
   void drawBalls(SDL_Renderer* renderer, std::span<const BallView> balls, bool reduceMotion) const;
+  // The balls' contact shadows: those on the table (on the playfield, under
+  // the elements) or those up on a rail.
+  void drawBallShadows(SDL_Renderer* renderer, std::span<const BallView> balls, bool raised,
+                       bool reduceMotion) const;
   // The exit of a subway while a ball comes up out of it (Game::holeExitOpening):
   // a cup like the art's, faded in and out, under the balls.
   void drawExitOpenings(SDL_Renderer* renderer, const Game& game) const;

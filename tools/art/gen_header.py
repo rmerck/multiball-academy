@@ -55,7 +55,8 @@ def text():
               "inline constexpr float kBallSpriteUnits = %.1fF;    // ball.png covers this; the disc is two ball radii" % P.BALL_SPRITE_UNITS,
               "inline constexpr float kBallShadowOffsetX = %.1fF;" % P.BALL_SHADOW_OFFSET[0],
               "inline constexpr float kBallShadowOffsetY = %.1fF;" % P.BALL_SHADOW_OFFSET[1],
-              "inline constexpr float kBallShadowAlpha = %.2fF;" % P.BALL_SHADOW_ALPHA, ""]
+              "inline constexpr float kBallShadowAlpha = %.2fF;" % P.BALL_SHADOW_ALPHA,
+              "inline constexpr float kBallShadowRadii = %.1fF;    // the contact shadow, in ball radii" % P.BALL_SHADOW_RADII, ""]
     lines += ["// Light show: lit lamps in the neon of their colour, LampId order, with the lens level for each.",
               "inline constexpr std::array<Rgb, %d> kLampNeon{{" % len(P.LAMPS)]
     for name, col in P.LAMPS:
@@ -67,6 +68,13 @@ def text():
     lines += ["inline constexpr float kNeonGlowStrength = %.2fF;" % P.GLOW_STRENGTH_NEON,
               "inline constexpr float kFlasherStrengthMax = %.2fF;" % P.FLASHER_STRENGTH_MAX,
               "inline constexpr float kGiStrength = %.2fF;" % P.GI_STRENGTH,
+              "inline constexpr float kGiStrengthTop = %.2fF;  // at the Altitude's top level" % P.GI_STRENGTH_TOP,
+              "inline constexpr int kGiBulbs = %d;" % P.GI_BULBS,
+              "inline constexpr float kGiBulbStrength = %.2fF;" % P.GI_BULB_STRENGTH,
+              "inline constexpr float kGiBulbStrengthTop = %.2fF;" % P.GI_BULB_STRENGTH_TOP,
+              "// The GI bulbs' colour at each Altitude level, FL100 to FL500.",
+              "inline constexpr std::array<Rgb, %d> kAltitudeGi{{" % len(P.ALTITUDE_GI),
+              *["    %s," % rgb(c) for c in P.ALTITUDE_GI], "}};",
               "inline constexpr float kBallPoolAlpha = %.2fF;  // the dark pool round each ball" % P.BALL_POOL_ALPHA,
               "inline constexpr float kBallPoolRadii = %.1fF;  // its radius in ball radii" % P.BALL_POOL_RADII,
               "inline constexpr float kFlareUnits = %.1fF;    // flare.png and ring.png at scale 1" % P.FLARE_UNITS,

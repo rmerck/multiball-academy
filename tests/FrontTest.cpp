@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -318,6 +320,28 @@ void testSettingsNavigation() {
   }
   CHECK(haptic.state().settingsFocus == SettingsRow::Haptics);
   CHECK(haptic.command(FrontCommand::Select) == FrontAction::ToggleHaptics);
+  // TEST HAPTICS under it, by key and by touch.
+  CHECK(haptic.command(FrontCommand::Down) == FrontAction::Moved);
+  CHECK(haptic.state().settingsFocus == SettingsRow::TestHaptics);
+  CHECK(haptic.command(FrontCommand::Select) == FrontAction::TestHaptics);
+  CHECK(haptic.command(FrontCommand::Down) == FrontAction::Moved);
+  CHECK(haptic.state().settingsFocus == SettingsRow::Reset);
+  CHECK(haptic.tap({FrontTarget::Kind::Row, static_cast<std::uint8_t>(SettingsRow::TestHaptics)}) ==
+        FrontAction::TestHaptics);
+  CHECK(haptic.state().settingsFocus == SettingsRow::TestHaptics);
+  // Hidden with the haptics: neither shown, reached nor tapped.
+  CHECK(!menu.shown(SettingsRow::TestHaptics) && haptic.shown(SettingsRow::TestHaptics));
+  (void)menu.tap({FrontTarget::Kind::Item, static_cast<std::uint8_t>(TitleItem::Settings)});
+  CHECK(menu.tap({FrontTarget::Kind::Row, static_cast<std::uint8_t>(SettingsRow::TestHaptics)}) ==
+        FrontAction::None);
+  for (std::size_t i = 0; i < kSettingsRowCount; ++i) {
+    CHECK(menu.state().settingsFocus != SettingsRow::Haptics &&
+          menu.state().settingsFocus != SettingsRow::TestHaptics);
+    (void)menu.command(FrontCommand::Down);
+  }
+  // Hiding them moves the focus off.
+  haptic.configure(FrontConfig{.hapticsShown = false});
+  CHECK(haptic.state().settingsFocus == SettingsRow::Sound);
 }
 
 // --- Rectangles -------------------------------------------------------------
@@ -413,19 +437,38 @@ void checkFront(const Layout& l, const char* name) {
     std::vector<Rect> controls{settings.page.back, settings.volumeDown, settings.volumeUp};
     for (std::size_t i = 0; i < settings.rows.size(); ++i) {
       const auto row = static_cast<SettingsRow>(i);
-      if (row == SettingsRow::Haptics && !config.hapticsShown) {
+      if ((row == SettingsRow::Haptics || row == SettingsRow::TestHaptics) &&
+          !config.hapticsShown) {
         CHECK(settings.rows[i].w == 0.0F);
         continue;
       }
       CHECK(bigEnough(settings.rows[i], l));
+      if (row != SettingsRow::Volume && row != SettingsRow::Back) {
+        // Found where it is.
+        FrontMenu onSettings(config);
+        (void)onSettings.tap({FrontTarget::Kind::Item, static_cast<std::uint8_t>(TitleItem::Settings)});
+        const Rect& r = settings.rows[i];
+        const FrontTarget t = screen::frontTarget(l, config, onSettings.state(), r.x + r.w * 0.5F,
+                                                  r.y + r.h * 0.5F);
+        CHECK(t.kind == FrontTarget::Kind::Row && t.index == i);
+      }
       CHECK(inside(settings.rows[i], settings.page.box));
       if (row != SettingsRow::Volume && row != SettingsRow::Back) {
         controls.push_back(settings.rows[i]);
       }
     }
+    if (config.hapticsShown) {
+      // Side by side, each wide enough for its caption at the smallest
+      // size a button draws it (12 characters, 3 units a pixel of a 6-wide
+      // cell, and the face's margin).
+      const Rect& haptics = settings.rows[static_cast<std::size_t>(SettingsRow::Haptics)];
+      const Rect& test = settings.rows[static_cast<std::size_t>(SettingsRow::TestHaptics)];
+      CHECK(haptics.y == test.y && haptics.x + haptics.w < test.x);
+      CHECK(std::min(haptics.w, test.w) >= 12.0F * 6.0F * 3.0F + 24.0F);
+    }
     CHECK(noneOverlap(controls));
     CHECK(inside(settings.volumeDown, settings.rows[1]) && inside(settings.volumeUp, settings.rows[1]));
-    CHECK(inside(settings.rows[4], settings.page.body));
+    CHECK(inside(settings.rows[static_cast<std::size_t>(SettingsRow::Reset)], settings.page.body));
   }
   for (const FrontPage page : {FrontPage::Scores, FrontPage::HowTo, FrontPage::Settings}) {
     for (const bool guide : {false, true}) {
@@ -604,6 +647,70 @@ void testHapticGate() {
   CHECK(!gate.take(soundBit(Sound::Flipper), 10));
 }
 
+void testHapticPatterns() {
+  // Every kind has a pattern, every value is in range, and a heavier kind
+  // is felt at least as strongly as a lighter one.
+  float previousPeak = 0.0F;
+  for (const Haptic kind : {Haptic::Flipper, Haptic::Hit, Haptic::Drain, Haptic::Jackpot}) {
+    const std::span<const HapticPulse> pattern = hapticPattern(kind);
+    CHECK(!pattern.empty());
+    float peak = 0.0F;
+    for (const HapticPulse& p : pattern) {
+      CHECK(p.intensity > 0.0F && p.intensity <= 1.0F);
+      CHECK(p.sharpness >= 0.0F && p.sharpness <= 1.0F);
+      CHECK(p.atSeconds >= 0.0F && p.atSeconds < 1.0F);
+      CHECK(p.durationSeconds >= 0.0F && p.durationSeconds <= 0.5F);
+      peak = std::max(peak, p.intensity);
+    }
+    CHECK(peak >= previousPeak);
+    previousPeak = peak;
+  }
+  // What was asked for: a flipper firm enough to feel, a sharper hit, a
+  // drain that buzzes for a quarter second, a jackpot of several taps.
+  const HapticPulse flipper = hapticPattern(Haptic::Flipper)[0];
+  CHECK(flipper.intensity == 0.6F && flipper.sharpness == 0.5F && !flipper.continuous());
+  const HapticPulse hit = hapticPattern(Haptic::Hit)[0];
+  CHECK(hit.intensity == 0.8F && hit.sharpness == 0.7F && !hit.continuous());
+  bool drainBuzz = false;
+  for (const HapticPulse& p : hapticPattern(Haptic::Drain)) {
+    drainBuzz = drainBuzz || (p.continuous() && p.durationSeconds >= 0.2F && p.intensity >= 0.8F);
+  }
+  CHECK(drainBuzz);
+  int taps = 0;
+  for (const HapticPulse& p : hapticPattern(Haptic::Jackpot)) {
+    taps += p.continuous() ? 0 : 1;
+  }
+  CHECK(taps >= 3);
+}
+
+void testHapticTest() {
+  HapticTest test;
+  CHECK(!test.running() && !test.take(0));
+  test.start(1000);
+  CHECK(test.running());
+  std::vector<Haptic> played;
+  std::vector<std::uint64_t> at;
+  for (std::uint64_t t = 1000; t < 1000 + 10 * HapticTest::kGapMs; t += 16) {
+    if (const std::optional<Haptic> kind = test.take(t)) {
+      played.push_back(*kind);
+      at.push_back(t);
+    }
+  }
+  CHECK(!test.running());
+  CHECK(played == std::vector<Haptic>(HapticTest::kOrder.begin(), HapticTest::kOrder.end()));
+  CHECK(at.size() == 4 && at[0] == 1000);
+  for (std::size_t i = 1; i < at.size(); ++i) {
+    CHECK(at[i] - at[i - 1] >= HapticTest::kGapMs - 16 && at[i] - at[i - 1] <= HapticTest::kGapMs + 16);
+  }
+  // A press during a run starts again from the first.
+  test.start(5000);
+  CHECK(test.take(5000) == Haptic::Flipper);
+  test.start(5100);
+  CHECK(test.take(5100) == Haptic::Flipper);
+  CHECK(!test.take(5100 + HapticTest::kGapMs - 1));
+  CHECK(test.take(5100 + HapticTest::kGapMs) == Haptic::Hit);
+}
+
 void testReviewGate() {
   Settings s;
   CHECK(!reviewDue(s, "2.0.0", true));
@@ -669,6 +776,8 @@ void testFront() {
   testFrontLayouts();
   testPauseMainMenu();
   testHapticGate();
+  testHapticPatterns();
+  testHapticTest();
   testReviewGate();
   testAttractPilot();
 }
