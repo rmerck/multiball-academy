@@ -59,15 +59,17 @@ float distance(Vec2 a, Vec2 b) {
 // deck bat (532, 236), and the shelf under the resting deck bat. Two runs on
 // x86-64 give the same value; arm64 is checked by the macOS CI job. The soak
 // plays at FL100, where the Air Pocket and the Prop Wash are idle.
-// G2: re-recorded for the frictionless Hangar roof, the one-shape bay door
-// bank, deck stand-up A lowered, the deck set-down (507, 228) moving right,
-// the BOGEY drops and the RADAR stand-ups. Was 0x4213a29dab26e639.)
-// Concept A rules (G5, feat/a-rules): re-recorded deliberately for the rules
-// the script reaches (Bandit, stand-up, G-meter and CAT SHOT scoring, the
-// deck diverter lit by two ramps, the 10 s saver, the pylon in sorties,
-// banks and the BOGEY bank toward the lock, RADAR and BOGEY as qualifiers).
-// Was 0xa1fa4e7df9970e85 (G2).
-constexpr std::uint64_t kSoakTrajectory = 0xebb404fdfb628623ULL;
+// G2: re-recorded for the frictionless Hangar roof, deck stand-up A
+// lowered, the deck set-down (507, 228) moving right,
+// the BOGEY drops and the RADAR stand-ups (0xa1fa4e7df9970e85), then merged
+// with concept A's rules (G5, feat/a-rules, recorded there as
+// 0x09482ffd3c224202 for the new rules the script reaches): re-recorded on
+// the merge (0x9671ef8fc1d10394); then the one-shape door bank was
+// reverted (it moved B4): 0x72134c8bea581229. Was 0x4213a29dab26e639.)
+// Then the lock asking for the BOGEY bank and RADAR/BOGEY as the sortie
+// qualifiers (DECISIONS.md 10): re-recorded deliberately. Was
+// 0x72134c8bea581229.
+constexpr std::uint64_t kSoakTrajectory = 0x1cc96e44b0f34524ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {

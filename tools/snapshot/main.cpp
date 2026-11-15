@@ -1280,7 +1280,9 @@ int run(const Request& request) {
         Seam::rules(game).setMultiballEnabled(false);
       }
       if (request.state != State::ScoopIn) {
-        // The doors marked, as three hits would: the bank drops.
+        // The doors marked, as three hits would: the bank drops (one bank
+        // lights the lock here; concept A's rules ask for several).
+        Seam::rules(game).setBanksPerLock(1);
         for (std::size_t door = 0; door < pinball::table::kDropTargets.size(); ++door) {
           Seam::rules(game).onDropTarget(door);
         }
@@ -1377,6 +1379,9 @@ int run(const Request& request) {
       // through the seam the tests use: the three doors are marked, as
       // three hits would, and for the lock a ball is sent into the Hangar.
       using Seam = pinball::GameTestAccess;
+      // Concept A's rules light the lock after several banks: one is
+      // enough for the picture.
+      Seam::rules(game).setBanksPerLock(1);
       for (std::size_t door = 0; door < pinball::table::kDropTargets.size(); ++door) {
         Seam::rules(game).onDropTarget(door);
       }

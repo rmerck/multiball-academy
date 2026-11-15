@@ -442,18 +442,18 @@ void PhysicsWorld::buildDoorBank() {
   b2BodyDef bodyDef = b2DefaultBodyDef();
   bodyDef.type = b2_staticBody;
   doorBank_ = b2CreateBody(world_, &bodyDef);
-  // One capsule across all three doors (G2): with a shape per door a ball
-  // striking a seam touched two shapes of the body at once, and Box2D could
-  // meet the two contacts in either order (a restored game parted from its
-  // original there). Which door was struck is told from where the ball was
-  // (doorAt), in collectEvents.
+  // (G2 tried one capsule across all three doors to end the double contact
+  // at a seam; it moved B4, bay-door rebounds through the gap, from 0.6 to
+  // 5.3 percent, and was reverted: DECISIONS.md 6.)
   b2ShapeDef shapeDef = wallShapeDef();
   shapeDef.material.restitution = kRubberRestitution;
-  shapeDef.userData = packElement({table::ElementKind::DropTarget, 0});
-  const table::Capsule& first = table::kDropTargets.front();
-  const table::Capsule& last = table::kDropTargets.back();
-  const b2Capsule capsule{toMeters(first.a), toMeters(last.b), toMeters(first.radius)};
-  b2CreateCapsuleShape(doorBank_, &shapeDef, &capsule);
+  for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
+    const table::Capsule& c = table::kDropTargets[i];
+    shapeDef.userData =
+        packElement({table::ElementKind::DropTarget, static_cast<std::uint8_t>(i)});
+    const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
+    b2CreateCapsuleShape(doorBank_, &shapeDef, &capsule);
+  }
 }
 
 void PhysicsWorld::buildStandups() {
@@ -994,10 +994,6 @@ void PhysicsWorld::collectEvents() {
       if (!fieldSide) {
         continue;
       }
-    }
-    if (element.kind == table::ElementKind::DropTarget) {
-      element = {table::ElementKind::DropTarget,
-                 static_cast<std::uint8_t>(table::doorAt(ballPosition(slot).x))};
     }
     if (element.kind == table::ElementKind::CaptiveBall) {
       // The switch, when the captive ball reaches it, is this ball's.

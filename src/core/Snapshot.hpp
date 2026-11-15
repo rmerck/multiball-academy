@@ -35,10 +35,10 @@ namespace pinball::save {
 // format 4; neither shipped, so one version, 5, holds both).
 // 7: main's format 3 (the Altitude in the rules' state, hole cups) merged
 // with concept A's 6.
-// 8: the BOGEY drop targets.
-// 9: concept A's rules (G5): sortie qualifiers, letters, G-meter, deck ramps,
-// CAT SHOT ball, Wings Ceremony, finale, DOGFIGHT, banks toward the lock.
-inline constexpr std::uint16_t kFormatVersion = 9;
+// 8: the BOGEY drop targets. 9: concept A's rules (G5): sorties, multiballs,
+// Wings Ceremony, Air Show.
+// 10: the lock's BOGEY bank and RADAR letters (DECISIONS.md 10).
+inline constexpr std::uint16_t kFormatVersion = 10;
 
 // The longest a build id may be ("2.0.0+123456789" is 15).
 inline constexpr std::size_t kMaxBuildIdLength = 32;
