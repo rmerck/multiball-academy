@@ -38,6 +38,10 @@ HEX = {
     # Table A: the Altitude GI ladder and the academy trainer livery
     "DAY": "#6FB4FF", "CLEAR": "#F2F4FF", "DUSK": "#FFB050", "SUNSET": "#FF8A5C", "NIGHTV": "#9A6BFF",
     "CORAL": "#FF5A4E", "SLATE": "#2A3048",
+    # floor paint for flush pieces under ball paths: deck-dark so the ball keeps 3:1 (palette LUM_DECK_MAX)
+    "F_DECK": "#161B3C", "F_PAINT_W": "#3E4670", "F_PAINT_Y": "#5A4A1E", "F_BLADE": "#363E74",
+    "F_BAND": "#6E2A2E", "F_TIP": "#6A5A1C", "F_RING1": "#164A52", "F_RING2": "#24406E", "F_RING3": "#3A2C66",
+    "F_STENCIL": "#262C52",
 }
 
 
@@ -227,10 +231,12 @@ def plastic(c, rough=0.18, coat=0.6):
     return mat("Plastic_" + c, HEX[c], rough=rough, coat=coat)
 
 
-def clear_plastic(c, tint=0.35):
+def clear_plastic(c, tint=0.35, alpha=0.30):
+    """Clear tinted plastic as a thin alpha-blended sheet with a hard clearcoat (top-down glass refraction
+    reads as smoked glass at sprite size)."""
     col = lin(HEX[c])
     col = tuple(1.0 - tint + tint * x for x in col[:3]) + (1.0,)
-    return mat("Clear_" + c, col, rough=0.04, trans=1.0, ior=1.49)
+    return mat("Clear_" + c, col, rough=0.05, coat=1.0, alpha=alpha)
 
 
 def assign(obj, m):
@@ -425,9 +431,9 @@ def build_propwash():
     rot = bpy.data.objects.new("Turntable", None)
     bpy.context.scene.collection.objects.link(rot)
     parts = []
-    parts.append(cyl(R, 1.0, (0, 0, -0.5), 128, mat("Disc", HEX["NIGHT"], rough=0.3, coat=0.9)))
+    parts.append(cyl(R, 1.0, (0, 0, -0.5), 128, mat("Disc", HEX["F_DECK"], rough=0.4, coat=0.5)))
     ring = cyl(R, 1.2, (0, 0, -0.4), 128, chrome())
-    inner = cyl(R - 2.2, 1.6, (0, 0, -0.4), 128, mat("Disc2", HEX["DECK_B"], rough=0.3, coat=0.9))
+    inner = cyl(R - 2.2, 1.6, (0, 0, -0.4), 128, mat("Disc2", HEX["NIGHT"], rough=0.45, coat=0.4))
     parts += [ring, inner]
     # airflow rings: printed arcs that rotate with the disc
     for k, rr in enumerate((14.0, 22.0, 30.0)):
@@ -435,7 +441,7 @@ def build_propwash():
                                          location=(0, 0, 0.42))
         t = bpy.context.active_object
         t.scale = (1, 1, 0.15)
-        assign(t, plastic(("AQUA", "DAY", "ORCHID")[k], 0.3, 0.2))
+        assign(t, plastic(("F_RING1", "F_RING2", "F_RING3")[k], 0.4, 0.2))
         parts.append(t)
     # three blades: a swept outline, cream with a coral band and a yellow tip
     blade = [(0, -3.2), (12, -4.8), (24, -5.4), (31, -4.4), (34.5, -1.6), (34, 1.8), (30, 3.6), (20, 3.8),
@@ -448,13 +454,13 @@ def build_propwash():
             return (p[0] * ca - p[1] * sa, p[0] * sa + p[1] * ca)
 
         pts = [rotp(p) for p in blade]
-        b = prism(pts, 0.5, 2.2, plastic("CREAM", 0.25), "Blade%d" % k)
+        b = prism(pts, 0.5, 2.2, plastic("F_BLADE", 0.3, 0.4), "Blade%d" % k)
         smooth(b, 0.4)
         parts.append(b)
         band = [rotp(p) for p in [(22, -5.6), (26, -5.4), (26, 4.0), (22, 4.0)]]
-        parts.append(prism(band, 2.15, 2.35, plastic("CORAL", 0.25), "Band%d" % k))
+        parts.append(prism(band, 2.15, 2.35, plastic("F_BAND", 0.3, 0.4), "Band%d" % k))
         tip = [rotp(p) for p in [(29, -4.8), (31, -4.5), (34.6, -1.6), (34.1, 1.9), (30, 3.7), (29, 3.7)]]
-        parts.append(prism(tip, 2.15, 2.35, plastic("YELLOW", 0.25), "Tip%d" % k))
+        parts.append(prism(tip, 2.15, 2.35, plastic("F_TIP", 0.3, 0.4), "Tip%d" % k))
     # spinner hub
     hub = cyl(7.5, 7.0, (0, 0, 5.0), 64, chrome(), r2=1.2)
     smooth(hub)
@@ -525,7 +531,7 @@ def build_flight_deck():
         for s in range(9):
             a = math.radians(a0 + s * 90 / 8)
             pts.append((cx + qx + rc * math.cos(a), -(cy) + qy + rc * math.sin(a)))
-    deck_m = mat("DeckPlate", HEX["SLATE"], rough=0.75)
+    deck_m = mat("DeckPlate", HEX["F_DECK"], rough=0.75)
     nodes = deck_m.node_tree.nodes
     noise = nodes.new("ShaderNodeTexNoise")
     noise.inputs["Scale"].default_value = 0.9
@@ -537,8 +543,8 @@ def build_flight_deck():
     plate = prism(pts, -1.0, 0.0, deck_m, "Deck")
     edge = prism(pts, -1.2, -0.05, chrome(), "Edge")
     edge.scale = (1.0, 1.0, 1.0)
-    paint_w = plastic("CLEAR", 0.5, 0.0)
-    paint_y = plastic("DUSK", 0.5, 0.0)
+    paint_w = plastic("F_PAINT_W", 0.6, 0.0)
+    paint_y = plastic("F_PAINT_Y", 0.6, 0.0)
 
     def stripe(x0, y0, x1, y1, w, m, z=0.05):
         dx, dy = x1 - x0, y1 - y0
@@ -574,7 +580,7 @@ def build_flight_deck():
         for x in (cx - hw + 4.5, cx + hw - 4.5):
             sphere(1.5, (x, -y, 0.2), lens_m, 16).scale = (1, 1, 0.5)
     # stencil lettering, low contrast (decoration only)
-    text("FLIGHT DECK", 7.0, (cx - hw + 11, -cy, 0.06), mat("Stencil", "#4A5378", rough=0.6),
+    text("FLIGHT DECK", 7.0, (cx - hw + 11, -cy, 0.06), mat("Stencil", HEX["F_STENCIL"], rough=0.6),
          font="SairaStencilOne-Regular.ttf", rot=(0, 0, math.radians(90)))
     frames = SHEETS["flight_deck"]["frames"]
     for f, label in enumerate(frames, start=1):
@@ -684,23 +690,29 @@ def _ramp(rail, name, colour, label, plastic_until=4, height=34.0, decal_side=1)
     pitch = math.atan2(tan[2], math.hypot(tan[0], tan[1]))
     dm = mat(name + "_Decal", HEX[colour], rough=0.4, coat=0.3)
     ink = mat(name + "_Ink", HEX["INK"], rough=0.5)
+    fx, fy = math.cos(yaw), math.sin(yaw)
+
+    def floor_z(i):
+        return P[i][2] + 1.0
+
+    # three chevrons pointing up the ramp, just inside the mouth
     for k in range(3):
-        i = 2 + k * 2
-        x, y, z = P[i]
+        i = 1 + k
+        x, y = P[i][0], P[i][1]
         for side in (-1, 1):
-            arm = box((7.5, 2.2, 0.15), (0, 0, 0), dm)
-            arm.rotation_mode = "ZYX"
-            arm.location = (x + side * 3.0 * math.cos(yaw + math.pi / 2), y + side * 3.0 * math.sin(yaw + math.pi / 2),
-                            z + 1.05)
-            arm.rotation_euler = (0, -pitch, yaw + side * math.radians(-140) + math.pi)
-    i = min(len(P) - 1, 9)
-    x, y, z = P[i]
-    t = text(label, 6.2, (x, y, z + 1.1), dm, rot=(0, -pitch, yaw - math.pi / 2 * decal_side + math.pi / 2))
-    t.rotation_mode = "ZYX"
-    t.rotation_euler = (0, -pitch, yaw - math.pi / 2)
-    sh = text(label, 6.2, (x + 0.5, y - 0.5, z + 1.0), ink)
-    sh.rotation_mode = "ZYX"
-    sh.rotation_euler = (0, -pitch, yaw - math.pi / 2)
+            a = yaw + math.pi + side * math.radians(42)
+            L = 8.0
+            arm = box((L, 2.4, 0.15), (x + L / 2 * math.cos(a), y + L / 2 * math.sin(a), floor_z(i)), dm,
+                      rot=(0, 0, a))
+            _ = arm
+    # the name, reading up the ramp, with an ink drop shadow
+    i = 6
+    x, y = P[i][0], P[i][1]
+    for (dx, dy, dz, m) in ((0.5, -0.5, -0.05, ink), (0.0, 0.0, 0.0, dm)):
+        t = text(label, 6.0, (x + dx, y + dy, floor_z(i) + 0.2 + dz), m)
+        t.rotation_mode = "ZYX"
+        t.rotation_euler = (0, -pitch, yaw)
+    _ = (fx, fy)
     return P
 
 
