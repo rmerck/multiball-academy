@@ -129,7 +129,7 @@ void testMultiball() {
     before = bench.score();
     CHECK(bench.hangar() == Rules::HoleResult::StartMultiball);
     CHECK(bench.score() - before == points::kHangar);
-    CHECK(bench.message() == std::string_view("ACADEMY MULTIBALL"));
+    CHECK(bench.message() == std::string_view("SQUADRON MULTIBALL"));
     CHECK(rules.multiball() == Multiball::Academy && rules.academyMultiballs() == 1);
     CHECK(bench.balls.live == 3 && bench.balls.locked == 0 && rules.locksHeld() == 0);
     CHECK(rules.ballsLive() == 3 && bench.launched == 0);
@@ -370,7 +370,7 @@ void testMultiball() {
     CHECK(bench.launched == 1 && bench.balls.live == 2 && rules.ballsLive() == 2);
     CHECK(rules.multiball() == Multiball::None);
     bench.step();
-    CHECK(bench.message() == std::string_view("TURBO MULTIBALL"));
+    CHECK(bench.message() == std::string_view("SCRAMBLE MULTIBALL"));
     CHECK(rules.multiball() == Multiball::Turbo && rules.turboMultiballs() == 1);
     CHECK(rules.ballsLive() == 2);
     CHECK(rules.lampState(LampId::TurboCharge) == LampState::On);
@@ -417,7 +417,7 @@ void testMultiball() {
     CHECK(bench.total() == 3 && rules.locksHeld() == 2);
     std::uint64_t before = bench.score();
     fillTurbo(bench);
-    CHECK(bench.message() == std::string_view("TURBO BONUS"));
+    CHECK(bench.message() == std::string_view("SCRAMBLE BONUS"));
     CHECK(rules.multiball() == Multiball::None && bench.launched == 0 && bench.refused == 1);
     CHECK(rules.scoreFrom(Feature::TurboBonus) == points::kTurboBonus);
     CHECK(bench.score() - before ==
@@ -447,7 +447,7 @@ void testMultiball() {
     // And again with three there already: refused, and the bonus.
     fillTurbo(one);
     CHECK(one.total() == 3 && one.refused == 1 && one.launched == 2);
-    CHECK(one.message() == std::string_view("TURBO BONUS"));
+    CHECK(one.message() == std::string_view("SCRAMBLE BONUS"));
     CHECK(one.rules.scoreFrom(Feature::TurboBonus) == points::kTurboBonus);
 
     // Two fills before the table has answered the first cannot make four:
@@ -481,25 +481,24 @@ void testMultiball() {
     CHECK(academy.launched == 1 && academy.refused == 1);
   }
 
-  {  // Stacking: a course runs through a multiball and its shots count for
-     // both; a multiball may start during a course.
+  {  // Stacking: a sortie runs through a multiball and its shots count for
+     // both; a multiball may start during a sortie; the sortie's clock
+     // stands still through it.
     RulesBench bench = unsaved();
     const Rules& rules = bench.rules;
-    bench.bumper();  // The offer moves to RUNWAY DRILLS.
+    bench.bumper();  // The offer moves to RAMP RUNS.
     bench.scoop();
-    CHECK(rules.course() == std::to_underlying(pinball::CourseId::RunwayDrills));
+    CHECK(rules.course() == std::to_underlying(pinball::CourseId::RampRuns));
     fillTurbo(bench);
     bench.step();
     CHECK(rules.multiball() == Multiball::Turbo && rules.courseRunning());
     const std::uint64_t before = bench.score();
     bench.runway();
     CHECK(bench.score() - before == points::kRamp + 50'000 + 20'000);
+    bench.skyway();
     bench.runway();
-    bench.runway();
-    bench.runway();
+    bench.skyway();
     CHECK(rules.coursePassed(1) && rules.multiball() == Multiball::Turbo && rules.rank() == 1);
-    // The course clock runs on in a multiball, and is not stopped by one
-    // ball in a hold while another is free.
     bench.runway();
     bench.runway();  // Relit.
     bench.scoop();
@@ -507,7 +506,7 @@ void testMultiball() {
     const double left = rules.courseSecondsLeft();
     bench.balls.free = 1;
     bench.wait(5.0);
-    CHECK(rules.courseSecondsLeft() < left - 4.9);
+    CHECK(rules.courseSecondsLeft() == left);
   }
 
   {  // Multiball ended by a tilt: no ball comes back, the last drain ends

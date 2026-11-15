@@ -9,12 +9,14 @@
 #include "core/DisplayText.hpp"
 #include "core/Progression.hpp"
 #include "core/Rules.hpp"
+#include "core/Snapshot.hpp"
 #include "core/Sound.hpp"
 #include "core/TableLayout.hpp"
 #include "platform/Font5x7.hpp"
 
-// Courses, rank and Graduation Day (TABLE.md 4.5, 4.6, 4.12), and the
-// arithmetic of the display limits every name and message is held to.
+// Concept A's sorties (courses in the code), rank, Wings Ceremony and the Air
+// Show (concepts/A/CONCEPT.md section 6), and the arithmetic of the display
+// limits every name and message is held to.
 namespace {
 
 using pinball::CourseId;
@@ -41,87 +43,18 @@ RulesBench single() {
   return bench;
 }
 
-// Lights the Briefing room if it is not, picks a course with the bumpers
-// and starts it.
+// Qualifies this sortie alone (as its own shots would) and starts it at the
+// Mission scoop.
 void start(RulesBench& bench, CourseId id) {
   bench.wait(tuning::kComboSeconds);
-  for (int i = 0; i < 4 && !bench.rules.briefingLit(); ++i) {
-    bench.runway();
-  }
+  pinball::save::RulesRecord record = bench.rules.record();
+  record.ready = {};
+  record.ready[idx(id)] = true;
+  record.courseBlink = static_cast<std::uint8_t>(idx(id));
+  bench.rules.restore(record);
   CHECK(bench.rules.briefingLit());
-  for (int i = 0; i < 6 && bench.rules.courseOffered() != idx(id); ++i) {
-    bench.bumper();
-  }
-  CHECK(bench.rules.courseOffered() == idx(id));
   bench.scoop();
   CHECK(bench.rules.course() == idx(id));
-}
-
-// Does what the running course asks for, with shots that make no combos.
-void finish(RulesBench& bench) {
-  const std::size_t course = bench.rules.course();
-  for (int i = 0; i < 64 && bench.rules.course() == course; ++i) {
-    switch (static_cast<CourseId>(course)) {
-      case CourseId::BumperBasics:
-        bench.bumper();
-        break;
-      case CourseId::RunwayDrills:
-        bench.runway();
-        break;
-      case CourseId::CircuitTraining:
-        bench.circuit(false);
-        break;
-      case CourseId::HangarSafety:
-        if (bench.rules.goalText() == pinball::kGoalEnterHangar) {
-          bench.hangar();
-        } else {
-          bench.doors();
-        }
-        break;
-      case CourseId::TurbineTheory:
-        bench.spin();
-        break;
-      case CourseId::Navigation:
-        bench.wait(tuning::kComboSeconds);
-        switch (bench.rules.navigationShot()) {
-          case Shot::CircuitLeft:
-            bench.circuit(false);
-            break;
-          case Shot::Runway:
-            bench.runway();
-            break;
-          case Shot::Hangar:
-            bench.hangar();
-            break;
-          case Shot::Briefing:
-            bench.scoop();
-            break;
-          case Shot::Turbine:
-            bench.turbine();
-            break;
-          case Shot::Skyway:
-            bench.skyway();
-            break;
-          case Shot::CircuitRight:
-            bench.circuit(true);
-            break;
-        }
-        break;
-    }
-  }
-  CHECK(!bench.rules.courseRunning());
-}
-
-void pass(RulesBench& bench, CourseId id) {
-  start(bench, id);
-  finish(bench);
-  CHECK(bench.rules.coursePassed(idx(id)));
-}
-
-void passAll(RulesBench& bench) {
-  for (std::size_t course = 0; course < pinball::kCourseCount; ++course) {
-    pass(bench, static_cast<CourseId>(course));
-  }
 }
 
 // Makes one of the seven major shots.
@@ -149,6 +82,76 @@ void shoot(RulesBench& bench, Shot shot) {
       bench.circuit(true);
       break;
   }
+}
+
+// Does what the running sortie asks for.
+void finish(RulesBench& bench) {
+  Rules& rules = bench.rules;
+  const std::size_t course = rules.course();
+  for (int i = 0; i < 64 && rules.course() == course; ++i) {
+    switch (static_cast<CourseId>(course)) {
+      case CourseId::LoopDrill:
+        bench.circuit(false);  // The same loop: no combo.
+        break;
+      case CourseId::RampRuns:
+        shoot(bench, rules.rampRunsShot());
+        break;
+      case CourseId::Gunnery:
+        rules.onDrone();
+        bench.step();
+        break;
+      case CourseId::Formation:
+        bench.wait(tuning::kComboSeconds);
+        shoot(bench, rules.navigationShot());
+        break;
+      case CourseId::NightLanding:
+        shoot(bench, rules.goalText() == pinball::kGoalLanding ? Shot::Skyway : Shot::Runway);
+        break;
+      case CourseId::Dogfight:
+        if (rules.dogfightJackpotLit()) {
+          bench.step();
+          CHECK(!bench.doorsUp);
+          bench.hangar();
+        } else {
+          rules.onDrone();
+          bench.step();
+        }
+        break;
+    }
+  }
+  CHECK(!rules.courseRunning());
+}
+
+void pass(RulesBench& bench, CourseId id) {
+  start(bench, id);
+  finish(bench);
+  CHECK(bench.rules.coursePassed(idx(id)));
+}
+
+void passAll(RulesBench& bench) {
+  for (std::size_t course = 0; course < pinball::kCourseCount; ++course) {
+    pass(bench, static_cast<CourseId>(course));
+  }
+}
+
+// What the Air Show asks for beside the six sorties, given as done: a
+// Squadron and a Scramble multiball played, A-C-E spelt.
+void giveExtras(RulesBench& bench) {
+  pinball::save::RulesRecord record = bench.rules.record();
+  record.academyMultiballs = 1;
+  record.turboMultiballs = 1;
+  record.aceDone = true;
+  bench.rules.restore(record);
+}
+
+// Every ball but one drains, past any grace.
+void downToOne(RulesBench& bench) {
+  bench.rules.onSlingshot(0);
+  bench.wait(30.0);
+  for (int i = 0; i < 3 && bench.balls.live > 1; ++i) {
+    bench.lose();
+  }
+  bench.step();
 }
 
 }  // namespace
@@ -180,7 +183,7 @@ void testCourses() {
     static_assert(display::charsThatFit(9.0F, 2.0F) == 0);
     static_assert(display::charsThatFit(0.0F, 2.0F) == 0);
     static_assert(display::charsThatFit(440.0F, 0.0F) == 0);
-    static_assert(display::fits("COURSE PASSED  RANK UP", display::kMaxMessageLength));
+    static_assert(display::fits("NIGHT LANDING COMPLETE", display::kMaxMessageLength));
     static_assert(display::fits("FIELD TRIP: 101", 15) && !display::fits("FIELD TRIP: 101", 14));
     static_assert(!display::fits("", 10));
     static_assert(!display::fits(" PAD", 10) && !display::fits("PAD ", 10));
@@ -217,17 +220,18 @@ void testCourses() {
     CHECK(pinball::rankName(6) == std::string_view("CHANCELLOR"));
     CHECK(pinball::rankName(999) == pinball::rankName(pinball::kRankCount - 1));
     // The catalogue as the design gives it.
-    CHECK(pinball::kCourses[0].name == std::string_view("BUMPER BASICS 101"));
-    CHECK(pinball::kCourses[5].name == std::string_view("NAVIGATION 302"));
+    CHECK(pinball::kCourses[0].name == std::string_view("LOOP DRILL"));
+    CHECK(pinball::kCourses[5].name == std::string_view("DOGFIGHT"));
   }
 
-  {  // 4.5 Choice: the Briefing room is lit at the start; the bumpers move
-     // the offer through the courses not yet passed; the scoop starts it.
+  {  // Choice: the Mission is lit at the start; the jets move the offer
+     // through the sorties not yet passed; the scoop starts it.
     RulesBench bench = single();
     const Rules& rules = bench.rules;
     CHECK(rules.briefingLit() && rules.courseOffered() == 0);
     CHECK(rules.lampState(LampId::Course1) == LampState::Blink);
     CHECK(rules.lampState(LampId::ArrowBriefing) == LampState::Blink);
+    CHECK(rules.goalText() == pinball::kGoalBriefingLit);
     bench.bumper();
     CHECK(rules.courseOffered() == 1 && rules.lampState(LampId::Course2) == LampState::Blink);
     CHECK(rules.lampState(LampId::Course1) == LampState::Off);
@@ -235,384 +239,375 @@ void testCourses() {
     CHECK(rules.courseOffered() == 0);
     bench.bumper(2);
     bench.scoop();
-    CHECK(rules.course() == idx(CourseId::CircuitTraining) && rules.coursesStarted() == 1);
-    CHECK(bench.message() == std::string_view("CLASS IN SESSION"));
-    CHECK(rules.courseName() == std::string_view("CIRCUIT TRAINING 201"));
-    CHECK(rules.goalText() == std::string_view("COMPLETE A CIRCUIT") && rules.goalRemaining() == 2);
-    CHECK(rules.courseSecondsLeft() > 39.9 && rules.courseSecondsLeft() <= 40.0);
+    CHECK(rules.course() == idx(CourseId::Gunnery) && rules.coursesStarted() == 1);
+    CHECK(bench.message() == std::string_view("GUNNERY  HIT THE BANDIT"));
+    CHECK(rules.courseName() == std::string_view("GUNNERY"));
+    CHECK(rules.goalText() == std::string_view("HIT THE BANDIT") && rules.goalRemaining() == 4);
+    CHECK(rules.courseSecondsLeft() > 29.9 && rules.courseSecondsLeft() <= 30.0);
     CHECK(rules.lampState(LampId::Course3) == LampState::FastBlink);
-    CHECK(rules.lampState(LampId::ArrowCircuitLeft) == LampState::Blink &&
-          rules.lampState(LampId::ArrowCircuitRight) == LampState::Blink);
-    CHECK(!rules.briefingLit());
-    // One at a time: the scoop and the bumpers change nothing now.
+    CHECK(rules.lampState(LampId::ArrowTurbine) == LampState::Blink);
+    CHECK(!rules.briefingLit() && rules.pylonWanted());
+    // One at a time: the scoop and the jets change nothing now.
     bench.bumper(3);
     bench.scoop();
-    CHECK(rules.course() == idx(CourseId::CircuitTraining) && rules.coursesStarted() == 1);
+    CHECK(rules.course() == idx(CourseId::Gunnery) && rules.coursesStarted() == 1);
   }
 
-  {  // 4.5 Each course: its task, its award per step, its pass award, and a
-     // rank for each of the first five.
+  {  // Qualifiers: each sortie is lit by its own shots, which hold the
+     // Mission's offer, and the scoop starts the qualified sortie.
     RulesBench bench = single();
-    const Rules& rules = bench.rules;
-
-    start(bench, CourseId::BumperBasics);
-    CHECK(rules.goalText() == std::string_view("HIT THE THRUSTERS") && rules.goalRemaining() == 12);
-    CHECK(rules.lampState(LampId::ArrowTurbine) == LampState::Blink);
-    bench.bumper(11);
-    CHECK(rules.scoreFrom(Feature::Course1) == 11 * 3'000 && rules.goalRemaining() == 1);
-    bench.bumper();
-    CHECK(rules.scoreFrom(Feature::Course1) == 12 * 3'000 + 100'000);
-    CHECK(!rules.courseRunning() && rules.coursePassed(0) && rules.rank() == 1);
-    CHECK(bench.message() == std::string_view("COURSE PASSED  RANK UP"));
-    CHECK(rules.lampState(LampId::Course1) == LampState::On);
-    // Relit by two ramps.
-    CHECK(!rules.briefingLit() && rules.rampsForBriefing() == 2);
-    CHECK(rules.goalText() == pinball::kGoalBriefingUnlit);
-    CHECK(rules.lampState(LampId::ArrowRunway) == LampState::On);
-    bench.wait(tuning::kComboSeconds);
-    bench.runway();
-    CHECK(bench.message() == std::string_view("RAMPS FOR BRIEFING") && rules.rampsForBriefing() == 1);
-    bench.runway();
-    CHECK(bench.message() == std::string_view("BRIEFING IS LIT") && rules.briefingLit());
-    CHECK(rules.goalText() == pinball::kGoalBriefingLit);
-    CHECK(rules.courseOffered() == 1);  // The first is passed: it is not offered again.
-
-    start(bench, CourseId::RunwayDrills);
-    bench.runway();
-    bench.runway();
-    bench.runway();
-    CHECK(rules.scoreFrom(Feature::Course2) == 3 * 20'000 && rules.goalRemaining() == 1);
-    bench.runway();
-    CHECK(rules.scoreFrom(Feature::Course2) == 4 * 20'000 + 125'000 && rules.rank() == 2);
-
-    start(bench, CourseId::CircuitTraining);
-    bench.circuit(true);
-    bench.circuit(true);
-    CHECK(rules.scoreFrom(Feature::Course3) == 2 * 30'000 + 150'000 && rules.rank() == 3);
-    // The third course passed lights the extra ball, and from now on the
-    // Briefing room takes three ramps.
-    CHECK(rules.extraBallLit() && rules.rampsForBriefing() == 3);
-
-    // HANGAR SAFETY: the doors are raised for it; three doors, then the
-    // Hangar, and the entry locks nothing.
-    bench.doors();
-    CHECK(!bench.doorsUp);
-    start(bench, CourseId::HangarSafety);
-    bench.step(2);
-    CHECK(bench.doorsUp && !rules.doorMarked(0) && !rules.lockLit());
-    CHECK(rules.goalText() == std::string_view("HIT THE BAY DOORS") && rules.goalRemaining() == 3);
-    // The doors still to hit blink on their faces; a marked one is lit.
-    CHECK(rules.doorLampState(0) == pinball::LampState::Blink);
-    bench.door(0);
-    CHECK(rules.doorLampState(0) == pinball::LampState::On &&
-          rules.doorLampState(1) == pinball::LampState::Blink);
-    CHECK(rules.doorLampState(table::kDropTargets.size()) == pinball::LampState::Off);
-    bench.door(0);  // Marked already: nothing for the course.
-    CHECK(rules.scoreFrom(Feature::Course4) == 10'000 && rules.goalRemaining() == 2);
-    bench.door(1);
-    bench.door(2);
-    bench.step();
-    CHECK(!bench.doorsUp && rules.goalText() == pinball::kGoalEnterHangar);
-    CHECK(rules.goalRemaining() == 1 && !rules.lockLit());
-    CHECK(bench.message() == std::string_view("BAY DOORS OPEN"));
-    CHECK(rules.lampState(LampId::ArrowHangar) == LampState::Blink);
-    CHECK(bench.hangar() == Rules::HoleResult::Eject);
-    CHECK(rules.scoreFrom(Feature::Course4) == 3 * 10'000 + 150'000 && rules.rank() == 4);
-    CHECK(rules.locksHeld() == 0);
-    bench.wait(Rules::kDoorRaiseSeconds);
-    CHECK(bench.doorsUp && !rules.doorMarked(1));
-
-    // TURBINE THEORY: the award falls 5,000 a second from 250,000.
-    start(bench, CourseId::TurbineTheory);
-    CHECK(rules.hurryUpValue() == 250'000 && rules.goalRemaining() == 36);
-    bench.spin(35);
-    bench.wait(10.4);
-    CHECK(rules.hurryUpValue() == 200'000);
-    bench.spin();
-    CHECK(rules.scoreFrom(Feature::Course5) == 200'000 && rules.rank() == 5);
-    CHECK(rules.hurryUpValue() == 0);
-
-    // NAVIGATION: the lit shot moves on when it is made, or after 8 s.
-    start(bench, CourseId::Navigation);
-    CHECK(rules.navigationShot() == Shot::CircuitLeft && rules.goalRemaining() == 3);
-    CHECK(rules.lampState(LampId::ArrowCircuitLeft) == LampState::Blink);
-    bench.runway();  // Not the lit shot.
-    CHECK(rules.scoreFrom(Feature::Course6) == 0);
-    bench.circuit(false);
-    CHECK(rules.scoreFrom(Feature::Course6) == 30'000 && rules.navigationShot() == Shot::Runway);
-    bench.wait(pinball::kNavigationHopSeconds);
-    // The Hangar is passed over while its doors stand.
-    CHECK(rules.navigationShot() == Shot::Briefing);
-    CHECK(rules.lampState(LampId::ArrowBriefing) == LampState::Blink);
-    bench.scoop();
-    CHECK(rules.navigationShot() == Shot::Turbine && rules.goalRemaining() == 1);
-    bench.wait(pinball::kNavigationHopSeconds);
-    bench.wait(pinball::kNavigationHopSeconds);
-    CHECK(rules.navigationShot() == Shot::CircuitRight);
-    bench.wait(pinball::kNavigationHopSeconds);
-    CHECK(rules.navigationShot() == Shot::CircuitLeft);  // Round again.
-    bench.wait(tuning::kComboSeconds);
-    bench.circuit(false);
-    CHECK(rules.scoreFrom(Feature::Course6) == 3 * 30'000 + 200'000);
-    // The sixth pass: no new rank name; Graduation Day is what it opens.
-    CHECK(rules.rank() == 5 && rules.coursesPassed() == 6);
-    CHECK(bench.message() == std::string_view("ALL COURSES PASSED"));
-    for (std::size_t lamp = 0; lamp < 6; ++lamp) {
-      CHECK(rules.lampState(static_cast<LampId>(std::to_underlying(LampId::Course1) + lamp)) ==
-            LampState::On);
-    }
-    CHECK(!rules.briefingLit() && rules.rampsForBriefing() == 0);
-  }
-
-  {  // The Hangar is the lit NAVIGATION shot when its doors are down.
-    RulesBench bench = single();
-    bench.doors();
-    start(bench, CourseId::Navigation);
-    bench.circuit(false);
-    bench.wait(tuning::kComboSeconds);
-    bench.runway();
-    CHECK(bench.rules.navigationShot() == Shot::Hangar);
-    bench.hangar();
-    CHECK(!bench.rules.courseRunning() && bench.rules.coursePassed(5));
-  }
-
-  {  // NAVIGATION counts the Hangar whatever the Hangar does with the
-     // ball: a lock, the start of Academy multiball, the super jackpot.
-    const auto hopToHangar = [](RulesBench& bench) {
-      for (int i = 0; i < 8 && bench.rules.navigationShot() != Shot::Hangar; ++i) {
-        bench.wait(pinball::kNavigationHopSeconds);
-      }
-      CHECK(bench.rules.navigationShot() == Shot::Hangar);
-    };
-    // A lock.
-    RulesBench locking;
-    locking.rules.onSlingshot(0);
-    locking.wait(Rules::kBallSaveSeconds);
-    locking.doors();
-    start(locking, CourseId::Navigation);
-    hopToHangar(locking);
-    CHECK(locking.rules.lockLit() && locking.rules.goalRemaining() == 3);
-    CHECK(locking.hangar() == Rules::HoleResult::Lock);
-    CHECK(locking.rules.goalRemaining() == 2 && locking.rules.locksHeld() == 1);
-    CHECK(locking.rules.scoreFrom(Feature::Course6) == 30'000);
-    CHECK(locking.message() == std::string_view("BALL 1 LOCKED"));
-
-    // The ball that starts Academy multiball.
-    RulesBench starting;
-    starting.rules.onSlingshot(0);
-    starting.wait(Rules::kBallSaveSeconds);
-    for (int lock = 0; lock < Rules::kLocksNeeded; ++lock) {
-      if (starting.doorsUp) {
-        starting.doors();
-      }
-      CHECK(starting.hangar() == Rules::HoleResult::Lock);
-      starting.step();
-    }
-    if (starting.doorsUp) {
-      starting.doors();
-    }
-    start(starting, CourseId::Navigation);
-    hopToHangar(starting);
-    CHECK(starting.hangar() == Rules::HoleResult::StartMultiball);
-    CHECK(starting.rules.multiball() == Multiball::Academy);
-    CHECK(starting.rules.goalRemaining() == 2);
-
-    // The super jackpot: lit first, then the course.
-    RulesBench super;
-    super.rules.onSlingshot(0);
-    super.wait(Rules::kBallSaveSeconds);
-    for (int lock = 0; lock <= Rules::kLocksNeeded; ++lock) {
-      if (super.doorsUp) {
-        super.doors();
-      }
-      super.hangar();
-      super.step();
-    }
-    CHECK(super.rules.multiball() == Multiball::Academy);
-    super.wait(Rules::kDoorRaiseSeconds);
-    for (int i = 0; i < 6 && !super.rules.superJackpotLit(); ++i) {
-      super.wait(tuning::kComboSeconds);
-      super.skyway();
-    }
-    CHECK(super.rules.superJackpotLit());
-    start(super, CourseId::Navigation);
-    hopToHangar(super);
-    CHECK(super.rules.goalRemaining() == 3);
-    CHECK(super.hangar() == Rules::HoleResult::Eject);
-    CHECK(!super.rules.superJackpotLit() && super.rules.scoreFrom(Feature::SuperJackpot) > 0);
-    CHECK(super.rules.goalRemaining() == 2);
-  }
-
-  {  // 4.5 The clock: it runs out to COURSE FAILED with nothing lost; it
-     // stands while no ball is free; locked balls do not stop it.
-    RulesBench bench = single();
-    const Rules& rules = bench.rules;
-    start(bench, CourseId::RunwayDrills);
-    bench.runway();
-    const std::uint64_t score = bench.score();
-    bench.wait(20.0);
-    CHECK(rules.courseRunning() && rules.courseSecondsLeft() < 15.1);
-    // In a hold or on the plunger: stopped.
-    bench.balls.free = 0;
-    bench.wait(100.0);
-    CHECK(rules.courseRunning() && rules.courseSecondsLeft() > 14.0);
-    // A ball locked beside the one in play changes nothing: it runs.
-    bench.balls.free = 1;
-    bench.balls.locked = 2;
-    bench.wait(10.0);
-    CHECK(rules.courseRunning() && rules.courseSecondsLeft() < 5.1);
-    bench.balls.locked = 0;
-    bench.wait(5.1);
-    CHECK(!rules.courseRunning() && !rules.coursePassed(1) && rules.rank() == 0);
-    CHECK(bench.message() == std::string_view("COURSE FAILED"));
-    CHECK(bench.score() == score);
-    // It stays available: relit by ramps, offered again.
-    CHECK(rules.rampsForBriefing() == 2);
-    start(bench, CourseId::RunwayDrills);
-    CHECK(rules.goalRemaining() == 4);  // From the beginning.
-    // A ramp during a course does not count toward relighting.
-    finish(bench);
-    CHECK(rules.rampsForBriefing() == 2);
-  }
-
-  {  // 4.5 Drain: the course carries over with its progress and at least
-     // 15 s; a tilt fails it at the drain.
-    RulesBench bench = single();
-    const Rules& rules = bench.rules;
-    start(bench, CourseId::RunwayDrills);
-    bench.runway();
-    bench.wait(30.0);
-    CHECK(rules.courseSecondsLeft() < 5.1);
-    CHECK(bench.drain() == Rules::DrainResult::NextBall);
-    CHECK(rules.courseRunning() && rules.goalRemaining() == 3);
-    CHECK(rules.courseSecondsLeft() > 14.9 && rules.courseSecondsLeft() <= 15.0);
-    // With more than that left it keeps what it has.
-    bench.runway();
-    bench.runway();
-    bench.runway();
-    start(bench, CourseId::CircuitTraining);
-    bench.wait(5.0);
-    bench.rules.onSlingshot(0);
-    bench.wait(Rules::kBallSaveSeconds);
-    const double left = rules.courseSecondsLeft();
-    CHECK(left > 15.0);
-    bench.drain();
-    CHECK(rules.courseRunning() && rules.courseSecondsLeft() == left);
-    // Tilt.
+    Rules& rules = bench.rules;
+    CHECK(rules.qualifyRemaining(idx(CourseId::RampRuns)) == 4);
     for (int i = 0; i < 3; ++i) {
-      bench.rules.onNudge();
+      bench.runway();
     }
-    CHECK(rules.tilted() && rules.courseRunning());
-    bench.wait(60.0);  // The clock does not run a tilted course out.
-    CHECK(rules.courseRunning());
-    CHECK(bench.drain() == Rules::DrainResult::GameOver);
-    CHECK(!rules.courseRunning() && !rules.coursePassed(2));
+    CHECK(!rules.courseQualified(idx(CourseId::RampRuns)) &&
+          rules.qualifyRemaining(idx(CourseId::RampRuns)) == 1);
+    bench.skyway();
+    CHECK(rules.courseQualified(idx(CourseId::RampRuns)) && rules.courseOffered() == 1);
+    CHECK(rules.lampState(LampId::Course2) == LampState::Blink);
+    bench.bumper(2);  // A qualified sortie holds the offer.
+    CHECK(rules.courseOffered() == 1);
+    bench.scoop();
+    CHECK(rules.course() == idx(CourseId::RampRuns) && !rules.courseQualified(1));
+    CHECK(rules.goalText() == std::string_view("SHOOT THE LIT RAMP"));
+    bench.wait(40.0);
+    CHECK(!rules.courseRunning() && bench.message() == std::string_view("SORTIE OVER"));
+    bench.wait(20.0);
+    // Loops, the Bandit, T-A-X-I (for RADAR), the nest pair (for BOGEY) and
+    // the G-meter's 3G each light their own.
+    bench.circuit(false);
+    bench.circuit(true);
+    bench.circuit(false);
+    CHECK(rules.courseQualified(idx(CourseId::LoopDrill)));
+    for (int i = 0; i < 3; ++i) {
+      rules.onDrone();
+    }
+    CHECK(rules.courseQualified(idx(CourseId::Gunnery)));
+    rules.onStandup(0, 100.0F);
+    rules.onStandup(0, 100.0F);  // A letter lit already counts once.
+    rules.onStandup(1, 100.0F);
+    rules.onStandup(2, 100.0F);
+    CHECK(rules.taxiLit(0) && !rules.courseQualified(idx(CourseId::Formation)));
+    rules.onStandup(3, 100.0F);
+    CHECK(rules.courseQualified(idx(CourseId::Formation)) && !rules.taxiLit(0));
+    rules.onTarget(0);
+    rules.onTarget(1);
+    CHECK(rules.courseQualified(idx(CourseId::NightLanding)) && rules.extraCreditLit());
+    rules.onCaptiveBall(100.0F);
+    CHECK(rules.gForce() == 1 && rules.lampState(LampId::GForce1) == LampState::On &&
+          rules.lampState(LampId::GForce2) == LampState::Blink);
+    rules.onCaptiveBall(tuning::kGForceHardSpeed);  // A hard hit is 2G.
+    CHECK(rules.gForce() == 3 && rules.courseQualified(idx(CourseId::Dogfight)));
+    rules.onCaptiveBall(tuning::kGForceHardSpeed);  // 5G pays and starts again.
+    CHECK(rules.gForce() == 0 && bench.message() == std::string_view("5G  PULL UP"));
+    // The scoop takes the qualified sorties in turn from the one offered.
+    const std::size_t offered = rules.courseOffered();
+    bench.wait(tuning::kComboSeconds);
+    bench.scoop();
+    CHECK(rules.course() == offered && rules.coursesStarted() == 2);
+    // From the third sortie started, each qualifier asks for twice as many.
+    bench.wait(60.0);
+    bench.wait(tuning::kComboSeconds);
+    bench.scoop();
+    CHECK(rules.coursesStarted() == 3);
+    bench.wait(60.0);
+    CHECK(rules.qualifyRemaining(idx(CourseId::RampRuns)) == 8);
   }
 
-  {  // 4.12 Graduation Day, from six courses to CHANCELLOR and after.
+  {  // Each sortie: its task, its award per step, its pass award, a rank for
+     // each and a climb of the Altitude.
+    RulesBench bench = single();
+    const Rules& rules = bench.rules;
+    // LOOP DRILL: loops, the other side from the last paying double.
+    start(bench, CourseId::LoopDrill);
+    CHECK(rules.lampState(LampId::ArrowCircuitLeft) == LampState::Blink);
+    bench.circuit(false);
+    CHECK(rules.scoreFrom(Feature::Course1) == 25'000);
+    CHECK(rules.lampState(LampId::ArrowCircuitRight) == LampState::FastBlink);
+    bench.circuit(false);
+    CHECK(rules.scoreFrom(Feature::Course1) == 50'000);
+    bench.circuit(true);
+    CHECK(!rules.courseRunning() && rules.coursePassed(0));
+    CHECK(rules.scoreFrom(Feature::Course1) == 50'000 + 50'000 + 125'000);
+    CHECK(bench.message() == std::string_view("LOOP DRILL COMPLETE"));
+    CHECK(rules.rank() == 1 && rules.altitude() == 1);
+    // RAMP RUNS: the lit ramp, then the other.
+    start(bench, CourseId::RampRuns);
+    CHECK(rules.rampRunsShot() == Shot::Runway);
+    CHECK(rules.lampState(LampId::ArrowRunway) == LampState::Blink &&
+          rules.lampState(LampId::ArrowSkyway) != LampState::Blink);
+    bench.skyway();
+    CHECK(rules.goalRemaining() == 4);
+    bench.runway();
+    CHECK(rules.goalRemaining() == 3 && rules.rampRunsShot() == Shot::Skyway);
+    bench.runway();
+    CHECK(rules.goalRemaining() == 3);
+    finish(bench);
+    CHECK(rules.scoreFrom(Feature::Course2) == 4 * 20'000 + 125'000 && rules.rank() == 2);
+    // GUNNERY: Bandit hits.
+    pass(bench, CourseId::Gunnery);
+    CHECK(rules.scoreFrom(Feature::Course3) == 4 * 15'000 + 100'000 && rules.rank() == 3);
+    {  // At FL100 (armour 3): each hit adds time; BANDIT DOWN during it
+       // doubles the pass.
+      RulesBench gun = single();
+      start(gun, CourseId::Gunnery);
+      gun.wait(10.0);
+      const double before = gun.rules.courseSecondsLeft();
+      CHECK(!gun.rules.onDrone());
+      CHECK(gun.rules.courseSecondsLeft() > before + pinball::kGunneryHitSeconds - 0.1);
+      CHECK(!gun.rules.onDrone());
+      CHECK(gun.rules.onDrone());  // The third hit knocks it down.
+      CHECK(gun.rules.droneHits() == 0 && gun.rules.goalRemaining() == 1);
+      gun.rules.onDrone();
+      CHECK(gun.rules.coursePassed(2));
+      CHECK(gun.rules.scoreFrom(Feature::Course3) == 4 * 15'000 + 2 * 100'000);
+    }
+    // FORMATION: the lit arrow, which moves on every few seconds.
+    start(bench, CourseId::Formation);
+    CHECK(rules.navigationShot() == Shot::CircuitLeft);
+    bench.wait(pinball::kNavigationHopSeconds + 0.1);
+    CHECK(rules.navigationShot() == Shot::Runway);
+    finish(bench);
+    CHECK(rules.scoreFrom(Feature::Course4) == 3 * 30'000 + 150'000 && rules.rank() == 4);
+    // NIGHT LANDING: the Runway (the approach), then the Skyway for what the
+    // hurry-up has left.
+    start(bench, CourseId::NightLanding);
+    CHECK(rules.hurryUpValue() == pinball::kHurryUpStart);
+    CHECK(rules.lampState(LampId::ArrowRunway) == LampState::FastBlink);
+    bench.skyway();
+    CHECK(rules.goalRemaining() == 2);
+    bench.wait(4.0);
+    CHECK(rules.hurryUpValue() == pinball::kHurryUpStart - 4 * pinball::kHurryUpPerSecond);
+    bench.runway();
+    CHECK(rules.goalText() == pinball::kGoalLanding && rules.goalRemaining() == 1);
+    CHECK(rules.lampState(LampId::ArrowSkyway) == LampState::FastBlink);
+    bench.skyway();
+    CHECK(rules.coursePassed(4));
+    CHECK(rules.scoreFrom(Feature::Course5) ==
+          10'000 + pinball::kHurryUpStart - 4 * pinball::kHurryUpPerSecond);
+    CHECK(rules.rank() == 5);
+    // DOGFIGHT (one ball here): a Bandit hit lights the Hangar's jackpot.
+    start(bench, CourseId::Dogfight);
+    CHECK(bench.balls.live == 1 && rules.multiball() == Multiball::None);
+    bench.rules.onDrone();
+    CHECK(rules.dogfightJackpotLit() && rules.goalText() == pinball::kGoalDogfightJackpot);
+    CHECK(rules.lampState(LampId::ArrowHangar) == LampState::FastBlink);
+    bench.step();
+    CHECK(!bench.doorsUp && !rules.lockLit());
+    CHECK(bench.hangar() == Rules::HoleResult::Eject);
+    CHECK(rules.scoreFrom(Feature::Jackpots) == pinball::points::kDogfightJackpot);
+    CHECK(rules.jackpotsCollected() == 1 && !rules.dogfightJackpotLit());
+    finish(bench);
+    CHECK(rules.coursePassed(5) && rules.coursesPassed() == 6 && rules.rank() == 5);
+    CHECK(rules.altitude() == pinball::progression::kTopLevel);
+    bench.wait(Rules::kDoorRaiseSeconds + 0.1);
+    CHECK(bench.doorsUp);
+  }
+
+  {  // The clock: it stands still through a multiball (not DOGFIGHT's own),
+     // while no ball is free, and runs out to SORTIE OVER; the Altitude
+     // shortens it; a drain carries it over.
+    RulesBench bench;
+    Rules& rules = bench.rules;
+    rules.onSlingshot(0);
+    bench.wait(Rules::kBallSaveSeconds);
+    start(bench, CourseId::LoopDrill);
+    bench.wait(10.0);
+    bench.bumper(rules.turboGoal());
+    bench.step(2);
+    CHECK(rules.multiball() == Multiball::Turbo && bench.balls.live == 2);
+    CHECK(bench.message() == std::string_view("SCRAMBLE MULTIBALL"));
+    const double left = rules.courseSecondsLeft();
+    bench.wait(20.0);
+    CHECK(rules.courseSecondsLeft() == left);
+    downToOne(bench);
+    CHECK(rules.multiball() == Multiball::None && rules.courseRunning());
+    bench.wait(left + 0.1);
+    CHECK(!rules.courseRunning() && !rules.coursePassed(0) && rules.rank() == 0);
+    CHECK(rules.rampsForBriefing() == 2);
+    // At FL500 the clock is the timerScale's share of its own.
+    RulesBench high = single();
+    high.rules.setAltitudeFloor(pinball::progression::kTopLevel);
+    start(high, CourseId::RampRuns);
+    const double scaled = 40.0 * pinball::progression::knobs(4).timerScale;
+    CHECK(high.rules.courseSecondsLeft() > scaled - 0.1 &&
+          high.rules.courseSecondsLeft() <= scaled);
+    // Drain: carried over with at least 15 s; a tilt ends it.
+    RulesBench drain = single();
+    start(drain, CourseId::RampRuns);
+    drain.runway();
+    drain.wait(30.0);
+    CHECK(drain.drain() == Rules::DrainResult::NextBall);
+    CHECK(drain.rules.courseRunning() && drain.rules.goalRemaining() == 3);
+    CHECK(drain.rules.courseSecondsLeft() > 14.9 && drain.rules.courseSecondsLeft() <= 15.0);
+    for (int i = 0; i < 3; ++i) {
+      drain.rules.onNudge();
+    }
+    CHECK(drain.rules.tilted());
+    CHECK(drain.drain() == Rules::DrainResult::NextBall);
+    CHECK(!drain.rules.courseRunning() && !drain.rules.coursePassed(1));
+  }
+
+  {  // DOGFIGHT with multiball: a second ball, its jackpot counted as a
+     // multiball's; the sortie runs on when it is one ball again.
+    RulesBench bench;
+    Rules& rules = bench.rules;
+    rules.onSlingshot(0);
+    bench.wait(Rules::kBallSaveSeconds);
+    start(bench, CourseId::Dogfight);
+    CHECK(bench.launched == 1 && bench.total() == 2);
+    CHECK(rules.multiball() == Multiball::Dogfight && rules.ballsLive() == 2);
+    CHECK(rules.ballSaveActive());
+    rules.onDrone();
+    bench.step();
+    CHECK(bench.hangar() == Rules::HoleResult::Eject && rules.jackpotsCollected() == 1);
+    downToOne(bench);
+    CHECK(rules.multiball() == Multiball::None && rules.courseRunning());
+    finish(bench);
+    CHECK(rules.coursePassed(idx(CourseId::Dogfight)) &&
+          bench.message() == std::string_view("DOGFIGHT WON"));
+  }
+
+  {  // WINGS CEREMONY: every sortie started lights it at the Mission; 60 s
+     // of every shot lit at 2X, the Bandit's armour standing again at once.
+    RulesBench bench = single();
+    Rules& rules = bench.rules;
+    for (std::size_t course = 0; course < pinball::kCourseCount; ++course) {
+      CHECK(!rules.wingsLit());
+      start(bench, static_cast<CourseId>(course));
+      bench.wait(70.0);
+      CHECK(!rules.courseRunning());
+    }
+    CHECK(rules.wingsLit() && !rules.briefingLit());
+    CHECK(rules.lampState(LampId::ArrowBriefing) == LampState::FastBlink);
+    CHECK(rules.lampState(LampId::Graduation) == LampState::Blink);
+    CHECK(rules.goalText() == pinball::kGoalBriefingLit);
+    bench.wait(tuning::kComboSeconds);
+    bench.scoop();
+    CHECK(rules.wingsRunning() && rules.wingsCeremonies() == 1 && !rules.courseRunning());
+    CHECK(rules.courseName() == pinball::kWingsName && rules.goalText() == pinball::kGoalWings);
+    CHECK(rules.wingsSecondsLeft() > 59.9 && rules.pylonWanted());
+    CHECK(rules.lampState(LampId::ArrowSkyway) == LampState::FastBlink);
+    const std::uint64_t before = rules.scoreFrom(Feature::Graduation);
+    bench.runway();
+    CHECK(rules.scoreFrom(Feature::Graduation) - before == pinball::points::kWingsShot);
+    for (int i = 0; i < 8; ++i) {
+      CHECK(!rules.onDrone());
+    }
+    CHECK(rules.scoreFrom(Feature::Graduation) - before == 9 * pinball::points::kWingsShot);
+    bench.wait(61.0);
+    CHECK(!rules.wingsRunning() && !rules.wingsLit());
+    CHECK(rules.scoreFrom(Feature::Graduation) - before == 9 * pinball::points::kWingsShot);
+  }
+
+  {  // The Air Show asks for six sorties passed, both multiballs played and
+     // A-C-E spelt; the sortie window says what is still to do.
     RulesBench bench = single();
     Rules& rules = bench.rules;
     passAll(bench);
+    // Every sortie started has lit WINGS CEREMONY too: say it was flown.
+    CHECK(rules.wingsLit() && rules.goalText() == pinball::kGoalBriefingLit);
+    pinball::save::RulesRecord record = rules.record();
+    record.wingsDone = true;
+    rules.restore(record);
+    rules.setMultiballEnabled(true);
+    CHECK(!rules.graduationLit() && rules.goalText() == pinball::kGoalNeedSquadron);
+    record.academyMultiballs = 1;
+    record.multiballEnabled = true;
+    rules.restore(record);
+    CHECK(rules.goalText() == pinball::kGoalNeedScramble);
+    record.turboMultiballs = 1;
+    rules.restore(record);
+    CHECK(rules.goalText() == pinball::kGoalNeedAce && !rules.graduationLit());
+    rules.onStandup(table::kDeckStandupA, 100.0F);
+    CHECK(bench.message() == std::string_view("A-C-E  A") && rules.aceLit(0));
+    rules.onStandup(table::kDeckStandupA + 1, 100.0F);
+    rules.onStandup(table::kDeckStandupA + 2, 100.0F);
+    CHECK(rules.aceDone() && !rules.aceLit(0) && rules.graduationLit());
+    CHECK(rules.scoreFrom(Feature::TurboTargets) == 3 * 5'000 + pinball::points::kAceComplete);
+  }
+
+  {  // The AIR SHOW: FORMATION PASS, then the FINALE (the Bandit at nine
+     // armour, then the Hangar), victory laps, and every sortie again.
+    RulesBench bench = single();
+    Rules& rules = bench.rules;
+    giveExtras(bench);
+    passAll(bench);
     CHECK(rules.rank() == 5 && rules.coursesPassed() == 6);
-    // With one ball at a time it cannot start; with multiball it is lit.
     CHECK(!rules.graduationLit());
     rules.setMultiballEnabled(true);
     CHECK(rules.graduationLit());
     CHECK(rules.lampState(LampId::Graduation) == LampState::Blink);
     CHECK(rules.lampState(LampId::ArrowBriefing) == LampState::FastBlink);
-    CHECK(rules.goalText() == pinball::kGoalBriefingLit);
     bench.wait(tuning::kComboSeconds);
     bench.scoop();
     CHECK(rules.graduationRunning() && rules.multiball() == Multiball::Graduation);
-    CHECK(bench.message() == std::string_view("GRADUATION DAY"));
-    CHECK(rules.courseName() == std::string_view("GRADUATION DAY"));
-    // Balls are launched until three are live; 30 s grace.
+    CHECK(bench.message() == std::string_view("AIR SHOW"));
+    CHECK(rules.courseName() == std::string_view("AIR SHOW"));
     CHECK(bench.launched == 2 && bench.total() == 3 && bench.refused == 0);
-    CHECK(rules.ballsLive() == 3 && rules.ballSaveActive());
-    CHECK(rules.graceSecondsLeft() > 29.0);
-    // Part one: all seven lit, the doors held down for the Hangar.
+    CHECK(rules.ballsLive() == 3 && rules.graceSecondsLeft() > 29.0);
     CHECK(!bench.doorsUp && rules.examShotsLeft() == 7 && rules.goalRemaining() == 7);
-    CHECK(rules.goalText() == std::string_view("SHOOT EVERY LIT ARROW"));
     for (std::size_t lamp = 0; lamp < 7; ++lamp) {
       CHECK(rules.lampState(static_cast<LampId>(lamp)) == LampState::Blink);
     }
-    // Lock, course and jackpot rules are suspended.
     CHECK(!rules.lockLit() && !rules.briefingLit() && !rules.jackpotLit(Shot::Runway));
-    const std::uint64_t exam = rules.scoreFrom(Feature::Graduation);
-    CHECK(exam == 0);
     CHECK(bench.hangar() == Rules::HoleResult::Eject);
     CHECK(rules.scoreFrom(Feature::Graduation) == 100'000 && rules.examShotMade(Shot::Hangar));
-    CHECK(bench.message() == std::string_view("FINAL EXAM  6 TO GO"));
-    CHECK(rules.locksHeld() == 0 && bench.balls.locked == 0);
-    // Made once: again pays nothing, and the doors come back up.
-    bench.wait(Rules::kDoorRaiseSeconds);
-    CHECK(bench.doorsUp);
-    CHECK(rules.lampState(LampId::ArrowHangar) == LampState::Off);
+    CHECK(bench.message() == std::string_view("FORMATION PASS  6 TO GO"));
     for (const Shot shot : {Shot::CircuitLeft, Shot::Runway, Shot::Briefing, Shot::Turbine,
                             Shot::Skyway}) {
       shoot(bench, shot);
       shoot(bench, shot);
     }
-    CHECK(rules.examShotsLeft() == 1 && bench.message() == std::string_view("FINAL EXAM  1 TO GO"));
-    CHECK(rules.scoreFrom(Feature::Graduation) == 600'000);
-    CHECK(!rules.courseRunning() && rules.coursesStarted() == 6);
+    CHECK(rules.examShotsLeft() == 1 && rules.scoreFrom(Feature::Graduation) == 600'000);
     shoot(bench, Shot::CircuitRight);
-    // Part two: the Hangar alone, doors down.
-    CHECK(rules.examShotsLeft() == 0 && bench.message() == std::string_view("SHOOT THE HANGAR"));
-    CHECK(rules.goalText() == std::string_view("SHOOT THE HANGAR") && rules.goalRemaining() == 0);
+    // FINALE.
+    CHECK(rules.examShotsLeft() == 0 && rules.courseName() == pinball::kFinaleName);
+    CHECK(bench.message() == std::string_view("FINALE  KNOCK DOWN BANDIT"));
+    CHECK(rules.goalText() == pinball::kGoalFinaleBandit);
+    CHECK(rules.droneArmour() == tuning::kFinaleArmour);
+    CHECK(rules.lampState(LampId::ArrowTurbine) == LampState::FastBlink &&
+          rules.lampState(LampId::ArrowHangar) == LampState::Off);
     bench.step();
     CHECK(!bench.doorsUp);
-    CHECK(rules.lampState(LampId::ArrowHangar) == LampState::FastBlink &&
-          rules.lampState(LampId::ArrowRunway) == LampState::Off);
-    shoot(bench, Shot::Runway);
-    CHECK(rules.scoreFrom(Feature::Graduation) == 700'000 && rules.rank() == 5);
+    const std::uint64_t early = bench.score();
+    bench.hangar();  // Not yet: the Hangar pays nothing more than its switch.
+    CHECK(bench.score() - early < 100'000 && rules.rank() == 5);
+    for (int i = 0; i < tuning::kFinaleArmour - 1; ++i) {
+      CHECK(!rules.onDrone());
+    }
+    CHECK(!rules.finaleHangarLit());
+    CHECK(rules.onDrone());
+    CHECK(rules.finaleHangarLit() && rules.goalText() == pinball::kGoalCommencement);
+    CHECK(rules.lampState(LampId::ArrowHangar) == LampState::FastBlink);
     const std::uint64_t before = bench.score();
-    CHECK(bench.hangar() == Rules::HoleResult::Eject);
-    CHECK(bench.score() - before == 1'000'000);
-    CHECK(rules.rank() == pinball::kTopRank && bench.message() == std::string_view("CHANCELLOR"));
-    // Victory laps: every major shot 50,000 until one ball is left.
+    bench.step();
+    bench.hangar();
+    CHECK(bench.score() - before >= 1'000'000);
+    CHECK(rules.rank() == pinball::kTopRank &&
+          bench.message() == std::string_view("AIR SHOW SUPER JACKPOT"));
+    const std::uint64_t laps = rules.scoreFrom(Feature::Graduation);
     shoot(bench, Shot::Turbine);
     shoot(bench, Shot::Briefing);
-    bench.hangar();
-    CHECK(rules.scoreFrom(Feature::Graduation) == 1'700'000 + 3 * 50'000);
-    // Grace: a drain inside it comes back.
-    CHECK(bench.lose());
-    bench.wait(tuning::kGraduationGraceSeconds);
-    CHECK(rules.graduationRunning());
-    CHECK(!bench.lose());
-    bench.step();
-    CHECK(rules.graduationRunning());
-    CHECK(!bench.lose());
-    bench.step();
-    // After: the courses are open again and everything else is kept.
+    CHECK(rules.scoreFrom(Feature::Graduation) - laps == 2 * pinball::points::kVictoryLap);
+    downToOne(bench);
     CHECK(!rules.graduationRunning() && rules.multiball() == Multiball::None);
-    CHECK(bench.message() == std::string_view("COURSES REOPENED"));
     CHECK(rules.graduations() == 1 && rules.coursesPassed() == 0 && rules.briefingLit());
     CHECK(rules.rank() == pinball::kTopRank && !rules.graduationLit());
     CHECK(rules.lampState(LampId::Graduation) == LampState::On);
-    bench.wait(Rules::kDoorRaiseSeconds);
-    CHECK(bench.doorsUp && !rules.doorMarked(0) && rules.locksHeld() == 0);
-    // Second time round: twice the pass award, the rank cannot change.
+    // Second time round: twice the pass award.
     rules.setMultiballEnabled(false);
     const std::uint64_t first = rules.scoreFrom(Feature::Course2);
-    pass(bench, CourseId::RunwayDrills);
+    pass(bench, CourseId::RampRuns);
     CHECK(rules.scoreFrom(Feature::Course2) - first == 4 * 20'000 + 2 * 125'000);
     CHECK(rules.rank() == pinball::kTopRank);
-    CHECK(bench.message() == std::string_view("COURSE PASSED"));
-    // A second Graduation Day can be qualified.
-    for (const CourseId id : {CourseId::BumperBasics, CourseId::CircuitTraining,
-                              CourseId::HangarSafety, CourseId::TurbineTheory,
-                              CourseId::Navigation}) {
-      pass(bench, id);
-    }
-    rules.setMultiballEnabled(true);
-    CHECK(rules.graduationLit() && rules.rank() == pinball::kTopRank);
   }
 
-  {  // 4.12 Not finished: the course lamps stay, the exam shots made stay
-     // made, and three ramps light it again.
+  {  // Not finished: the shots made stay made, and three ramps light it again.
     RulesBench bench = single();
     Rules& rules = bench.rules;
+    giveExtras(bench);
     passAll(bench);
     rules.setMultiballEnabled(true);
     bench.wait(tuning::kComboSeconds);
@@ -620,87 +615,185 @@ void testCourses() {
     shoot(bench, Shot::Runway);
     shoot(bench, Shot::Turbine);
     CHECK(rules.examShotsLeft() == 5);
-    bench.wait(tuning::kGraduationGraceSeconds);
-    bench.lose();
-    bench.lose();
-    bench.step();
+    downToOne(bench);
     CHECK(!rules.graduationRunning() && bench.message() == std::string_view("MULTIBALL OVER"));
-    CHECK(rules.coursesPassed() == 6 && rules.rank() == 5 && rules.graduations() == 0);
     CHECK(!rules.graduationLit() && rules.rampsForBriefing() == 3);
-    bench.wait(Rules::kDoorRaiseSeconds);
-    CHECK(bench.doorsUp);
     bench.wait(tuning::kComboSeconds);
     bench.runway();
     bench.runway();
     CHECK(!rules.graduationLit());
     bench.runway();
-    CHECK(rules.graduationLit() && bench.message() == std::string_view("GRADUATION DAY IS LIT"));
+    CHECK(rules.graduationLit());
     bench.scoop();
-    CHECK(rules.graduationRunning() && rules.examShotsLeft() == 5);
-    CHECK(rules.examShotMade(Shot::Runway) && rules.examShotMade(Shot::Turbine));
-    CHECK(bench.total() == 3);
-    // The last ball of the game drains during it: the game is over and
-    // nothing is left running.
-    bench.rules.onSlingshot(0);
-    for (int i = 0; i < 3; ++i) {
-      bench.rules.onNudge();
-    }
-    CHECK(rules.tilted());
-    CHECK(!bench.lose() && !bench.lose());
-    while (!rules.gameOver()) {
-      bench.drain();
-      bench.rules.onSlingshot(0);
-      bench.wait(Rules::kBallSaveSeconds);
-    }
-    CHECK(!rules.graduationRunning() && rules.multiball() == Multiball::None);
-    CHECK(rules.rank() == 5);
+    CHECK(rules.graduationRunning() && rules.examShotsLeft() == 5 && bench.total() == 3);
   }
 
-  {  // 4.12 with balls locked: they are let go and count toward the three.
+  {  // With balls locked: they are let go and count toward the three.
     for (int locked = 0; locked <= 2; ++locked) {
       RulesBench bench = single();
       Rules& rules = bench.rules;
+      giveExtras(bench);
       passAll(bench);
       rules.setMultiballEnabled(true);
+      bench.wait(1.0);  // DOGFIGHT's doors back up.
       bench.doors();
       for (int i = 0; i < locked; ++i) {
         CHECK(bench.hangar() == Rules::HoleResult::Lock);
+        bench.step();
+        if (bench.doorsUp && i + 1 < locked) {
+          bench.doors();
+        }
       }
       CHECK(rules.locksHeld() == locked && bench.balls.locked == locked);
       bench.wait(tuning::kComboSeconds);
-      bench.rules.setTable(bench.balls);
       bench.scoop();
       CHECK(rules.graduationRunning());
       CHECK(bench.balls.locked == 0 && rules.locksHeld() == 0);
-      CHECK(bench.launched == 2 - locked && bench.refused == 0);
-      CHECK(bench.total() == 3 && bench.balls.live == 3 && rules.ballsLive() == 3);
-      bench.wait(1.0);
-      CHECK(rules.graduationRunning() && bench.launched == 2 - locked);
+      CHECK(bench.launched == 2 - locked && bench.refused == 0 && bench.total() == 3);
     }
   }
 
-  {  // 4.12 Turbo multiball is suspended on Graduation Day: with room for
-     // a ball, a full meter still pays its bonus and adds none.
+  {  // Scramble multiball is suspended through the Air Show: a full meter
+     // pays its bonus and adds no ball.
     RulesBench bench = single();
     Rules& rules = bench.rules;
+    giveExtras(bench);
     passAll(bench);
     rules.setMultiballEnabled(true);
     bench.wait(tuning::kComboSeconds);
     bench.scoop();
-    CHECK(rules.graduationRunning() && bench.total() == 3);
     bench.wait(tuning::kGraduationGraceSeconds);
     CHECK(!bench.lose());
     bench.step();
-    CHECK(rules.graduationRunning() && bench.total() == 2);
     const int launched = bench.launched;
     const std::uint64_t bonus = rules.scoreFrom(Feature::TurboBonus);
     bench.bumper(rules.turboGoal() - rules.turboMeter());
     bench.step();
     CHECK(rules.scoreFrom(Feature::TurboBonus) - bonus == pinball::points::kTurboBonus);
-    CHECK(bench.message() == std::string_view("TURBO BONUS"));
-    CHECK(bench.launched == launched && bench.refused == 0 && bench.total() == 2);
-    CHECK(rules.multiball() == Multiball::Graduation && rules.turboMultiballs() == 0);
-    CHECK(rules.turboMeter() == 0);
+    CHECK(bench.message() == std::string_view("SCRAMBLE BONUS"));
+    CHECK(bench.launched == launched && rules.multiball() == Multiball::Graduation);
+  }
+
+  {  // The CAT SHOT spots a lock: its ball is locked with the doors up, and
+     // the third starts SQUADRON MULTIBALL; the meter gets a boost.
+    RulesBench bench;
+    Rules& rules = bench.rules;
+    rules.onSlingshot(0);
+    bench.wait(Rules::kBallSaveSeconds);
+    CHECK(bench.doorsUp && !rules.lockLit());
+    const int meter = rules.turboMeter();
+    rules.onHole(table::kCatHole);
+    CHECK(rules.turboMeter() == meter + tuning::kTurboPerCatShot);
+    // (A meter that cannot fill here, so that no Scramble joins in.)
+    pinball::save::RulesRecord record = rules.record();
+    record.turboGoal = 5'000;
+    rules.restore(record);
+    bench.step();
+    CHECK(bench.hangar() == Rules::HoleResult::Lock && rules.locksHeld() == 1);
+    rules.onHole(table::kCatHole);
+    bench.step();
+    CHECK(bench.hangar() == Rules::HoleResult::Lock && rules.locksHeld() == 2);
+    // A Hangar shot of its own (not by the ride) is not a lock.
+    CHECK(bench.hangar() == Rules::HoleResult::Eject);
+    rules.onHole(table::kCatHole);
+    bench.step();
+    CHECK(bench.hangar() == Rules::HoleResult::StartMultiball);
+    CHECK(rules.multiball() == Multiball::Academy && bench.total() == 3);
+    CHECK(bench.message() == std::string_view("SQUADRON MULTIBALL"));
+    // BANDIT DOWN lights the super jackpot.
+    for (int i = 0; i < rules.droneArmour(); ++i) {
+      rules.onDrone();
+    }
+    CHECK(rules.superJackpotLit());
+    bench.step();
+    CHECK(!bench.doorsUp);
+    const std::uint64_t super = rules.scoreFrom(Feature::SuperJackpot);
+    bench.hangar();
+    CHECK(rules.scoreFrom(Feature::SuperJackpot) - super == pinball::points::kSuperJackpot);
+  }
+
+  {  // The Flight Deck's diverter: lit by two ramps, by the super skill
+     // shot's window and all through Scramble; a Skyway it takes puts it out.
+    RulesBench bench;
+    Rules& rules = bench.rules;
+    rules.onSlingshot(0);
+    CHECK(!rules.deckLit());
+    bench.wait(tuning::kComboSeconds);
+    bench.runway();
+    CHECK(!rules.deckLit());
+    bench.runway();
+    CHECK(rules.deckLit());
+    bench.skyway();  // Diverted to the deck.
+    CHECK(!rules.deckLit());
+    bench.runway();
+    CHECK(!rules.deckLit());
+    bench.skyway();
+    CHECK(rules.deckLit());
+    rules.setDeckPolicy(2);
+    CHECK(!rules.deckLit());
+    rules.setDeckPolicy(0);
+    // The super skill shot: a full plunge round to the left inlane.
+    RulesBench skill;
+    CHECK(skill.rules.skillShotOffered() && !skill.rules.deckLit());
+    skill.wing(1);
+    CHECK(skill.rules.superSkillShotLit() && skill.rules.deckLit());
+    skill.skyway();
+    CHECK(skill.rules.scoreFrom(Feature::SkillShot) > 0 && !skill.rules.deckLit());
+    // Scramble keeps it open.
+    RulesBench scramble;
+    scramble.rules.onSlingshot(0);
+    scramble.bumper(scramble.rules.turboGoal());
+    scramble.step(2);
+    CHECK(scramble.rules.multiball() == Multiball::Turbo && scramble.rules.deckLit());
+  }
+
+  {  // F-L-A-P-S: the checklist relights the Mission (and adds a bonus X);
+     // at FL300 and above its letters time out.
+    RulesBench bench = single();
+    Rules& rules = bench.rules;
+    start(bench, CourseId::LoopDrill);
+    bench.wait(60.0);
+    CHECK(!rules.briefingLit() && rules.rampsForBriefing() == 2);
+    for (std::size_t letter = 0; letter < 5; ++letter) {
+      rules.onRollover(7 + letter);
+    }
+    CHECK(rules.briefingLit() && bench.message() == std::string_view("FLAPS SET  MISSION LIT"));
+    CHECK(rules.bonusMultiplier() == 2);
+    rules.onRollover(7);
+    bench.wait(30.0);
+    CHECK(rules.flapLit(0));  // No time out at FL100.
+    rules.setAltitudeFloor(2);
+    rules.onRollover(8);
+    bench.wait(tuning::kFlapsLetterSeconds * pinball::progression::knobs(2).timerScale - 0.5);
+    CHECK(rules.flapLit(1));
+    bench.wait(1.0);
+    CHECK(!rules.flapLit(0) && !rules.flapLit(1));
+  }
+
+  {  // The Altitude's knobs in the rules: the Bandit's armour, the ball
+     // saver's time, and the Mission's repeat paying a quarter.
+    for (int level = 0; level <= pinball::progression::kTopLevel; ++level) {
+      RulesBench bench;
+      bench.rules.setAltitudeFloor(level);
+      bench.rules.startGame();
+      bench.apply();
+      bench.rules.onBallInPlay();
+      const pinball::progression::Knobs& knobs = pinball::progression::knobs(level);
+      CHECK(bench.rules.droneArmour() == tuning::kDroneArmourBase + knobs.extraHits);
+      const double saver = Rules::kBallSaveSeconds * knobs.ballSaveScale;
+      CHECK(bench.rules.ballSaveSecondsLeft() > saver - 0.01 &&
+            bench.rules.ballSaveSecondsLeft() < saver + 0.01);
+    }
+    RulesBench bench = single();
+    Rules& rules = bench.rules;
+    start(bench, CourseId::LoopDrill);
+    const std::uint64_t before = rules.scoreFrom(Feature::Briefing);
+    bench.scoop();
+    CHECK(rules.scoreFrom(Feature::Briefing) - before == pinball::points::kBriefingRepeat / 4);
+    bench.wait(tuning::kMissionRepeatSeconds + 0.1);
+    bench.scoop();
+    CHECK(rules.scoreFrom(Feature::Briefing) - before ==
+          pinball::points::kBriefingRepeat / 4 + pinball::points::kBriefingRepeat);
   }
 
   {  // Each kind of event has its own sound: the rules' cues, one table row
@@ -719,13 +812,13 @@ void testCourses() {
     bench.rules.setMultiballEnabled(true);
     Rules& rules = bench.rules;
     rules.takeSounds();
-    // Roll call complete: a set, and overdrive lit.
+    // R-A-D complete: a set, and overdrive lit.
     for (std::size_t lane = 0; lane < 3; ++lane) {
       bench.rollCall(lane);
     }
     SoundSet sounds = rules.takeSounds();
     CHECK(has(sounds, Sound::SetComplete) && has(sounds, Sound::Lit));
-    // The Turbine lane starts overdrive.
+    // The Afterburner lane starts overdrive.
     bench.wait(tuning::kComboSeconds);
     rules.takeSounds();
     bench.turbine();
@@ -736,20 +829,20 @@ void testCourses() {
     rules.takeSounds();
     bench.skyway();
     CHECK(has(rules.takeSounds(), Sound::Combo));
-    // A course: started, passed with a rank, and another failed.
+    // A sortie: started, passed with a rank, and another failed.
     bench.wait(tuning::kOverdriveSeconds);
     rules.takeSounds();
-    start(bench, CourseId::BumperBasics);
+    start(bench, CourseId::LoopDrill);
     CHECK(has(rules.takeSounds(), Sound::CourseStart));
     finish(bench);
     sounds = rules.takeSounds();
     CHECK(has(sounds, Sound::CoursePassed) && has(sounds, Sound::RankUp));
-    start(bench, CourseId::RunwayDrills);
+    start(bench, CourseId::RampRuns);
     rules.takeSounds();
-    bench.wait(pinball::kCourses[idx(CourseId::RunwayDrills)].seconds + 1.0);
+    bench.wait(pinball::kCourses[idx(CourseId::RampRuns)].seconds + 1.0);
     CHECK(!rules.courseRunning() && has(rules.takeSounds(), Sound::CourseFailed));
-    // Both turbo targets light extra credit; the Briefing room collects it
-    // (a course on offer is started first).
+    // Both nest targets light extra credit; the Mission collects it (a
+    // sortie on offer is started first).
     rules.onTarget(0);
     rules.onTarget(1);
     CHECK(rules.extraCreditLit());
@@ -762,7 +855,7 @@ void testCourses() {
       }
     }
     CHECK(!rules.extraCreditLit() && has(rules.takeSounds(), Sound::ExtraCredit));
-    // The lock, then Academy multiball, its jackpots and the super jackpot,
+    // The lock, then Squadron multiball, its jackpots and the super jackpot,
     // on a table of their own.
     {
       RulesBench mb;
@@ -791,8 +884,8 @@ void testCourses() {
       mb.hangar();
       CHECK(has(mb.rules.takeSounds(), Sound::SuperJackpot));
     }
-    // An extra ball: lit by the third course passed, collected at the
-    // Briefing room.
+    // An extra ball: lit by the third sortie passed, collected at the
+    // Mission.
     sounds = 0;
     for (int i = 0; i < 12 && rules.coursesPassed() < 3; ++i) {
       bench.wait(tuning::kComboSeconds);
@@ -840,18 +933,18 @@ void testCourses() {
     altitude.restore(3);
     CHECK(altitude.level() == 3);
 
-    // A game starts at FL100 and climbs a level for each course passed.
+    // A game starts at FL100 and climbs a level for each sortie passed.
     RulesBench bench = single();
     Rules& rules = bench.rules;
     CHECK(rules.altitude() == 0 && rules.flightLevel() == 100);
-    pass(bench, CourseId::BumperBasics);
+    pass(bench, CourseId::LoopDrill);
     CHECK(rules.altitude() == 1 && rules.flightLevel() == 200);
-    CHECK(bench.message() == std::string_view("COURSE PASSED  RANK UP"));
+    CHECK(bench.message() == std::string_view("LOOP DRILL COMPLETE"));
     bench.wait(Rules::kMessageSeconds);
     CHECK(bench.message() == std::string_view("CLIMB TO FL200"));
-    pass(bench, CourseId::CircuitTraining);
+    pass(bench, CourseId::RampRuns);
     CHECK(rules.altitude() == 2);
-    for (const CourseId id : {CourseId::RunwayDrills, CourseId::HangarSafety}) {
+    for (const CourseId id : {CourseId::Gunnery, CourseId::Formation}) {
       if (!rules.coursePassed(idx(id))) {
         pass(bench, id);
       }
@@ -886,8 +979,8 @@ void testCourses() {
     rules.setProgressionEnabled(false);
     rules.onBallInPlay();
     bench.wait(Rules::kBallSaveSeconds);
-    pass(bench, CourseId::BumperBasics);
-    CHECK(rules.altitude() == 0 && rules.coursePassed(idx(CourseId::BumperBasics)));
+    pass(bench, CourseId::LoopDrill);
+    CHECK(rules.altitude() == 0 && rules.coursePassed(idx(CourseId::LoopDrill)));
     rules.setProgressionEnabled(true);
   }
 }

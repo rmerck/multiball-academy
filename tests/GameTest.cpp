@@ -946,14 +946,16 @@ void testConceptA() {
     CHECK(distance(game.ball().position, table::kDeckSetDown) < 2.0F);
     CHECK(table::onDeck(game.ball().position));
 
+    // Under the rules: two ramps light the diverter, and the third Skyway
+    // goes to the deck.
     Game alternate;
     Seam::putInPlay(alternate);
-    for (int shot = 0; shot < 2; ++shot) {
+    for (int shot = 0; shot < 3; ++shot) {
       Seam::placeBall(alternate, 0, skyway.center + Vec2{0.0F, 12.0F}, {0.0F, -900.0F});
       CHECK(stepUntil(alternate, 30, [&] { return alternate.ballHeld(); }));
       CHECK(stepUntil(alternate, 240, [&] { return !alternate.ballHeld(); }));
     }
-    CHECK(alternate.holeCount(table::kSkywayHole) == 2);
+    CHECK(alternate.holeCount(table::kSkywayHole) == 3);
     CHECK(alternate.holeCount(table::kDeckRampHole) == 1);
   }
   {  // CAT SHOT: taken in the deck's corner, carried over the nest, and taken
