@@ -426,7 +426,7 @@ def build_drone():
             on = (6 - i) <= n
             key_base(pip_m[k], f, HEX[col] if on else "#1A1A30")
             key_colour(pip_m[k], f, HEX[col])
-            key_emit(pip_m[k], f, 2.4 if on else 0.0)
+            key_emit(pip_m[k], f, 1.1 if on else 0.0)
         key_show(flash, f, label == "hit")
         if label.startswith("down"):
             sink = 4.0 if label == "down1" else 8.0
@@ -647,7 +647,7 @@ def build_flight_deck():
         else:
             k = int(label[-3]) - 1
             key_colour(light_m, f, HEX[GI_LEVELS[k]])
-            key_emit(light_m, f, 7.0)
+            key_emit(light_m, f, 2.2)
 
 
 def _offset(pts, d):
