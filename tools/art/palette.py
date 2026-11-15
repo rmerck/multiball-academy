@@ -68,7 +68,7 @@ PLANNED_LAMPS = (
     [("TaxiT", YELLOW, "round", (176.0, 462.0)), ("TaxiA", YELLOW, "round", (535.0, 462.0)),
      ("TaxiX", YELLOW, "round", (221.0, 392.0)), ("TaxiI", YELLOW, "round", (487.0, 450.0))] +
     # Rank ladder, 1 (bottom) to 7: concept A moves it out of the centre (the pylon, F-L-A-P-S and the Air
-    # Pocket are there) to x 500, the mirror of the Altitude ladder's x 211.
+    # Pocket are there) to x 500 (G2: the Altitude ladder moved to x 175, clear of the BOGEY drops).
     [("Rank%d" % (i + 1), ORCHID, "chevron", (500.0, 662.0 - 12.0 * i)) for i in range(7)] +
     # Combo 2X..5X left of centre and bonus multiplier 2X..5X mirrored on the right, rising toward the middle;
     # concept A: 16 lower, clear of the F and S rollovers.
@@ -87,14 +87,14 @@ PLANNED_LAMPS = (
         ("Skyway", PINK, [(501.1, 492.2), (497.7, 504.8), (494.4, 517.3)]),
         ("CircuitRight", AQUA, [(593.0, 535.0), (593.0, 548.0), (593.0, 561.0)]),
     ) for k, pos in enumerate(pips)] +
-    [("AltitudeFL%d00" % (i + 1), c, "chevron", (211.0, 676.0 - 18.0 * i))
+    [("AltitudeFL%d00" % (i + 1), c, "chevron", (175.0, 676.0 - 18.0 * i))
      for i, c in enumerate((BLUE, CREAM, YELLOW, ORANGE, ORCHID))] +
     [("Flaps%s" % l, CREAM, "round", pos) for l, pos in zip("FLAPS", ((291.0, 626.0), (323.0, 618.0), (355.5, 616.0),
                                                                       (388.0, 618.0), (420.0, 626.0)))] +
-    [("Bogey%d" % (i + 1), ORANGE, "round", (188.0 + 2.0 * i, 505.0 + 20.0 * i)) for i in range(3)] +
+    [("Bogey%d" % (i + 1), ORANGE, "round", (226.0 + 4.0 * i, 575.0 + 20.0 * i)) for i in range(3)] +
     [("Radar%d" % (i + 1), AQUA, "round", (523.0 - 2.0 * i, 505.0 + 20.0 * i)) for i in range(3)] +
     [("SafetyPost", GREEN, "round", (355.5, 904.0)), ("Multiball", YELLOW, "round", (312.0, 530.0)),
-     ("DeckLit", PINK, "round", (540.0, 498.0)), ("DeckA", PINK, "pip", (493.0, 236.0)),
+     ("DeckLit", PINK, "round", (520.0, 575.0)), ("DeckA", PINK, "pip", (493.0, 236.0)),
      ("DeckC", PINK, "pip", (514.7, 213.6)), ("DeckE", PINK, "pip", (532.9, 242.1)),
      ("CatShot", ORANGE, "pip", (497.0, 220.0))]
 )

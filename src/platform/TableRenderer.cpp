@@ -1832,6 +1832,24 @@ void TableRenderer::drawStandupsA(SDL_Renderer* r, const Game& game) const {
                              static_cast<double>(std::atan2(run.y, run.x) * kRadiansToDegrees),
                              nullptr, SDL_FLIP_NONE);
   }
+  // G2: the BOGEY drop targets, while each stands (down, the art's slot
+  // shows), on the same bar, orange.
+  setTint(bar, art::kOrange, 0.85F);
+  for (std::size_t i = 0; i < table::kBogeys.size(); ++i) {
+    if (!game.bogeyUp(i)) {
+      continue;
+    }
+    const table::Capsule& shape = table::kBogeys[i];
+    const Vec2 run = shape.b - shape.a;
+    const float length = std::sqrt(run.x * run.x + run.y * run.y);
+    const float width = (kBarSpriteLength + 2.0F * (kBarSpriteRadius + kBarSpriteMargin)) *
+                        (length / kBarSpriteLength);
+    const float height = 2.0F * (shape.radius + kBarSpriteMargin) * 1.1F;
+    const SDL_FRect dst = centred((shape.a + shape.b) * 0.5F, width, height);
+    SDL_RenderTextureRotated(r, bar, nullptr, &dst,
+                             static_cast<double>(std::atan2(run.y, run.x) * kRadiansToDegrees),
+                             nullptr, SDL_FLIP_NONE);
+  }
   // The captive ball, in its channel (the G-FORCE housing is in the art).
   const Vec2 at = game.captivePosition();
   const float size = art::kCaptiveBallSpriteUnits;
