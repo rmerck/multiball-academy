@@ -3,7 +3,7 @@
 # reproduces out/ byte for byte (verified, and from the .blend files alone); other platforms: check by eye.
 44681a094a68a2b9269a4c0bddbec89af9752a645f9cc5187aa132f733cd66da  tools/art/table_a/blender/bay_door.blend
 3de26b017aded2abc2b189e0d8b3674f1a86523c8708a022f91c6befedc07de1  tools/art/table_a/blender/drone.blend
-00043f7f448a071243f97b800d83b92a73fd9bb3f2e21e033fc4abbcc16fc6a5  tools/art/table_a/blender/flasher_domes.blend
+f34de479a65d385e41f91ea3f7777e37ac6004aa26e281997191e003f5bfbbae  tools/art/table_a/blender/flasher_domes.blend
 6b1da4ed71b05f876f9cfea29bc78d328346e1fe8a8965f3cf583b10ea1db12b  tools/art/table_a/blender/flight_deck.blend
 aa7e38b786b5b33f5e720c259a4f0e5ef67e7b50050c353656ddf9f9f40ef8f9  tools/art/table_a/blender/gforce.blend
 b26d548e25f7777a48a56e8dca9efd3162304da56fad8e3aa3ec7e81f86c71be  tools/art/table_a/blender/jet_caps.blend
@@ -22,7 +22,7 @@ d8edaff2531200016bd701f8aed2aa4cfdc7b4c2f4c613349cd6813abb051075  tools/art/tabl
 e55a9b0e2640ce8f9a6bdcd144a4ed223cd1a8e9e00944e4e59dfabd67e2d59c  tools/art/table_a/out/bay_door.png
 fbe432b83883a518b6322dda2aaa92f4fd0fc577568d5436fbf47b0d4b0ac145  tools/art/table_a/out/decals_nameplates.png
 6d127be113078e71ffbb9b11c7a929b41276baf944472e42058a4c2b16a5bebd  tools/art/table_a/out/drone.png
-25df5a49d621815da0312820f15ea90ba590d17f5bfb72d8bd2a204a74fbfe18  tools/art/table_a/out/flasher_domes.png
+0cff104c975ae5316f2251f926ef5c1600934560aec22d62c5bdd49e4f5da364  tools/art/table_a/out/flasher_domes.png
 84faa6ba5dbaa9f2b50b3959d5cebdd13aff7d9a5cb02edef06472ca65ac55a9  tools/art/table_a/out/flight_deck.png
 f6d65994108c08d3b3cacbb2cc5b1a3d52b75e841e7f5846abfa00189af9549f  tools/art/table_a/out/gforce.png
 a3e39b1b8af6f3f417ec4a0de164b486ec7ddb481ebc9cffb42a6dafbe99258b  tools/art/table_a/out/gimp_sheets.json
