@@ -57,7 +57,7 @@ std::string cradleFan(bool rightSide, int maxPress) {
       flip = i >= press && i < press + 30;
       const std::size_t before = h.events.size();
       const Touch drain = h.advance();
-      if (std::getenv("TRACE_FAN") != nullptr && i >= press && i % 6 == 0 &&
+      if (std::getenv("TRACE_FAN") != nullptr && i >= press && (i % 6 == 0 || std::getenv("TRACE_EVERY") != nullptr) &&
           std::atoi(std::getenv("TRACE_FAN")) == press && rightSide == (std::getenv("TRACE_R") != nullptr)) {
         std::printf("  k=%d i=%d p=(%.0f,%.0f) v=(%.0f,%.0f)\n", press, i, h.position(0).x, h.position(0).y,
                     h.velocity(0).x, h.velocity(0).y);

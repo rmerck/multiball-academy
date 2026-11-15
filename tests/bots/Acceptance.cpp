@@ -455,6 +455,8 @@ Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bo
   std::uint64_t touchesAtHit = 0;
   std::uint64_t topsAtHit = 0;
   std::uint64_t doneAtHit = 0;
+  int standupStep = 0;
+  constexpr int kBrushSteps = kStepsPerSecond / 2;
   for (int i = 0; i < kStepsPerSecond * 7; ++i) {
     if (dry && harness.nearFlipper(harness.position(0), flipper, 1.0F)) {
       if (result.contactFirst < 0) {
@@ -474,10 +476,22 @@ Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bo
         }
         result.shot = event.touch;
         decided = true;
+        standupStep = i;
         touchesAtHit = harness.flipperTouches;
         topsAtHit = harness.circuitTop[0] + harness.circuitTop[1];
         doneAtHit = harness.circuitDone[0] + harness.circuitDone[1];
         break;
+      }
+    } else if (decided && result.shot == Touch::Standup && i - standupStep <= kBrushSteps) {
+      // A dead T-A-X-I stand-up brushed at a hole's mouth (the Mission
+      // scoop's rail end, I) on the way in: with holes that take the ball at
+      // their cup, the hole may take it a moment later. That is the hole's
+      // shot made, as it was when the hole took the ball at its mouth.
+      for (const TouchEvent& event : std::span(harness.events).subspan(eventsBefore)) {
+        if (event.touch == Touch::Briefing || event.touch == Touch::Hangar) {
+          result.shot = event.touch;
+          break;
+        }
       }
     } else if (decided && isCircuit) {
       result.reachedArch =
