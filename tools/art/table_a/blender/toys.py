@@ -40,8 +40,8 @@ HEX = {
     "CORAL": "#FF5A4E", "SLATE": "#2A3048",
     # floor paint for flush pieces under ball paths: deck-dark so the ball keeps 3:1 (palette LUM_DECK_MAX)
     "F_DECK": "#161B3C", "F_PAINT_W": "#3E4670", "F_PAINT_Y": "#5A4A1E", "F_BLADE": "#1E2450",
-    "F_BAND": "#5E2228", "F_TIP": "#5A4C18", "F_RING1": "#123E46", "F_RING2": "#1E365E", "F_RING3": "#302458",
-    "F_STENCIL": "#262C52",
+    "F_BAND": "#6A5418", "F_TIP": "#B04428", "F_RING1": "#123E46", "F_RING2": "#1E365E", "F_RING3": "#302458",
+    "F_STENCIL": "#262C52", "F_EDGE": "#4A5698", "F_RINGBG": "#10163A",
 }
 
 
@@ -55,17 +55,25 @@ def lin(hexstr, a=1.0):
 # ---- the sheets: frames, cell size (units), columns, and where the cell sits ------------------------
 # "anchor": "centre" = the cell is centred on the toy's position; [x, y] = the cell's top-left corner in
 # playfield units (pieces drawn in table coordinates, such as the ramps).
+GI_LEVELS = ["DAY", "CLEAR", "DUSK", "SUNSET", "NIGHTV"]   # FL100..FL500 (palette.py ALTITUDE_GI)
 SHEETS = {
-    "drone": {"cell": (48, 48), "cols": 5, "anchor": "centre",
+    "drone": {"cell": (48, 48), "cols": 6, "anchor": "centre",
               "frames": ["armour6", "armour5", "armour4", "armour3", "armour2", "armour1", "armour0",
-                         "dive", "down1", "down2"]},
-    "propwash": {"cell": (84, 84), "cols": 6, "anchor": "centre",
+                         "hit", "dive", "down1", "down2"]},
+    # rendered at 2.5 degree steps over the 120-degree period (48 timeline frames); the sharp sheet takes every
+    # second one, the blur sheet averages 13 of them (30 degrees) round each 10-degree step. Both loop.
+    "propwash": {"cell": (84, 84), "cols": 6, "anchor": "centre", "timeline": 48,
                  "frames": ["rot%03d" % (k * 5) for k in range(24)]},
+    "propwash_blur": {"cell": (84, 84), "cols": 6, "anchor": "centre", "derived": "propwash",
+                      "frames": ["blur%03d" % (k * 10) for k in range(12)]},
+    "propwash_ring": {"cell": (100, 100), "cols": 1, "anchor": "centre", "frames": ["ring"]},
     "pylon": {"cell": (64, 64), "cols": 4, "anchor": "centre", "frames": ["down", "rise1", "rise2", "up"]},
     "bay_door": {"cell": (40, 32), "cols": 3, "anchor": "centre", "frames": ["closed", "dropping", "open"]},
-    "flight_deck": {"cell": (100, 172), "cols": 2, "anchor": [471.0, 146.0], "frames": ["off", "lit"]},
-    "ramp_runway": {"cell": (176, 412), "cols": 1, "anchor": [40.0, 276.0], "frames": ["normal"]},
-    "ramp_skyway": {"cell": (176, 452), "cols": 2, "anchor": [495.0, 236.0], "frames": ["normal", "to_deck"]},
+    "flight_deck": {"cell": (112, 184), "cols": 3, "anchor": [465.0, 140.0],
+                    "frames": ["off"] + ["lit_fl%d00" % (k + 1) for k in range(5)]},
+    "ramp_runway": {"cell": (176, 412), "cols": 2, "anchor": [40.0, 276.0], "frames": ["normal", "lit"]},
+    "ramp_skyway": {"cell": (176, 452), "cols": 2, "anchor": [495.0, 236.0],
+                    "frames": ["normal", "lit", "to_deck", "to_deck_lit"]},
     "gforce": {"cell": (88, 88), "cols": 1, "anchor": [128.0, 224.0], "frames": ["housing"]},
     "jet_caps": {"cell": (56, 56), "cols": 2, "anchor": "centre",
                  "frames": ["jet1_off", "jet1_on", "jet2_off", "jet2_on", "jet3_off", "jet3_on"]},
@@ -358,88 +366,93 @@ def T(x, y, z=0.0):
 
 
 # ---- toys --------------------------------------------------------------------------------------------
+def key_colour(m, frame, hexstr):
+    """Keyframe a material's emission colour (lit variants in different colours from one scene)."""
+    sock = m.node_tree.nodes.get("Principled BSDF").inputs["Emission Color"]
+    sock.default_value = lin(hexstr)
+    sock.keyframe_insert("default_value", frame=frame)
+
+
+def key_base(m, frame, hexstr):
+    sock = m.node_tree.nodes.get("Principled BSDF").inputs["Base Color"]
+    sock.default_value = lin(hexstr)
+    sock.keyframe_insert("default_value", frame=frame)
+
+
+def hexagon(r, rot_deg=-90.0):
+    return [(r * math.cos(math.radians(rot_deg + 60 * k)), r * math.sin(math.radians(rot_deg + 60 * k)))
+            for k in range(6)]
+
+
 def build_drone():
-    """BANDIT: an academy target drone. Hexagon, a corner pointing down the table (layout: radius 15)."""
-    body_r, armour_r = 12.0, 15.0
-    corners = [(body_r * math.cos(math.radians(-90 + 60 * k)), body_r * math.sin(math.radians(-90 + 60 * k)))
-               for k in range(6)]
-    # world: corner pointing down the table = -Y in Blender
-    corners = [(x, y) for x, y in corners]
+    """BANDIT, simplified for 15 units of radius: a bold hexagon (ink rim, cream cap, three hot-orange wedges,
+    a big pink eye) and its armour as six pips round the cap, coloured by how much is left (aqua 6-4, yellow
+    3-2, coral 1, dark when gone). Hit = a white flash over the cap. A corner points down the table."""
     parts = []
-    hull = prism(corners, 3.0, 10.0, mat("DroneHull", HEX["CREAM"], rough=0.25, coat=0.8), "Hull")
-    smooth(hull, 0.8)
-    parts.append(hull)
-    # top: six wedges, hot orange and cream, the trainer's target pattern
-    for k in range(6):
+    rim = prism(hexagon(15.0), 2.0, 11.0, mat("DroneRim", HEX["INK"], rough=0.35, coat=0.6), "Rim")
+    smooth(rim, 0.9)
+    parts.append(rim)
+    cap = prism(hexagon(13.2), 11.0, 11.6, plastic("CREAM", 0.25, 0.8), "Cap")
+    parts.append(cap)
+    for k in range(0, 6, 2):
         a0, a1 = math.radians(-90 + 60 * k), math.radians(-90 + 60 * (k + 1))
-        tri = [(0, 0), (body_r * 0.92 * math.cos(a0), body_r * 0.92 * math.sin(a0)),
-               (body_r * 0.92 * math.cos(a1), body_r * 0.92 * math.sin(a1))]
-        w = prism(tri, 10.0, 10.6, plastic("ORANGE" if k % 2 == 0 else "INK", 0.2), "Wedge%d" % k)
-        parts.append(w)
-    # sensor eye
-    eye_m = mat("Eye", HEX["PINK"], rough=0.05, coat=1.0, emit=HEX["PINK"], strength=2.5)
-    eye = sphere(3.6, (0, 0, 10.4), eye_m)
-    eye.scale = (1, 1, 0.6)
+        tri = [(0, 0), (8.6 * math.cos(a0), 8.6 * math.sin(a0)), (8.6 * math.cos(a1), 8.6 * math.sin(a1))]
+        parts.append(prism(tri, 11.6, 11.9, plastic("ORANGE", 0.25), "Wedge%d" % k))
+    eye_m = mat("Eye", HEX["PINK"], rough=0.05, coat=1.0, emit=HEX["PINK"], strength=2.0)
+    eye = sphere(4.6, (0, 0, 11.9), eye_m)
+    eye.scale = (1, 1, 0.55)
     parts.append(eye)
-    parts.append(cyl(4.4, 0.8, (0, 0, 10.7), m=chrome()))
-    # three ducted rotor pods on alternate corners
-    for k in (1, 3, 5):
-        a = math.radians(-90 + 60 * k)
-        c = (13.0 * math.cos(a), 13.0 * math.sin(a), 8.0)
-        parts.append(cyl(3.6, 2.4, c, m=chrome()))
-        parts.append(cyl(2.6, 2.6, c, m=mat("Duct", HEX["INK"], rough=0.6)))
+    parts.append(cyl(5.4, 0.7, (0, 0, 11.95), 48, chrome()))
     root = group(parts, "Drone")
-    # armour: six teal plates, one per face, bolted on
-    plates = []
-    pm = mat("Armour", HEX["TEAL"], metallic=0.6, rough=0.28, coat=0.5)
+    pips, pip_m = [], []
     for k in range(6):
-        a0, a1 = math.radians(-90 + 60 * k), math.radians(-90 + 60 * (k + 1))
-        ri, ro = body_r - 0.5, armour_r
-        quad = [(ri * math.cos(a0), ri * math.sin(a0)), (ro * math.cos(a0 + 0.06), ro * math.sin(a0 + 0.06)),
-                (ro * math.cos(a1 - 0.06), ro * math.sin(a1 - 0.06)), (ri * math.cos(a1), ri * math.sin(a1))]
-        p = prism(quad, 2.5, 9.0, pm, "Plate%d" % k)
-        smooth(p, 0.5)
-        am = (a0 + a1) / 2
-        bolt = sphere(0.7, ((ri + ro) / 2 * math.cos(am), (ri + ro) / 2 * math.sin(am), 9.1), chrome(), 12)
-        bolt.parent = p
+        a0, a1 = math.radians(-90 + 60 * k + 7), math.radians(-90 + 60 * (k + 1) - 7)
+        ri, ro = 9.4, 12.6
+        quad = [(ri * math.cos(a0), ri * math.sin(a0)), (ro * math.cos(a0), ro * math.sin(a0)),
+                (ro * math.cos(a1), ro * math.sin(a1)), (ri * math.cos(a1), ri * math.sin(a1))]
+        m = mat("Pip%d" % k, "#1A1A30", rough=0.2, coat=0.8, emit=HEX["AQUA"], strength=0.0)
+        p = prism(quad, 11.6, 12.1, m, "Pip%d" % k)
         p.parent = root
-        plates.append(p)
-    # removal order: front corners first, so the throw faces strip first
-    order = [0, 5, 1, 4, 2, 3]
-    frames = SHEETS["drone"]["frames"]
-    for f, label in enumerate(frames, start=1):
-        if label.startswith("armour"):
-            n = int(label[-1])
-            for i, k in enumerate(order):
-                key_show(plates[k], f, (6 - i) <= n)
+        pips.append(p)
+        pip_m.append(m)
+    flash = prism(hexagon(15.4), 12.3, 12.5, mat("Flash", HEX["WHITE"], emit=HEX["WHITE"], strength=6.0,
+                                                  alpha=0.85), "Flash")
+    flash.parent = root
+    order = [0, 5, 1, 4, 2, 3]          # front corners lose armour first
+    for f, label in enumerate(SHEETS["drone"]["frames"], start=1):
+        n = int(label[-1]) if label.startswith("armour") else (6 if label == "hit" else 0)
+        col = "AQUA" if n >= 4 else ("YELLOW" if n >= 2 else "CORAL")
+        for i, k in enumerate(order):
+            on = (6 - i) <= n
+            key_base(pip_m[k], f, HEX[col] if on else "#1A1A30")
+            key_colour(pip_m[k], f, HEX[col])
+            key_emit(pip_m[k], f, 2.4 if on else 0.0)
+        key_show(flash, f, label == "hit")
+        if label.startswith("down"):
+            sink = 4.0 if label == "down1" else 8.0
+            key(root, "location", f, (0, 0, -sink))
+            key(root, "rotation_euler", f, (math.radians(-10), math.radians(14), 0))
+            key_emit(eye_m, f, 0.0)
+        elif label == "dive":
+            key(root, "location", f, (0, 0, 1.0))
+            key(root, "rotation_euler", f, (math.radians(-24), 0, 0))
+            key_emit(eye_m, f, 5.0)
+        else:
             key(root, "location", f, (0, 0, 0))
             key(root, "rotation_euler", f, (0, 0, 0))
-            key_emit(eye_m, f, 2.5)
-        else:
-            for p in plates:
-                key_show(p, f, False)
-            if label == "dive":
-                key(root, "location", f, (0, 0, 1.0))
-                key(root, "rotation_euler", f, (math.radians(-24), 0, 0))
-                key_emit(eye_m, f, 6.0)
-            else:
-                sink = 4.0 if label == "down1" else 8.0
-                key(root, "location", f, (0, 0, -sink))
-                key(root, "rotation_euler", f, (math.radians(-10), math.radians(14), 0))
-                key_emit(eye_m, f, 0.0)
+            key_emit(eye_m, f, 2.0)
 
 
 def build_propwash():
-    """Prop Wash: a flush turntable, r 38, with an original three-blade prop hub."""
+    """Prop Wash: a flush turntable (r 38) with a three-blade prop: dark blades with a painted lighter leading
+    edge, coral tips with an amber band, a chrome spinner hub with three bolts. 48 timeline frames, 2.5 degrees
+    apart, over the 120-degree period."""
     R = 38.0
     rot = bpy.data.objects.new("Turntable", None)
     bpy.context.scene.collection.objects.link(rot)
-    parts = []
-    parts.append(cyl(R, 1.0, (0, 0, -0.5), 128, mat("Disc", HEX["F_DECK"], rough=0.4, coat=0.5)))
-    ring = cyl(R, 1.2, (0, 0, -0.4), 128, chrome(True))
-    inner = cyl(R - 2.2, 1.6, (0, 0, -0.4), 128, mat("Disc2", HEX["NIGHT"], rough=0.45, coat=0.4))
-    parts += [ring, inner]
-    # airflow rings: printed arcs that rotate with the disc
+    parts = [cyl(R, 1.0, (0, 0, -0.5), 128, mat("Disc", HEX["F_DECK"], rough=0.4, coat=0.5)),
+             cyl(R, 1.2, (0, 0, -0.4), 128, chrome(True)),
+             cyl(R - 2.2, 1.6, (0, 0, -0.4), 128, mat("Disc2", HEX["NIGHT"], rough=0.45, coat=0.4))]
     for k, rr in enumerate((14.0, 22.0, 30.0)):
         bpy.ops.mesh.primitive_torus_add(major_radius=rr, minor_radius=0.55, major_segments=96, minor_segments=8,
                                          location=(0, 0, 0.42))
@@ -447,9 +460,9 @@ def build_propwash():
         t.scale = (1, 1, 0.15)
         assign(t, plastic(("F_RING1", "F_RING2", "F_RING3")[k], 0.4, 0.2))
         parts.append(t)
-    # three blades: a swept outline, cream with a coral band and a yellow tip
     blade = [(0, -3.2), (12, -4.8), (24, -5.4), (31, -4.4), (34.5, -1.6), (34, 1.8), (30, 3.6), (20, 3.8),
              (10, 3.4), (0, 3.0)]
+    edge = [(6, 3.1), (12, 3.4), (20, 3.8), (30, 3.6), (30, 2.4), (20, 2.5), (12, 2.2), (6, 2.0)]
     for k in range(3):
         a = math.radians(90 + 120 * k)
         ca, sa = math.cos(a), math.sin(a)
@@ -457,22 +470,49 @@ def build_propwash():
         def rotp(p, ca=ca, sa=sa):
             return (p[0] * ca - p[1] * sa, p[0] * sa + p[1] * ca)
 
-        pts = [rotp(p) for p in blade]
-        b = prism(pts, 0.5, 2.2, plastic("F_BLADE", 0.3, 0.4), "Blade%d" % k)
+        b = prism([rotp(p) for p in blade], 0.5, 2.2, plastic("F_BLADE", 0.3, 0.4), "Blade%d" % k)
         smooth(b, 0.4)
         parts.append(b)
-        band = [rotp(p) for p in [(22, -5.6), (26, -5.4), (26, 4.0), (22, 4.0)]]
+        parts.append(prism([rotp(p) for p in edge], 2.15, 2.35, plastic("F_EDGE", 0.3, 0.5), "Edge%d" % k))
+        band = [rotp(p) for p in [(22, -5.6), (25, -5.5), (25, 4.0), (22, 4.0)]]
         parts.append(prism(band, 2.15, 2.35, plastic("F_BAND", 0.3, 0.4), "Band%d" % k))
-        tip = [rotp(p) for p in [(29, -4.8), (31, -4.5), (34.6, -1.6), (34.1, 1.9), (30, 3.7), (29, 3.7)]]
-        parts.append(prism(tip, 2.15, 2.35, plastic("F_TIP", 0.3, 0.4), "Tip%d" % k))
-    # spinner hub
+        tip = [rotp(p) for p in [(28, -4.9), (31, -4.5), (34.6, -1.6), (34.1, 1.9), (30, 3.7), (28, 3.7)]]
+        parts.append(prism(tip, 2.15, 2.4, plastic("F_TIP", 0.25, 0.6), "Tip%d" % k))
     hub = cyl(7.5, 7.0, (0, 0, 5.0), 64, chrome(), r2=1.2)
     smooth(hub)
-    parts += [hub, cyl(8.4, 1.6, (0, 0, 1.8), 64, plastic("INK", 0.4, 0.3))]
+    parts += [hub, cyl(9.0, 1.8, (0, 0, 1.6), 64, chrome(True))]
+    for k in range(3):
+        a = math.radians(30 + 120 * k)
+        parts.append(cyl(1.1, 0.8, (7.6 * math.cos(a), 7.6 * math.sin(a), 2.6), 16, chrome()))
     for p in parts:
         p.parent = rot
-    for f in range(1, 25):
-        key(rot, "rotation_euler", f, (0, 0, -math.radians(5 * (f - 1))))
+    n = SHEETS["propwash"]["timeline"]
+    for f in range(1, n + 1):
+        key(rot, "rotation_euler", f, (0, 0, -math.radians(120.0 * (f - 1) / n)))
+
+
+def build_propwash_ring():
+    """The static ground ring round the turntable (r 39-47): floor-dark, twelve chevrons pointing clockwise
+    (the turntable's normal sense; mirror the sprite for Dogfight's reverse)."""
+    cyl(47.0, 0.6, (0, 0, -0.3), 128, mat("RingFloor", HEX["F_RINGBG"], rough=0.6))
+    cyl(47.6, 0.5, (0, 0, -0.35), 128, chrome(True))
+    hole = cyl(38.6, 1.0, (0, 0, -0.2), 128, mat("Hole", HEX["INK"], rough=0.9))
+    paint = plastic("F_PAINT_Y", 0.6, 0.0)
+    for k in range(12):
+        a = math.radians(30 * k)
+        # a chevron at radius 43, pointing clockwise (towards decreasing angle seen from above)
+        tip = (43.0 * math.cos(a - 0.10), 43.0 * math.sin(a - 0.10))
+        arms = []
+        for side in (-1, 1):
+            rr = 43.0 + side * 2.6
+            back = (rr * math.cos(a + 0.05), rr * math.sin(a + 0.05))
+            arms.append(back)
+        for back in arms:
+            dx, dy = tip[0] - back[0], tip[1] - back[1]
+            L = math.hypot(dx, dy)
+            box((L + 1.2, 1.3, 0.12), ((tip[0] + back[0]) / 2, (tip[1] + back[1]) / 2, 0.06), paint,
+                rot=(0, 0, math.atan2(dy, dx)))
+    _ = hole
 
 
 def build_pylon():
@@ -523,18 +563,23 @@ def build_bay_door():
 
 
 def build_flight_deck():
-    """The Flight Deck floor (centre 521,232, 90 x 160): a carrier-style deck plate, with the CAT SHOT and deck
-    drain recesses, landing lines, catapult track and edge lights (lit frame = the deck is open)."""
+    """The Flight Deck (centre 521,232, 90 x 160): a raised carrier-style deck, 6 units high with a chamfered
+    metal edge and a cast shadow, so it reads as a mini-playfield above the table. On top: dark non-skid
+    plate, an angled landing area (dim edge lines, dashed centreline) lit by runway lights, a catapult track
+    to the CAT SHOT, recessed CAT SHOT and deck-drain cups, hazard chevrons, and 14 deck-edge lights.
+    Frames: off, and lit in each Altitude GI colour (the deck is open)."""
     cx, cy = 521.0, 232.0
     hw, hh = 45.0, 80.0
-    # plate with rounded corners
+    Z = 6.0
     pts = []
     rc = 8.0
     for qx, qy, a0 in ((hw - rc, hh - rc, 0), (-hw + rc, hh - rc, 90), (-hw + rc, -hh + rc, 180),
                        (hw - rc, -hh + rc, 270)):
         for s in range(9):
             a = math.radians(a0 + s * 90 / 8)
-            pts.append((cx + qx + rc * math.cos(a), -(cy) + qy + rc * math.sin(a)))
+            pts.append((cx + qx + rc * math.cos(a), -cy + qy + rc * math.sin(a)))
+    side = prism(pts, 0.0, Z - 0.4, mat("DeckSide", "#3A4258", metallic=0.9, rough=0.32), "DeckSide")
+    smooth(side, 1.6, 3)
     deck_m = mat("DeckPlate", HEX["F_DECK"], rough=0.75)
     nodes = deck_m.node_tree.nodes
     noise = nodes.new("ShaderNodeTexNoise")
@@ -544,52 +589,65 @@ def build_flight_deck():
     bump.inputs["Strength"].default_value = 0.25
     deck_m.node_tree.links.new(noise.outputs["Fac"], bump.inputs["Height"])
     deck_m.node_tree.links.new(bump.outputs["Normal"], nodes.get("Principled BSDF").inputs["Normal"])
-    plate = prism(pts, -1.0, 0.0, deck_m, "Deck")
-    edge = prism(pts, -1.2, -0.05, chrome(True), "Edge")
-    edge.scale = (1.0, 1.0, 1.0)
+    inset = [(cx + (x - cx) * 0.965, -cy + (y + cy) * 0.978) for x, y in pts]
+    prism(inset, Z - 0.6, Z, deck_m, "Deck")
     paint_w = plastic("F_PAINT_W", 0.6, 0.0)
     paint_y = plastic("F_PAINT_Y", 0.6, 0.0)
+    zt = Z + 0.05
 
-    def stripe(x0, y0, x1, y1, w, m, z=0.05):
+    def stripe(x0, y0, x1, y1, w, m, z=zt):
         dx, dy = x1 - x0, y1 - y0
         L = math.hypot(dx, dy)
-        o = box((L, w, 0.1), ((x0 + x1) / 2, -(y0 + y1) / 2, z), m, rot=(0, 0, math.atan2(-dy, dx)))
-        return o
+        return box((L, w, 0.1), ((x0 + x1) / 2, -(y0 + y1) / 2, z), m, rot=(0, 0, math.atan2(-dy, dx)))
 
-    # angled landing area: two yellow edge lines and a dashed white centreline, set down -> CAT SHOT
     sx, sy, ex, ey = 532.0, 300.0, 495.0, 160.0
     ang = math.atan2(ey - sy, ex - sx)
     nx, ny = -math.sin(ang), math.cos(ang)
-    for side in (-1, 1):
-        stripe(sx + side * 16 * nx, sy + side * 16 * ny, ex + side * 16 * nx, ey + side * 16 * ny, 1.4, paint_y)
-    L = math.hypot(ex - sx, ey - sy)
+    for sd in (-1, 1):
+        stripe(sx + sd * 16 * nx, sy + sd * 16 * ny, ex + sd * 16 * nx, ey + sd * 16 * ny, 1.4, paint_y)
     for k in range(9):
         t0, t1 = k / 9.0, k / 9.0 + 0.055
         stripe(sx + (ex - sx) * t0, sy + (ey - sy) * t0, sx + (ex - sx) * t1, sy + (ey - sy) * t1, 1.6, paint_w)
-    # catapult track: chrome slot from the set-down towards the CAT SHOT
-    stripe(532.0, 252.0, 498.0, 212.0, 2.4, chrome(True), 0.08)
-    stripe(532.0, 252.0, 498.0, 212.0, 1.0, mat("TrackSlot", HEX["INK"], rough=0.9), 0.12)
-    # recesses: CAT SHOT (495,196, 14x16) and deck drain (495,292, 14x12)
+    # threshold bars at the landing end (piano keys)
+    for k in range(-3, 4):
+        if k == 0:
+            continue
+        o = k * 4.0
+        stripe(sx + o * nx - 4 * math.cos(ang), sy + o * ny - 4 * math.sin(ang),
+               sx + o * nx + 4 * math.cos(ang), sy + o * ny + 4 * math.sin(ang), 1.8, paint_w)
+    stripe(532.0, 252.0, 498.0, 212.0, 2.4, chrome(True), zt + 0.03)
+    stripe(532.0, 252.0, 498.0, 212.0, 1.0, mat("TrackSlot", HEX["INK"], rough=0.9), zt + 0.07)
     for (hx, hy, ax, ay) in ((495.0, 196.0, 14.0, 16.0), (495.0, 292.0, 14.0, 12.0)):
-        box((2 * ax + 3, 2 * ay + 3, 0.3), (hx, -hy, 0.05), chrome(True))
-        box((2 * ax, 2 * ay, 0.4), (hx, -hy, 0.1), mat("Recess", HEX["INK"], rough=0.95))
-    # hazard chevrons at the drain's lip
+        box((2 * ax + 3, 2 * ay + 3, 0.3), (hx, -hy, zt), chrome(True))
+        box((2 * ax, 2 * ay, 0.4), (hx, -hy, zt + 0.05), mat("Recess", HEX["INK"], rough=0.95))
     for k in range(4):
         x = 483.0 + k * 8
         stripe(x, 306.0, x + 4, 309.0, 1.2, paint_y)
-    # deck-edge lights: 14 small lenses along both long edges (emit in the lit frame)
-    lens_m = mat("EdgeLens", "#1E5C5C", rough=0.2, coat=0.6, emit=HEX["AQUA"], strength=0.0)   # unlit lens: LUM_UNLIT_LENS
+    # lights: runway edge lights along both landing lines, centreline lights between dashes, deck-edge lights
+    light_m = mat("Lights", "#1E3048", rough=0.2, coat=0.6, emit=HEX["DAY"], strength=0.0)
+    for sd in (-1, 1):
+        for k in range(8):
+            t = (k + 0.5) / 8
+            x = sx + (ex - sx) * t + sd * 19.5 * nx
+            y = sy + (ey - sy) * t + sd * 19.5 * ny
+            sphere(1.15, (x, -y, zt), light_m, 16).scale = (1, 1, 0.5)
+    for k in range(8):
+        t = (k + 1.0) / 9 - 0.028
+        sphere(0.95, (sx + (ex - sx) * t, -(sy + (ey - sy) * t), zt), light_m, 16).scale = (1, 1, 0.5)
     for k in range(7):
         y = cy - hh + 14 + k * (2 * hh - 28) / 6
         for x in (cx - hw + 4.5, cx + hw - 4.5):
-            sphere(1.5, (x, -y, 0.2), lens_m, 16).scale = (1, 1, 0.5)
-    # stencil lettering, low contrast (decoration only)
-    text("FLIGHT DECK", 7.0, (cx - hw + 11, -cy, 0.06), mat("Stencil", HEX["F_STENCIL"], rough=0.6),
+            sphere(1.5, (x, -y, zt), light_m, 16).scale = (1, 1, 0.5)
+    text("FLIGHT DECK", 7.0, (cx - hw + 11, -cy, zt), mat("Stencil", HEX["F_STENCIL"], rough=0.6),
          font="SairaStencilOne-Regular.ttf", rot=(0, 0, math.radians(90)))
-    frames = SHEETS["flight_deck"]["frames"]
-    for f, label in enumerate(frames, start=1):
-        key_emit(lens_m, f, 8.0 if label == "lit" else 0.0)
-    _ = (plate, ang, L)
+    for f, label in enumerate(SHEETS["flight_deck"]["frames"], start=1):
+        if label == "off":
+            key_colour(light_m, f, HEX["DAY"])
+            key_emit(light_m, f, 0.0)
+        else:
+            k = int(label[-3]) - 1
+            key_colour(light_m, f, HEX[GI_LEVELS[k]])
+            key_emit(light_m, f, 7.0)
 
 
 def _offset(pts, d):
@@ -659,24 +717,38 @@ def _ramp(rail, name, colour, label, plastic_until=4, height=34.0, decal_side=1)
     P = [(x, -y, z_at(si)) for (x, y), si in zip(pts, s)]
     plastic_pts = P[:s_apex + 1]
     wire_pts = P[s_apex:]
-    # U profile (width 30, walls 9 high)
-    prof = bpy.data.curves.new(name + "_U", "CURVE")
-    sp = prof.splines.new("POLY")
-    u = [(-16, 9), (-15, 9), (-15, 0.8), (15, 0.8), (15, 9), (16, 9), (16, -0.4), (-16, -0.4)]
-    sp.points.add(len(u) - 1)
-    for p, (a, b) in zip(sp.points, u):
-        p.co = (a, b, 0, 1)
-    sp.use_cyclic_u = True
-    profo = bpy.data.objects.new(name + "_U", prof)
-    bpy.context.scene.collection.objects.link(profo)
-    profo.hide_render = True
-    _curve(name + "_Plastic", plastic_pts, clear_plastic(colour, 0.45), profile=profo)
+
+    def profile(nm, pts2):
+        prof = bpy.data.curves.new(nm, "CURVE")
+        sp = prof.splines.new("POLY")
+        sp.points.add(len(pts2) - 1)
+        for p, (a, b) in zip(sp.points, pts2):
+            p.co = (a, b, 0, 1)
+        sp.use_cyclic_u = True
+        o = bpy.data.objects.new(nm, prof)
+        bpy.context.scene.collection.objects.link(o)
+        o.hide_render = True
+        return o
+
+    # clear plastic: a light-tinted floor, side walls tinted deeper (more plastic in the line of sight, as
+    # refraction would show it), and a glossy rim highlight along each wall top
+    floor_prof = profile(name + "_FloorP", [(-15.6, 0.8), (15.6, 0.8), (15.6, 0.0), (-15.6, 0.0)])
+    wall_prof = profile(name + "_WallP", [(-0.7, 9.0), (0.7, 9.0), (0.7, 0.0), (-0.7, 0.0)])
+    _curve(name + "_Floor", plastic_pts, clear_plastic(colour, 0.35, alpha=0.22), profile=floor_prof)
+    wall_m = clear_plastic(colour, 0.70, alpha=0.45)
+    rim_m = mat(name + "_Rim", "#FFFFFF", rough=0.05, coat=1.0, alpha=0.85)
+    stripe_m = mat(name + "_Stripe", HEX[colour], rough=0.35, coat=0.5)
+    for d in (-15.4, 15.4):
+        _curve(name + "_Wall%+d" % d, _offset(plastic_pts, d), wall_m, profile=wall_prof)
+        _curve(name + "_Rim%+d" % d, [(x, y, z + 9.0) for x, y, z in _offset(plastic_pts, d)], rim_m, bevel=0.55)
+    for d in (-11.5, 11.5):
+        _curve(name + "_Edge%+d" % d, [(x, y, z + 0.95) for x, y, z in _offset(plastic_pts, d)], stripe_m,
+               bevel=0.7)
     cm = chrome()
     # wire rail: two floor wires and two side wires
     for d, dz in ((-7.0, 0.0), (7.0, 0.0), (-12.0, 7.0), (12.0, 7.0)):
         q = [(x, y, z + dz) for x, y, z in _offset(wire_pts, d)]
         _curve(name + "_Wire%+d_%d" % (d, dz), q, cm, bevel=1.1)
-    # posts every ~70 units of the wire part, and flat chrome lip at the mouth
     acc = 0.0
     for i in range(1, len(wire_pts)):
         a, b = wire_pts[i - 1], wire_pts[i]
@@ -686,37 +758,48 @@ def _ramp(rail, name, colour, label, plastic_until=4, height=34.0, decal_side=1)
             for d in (-12.0, 12.0):
                 x, y, z = _offset([a, b], d)[1]
                 cyl(0.9, z, (x, y, z / 2), 12, cm)
-    x0, y0, _ = P[0]
-    box((34, 3, 1.2), (x0, y0 + 1.5, 0.6), cm)
-    # decals on the plastic floor near the mouth: three chevrons in the shot colour, then the name
     tan = (P[3][0] - P[0][0], P[3][1] - P[0][1], P[3][2] - P[0][2])
     yaw = math.atan2(tan[1], tan[0])
     pitch = math.atan2(tan[2], math.hypot(tan[0], tan[1]))
-    dm = mat(name + "_Decal", HEX[colour], rough=0.4, coat=0.3)
-    ink = mat(name + "_Ink", HEX["INK"], rough=0.5)
     fx, fy = math.cos(yaw), math.sin(yaw)
+    nx, ny = -fy, fx
+    # entrance flap: a floor-chrome apron in front of the mouth with hazard bars in the shot colour, and a
+    # raised lip where the plastic starts
+    x0, y0, _ = P[0]
 
-    def floor_z(i):
-        return P[i][2] + 1.0
+    def at(u, v):
+        return (x0 + fx * u + nx * v, y0 + fy * u + ny * v)
 
-    # three chevrons pointing up the ramp, just inside the mouth
-    for k in range(3):
-        i = 1 + k
-        x, y = P[i][0], P[i][1]
-        for side in (-1, 1):
-            a = yaw + math.pi + side * math.radians(42)
-            L = 8.0
-            arm = box((L, 2.4, 0.15), (x + L / 2 * math.cos(a), y + L / 2 * math.sin(a), floor_z(i)), dm,
-                      rot=(0, 0, a))
-            _ = arm
-    # the name, reading up the ramp, with an ink drop shadow
-    i = 6
-    x, y = P[i][0], P[i][1]
-    for (dx, dy, dz, m) in ((0.5, -0.5, -0.05, ink), (0.0, 0.0, 0.0, dm)):
-        t = text(label, 6.0, (x + dx, y + dy, floor_z(i) + 0.2 + dz), m)
-        t.rotation_mode = "ZYX"
-        t.rotation_euler = (0, -pitch, yaw)
-    _ = (fx, fy)
+    prism([at(-11, -19), at(0, -16.5), at(0, 16.5), at(-11, 19)], 0.0, 0.7, chrome(True), name + "_Apron")
+    haz = mat(name + "_Hazard", HEX[colour], rough=0.4, coat=0.3)
+    for k in range(-3, 4):
+        v = k * 4.6
+        prism([at(-10, v - 1.0), at(-1, v + 1.6), at(-1, v + 3.4), at(-10, v + 0.8)], 0.7, 0.85, haz,
+              name + "_Haz%d" % k)
+    lip = box((34, 2.4, 1.6), (0, 0, 0), cm)
+    lip.location = (x0, y0, 0.8)
+    lip.rotation_euler = (0, 0, yaw + math.pi / 2)
+    ink = mat(name + "_Ink", HEX["INK"], rough=0.5)
+
+    def flat(obj, i, lift):
+        obj.rotation_mode = "ZYX"
+        obj.location = (P[i][0], P[i][1], P[i][2] + lift)
+        obj.rotation_euler = (0, -pitch, yaw)
+        return obj
+
+    # the lit arrow (emission keyed per frame) just inside the mouth, then the name
+    arrow_m = mat(name + "_Arrow", HEX[colour], rough=0.2, coat=0.8, emit=HEX[colour], strength=0.0)
+    arrow = [(-7, -2.2), (1, -2.2), (1, -5.6), (8.5, 0), (1, 5.6), (1, 2.2), (-7, 2.2)]
+    flat(prism([(x + 0.5, y - 0.5) for x, y in arrow], 0.0, 0.1, ink, name + "_ArrowShadow"), 2, 0.9)
+    arrow_obj = flat(prism(arrow, 0.0, 0.15, arrow_m, name + "_ArrowLit"), 2, 1.0)
+    for (dx, dy, dz, m) in ((0.5, -0.5, -0.05, ink), (0.0, 0.0, 0.0, stripe_m)):
+        t = text(label, 6.0, (0, 0, 0), m)
+        flat(t, 6, 1.2 + dz)
+        t.location = (t.location[0] + dx, t.location[1] + dy, t.location[2])
+    sheet = "ramp_" + name.lower()
+    for f, lab in enumerate(SHEETS[sheet]["frames"], start=1):
+        key_emit(arrow_m, f, 6.0 if lab.endswith("lit") else 0.0)
+    _ = arrow_obj
     return P
 
 
@@ -755,7 +838,7 @@ def build_ramp_skyway():
     flap.parent = hinge
     cyl(1.6, 9.0, (0, 0, 4.0), 16, cm).parent = hinge
     for f, label in enumerate(SHEETS["ramp_skyway"]["frames"], start=1):
-        key(hinge, "rotation_euler", f, (0, 0, math.radians(0 if label == "normal" else 35)))
+        key(hinge, "rotation_euler", f, (0, 0, math.radians(35 if label.startswith("to_deck") else 0)))
 
 
 def build_gforce():
@@ -857,10 +940,10 @@ def build_flasher_domes():
 
 BUILD = {
     "drone": build_drone, "propwash": build_propwash, "pylon": build_pylon, "bay_door": build_bay_door,
-    "flight_deck": build_flight_deck, "ramp_runway": build_ramp_runway, "ramp_skyway": build_ramp_skyway,
+    "flight_deck": build_flight_deck, "propwash_ring": build_propwash_ring, "ramp_runway": build_ramp_runway, "ramp_skyway": build_ramp_skyway,
     "gforce": build_gforce, "jet_caps": build_jet_caps, "flasher_domes": build_flasher_domes,
 }
-NO_SHADOW_CATCHER = {"propwash", "flight_deck", "jet_caps"}   # floor pieces are the floor; caps sit on the bumper
+NO_SHADOW_CATCHER = {"propwash", "propwash_ring", "jet_caps"}   # floor pieces are the floor; caps sit on the bumper
 
 
 def cell_centre(name):
@@ -872,39 +955,80 @@ def cell_centre(name):
     return (x0 + w / 2.0, -(y0 + h / 2.0))
 
 
+def timeline(name):
+    return SHEETS[name].get("timeline", len(SHEETS[name]["frames"]))
+
+
 def build(name, samples, blend_dir):
     reset()
     setup_scene(name, samples, SHEETS[name]["cell"], cell_centre(name), shadow=name not in NO_SHADOW_CATCHER)
     BUILD[name]()
     sc = bpy.context.scene
-    sc.frame_start, sc.frame_end = 1, len(SHEETS[name]["frames"])
+    sc.frame_start, sc.frame_end = 1, timeline(name)
     os.makedirs(blend_dir, exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(blend_dir, name + ".blend"), compress=True,
                                 relative_remap=True)
 
 
-def render_and_pack(name, tmp):
-    sh = SHEETS[name]
+def render_frames(name, tmp):
     sc = bpy.context.scene
+    sh = SHEETS[name]
     cw, ch = sh["cell"][0] * PPU, sh["cell"][1] * PPU
-    n = len(sh["frames"])
-    cols = sh["cols"]
-    rows = (n + cols - 1) // cols
-    sheet = np.zeros((rows * ch, cols * cw, 4), dtype=np.uint8)
     os.makedirs(tmp, exist_ok=True)
-    for i in range(n):
+    out = []
+    for i in range(timeline(name)):
         sc.frame_set(i + 1)
         path = os.path.join(tmp, "%s_%02d.tga" % (name, i))
         sc.render.filepath = path
         bpy.ops.render.render(write_still=True)
         px = tga_read(path)
         assert px.shape == (ch, cw, 4), (px.shape, ch, cw)
+        out.append(px)
+    return out
+
+
+def pack(name, frames):
+    sh = SHEETS[name]
+    cw, ch = sh["cell"][0] * PPU, sh["cell"][1] * PPU
+    cols = sh["cols"]
+    rows = (len(frames) + cols - 1) // cols
+    sheet = np.zeros((rows * ch, cols * cw, 4), dtype=np.uint8)
+    for i, px in enumerate(frames):
+        px = px.copy()
         # fully transparent pixels carry no colour: zero them so the bytes do not depend on the renderer's
         # choice of colour under alpha 0
         px[px[..., 3] == 0] = 0
         r, c = divmod(i, cols)
         sheet[r * ch:(r + 1) * ch, c * cw:(c + 1) * cw] = px
     png_write(os.path.join(OUT, name + ".png"), sheet)
+
+
+def blur_frames(sharp, step, span):
+    """Motion blur from the fine rotation: frame j averages `span` consecutive renders centred on j * step
+    (cyclic, so the sheet loops), in premultiplied alpha, rounded once."""
+    n = len(sharp)
+    out = []
+    for j in range(0, n, step):
+        acc = np.zeros(sharp[0].shape, dtype=np.float64)
+        for d in range(-(span // 2), span // 2 + 1):
+            px = sharp[(j + d) % n].astype(np.float64)
+            a = px[..., 3:4] / 255.0
+            acc[..., :3] += px[..., :3] * a
+            acc[..., 3:4] += px[..., 3:4]
+        acc /= float(2 * (span // 2) + 1)
+        a = acc[..., 3:4]
+        rgb = np.where(a > 0, acc[..., :3] * 255.0 / np.maximum(a, 1e-9), 0.0)
+        out.append(np.clip(np.rint(np.concatenate([rgb, a], axis=2)), 0, 255).astype(np.uint8))
+    return out
+
+
+def render_and_pack(name, tmp):
+    frames = render_frames(name, tmp)
+    if name == "propwash":
+        pack("propwash", frames[::2])                          # 5-degree steps
+        pack("propwash_blur", blur_frames(frames, 4, 13))      # 10-degree steps, 30 degrees of blur
+    else:
+        pack(name, frames)
 
 
 def write_manifest():
@@ -930,6 +1054,7 @@ def main():
     if "--samples" in argv:
         samples = int(argv[argv.index("--samples") + 1])
     tmp = os.environ.get("TABLE_A_TMP", "/tmp/table_a_frames")
+    toys = [t for t in toys if "derived" not in SHEETS[t]]
     for name in toys:
         if not from_blend:
             build(name, samples, HERE)
