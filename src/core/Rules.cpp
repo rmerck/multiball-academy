@@ -1960,7 +1960,140 @@ LampState Rules::lampState(table::LampId lamp) const noexcept {
       const int x = std::to_underlying(lamp) - std::to_underlying(Bonus2X) + 2;
       return lit(x <= bonusMultiplier_);
     }
+    // Concept A (G6): a first pass from the public queries alone, for the
+    // rules (G5) to replace.
+    case LadderCircuitLeft1:
+    case LadderCircuitLeft2:
+    case LadderCircuitLeft3:
+    case LadderRunway1:
+    case LadderRunway2:
+    case LadderRunway3:
+    case LadderHangar1:
+    case LadderHangar2:
+    case LadderHangar3:
+    case LadderBriefing1:
+    case LadderBriefing2:
+    case LadderBriefing3:
+    case LadderTurbine1:
+    case LadderTurbine2:
+    case LadderTurbine3:
+    case LadderSkyway1:
+    case LadderSkyway2:
+    case LadderSkyway3:
+    case LadderCircuitRight1:
+    case LadderCircuitRight2:
+    case LadderCircuitRight3:
+    case AltitudeFL100:
+    case AltitudeFL200:
+    case AltitudeFL300:
+    case AltitudeFL400:
+    case AltitudeFL500:
+    case FlapsF:
+    case FlapsL:
+    case FlapsA:
+    case FlapsP:
+    case FlapsS:
+    case Bogey1:
+    case Bogey2:
+    case Bogey3:
+    case Radar1:
+    case Radar2:
+    case Radar3:
+    case SafetyPost:
+    case Multiball:
+    case DeckLit:
+    case DeckA:
+    case DeckC:
+    case DeckE:
+    case CatShot:
+      return conceptLampState(*this, lamp);
     case Count:
+      break;
+  }
+  return LampState::Off;
+}
+
+LampState conceptLampState(const Rules& rules, table::LampId lamp) noexcept {
+  using enum table::LampId;
+  if (rules.gameOver()) {
+    return LampState::Off;
+  }
+  const auto lit = [](bool on) { return on ? LampState::On : LampState::Off; };
+  const auto index = [lamp](table::LampId first) {
+    return static_cast<std::size_t>(std::to_underlying(lamp) - std::to_underlying(first));
+  };
+  if (table::isPipLamp(lamp)) {
+    // A shot's ladder: while its arrow blinks, every pip blinks with it (the
+    // light show runs them up toward the arrow); otherwise the pips count
+    // the shot's progress toward its next award, the first nearest the arrow.
+    const std::size_t pips = index(LadderCircuitLeft1);
+    const std::size_t arrow = pips / table::kShotLadderPips;
+    const std::size_t k = pips % table::kShotLadderPips;
+    const LampState arrowState = rules.lampState(static_cast<table::LampId>(arrow));
+    if (arrowState == LampState::Blink || arrowState == LampState::FastBlink) {
+      return arrowState;
+    }
+    std::size_t progress = 0;
+    switch (static_cast<Shot>(arrow)) {
+      case Shot::CircuitLeft:  // The R-A-D lanes it feeds.
+        for (std::size_t lane = 0; lane < 3; ++lane) {
+          progress += rules.rollCallLit(lane) ? 1U : 0U;
+        }
+        break;
+      case Shot::CircuitRight:  // W-I-N-G.
+        for (std::size_t letter = 0; letter < 4; ++letter) {
+          progress += rules.wingLit(letter) ? 1U : 0U;
+        }
+        break;
+      case Shot::Runway:
+      case Shot::Skyway:  // Ramps made toward relighting the Mission.
+        progress = rules.rampsForBriefing() > 0
+                       ? static_cast<std::size_t>(
+                             std::max(0, tuning::kRampsForBriefingLater - rules.rampsForBriefing()))
+                       : 3U;
+        break;
+      case Shot::Hangar:  // The bay doors marked.
+        for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
+          progress += rules.doorMarked(door) ? 1U : 0U;
+        }
+        break;
+      case Shot::Turbine:  // The turbo meter, in thirds.
+        progress = rules.turboGoal() > 0 ? static_cast<std::size_t>(3 * rules.turboMeter() /
+                                                                    rules.turboGoal())
+                                         : 0U;
+        break;
+      case Shot::Briefing: {  // F-L-A-P-S lights the Mission.
+        std::size_t letters = 0;
+        for (std::size_t letter = 0; letter < 5; ++letter) {
+          letters += rules.flapLit(letter) ? 1U : 0U;
+        }
+        progress = letters * 3 / 5;
+        break;
+      }
+    }
+    return lit(k < progress);
+  }
+  if (lamp >= AltitudeFL100 && lamp <= AltitudeFL500) {
+    // The altimeter: every level reached.
+    return lit(static_cast<int>(index(AltitudeFL100)) <= rules.altitude());
+  }
+  if (lamp >= FlapsF && lamp <= FlapsS) {
+    return lit(rules.flapLit(index(FlapsF)));
+  }
+  switch (lamp) {
+    case Multiball:
+      if (rules.multiball() != pinball::Multiball::None) {
+        return LampState::On;
+      }
+      return rules.lockLit() ? LampState::Blink : lit(rules.locksHeld() > 0);
+    case DeckLit:
+      return rules.deckLit() ? LampState::Blink : LampState::Off;
+    case CatShot:
+      // CAT SHOT rides to the lock.
+      return rules.lockLit() ? LampState::Blink : LampState::Off;
+    default:
+      // BOGEY, RADAR and the Safety Post wait for G2's targets; the deck's
+      // A-C-E letters for the rules (G5). Unlit, the light show runs them.
       break;
   }
   return LampState::Off;
