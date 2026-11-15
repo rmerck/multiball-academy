@@ -113,6 +113,25 @@ struct ShotMap {
 // drain), '.' (nothing within 5 s), '?' anything else.
 [[nodiscard]] std::string deckFan(int variant);
 
+// Concept A G1 gate: make-rate of each shot from each flipper. For every
+// standard feed (inlane, ramp exit, circuit return, cradle) and every one of
+// `variants` jittered copies, a player aims at the press step that is best
+// for the shot and presses within +-error steps of it, every step equally
+// likely: the share of those presses that make the shot. Per shot and side,
+// the best feed's share averaged over the variants, and that feed.
+struct MakeRate {
+  double rate = 0.0;
+  const char* feed = "";
+};
+struct MakeRates {
+  // [touch][side]: side 0 left flipper, 1 right.
+  std::array<std::array<MakeRate, 2>, kTouchCount> shots{};
+};
+[[nodiscard]] MakeRates makeRates(int variants, int error, bool bankDown);
+// The same for the deck flipper from the diverter's set-down: A, C, E, K
+// (CAT SHOT) in that order.
+[[nodiscard]] std::array<double, 4> deckMakeRates(int variants, int error);
+
 // --- A5, A6: lanes and ramps at a speed --------------------------------------------
 struct LaneResult {
   int balls = 0;

@@ -465,6 +465,7 @@ save::Snapshot Game::snapshot() const {
   g.droneWasKnocked = droneWasKnocked_;
   g.droneMoveStep = droneMoveStep_;
   g.droneHitStep = droneHitStep_;
+  g.lastFlipStep = lastFlipStep_;
   g.droneRecoilDirection = droneRecoilDirection_;
   g.droneHitCount = droneHitCount_;
   g.random = random_;
@@ -538,6 +539,7 @@ bool Game::restore(const save::Snapshot& s) {
   droneWasKnocked_ = g.droneWasKnocked;
   droneMoveStep_ = g.droneMoveStep;
   droneHitStep_ = g.droneHitStep;
+  lastFlipStep_ = g.lastFlipStep;
   droneRecoilDirection_ = g.droneRecoilDirection;
   droneHitCount_ = g.droneHitCount;
   random_ = g.random;

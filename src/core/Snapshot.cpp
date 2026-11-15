@@ -343,6 +343,7 @@ void visit(V& v, GameRecord& g) {
   v.flag(g.droneWasKnocked);
   v.integer(g.droneMoveStep, std::uint64_t{0}, kMaxStepCount + 1U);
   v.integer(g.droneHitStep, std::uint64_t{0}, kMaxStepCount + 1U);
+  v.integer(g.lastFlipStep, std::uint64_t{0}, kMaxStepCount + 1U);
   // A unit vector (or near enough).
   visit(v, g.droneRecoilDirection, -1.001F, 1.001F);
   v.integer(g.droneHitCount, 0U, kAnyU32);
@@ -797,7 +798,8 @@ bool valid(const Snapshot& snapshot) {
     }
   }
   if (game.lastAutoServeStep > game.stepCount + 1U || game.arrivals > game.stepCount + 1U ||
-      game.droneMoveStep > game.stepCount + 1U || game.droneHitStep > game.stepCount + 1U) {
+      game.droneMoveStep > game.stepCount + 1U || game.droneHitStep > game.stepCount + 1U ||
+      game.lastFlipStep > game.stepCount + 1U) {
     return false;
   }
   // The spinners: the total is the sum of each one's count (both only ever

@@ -484,6 +484,12 @@ void Game::step(const InputState& input) {
                    (input.rightFlipper && !previousInput_.rightFlipper))) {
     sounds_ |= soundBit(Sound::Flipper);
   }
+  // The Air Pocket rests after any press of a flipper button (all three
+  // flippers share the two buttons).
+  if (playable && ((input.leftFlipper && !previousInput_.leftFlipper) ||
+                   (input.rightFlipper && !previousInput_.rightFlipper))) {
+    lastFlipStep_ = stepCount_ + 1;
+  }
   // The flipper buttons also move the lit lanes.
   if (input.leftFlipper && !previousInput_.leftFlipper) {
     rules_.onFlipper(false);
@@ -1146,8 +1152,11 @@ void Game::driveDevices(bool playable) {
   AirPocket mode = AirPocket::Off;
   Vec2 kick{};
   const double period = table::airPocketPeriodSeconds(altitude);
-  // Never while a drain would be saved (the saver, a multiball's grace).
-  if (period > 0.0 && playable && !rules_.ballSaveActive()) {
+  // Never while a drain would be saved (the saver, a multiball's grace), and
+  // never within kAirPocketFlipQuietSeconds of a flipper press.
+  const bool flipQuiet = lastFlipStep_ != 0 &&
+                         stepCount_ + 1 - lastFlipStep_ < stepsIn(table::kAirPocketFlipQuietSeconds);
+  if (period > 0.0 && playable && !rules_.ballSaveActive() && !flipQuiet) {
     const std::uint64_t periodSteps = stepsIn(period);
     const std::uint64_t onSteps = stepsIn(table::kAirPocketOnSeconds);
     const std::uint64_t now = stepCount_ + 1;

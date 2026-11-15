@@ -173,6 +173,13 @@ Touch TableHarness::advance() {
   restart = false;
   game_.step(input);
   ++step_;
+  // Concept A: a Skyway diverted to the Flight Deck is a capture of its own
+  // in the game's counts (no physics event: the Skyway's box took the ball).
+  const std::uint32_t deckRides = game_.holeCount(table::kDeckRampHole);
+  if (deckRides > deckRidesSeen_) {
+    holeHits[table::kDeckRampHole] += deckRides - deckRidesSeen_;
+  }
+  deckRidesSeen_ = deckRides;
 
   for (const PhysicsEvent& event : game_.events()) {
     const std::size_t i = event.element.index;

@@ -1033,6 +1033,21 @@ void testConceptA() {
         CHECK(fastestUp > 0.5F * table::kAirPocketKickSpeed);
       }
     }
+    // It rests within 1.5 s of any flipper press: a flipper tapped every
+    // second keeps it from ever taking the ball, at FL500.
+    Game game;
+    game.setAltitude(4);
+    Seam::rules(game).setBallSaveEnabled(false);
+    Seam::putInPlay(game);
+    InputState tap;
+    for (int i = 0; i < 120 * 8; ++i) {
+      if (i % 120 == 0) {
+        Seam::placeBall(game, 0, table::kAirPocketCenter + Vec2{0.0F, -16.0F}, {0.0F, 60.0F});
+      }
+      tap.leftFlipper = i % 120 < 4;
+      game.step(tap);
+    }
+    CHECK(game.airPocketCatches() == 0);
   }
   {  // The Prop Wash: still at FL100; turning, it drags a slow ball on it
      // round with the disc (clockwise on screen).

@@ -1106,13 +1106,16 @@ inline constexpr int kAltitudeLevels = 5;
 // and held; at the end of the pulse each held ball is let go with a kick of
 // kAirPocketKickSpeed up the table to the left or right (never down at the
 // flippers), the side and angle drawn from the step count. Off at FL100 and
-// FL200 (period 0). Its clock is the game's step count: nothing to save.
+// FL200 (period 0). Its clock is the game's step count. It also rests for
+// kAirPocketFlipQuietSeconds after any flipper button is pressed (Rev A.2:
+// "never within 1.5 s of a flipper hit"): no pull and no kick in that time.
 inline constexpr Vec2 kAirPocketCenter{355.5F, 652.0F};
 inline constexpr float kAirPocketRadius = 26.0F;
 inline constexpr double kAirPocketOnSeconds = 0.35;
 inline constexpr float kAirPocketPull = 9.0F;  // Per second: velocity = pull x offset.
 inline constexpr float kAirPocketRisingLimit = -250.0F;  // px/s; faster upward is not taken.
 inline constexpr float kAirPocketKickSpeed = 420.0F;
+inline constexpr double kAirPocketFlipQuietSeconds = 1.5;
 [[nodiscard]] constexpr double airPocketPeriodSeconds(int altitude) noexcept {
   return altitude >= 4 ? 3.0 : (altitude == 3 ? 5.0 : (altitude == 2 ? 9.0 : 0.0));
 }

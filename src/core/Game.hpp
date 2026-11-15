@@ -554,6 +554,7 @@ class Game {
   bool droneWasKnocked_ = false;
   std::uint64_t droneMoveStep_ = 0;
   std::uint64_t droneHitStep_ = 0;
+  std::uint64_t lastFlipStep_ = 0;  // One more than the latest flipper press's step; 0 none.
   Vec2 droneRecoilDirection_{0.0F, -1.0F};
   std::uint32_t droneHitCount_ = 0;
   static constexpr std::size_t kMaxGameEvents = 24;

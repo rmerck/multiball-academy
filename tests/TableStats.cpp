@@ -714,6 +714,30 @@ int main(int argc, char** argv) {
     }
     return 0;
   }
+  if (mode == "makerate") {
+    // Concept A G1 gate: per-shot make-rate from its flipper(s); variants and
+    // timing error as arguments (default 5 and 3).
+    const int variants = argc > 2 ? std::atoi(argv[2]) : 5;
+    const int error = argc > 3 ? std::atoi(argv[3]) : 3;
+    const acceptance::MakeRates up = acceptance::makeRates(variants, error, false);
+    const acceptance::MakeRates down = acceptance::makeRates(variants, error, true);
+    struct Row { const char* name; Touch touch; bool bank; };
+    static constexpr std::array<Row, 8> kRows{{
+        {"1 Left Loop", Touch::CircuitLeft, false}, {"2 Runway", Touch::Runway, false},
+        {"3 bay doors", Touch::Door, false},  {"3 Hangar (doors down)", Touch::Hangar, true},
+        {"4 Afterburner", Touch::Turbine, false},   {"5 Mission", Touch::Briefing, false},
+        {"6 Skyway", Touch::Skyway, false},         {"7 Right Loop", Touch::CircuitRight, false}}};
+    std::printf("make-rate, aim +-%d steps, %d variants (left flipper | right flipper)\n", error, variants);
+    for (const Row& r : kRows) {
+      const auto& m = (r.bank ? down : up).shots[static_cast<std::size_t>(r.touch)];
+      std::printf("MAKE | %-22s | L %5.1f%% (%s) | R %5.1f%% (%s)\n", r.name, 100.0 * m[0].rate,
+                  m[0].feed, 100.0 * m[1].rate, m[1].feed);
+    }
+    const auto deck = acceptance::deckMakeRates(variants, error);
+    std::printf("MAKE | 8 Flight Deck (deck flipper) | A %.1f%% C %.1f%% E %.1f%% CAT SHOT %.1f%%\n",
+                100.0 * deck[0], 100.0 * deck[1], 100.0 * deck[2], 100.0 * deck[3]);
+    return 0;
+  }
   if (mode == "fan") {
     std::printf("L cradle: %s\nR cradle: %s\n", fanL.c_str(), fanR.c_str());
     std::printf("widest windows from the cradles (L/R): Briefing %d/%d, Runway %d/%d, Skyway %d/%d, "

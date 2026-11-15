@@ -540,6 +540,79 @@ std::string deckFan(int variant) {
   return fan;
 }
 
+namespace {
+// Best share of presses within +-error of one step that give `want`.
+double bestAimed(const std::string& line, char want, int error) {
+  const int n = static_cast<int>(line.size());
+  const int width = 2 * error + 1;
+  int best = 0;
+  for (int aim = 0; aim < n; ++aim) {
+    int made = 0;
+    for (int k = aim - error; k <= aim + error; ++k) {
+      made += (k >= 0 && k < n && line[static_cast<std::size_t>(k)] == want) ? 1 : 0;
+    }
+    best = std::max(best, made);
+  }
+  return static_cast<double>(best) / width;
+}
+}  // namespace
+
+MakeRates makeRates(int variants, int error, bool bankDown) {
+  constexpr std::array<std::size_t, 4> kPlayerFeeds{0, 1, 2, 3};
+  // lines[side][feed][variant]
+  std::array<std::array<std::vector<std::string>, kPlayerFeeds.size()>, 2> lines;
+  for (int variant = 0; variant < std::max(variants, 1); ++variant) {
+    for (int side = 0; side < 2; ++side) {
+      for (std::size_t fi = 0; fi < kPlayerFeeds.size(); ++fi) {
+        const Feed& feed = kFeeds[kPlayerFeeds[fi]];
+        const Attempt dry = attempt(feed, side == 1, variant, -1, bankDown);
+        std::string line;
+        if (dry.contactFirst >= 0) {
+          const int first = std::max(0, dry.contactFirst - 2);
+          const int last = std::min(dry.contactLast, dry.contactFirst + 140) + 2;
+          for (int k = first; k <= last; ++k) {
+            const Attempt made = attempt(feed, side == 1, variant, k, bankDown);
+            Touch shot = made.shot;
+            if ((shot == Touch::CircuitLeft || shot == Touch::CircuitRight) && !made.reachedArch) {
+              shot = Touch::None;
+            }
+            line.push_back(touchChar(shot));
+          }
+        }
+        lines[static_cast<std::size_t>(side)][fi].push_back(line);
+      }
+    }
+  }
+  MakeRates rates;
+  for (std::size_t t = 1; t < kTouchCount; ++t) {
+    const char want = touchChar(static_cast<Touch>(t));
+    for (std::size_t side = 0; side < 2; ++side) {
+      for (std::size_t fi = 0; fi < kPlayerFeeds.size(); ++fi) {
+        double sum = 0.0;
+        for (const std::string& line : lines[side][fi]) {
+          sum += bestAimed(line, want, error);
+        }
+        const double mean = sum / static_cast<double>(lines[side][fi].size());
+        if (mean > rates.shots[t][side].rate) {
+          rates.shots[t][side] = {mean, kFeeds[kPlayerFeeds[fi]].name};
+        }
+      }
+    }
+  }
+  return rates;
+}
+
+std::array<double, 4> deckMakeRates(int variants, int error) {
+  std::array<double, 4> rates{};
+  for (int variant = 0; variant < std::max(variants, 1); ++variant) {
+    const std::string fan = deckFan(variant);
+    for (std::size_t i = 0; i < rates.size(); ++i) {
+      rates[i] += bestAimed(fan, "ACEK"[i], error) / std::max(variants, 1);
+    }
+  }
+  return rates;
+}
+
 ShotMap shotSweep(int variants, bool bankDown) {
   ShotMap map;
   for (int variant = 0; variant < std::max(variants, 1); ++variant) {

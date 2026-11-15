@@ -39,6 +39,7 @@
 //          --message TEXT      shown in the message window
 //          --pressed LIST      of left,right,centre,nl,nr,pause
 //          --zones             outline the safe area, zones and hit rectangles
+//          --altitude N        concept A: altitude 0 (FL100) to 4 (FL500)
 //
 // Sizes and insets are in points. Without a scale the picture is the
 // layout's canvas, one pixel to the unit; with one it is the window at that
@@ -254,6 +255,7 @@ struct Request {
   std::string_view message;
   pinball::TouchControls::View pressed{};
   bool zones = false;
+  int altitude = -1;  // Concept A: FL100 (0) to FL500 (4); -1 the game's own.
 };
 
 // The largest picture drawn, on either side, in canvas units and in pixels.
@@ -272,7 +274,7 @@ constexpr const char* kUsage =
     "  --surface WxH   --insets top,bottom,left,right\n"
     "  --idiom desktop|touch\n"
     "  --page <1..99>   --message <TEXT>   --zones\n"
-    "  --pressed <left,right,centre,nl,nr,pause>\n";
+    "  --pressed <left,right,centre,nl,nr,pause>   --altitude <0..4>\n";
 
 // "left,right,..." into the view. False if a word is unknown or repeated.
 bool parsePressed(std::string_view text, pinball::TouchControls::View& view) noexcept {
@@ -335,6 +337,7 @@ std::optional<Request> parseArguments(std::span<char* const> args) {
   bool page = false;
   bool message = false;
   bool pressed = false;
+  bool altitude = false;
   for (; next < args.size(); ++next) {
     const std::string_view option = args[next];
     if (option == "--zones") {
@@ -384,6 +387,13 @@ std::optional<Request> parseArguments(std::span<char* const> args) {
       }
       request.message = value;
       message = true;
+    } else if (option == "--altitude" && !altitude) {
+      const auto level = screen::parseSpecNumber(value, 0, 4);
+      if (!level) {
+        return std::nullopt;
+      }
+      request.altitude = static_cast<int>(*level);
+      altitude = true;
     } else if (option == "--pressed" && !pressed) {
       if (!parsePressed(value, request.pressed)) {
         return std::nullopt;
@@ -1214,6 +1224,9 @@ int run(const Request& request) {
     }
 
     pinball::Game game;
+    if (request.altitude >= 0) {
+      game.setAltitude(request.altitude);
+    }
     std::uint32_t step = 0;
     if (request.state == State::GameOver) {
       // Lose every ball first; the steps asked for come after that.
@@ -1346,7 +1359,7 @@ int run(const Request& request) {
     const bool onDeck = request.state == State::Deck;
     if (onDeck) {
       using Seam = pinball::GameTestAccess;
-      game.setAltitude(4);
+      game.setAltitude(request.altitude >= 0 ? request.altitude : 4);
       game.setPylonPolicy(1);
       const std::size_t slot = game.ball().id;
       Seam::placeBall(game, slot, pinball::table::kDeckSetDown,

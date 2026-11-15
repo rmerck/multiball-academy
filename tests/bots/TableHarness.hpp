@@ -105,6 +105,7 @@ class TableHarness {
   std::array<std::uint64_t, table::kDropTargets.size()> doorHits{};
   std::array<std::uint64_t, table::kRollovers.size()> rolloverHits{};
   std::array<std::uint64_t, table::kHoles.size()> holeHits{};
+  std::uint32_t deckRidesSeen_ = 0;
   std::array<std::uint64_t, table::kSlingshots.size()> slingHits{};
   // T-A-X-I, then the captive ball's switch.
   std::array<std::uint64_t, table::kStandups.size() + 1> standupHits{};

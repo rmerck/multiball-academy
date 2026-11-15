@@ -261,6 +261,9 @@ struct GameRecord {
   bool droneWasKnocked = false;
   std::uint64_t droneMoveStep = 0;
   std::uint64_t droneHitStep = 0;
+  // One more than the step of the latest flipper press; 0 if none (the Air
+  // Pocket rests after one).
+  std::uint64_t lastFlipStep = 0;
   Vec2 droneRecoilDirection{0.0F, -1.0F};
   std::uint32_t droneHitCount = 0;
   std::uint64_t random = 0x9E3779B97F4A7C15ULL;
