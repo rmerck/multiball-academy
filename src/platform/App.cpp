@@ -375,13 +375,6 @@ FrameResult App::iterate(bool restWhenStill) {
           : static_cast<double>(frameStartNs_ - previousNs_) / 1e9;
   previousNs_ = frameStartNs_;
 
-  {
-    // Whole milliseconds, the fractions carried to the next frame.
-    feedbackRemainderMs_ += std::clamp(frameSeconds, 0.0, 1.0) * 1000.0;
-    const auto whole = static_cast<std::uint64_t>(feedbackRemainderMs_);
-    feedbackMs_ += whole;
-    feedbackRemainderMs_ -= static_cast<double>(whole);
-  }
   stepHapticTest();
   serviceAudio();
   readInput();
@@ -450,7 +443,7 @@ FrameResult App::iterate(bool restWhenStill) {
   // the prompt's cursor blinks. Where the loop cannot sleep it is not drawn
   // again until then. Nothing at all is drawn in the background, where the
   // system forbids it.
-  const bool cursorLit = (SDL_GetTicks() / kCursorBlinkMs) % 2U == 0U;
+  const bool cursorLit = (nowMs() / kCursorBlinkMs) % 2U == 0U;
   const bool blinked = entry_ && !aboutOpen_ && cursorLit != cursorWasLit_;
   // The title moves while it is up: its intro, its dot display, attract
   // mode. With less motion asked for, only the dot display's pages change.
@@ -583,6 +576,10 @@ void App::handleLayoutChange() {
   }
 }
 
+Uint64 App::nowMs() const {
+  return options_.clockMs ? options_.clockMs() : SDL_GetTicks();
+}
+
 void App::serviceAudio() {
   if (!audioOpener_) {
     return;
@@ -663,6 +660,8 @@ App::Status App::status() const {
   status.drawnFrames = drawnFrames_;
   status.steps = game_.stepCount();
   status.lightShowResets = lightShowResets_;
+  status.lightShow = lightShow_.show();
+  status.multiball = game_.rules().multiball();
   status.input = input_;
   status.layout = layout_;
   status.touch = touch_.view(touchContext());
@@ -718,7 +717,7 @@ void App::recordFinishedGame() {
       // Ask for initials. The entry is made when they are confirmed.
       pending_ = entry;
       entry_.emplace(lastInitials_);
-      entryOpenedMs_ = SDL_GetTicks();
+      entryOpenedMs_ = nowMs();
       latched_ = InputState{};
     }
   } else if (!over) {

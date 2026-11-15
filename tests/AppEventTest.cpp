@@ -12,23 +12,34 @@
 #include <exception>
 #include <filesystem>
 #include <memory>
+#include <random>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <vector>
+
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "Check.hpp"
 #include "core/Args.hpp"
 #include "core/Feedback.hpp"
 #include "core/FrontLayout.hpp"
 #include "core/FrontMenu.hpp"
+#include "core/Game.hpp"
+#include "core/LightShow.hpp"
 #include "core/OverlayLayout.hpp"
+#include "core/Scenes.hpp"
 #include "core/ScreenLayout.hpp"
 #include "core/TouchControls.hpp"
 #include "core/Version.hpp"
 #include "platform/About.hpp"
 #include "platform/App.hpp"
 #include "platform/AudioOutput.hpp"
+#include "platform/SaveStore.hpp"
 #include "platform/ios/IosSystem.hpp"
 
 namespace {
@@ -46,9 +57,19 @@ void setAudioDriver(const char* name) {
 // Eight simulation steps for every frame: the most a frame may run.
 constexpr double kFastFrame = 8.0 / 120.0;
 
+// The clock the applications under test go by for their guards and repeats
+// (AppOptions::clockMs). It moves only when a test waits, so a slow or busy
+// machine changes nothing: the initials guard, a held arrow's repeat and
+// the cursor's blink see exactly the time the test says has passed.
+std::uint64_t gClockMs = 1'000'000;
+
+// As if ms had passed, for those guards and repeats.
+void advanceClock(std::uint64_t ms) { gClockMs += ms; }
+
 AppOptions playerOptions(pinball::screen::Idiom idiom) {
   AppOptions options;
   options.idiom = idiom;
+  options.clockMs = [] { return gClockMs; };
   options.keepScores = false;
   options.fixedFrameSeconds = kFastFrame;
   // Straight to the game: the title has tests of its own.
@@ -256,7 +277,7 @@ void testDesktopKeys() {
   // F1 does not open the About screen over it.
   key(*app, SDLK_F1, SDL_SCANCODE_F1);
   CHECK(!app->status().aboutOpen);
-  SDL_Delay(750);
+  advanceClock(750);
   // A shortcut is not typing.
   key(*app, SDLK_Q, SDL_SCANCODE_Q, SDL_KMOD_GUI);
   CHECK(app->status().initials[0] == 'A');
@@ -285,7 +306,7 @@ void testDesktopKeys() {
   const std::uint32_t drawnAtPrompt = app->status().drawnFrames;
   const std::uint32_t framesAtPrompt = app->status().frames;
   for (int i = 0; i < 12; ++i) {
-    SDL_Delay(100);
+    advanceClock(100);
     CHECK(frames(*app, 3));
   }
   status = app->status();
@@ -322,13 +343,22 @@ void testQuitAtThePromptKeepsTheScore() {
       *app, [&app] { key(*app, SDLK_SPACE, SDL_SCANCODE_SPACE); }, [] {}));
   CHECK(app->status().entryOpen);
   // Escape accepts the letters as they stand (after the guard).
-  SDL_Delay(750);
+  advanceClock(750);
   key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
   CHECK(!app->status().entryOpen);
 }
 
 // A scratch directory for the game's files (AppOptions::dataDirectory), so
 // that no test reads or writes the player's own. Removed at the end.
+// This process's id, for names no other process makes.
+std::uint64_t processId() {
+#if defined(_WIN32)
+  return static_cast<std::uint64_t>(_getpid());
+#else
+  return static_cast<std::uint64_t>(getpid());
+#endif
+}
+
 class ScratchDir {
  public:
   explicit ScratchDir(const char* name) {
@@ -338,9 +368,22 @@ class ScratchDir {
     if (error) {
       return;
     }
-    path_ = base / (std::string(name) + "-" + std::to_string(SDL_GetTicksNS()));
-    if (!fs::create_directory(path_, error) || error) {
-      path_.clear();
+    // A name no other run has: the process, a random number and a count,
+    // made only if it is not there already (and tried again if it is), so
+    // runs side by side, or one left behind by a run that was killed, never
+    // share a directory.
+    static std::uint32_t made = 0;
+    std::random_device entropy;
+    for (int attempt = 0; attempt < 16; ++attempt) {
+      const std::uint64_t random =
+          (static_cast<std::uint64_t>(entropy()) << 32) ^ entropy() ^ SDL_GetTicksNS();
+      const fs::path candidate =
+          base / (std::string(name) + "-" + std::to_string(processId()) + "-" +
+                  std::to_string(random) + "-" + std::to_string(made++));
+      if (fs::create_directory(candidate, error) && !error) {
+        path_ = candidate;
+        return;
+      }
     }
   }
   ~ScratchDir() {
@@ -388,7 +431,7 @@ void testStagedSceneKeepsNoScore() {
     CHECK(playToGameOver(
         *app, [&app] { key(*app, SDLK_SPACE, SDL_SCANCODE_SPACE); }, [] {}));
     CHECK(app->status().entryOpen);
-    SDL_Delay(750);
+    advanceClock(750);
     key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     CHECK(!app->status().entryOpen);
     CHECK(app->finish() == 0);
@@ -409,6 +452,63 @@ void launchAndPlay(App& app) {
     CHECK(frames(app, 1));
   }
   CHECK(frames(app, 30));
+}
+
+// A game saved during a multiball resumes into the multiball as it stands:
+// the light show takes it as found and never plays the multiball's start
+// show again (the blackout and sweep; in gold for Graduation Day), paused or
+// played on. Graduation's show starts on the multiball itself appearing, not
+// on a sound, so a show that saw the table before the restore would replay
+// it: that is what the light show's reset on resume prevents.
+void testResumedMultiballKeepsItsShow() {
+  using pinball::Multiball;
+  using pinball::fx::Show;
+  for (const pinball::Scene scene : {pinball::Scene::Multiball, pinball::Scene::Graduation}) {
+    const ScratchDir scratch("pinball-app-resume-multiball");
+    CHECK(scratch.usable());
+    if (!scratch.usable()) {
+      return;
+    }
+    {
+      pinball::Game staged;
+      CHECK(pinball::stageScene(staged, scene));
+      CHECK(staged.rules().multiball() != Multiball::None);
+      pinball::SaveStore store(scratch.directory());
+      CHECK(store.write(staged.snapshot()));
+    }
+    AppOptions options = playerOptions(pinball::screen::Idiom::Desktop);
+    options.keepScores = true;
+    options.dataDirectory = scratch.directory();
+    const std::unique_ptr<App> app = App::create(options);
+    CHECK(app != nullptr);
+    if (!app) {
+      return;
+    }
+    CHECK(app->hasSavedGame());
+    // The table's show has seen a game with no multiball first, as a
+    // player's has when CONTINUE is chosen: the restored multiball must not
+    // look new.
+    CHECK(frames(*app, 3));
+    CHECK(app->status().multiball == Multiball::None);
+    CHECK(app->resumeSavedGame());
+    const auto noStartShow = [&app] {
+      const Show show = app->status().lightShow;
+      return show != Show::MultiballStart && show != Show::Graduation;
+    };
+    App::Status status = app->status();
+    CHECK(status.paused && status.multiball != Multiball::None);
+    CHECK(noStartShow());
+    CHECK(frames(*app, 5));
+    CHECK(noStartShow());
+    // Played on: still no start show, step by step.
+    key(*app, SDLK_F3, SDL_SCANCODE_F3);
+    for (int i = 0; i < 40; ++i) {
+      CHECK(frames(*app, 1));
+      CHECK(!app->status().paused);
+      CHECK(noStartShow());
+    }
+    CHECK(app->finish() == 0);
+  }
 }
 
 void testSavedGame() {
@@ -800,7 +900,7 @@ void testBackgroundKeepsAScoreAtThePrompt() {
       *app, [&] { finger(*app, SDL_EVENT_FINGER_DOWN, 9, centre); },
       [&] { finger(*app, SDL_EVENT_FINGER_UP, 9, centre); }));
   if (app->status().entryOpen) {
-    SDL_Delay(750);
+    advanceClock(750);
     tap(*app, centreOf(pinball::screen::initialsLayout(layout).ok));
   }
   CHECK(!app->status().entryOpen && app->status().gameOver);
@@ -1033,7 +1133,7 @@ void testTouchInitials() {
   finger(*app, SDL_EVENT_FINGER_DOWN, 20, centreOf(prompt.ok));
   tap(*app, centreOf(prompt.up[0]), 21);
   CHECK(app->status().entryOpen && app->status().initials[0] == 'A');
-  SDL_Delay(750);
+  advanceClock(750);
   finger(*app, SDL_EVENT_FINGER_UP, 20, centreOf(prompt.ok));
   CHECK(app->status().entryOpen);
 
@@ -1061,16 +1161,16 @@ void testTouchInitials() {
   CHECK(app->status().initials[1] == 'C');
   CHECK(frames(*app, 2));
   CHECK(app->status().initials[1] == 'C');
-  SDL_Delay(pinball::OverlayTaps::kRepeatDelayMs + 30);
+  advanceClock(pinball::OverlayTaps::kRepeatDelayMs + 30);
   CHECK(frames(*app, 1));
   CHECK(app->status().initials[1] == 'D');
   CHECK(frames(*app, 1));
   CHECK(app->status().initials[1] == 'D');
-  SDL_Delay(pinball::OverlayTaps::kRepeatPeriodMs + 30);
+  advanceClock(pinball::OverlayTaps::kRepeatPeriodMs + 30);
   CHECK(frames(*app, 1));
   CHECK(app->status().initials[1] == 'E');
   finger(*app, SDL_EVENT_FINGER_UP, 30, centreOf(prompt.up[1]));
-  SDL_Delay(pinball::OverlayTaps::kRepeatPeriodMs + 30);
+  advanceClock(pinball::OverlayTaps::kRepeatPeriodMs + 30);
   CHECK(frames(*app, 2));
   CHECK(app->status().initials == (pinball::Initials{'Y', 'E', 'Z'}));
 
@@ -1842,7 +1942,7 @@ void testGameOverReturnsToTitle() {
   CHECK(app->status().entryOpen);
   CHECK(frames(*app, 5));
   CHECK(!app->status().frontOpen);
-  SDL_Delay(750);
+  advanceClock(750);
   key(*app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
   CHECK(!app->status().entryOpen && app->status().gameOver);
   // A key at once (a finger still on a flipper) does nothing.
@@ -1976,13 +2076,18 @@ void testAttractKeepsNoScore() {
 // prompt, leaving the finished game standing. False if it would not end.
 bool playOneGame(App& app) {
   key(app, SDLK_F2, SDL_SCANCODE_F2);
-  if (!playToGameOver(app, [&app] { key(app, SDLK_SPACE, SDL_SCANCODE_SPACE); }, [] {})) {
+  const bool ended =
+      playToGameOver(app, [&app] { key(app, SDLK_SPACE, SDL_SCANCODE_SPACE); }, [] {});
+  CHECK(ended);
+  if (!ended) {
     return false;
   }
   if (app.status().entryOpen) {
-    SDL_Delay(750);
+    advanceClock(750);
     key(app, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
   }
+  CHECK(!app.status().entryOpen);
+  CHECK(app.status().gameOver);
   return !app.status().entryOpen && app.status().gameOver;
 }
 
@@ -2076,7 +2181,7 @@ void testTouchGameOverGuard() {
       *app, [&app, centre] { finger(*app, SDL_EVENT_FINGER_DOWN, 9, centre); },
       [&app, centre] { finger(*app, SDL_EVENT_FINGER_UP, 9, centre); }));
   if (app->status().entryOpen) {
-    SDL_Delay(750);
+    advanceClock(750);
     tap(*app, centreOf(pinball::screen::initialsLayout(layout).ok));
   }
   CHECK(!app->status().entryOpen && app->status().gameOver);
@@ -2138,18 +2243,24 @@ void testHapticsReachTheDevice() {
       return;
     }
     CHECK(frames(*app, 5));
-    // A flipper: one each press, the rate limit well past between them.
+    // A flipper: one each press, the rate limit past between them (on the
+    // test's clock, which frames alone do not move).
     for (int i = 0; i < 3; ++i) {
+      advanceClock(pinball::HapticGate::kFlipperMs);
       key(*app, SDLK_Z, SDL_SCANCODE_Z);
       CHECK(frames(*app, 3));
     }
+    // Held to the same instant, a press is limited.
+    key(*app, SDLK_Z, SDL_SCANCODE_Z);
+    CHECK(frames(*app, 3));
     CHECK(count(Haptic::Flipper) == 3);
     CHECK(app->status().hapticsPlayed == played.size());
     // Balls played out with the plunger, flippers idle: each drain is felt.
     // (Whether a plunged ball touches a bumper or a slingshot on the way
     // down is the table's business; which sounds make a hit is tested in
     // FrontTest, testHapticGate.)
-    CHECK(playToGameOver(*app, [&app] { key(*app, SDLK_SPACE, SDL_SCANCODE_SPACE); }, [] {}));
+    CHECK(playToGameOver(*app, [&app] { key(*app, SDLK_SPACE, SDL_SCANCODE_SPACE); },
+                         [] { advanceClock(pinball::HapticGate::kDrainMs); }));
     CHECK(count(Haptic::Drain) > 0);
     CHECK(app->status().hapticsPlayed == played.size());
     CHECK(app->finish() == 0);
@@ -2183,14 +2294,24 @@ void testHapticsReachTheDevice() {
     // after the last.
     CHECK(app->status().settings.haptics);
     tap(*app, row(SettingsRow::TestHaptics));
-    const int gapFrames =
-        static_cast<int>(static_cast<double>(pinball::HapticTest::kGapMs) / (kFastFrame * 1000.0)) + 1;
+    constexpr std::uint64_t kGap = pinball::HapticTest::kGapMs;
     CHECK(frames(*app, 1));
     CHECK(played.size() == 1 && played.front() == Haptic::Flipper);
-    CHECK(frames(*app, 4 * gapFrames));
+    // Nothing more until the gap has passed, however many frames.
+    CHECK(frames(*app, 30));
+    CHECK(played.size() == 1);
+    for (std::size_t i = 2; i <= 4; ++i) {
+      advanceClock(kGap - 1);
+      CHECK(frames(*app, 2));
+      CHECK(played.size() == i - 1);
+      advanceClock(1);
+      CHECK(frames(*app, 1));
+      CHECK(played.size() == i);
+    }
     CHECK(played == std::vector<Haptic>(pinball::HapticTest::kOrder.begin(),
                                         pinball::HapticTest::kOrder.end()));
-    CHECK(frames(*app, 2 * gapFrames));
+    advanceClock(2 * kGap);
+    CHECK(frames(*app, 2));
     CHECK(played.size() == 4);
     // Switched off part way through a test: the rest is dropped.
     played.clear();
@@ -2199,12 +2320,14 @@ void testHapticsReachTheDevice() {
     CHECK(played.size() == 1);
     tap(*app, row(SettingsRow::Haptics));
     CHECK(!app->status().settings.haptics);
-    CHECK(frames(*app, 6 * gapFrames));
+    advanceClock(6 * kGap);
+    CHECK(frames(*app, 2));
     CHECK(played.size() == 1);
     // HAPTICS: OFF holds for the test too.
     played.clear();
     tap(*app, row(SettingsRow::TestHaptics));
-    CHECK(frames(*app, 6 * gapFrames));
+    advanceClock(6 * kGap);
+    CHECK(frames(*app, 2));
     CHECK(played.empty());
     // With the setting off, a game plays none.
     tap(*app, centreOf(settings.page.back));
@@ -2213,6 +2336,7 @@ void testHapticsReachTheDevice() {
     tap(*app, centreOf(title.items[static_cast<std::size_t>(TitleItem::Play)]));
     // (The first touch may only put away the touch guide.)
     for (int i = 0; i < 4; ++i) {
+      advanceClock(pinball::HapticGate::kFlipperMs);
       tap(*app, flipperPoint(layout, true));
       CHECK(frames(*app, 3));
     }
@@ -2290,6 +2414,7 @@ int main(int argc, char* argv[]) {
   try {
     if (savedGameOnly) {
       testSavedGame();
+      testResumedMultiballKeepsItsShow();
     } else if (frontOnly) {
       runFront();
     } else {

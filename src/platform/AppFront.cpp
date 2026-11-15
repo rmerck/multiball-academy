@@ -262,7 +262,7 @@ void App::frontAct(FrontAction action) {
       // holds for the test as for the game (the button is drawn off then).
       // No click: it would hide the first.
       if (settings_.haptics) {
-        hapticTest_.start(feedbackMs_);
+        hapticTest_.start(nowMs());
       }
       SDL_Log("TEST HAPTICS pressed (haptics %s)", settings_.haptics ? "on" : "off");
       break;
@@ -414,7 +414,7 @@ void App::playHaptics(SoundSet sounds) {
   if (!hapticsAvailable_ || !settings_.haptics || sounds == 0 || options_.frameLimit) {
     return;
   }
-  if (const std::optional<Haptic> kind = hapticGate_.take(sounds, feedbackMs_)) {
+  if (const std::optional<Haptic> kind = hapticGate_.take(sounds, nowMs())) {
     playHaptic(*kind);
   }
 }
@@ -425,7 +425,7 @@ void App::stepHapticTest() {
     hapticTest_ = HapticTest{};
     return;
   }
-  if (const std::optional<Haptic> kind = hapticTest_.take(feedbackMs_)) {
+  if (const std::optional<Haptic> kind = hapticTest_.take(nowMs())) {
     playHaptic(*kind);
   }
 }

@@ -105,7 +105,7 @@ void App::handleTouch(const SDL_Event& event) {
   const std::uint64_t id = fingerKey(event.tfinger.touchID, event.tfinger.fingerID);
   // SDL gives a finger's place as a fraction of the window.
   const CanvasPoint at = canvasPoint(layout_, event.tfinger.x, event.tfinger.y);
-  const Uint64 now = SDL_GetTicks();
+  const Uint64 now = nowMs();
   // A drag from a bottom corner of an iPad's window resizes the window: a
   // finger that starts there is the system's, and without its start every
   // control and menu ignores it to the end.
@@ -294,7 +294,7 @@ void App::repeatHeldArrow() {
   if (screen() != Screen::Prompt) {
     return;
   }
-  const OverlayTarget arrow = overlayTaps_.repeat(SDL_GetTicks());
+  const OverlayTarget arrow = overlayTaps_.repeat(nowMs());
   if (arrow.kind != OverlayTarget::Kind::None) {
     touchInitials(arrow);
     redrawsDue_ = kRedrawsAfterEvent;

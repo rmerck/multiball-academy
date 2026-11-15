@@ -90,6 +90,13 @@ struct AppOptions {
   // Given, every haptic the game plays goes here instead of to the device.
   // For tests, which check that each event of the table reaches it.
   std::function<void(Haptic)> hapticHook;
+  // For tests: the clock, in milliseconds, that the game's own guards and
+  // repeats go by: the initials prompt's guard, a held arrow's repeat, the
+  // cursor's blink, the haptics' rate and the TEST HAPTICS run. A test
+  // moves it itself, so what
+  // these do never depends on how fast the machine runs. Unset, SDL's.
+  // Frame pacing and the audio device's retries keep SDL's clock.
+  std::function<std::uint64_t()> clockMs;
 };
 
 enum class FrameResult : std::uint8_t { Continue, Quit };
@@ -184,6 +191,10 @@ class App {
     std::uint64_t steps;
     // Times the table's light show was started afresh for a restored game.
     std::uint32_t lightShowResets;
+    // The table's light show: the big moment it is showing, if any, and the
+    // multiball the game is in.
+    fx::Show lightShow;
+    Multiball multiball;
     // What the latest simulation step was given.
     InputState input;
     screen::Layout layout;
@@ -256,6 +267,8 @@ class App {
   App(const AppOptions& options, const screen::Layout& layout, SDL_Window* window,
       SDL_Renderer* renderer, bool vsync, std::unique_ptr<TableRenderer> table);
 
+  // The milliseconds the guards and repeats go by (AppOptions::clockMs).
+  [[nodiscard]] Uint64 nowMs() const;
   // How long the initials prompt ignores keys and touches after it appears.
   static constexpr Uint64 kEntryGuardMs = 700;
   // What is in front of the player. Fingers on one do not carry to the next.
@@ -554,11 +567,8 @@ class App {
   // Whether the device has haptics.
   bool hapticsAvailable_ = false;
   HapticGate hapticGate_;
+  // The TEST HAPTICS run, on nowMs() like the rate limit.
   HapticTest hapticTest_;
-  // The haptics' clock, ms: the frames' time added up (the fixed time of a
-  // test's frames), so that the rate limit and the test run follow it.
-  std::uint64_t feedbackMs_ = 0;
-  double feedbackRemainderMs_ = 0.0;
   unsigned hapticsPlayed_ = 0;
   // A player's game ended in this run: the review may be asked for.
   bool gameEndedThisRun_ = false;
