@@ -846,7 +846,10 @@ if(BUILD_TESTING)
     # ball every 24, the subway, and the eight flasher domes. Each also at the
     # Altitude's top level (FL500), where the table is at its busiest and
     # brightest; attract (the busiest the title gets) at both limits too.
-    foreach(scene storm domes mix rev3storm)
+    # astorm: concept A's worst case (the rev3storm with the deck, F-L-A-P-S,
+    # the pylon, the Air Pocket, sortie and climb shows and all ten domes).
+    # The limit holds for the iPad's field and the iPhone's.
+    foreach(scene storm domes mix rev3storm astorm)
       add_test(NAME fx_wcag_${scene}
         COMMAND pinball_fxreel ${scene} - --wcag 0.15 --frames 360)
       add_test(NAME fx_wcag_${scene}_reduce_motion
