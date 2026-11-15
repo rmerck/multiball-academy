@@ -57,7 +57,14 @@ float distance(Vec2 a, Vec2 b) {
 // Checked: this tree with 2b's old rise gives 2a's value exactly, so
 // nothing else here moves it; the three spinners' payouts, the subway's
 // drawing, the drone's look and the light show do not.)
-constexpr std::uint64_t kSoakTrajectory = 0xb4240991f33e56a4ULL;
+// (Concept A, G0/G1 (table/a-geometry): re-recorded deliberately for the new
+// upper right: the right bumper moved and made smaller, the Flight Deck's
+// walls, flipper, stand-ups and holes, the right turbo target on the deck's
+// wall, F-L-A-P-S. Was 0xb4240991f33e56a4 on table/rev3-int. Two runs on
+// x86-64 give the same value; arm64 is checked by the macOS CI job. The soak
+// plays at FL100, where the Air Pocket and the Prop Wash are idle; their
+// determinism at FL500 is SaveGameTest's.)
+constexpr std::uint64_t kSoakTrajectory = 0xdd2e8503b7c67182ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {

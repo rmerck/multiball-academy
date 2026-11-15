@@ -183,6 +183,7 @@ enum class State : std::uint8_t {
   ScoopIn,
   DroneHit,
   DroneDown,
+  Deck,
   HangarIn,
   LockIn,
   LockOut,
@@ -202,7 +203,7 @@ struct StateName {
   std::string_view name;
   State state;
 };
-constexpr std::array<StateName, 35> kStates{{
+constexpr std::array<StateName, 36> kStates{{
     {"play", State::Play},
     {"launch", State::Launch},
     {"pause", State::Pause},
@@ -225,6 +226,7 @@ constexpr std::array<StateName, 35> kStates{{
     {"scoop-in", State::ScoopIn},
     {"drone-hit", State::DroneHit},
     {"drone-down", State::DroneDown},
+    {"deck", State::Deck},
     {"hangar-in", State::HangarIn},
     {"lock-in", State::LockIn},
     {"lock-out", State::LockOut},
@@ -262,7 +264,7 @@ constexpr const char* kUsage =
     "  state: play launch pause interrupted confirm about about-info licences\n"
     "         initials gameover longest table course multiball hangar graduation\n"
     "         locked bankdown spinning scoop-in hangar-in lock-in lock-out drone-hit\n"
-    "         drone-down title\n"
+    "         drone-down deck title\n"
     "         title-intro title-still scores howto settings settings-confirm guide\n"
     "         mainmenu-confirm check\n"
     "  --layout <preset | WxH[@scale][+top,bottom,left,right]>   points, 100..4096; scale 1..4,\n"
@@ -657,6 +659,7 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
     case State::ScoopIn:
     case State::DroneHit:
     case State::DroneDown:
+    case State::Deck:
     case State::HangarIn:
     case State::LockIn:
     case State::LockOut:
@@ -1338,8 +1341,20 @@ int run(const Request& request) {
         return EXIT_FAILURE;
       }
     }
+    // Concept A: a ball set down on the Flight Deck by the Skyway's diverter,
+    // at FL500 (the Prop Wash turning), with the pylon up.
+    const bool onDeck = request.state == State::Deck;
+    if (onDeck) {
+      using Seam = pinball::GameTestAccess;
+      game.setAltitude(4);
+      game.setPylonPolicy(1);
+      const std::size_t slot = game.ball().id;
+      Seam::placeBall(game, slot, pinball::table::kDeckSetDown,
+                      pinball::table::kDeckSetDownVelocity);
+      Seam::putInPlay(game, slot);
+    }
     const bool idle = request.state == State::GameOver || request.state == State::Launch ||
-                      staged.has_value() || intoHole || atDrone;
+                      staged.has_value() || intoHole || atDrone || onDeck;
     for (std::uint32_t i = 0; i < request.steps; ++i) {
       game.step(idle ? pinball::InputState{} : scriptedInput(step++));
     }

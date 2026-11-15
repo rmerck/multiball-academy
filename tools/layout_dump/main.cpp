@@ -59,6 +59,8 @@ const char* name(table::RolloverGroup g) {
       return "outlane";
     case Inlane:
       return "inlane";
+    case Flaps:
+      return "flaps";
   }
   return "unknown";
 }
@@ -74,6 +76,12 @@ const char* name(table::HoleType t) {
       return "rampLeft";
     case RampRight:
       return "rampRight";
+    case DeckRamp:
+      return "deckRamp";
+    case CatShot:
+      return "catShot";
+    case DeckDrain:
+      return "deckDrain";
   }
   return "unknown";
 }
@@ -307,6 +315,24 @@ int main() {
   std::printf(", ");
   capsule(table::kCaptiveWallLower);
   std::printf("]},\n");
+  // Concept A: the Flight Deck (its walls are among "walls", its flipper
+  // among "flippers", A-C-E are stand-ups 4 to 6, its holes are holes) and
+  // the Rev A.2 devices.
+  std::printf("  \"flightDeck\": {\"center\": ");
+  point(table::kDeckCenter);
+  std::printf(", \"halfSize\": ");
+  point(table::kDeckHalfSize);
+  std::printf(", \"setDown\": ");
+  point(table::kDeckSetDown);
+  std::printf("},\n  \"airPocket\": {\"c\": ");
+  point(table::kAirPocketCenter);
+  std::printf(", \"r\": %.1f},\n  \"propWash\": {\"c\": ",
+              static_cast<double>(table::kAirPocketRadius));
+  point(table::kPropWash.center);
+  std::printf(", \"r\": %.1f},\n  \"pylon\": {\"c\": ",
+              static_cast<double>(table::kPropWash.radius));
+  point(table::kPylon.center);
+  std::printf(", \"r\": %.1f},\n", static_cast<double>(table::kPylon.radius));
   std::printf("  \"lampSizes\": {\"arrowLength\": %.1f, \"course\": %.1f, \"status\": %.1f},\n",
               static_cast<double>(table::kArrowLampLength),
               static_cast<double>(table::kCourseLampDiameter),
@@ -325,9 +351,11 @@ int main() {
   list("flippers", table::kFlippers, [](const table::Flipper& f) {
     std::printf("{\"pivot\": ");
     point(f.pivot);
-    std::printf(", \"rest\": %.5f, \"active\": %.5f, \"length\": %.1f}",
+    std::printf(", \"rest\": %.5f, \"active\": %.5f, \"length\": %.1f, \"baseRadius\": %.1f, "
+                "\"tipRadius\": %.1f}",
                 static_cast<double>(f.restAngle), static_cast<double>(f.activeAngle),
-                static_cast<double>(f.length));
+                static_cast<double>(f.length), static_cast<double>(f.baseRadius),
+                static_cast<double>(f.tipRadius));
   });
   // The lane's one-way gate: an open one-sided chain, solid from above; the
   // first and last points are ghosts.
@@ -403,6 +431,9 @@ int main() {
               static_cast<double>(table::kDroneLeftX), static_cast<double>(table::kDroneRightX));
   list("runwayRail", table::kRunwayRail, [](Vec2 p) { point(p); });
   list("skywayRail", table::kSkywayRail, [](Vec2 p) { point(p); });
+  list("deckRail", table::kDeckRail, [](Vec2 p) { point(p); });
+  list("catRail", table::kCatRail, [](Vec2 p) { point(p); });
+  list("deckSubway", table::kDeckSubway, [](Vec2 p) { point(p); });
   // Lamps in LampId order; "kind" is arrow, course, status, or planned (revision 3's
   // inserts, drawn from tools/art/palette.py PLANNED_LAMPS).
   list(
