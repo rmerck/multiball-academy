@@ -7,6 +7,7 @@
 #include "Suites.hpp"
 #include "core/Courses.hpp"
 #include "core/DisplayText.hpp"
+#include "core/Progression.hpp"
 #include "core/Rules.hpp"
 #include "core/Sound.hpp"
 #include "core/TableLayout.hpp"
@@ -812,5 +813,81 @@ void testCourses() {
       }
     }
     CHECK(rules.extraBalls() == 1 && has(sounds, Sound::ExtraBall));
+  }
+  {  // Progression: the Altitude, FL100 to FL500 (core/Progression.hpp).
+    namespace progression = pinball::progression;
+    // The knobs: the plain tuning at level 0, then only tighter.
+    static_assert(progression::knobsClimb());
+    static_assert(progression::flightLevel(0) == 100 && progression::flightLevel(4) == 500);
+    static_assert(progression::flightLevel(-3) == 100 && progression::flightLevel(9) == 500);
+    CHECK(progression::knobs(-1).ballSaveScale == 1.0 && progression::knobs(7).lightEnergy == 1.0F);
+    CHECK(!progression::knobs(1).guardsUp && progression::knobs(2).guardsUp);
+
+    progression::Altitude altitude;
+    CHECK(altitude.level() == 0 && !altitude.atTop());
+    CHECK(altitude.climb() == 1 && altitude.level() == 1);
+    CHECK(altitude.climb(-2) == 0 && altitude.level() == 1);  // Never down.
+    CHECK(altitude.climb(10) == 3 && altitude.atTop() && altitude.climb() == 0);
+    altitude.reset();
+    CHECK(altitude.level() == 0);
+    altitude.setFloor(2);
+    CHECK(altitude.level() == 2 && altitude.knobs().guardsUp);
+    altitude.reset();
+    CHECK(altitude.level() == 2);
+    altitude.restore(0);  // A restored value never goes under the floor.
+    CHECK(altitude.level() == 2);
+    altitude.setFloor(0);
+    altitude.restore(3);
+    CHECK(altitude.level() == 3);
+
+    // A game starts at FL100 and climbs a level for each course passed.
+    RulesBench bench = single();
+    Rules& rules = bench.rules;
+    CHECK(rules.altitude() == 0 && rules.flightLevel() == 100);
+    pass(bench, CourseId::BumperBasics);
+    CHECK(rules.altitude() == 1 && rules.flightLevel() == 200);
+    CHECK(bench.message() == std::string_view("COURSE PASSED  RANK UP"));
+    bench.wait(Rules::kMessageSeconds);
+    CHECK(bench.message() == std::string_view("CLIMB TO FL200"));
+    pass(bench, CourseId::CircuitTraining);
+    CHECK(rules.altitude() == 2);
+    for (const CourseId id : {CourseId::RunwayDrills, CourseId::HangarSafety}) {
+      if (!rules.coursePassed(idx(id))) {
+        pass(bench, id);
+      }
+    }
+    CHECK(rules.altitude() == 4 && rules.altitudeKnobs().lightEnergy == 1.0F);
+    const int passed = rules.coursesPassed();
+    for (int i = 0; i < 4 && rules.coursesPassed() == passed; ++i) {
+      bench.wait(tuning::kComboSeconds);
+      for (int ramp = 0; ramp < 4 && !rules.briefingLit(); ++ramp) {
+        bench.runway();
+      }
+      bench.scoop();
+      if (rules.courseRunning()) {
+        finish(bench);
+      }
+    }
+    CHECK(rules.coursesPassed() > passed && rules.altitude() == 4);  // The top holds.
+
+    // A new game starts low again; a floor holds it up (the bench's and the
+    // tools' setting); with progression off it stays where it is.
+    rules.startGame();
+    bench.apply();
+    CHECK(rules.altitude() == 0);
+    rules.setAltitudeFloor(progression::kTopLevel);
+    rules.startGame();
+    bench.apply();
+    CHECK(rules.altitude() == progression::kTopLevel && rules.flightLevel() == 500);
+    rules.setAltitudeFloor(0);
+    rules.startGame();
+    bench.apply();
+    CHECK(rules.altitude() == 0);
+    rules.setProgressionEnabled(false);
+    rules.onBallInPlay();
+    bench.wait(Rules::kBallSaveSeconds);
+    pass(bench, CourseId::BumperBasics);
+    CHECK(rules.altitude() == 0 && rules.coursePassed(idx(CourseId::BumperBasics)));
+    rules.setProgressionEnabled(true);
   }
 }

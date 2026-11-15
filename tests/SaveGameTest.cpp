@@ -23,6 +23,7 @@
 #include "bots/TableHarness.hpp"
 #include "core/Args.hpp"
 #include "core/Game.hpp"
+#include "core/Progression.hpp"
 #include "core/Input.hpp"
 #include "core/Rules.hpp"
 #include "core/Scenes.hpp"
@@ -113,7 +114,8 @@ bool sameOnTable(const Game& a, const Game& b) {
       ra.comboLevel() != rb.comboLevel() || ra.bonusMultiplier() != rb.bonusMultiplier() ||
       ra.ballSaveActive() != rb.ballSaveActive() || ra.extraBalls() != rb.extraBalls() ||
       ra.rank() != rb.rank() || ra.jackpotValue() != rb.jackpotValue() ||
-      ra.examShotsLeft() != rb.examShotsLeft() || ra.graduations() != rb.graduations()) {
+      ra.examShotsLeft() != rb.examShotsLeft() || ra.graduations() != rb.graduations() ||
+      ra.altitude() != rb.altitude()) {
     return false;
   }
   for (std::size_t lamp = 0; lamp < table::kLamps.size(); ++lamp) {
@@ -553,6 +555,9 @@ void testRejectsBadFields() {
   refused("an unknown shot for the combo", [](S& s) { s.rules.comboShot = 9; });
   refused("an unknown navigation shot", [](S& s) { s.rules.navShot = 7; });
   refused("a rank past the top", [](S& s) { s.rules.rank = 7; });
+  refused("an Altitude past FL500", [](S& s) {
+    s.rules.altitude = static_cast<std::uint8_t>(pinball::progression::kTopLevel + 1);
+  });
   refused("overdrive 4", [](S& s) { s.rules.overdrive = 4; });
   refused("bonus x 0", [](S& s) { s.rules.bonusMultiplier = 0; });
   refused("a jackpot past the ladder", [](S& s) { s.rules.jackpotIndex = 9; });
@@ -676,6 +681,23 @@ void testRejectsBadFields() {
                accepted, payload.size());
 }
 
+// The Altitude is part of the game: saved, read back and restored, and the
+// restored game's lights and knobs follow it.
+void testAltitude() {
+  save::Snapshot good;
+  (void)goodFile(&good);
+  for (int level = 0; level <= pinball::progression::kTopLevel; ++level) {
+    save::Snapshot snapshot = good;
+    snapshot.rules.altitude = static_cast<std::uint8_t>(level);
+    const std::optional<save::Snapshot> read = save::decode(bytesOf(save::encode(snapshot)));
+    CHECK(read.has_value() && read->rules.altitude == level);
+    Game game;
+    CHECK(read.has_value() && game.restore(*read));
+    CHECK(game.rules().altitude() == level);
+    CHECK(game.snapshot().rules.altitude == level);
+  }
+}
+
 // The save is written on the main thread as the application goes to the
 // background: it must take next to nothing.
 void testFast() {
@@ -717,5 +739,6 @@ void testSaveGame() {
   testContinuesAsTheOriginal();
   testEveryStateSaves();
   testRestoreIsDeterministic();
+  testAltitude();
   testFast();
 }
