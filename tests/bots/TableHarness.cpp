@@ -43,13 +43,18 @@ TableHarness::TableHarness() {
   // The bench counts every ball that leaves the table: see setSaver().
   setSaver(false);
   // Concept A's measuring knobs, for a whole run: PINBALL_ALTITUDE 0 to 4
-  // (FL100 to FL500), PINBALL_DECK and PINBALL_PYLON (0 rules, 1 always,
-  // 2 never). Unset: FL100 and the stub rules.
+  // (FL100 to FL500, pinned), PINBALL_DECK and PINBALL_PYLON (0 rules, 1
+  // always, 2 never). Unset: the Altitude as the rules climb it, and the
+  // stub rules.
   const auto knob = [](const char* name) {
     const char* value = std::getenv(name);
     return value == nullptr ? 0 : std::atoi(value);
   };
-  game_.setAltitude(knob("PINBALL_ALTITUDE"));
+  // The Altitude is pinned only when asked; unset, the game climbs as the
+  // rules take it.
+  if (std::getenv("PINBALL_ALTITUDE") != nullptr) {
+    game_.setAltitude(knob("PINBALL_ALTITUDE"));
+  }
   game_.setDeckPolicy(knob("PINBALL_DECK"));
   game_.setPylonPolicy(knob("PINBALL_PYLON"));
 }
