@@ -1,0 +1,39 @@
+# SHA-256 of the Table A masters (tools/art/table_a/out) and their sources (.blend, .xcf).
+# Made on macOS arm64 (Blender 5.3.0 Cycles CPU, GIMP 3.2). Re-running blender/toys.py or gimp/finish.py there
+# reproduces out/ byte for byte (verified, and from the .blend files alone); other platforms: check by eye.
+44681a094a68a2b9269a4c0bddbec89af9752a645f9cc5187aa132f733cd66da  tools/art/table_a/blender/bay_door.blend
+3de26b017aded2abc2b189e0d8b3674f1a86523c8708a022f91c6befedc07de1  tools/art/table_a/blender/drone.blend
+00043f7f448a071243f97b800d83b92a73fd9bb3f2e21e033fc4abbcc16fc6a5  tools/art/table_a/blender/flasher_domes.blend
+d09a2871765b2d0d1dda1d69ed627e66a70cc304ea82a01d2cf5d47b913af71c  tools/art/table_a/blender/flight_deck.blend
+aa7e38b786b5b33f5e720c259a4f0e5ef67e7b50050c353656ddf9f9f40ef8f9  tools/art/table_a/blender/gforce.blend
+b26d548e25f7777a48a56e8dca9efd3162304da56fad8e3aa3ec7e81f86c71be  tools/art/table_a/blender/jet_caps.blend
+0058ea4de397343df2a539647cc082fd048ccb459e0b06d6ee1b988266e44320  tools/art/table_a/blender/propwash.blend
+ca54129148964c816db771c973608b8f5434c54e776b45186b2be71f855927a5  tools/art/table_a/blender/pylon.blend
+dffa8a8f706e17bde34541b73fd882494ce5953cd7d65c18070eedbba20527d3  tools/art/table_a/blender/ramp_runway.blend
+f989b7eacefafae55dc4f76efcf69c33d4d1ac930cd296da3eafd7183d1a905e  tools/art/table_a/blender/ramp_skyway.blend
+4a6fcb78d9ab03c152a2c8d4da1995c304b8357993d5bccbd2a235a6e5c5a65d  tools/art/table_a/gimp/xcf/altitude_plate.xcf
+34669aa1eba3c257c04231ecbb2b42924a2812cf7cd953e73017fe8b59d550a1  tools/art/table_a/gimp/xcf/decals_nameplates.xcf
+e5c19c5c8231956e229c06251312da382ab49d077a21e413ed9c0fc7e4090487  tools/art/table_a/gimp/xcf/inserts_altitude.xcf
+4c79d7f4ab4643a606ba30ced0872144efd74c962e2372d945384cdc94aff04e  tools/art/table_a/gimp/xcf/inserts_arrows.xcf
+a13a1d736819d48d2e787c6be2f6d62ef0ba99f7db208256717da5eea1f54072  tools/art/table_a/gimp/xcf/inserts_flaps.xcf
+6fe7b8e37be136e5844d5f05ab361f287407891e0c8e2d9785fb5f5642d2a9ca  tools/art/table_a/gimp/xcf/plastic_sling_left.xcf
+d8edaff2531200016bd701f8aed2aa4cfdc7b4c2f4c613349cd6813abb051075  tools/art/table_a/gimp/xcf/plastic_sling_right.xcf
+19a53c19d2482f93fc75ac930880f47fe0ffea4b4cbe0ca7c58d5ba9bb6212f5  tools/art/table_a/out/altitude_plate.png
+e55a9b0e2640ce8f9a6bdcd144a4ed223cd1a8e9e00944e4e59dfabd67e2d59c  tools/art/table_a/out/bay_door.png
+fbe432b83883a518b6322dda2aaa92f4fd0fc577568d5436fbf47b0d4b0ac145  tools/art/table_a/out/decals_nameplates.png
+6d127be113078e71ffbb9b11c7a929b41276baf944472e42058a4c2b16a5bebd  tools/art/table_a/out/drone.png
+25df5a49d621815da0312820f15ea90ba590d17f5bfb72d8bd2a204a74fbfe18  tools/art/table_a/out/flasher_domes.png
+f205fff981281d87cb5706c864da5be12cbbc8b4db10a2d63de40a7221799b89  tools/art/table_a/out/flight_deck.png
+f6d65994108c08d3b3cacbb2cc5b1a3d52b75e841e7f5846abfa00189af9549f  tools/art/table_a/out/gforce.png
+a3e39b1b8af6f3f417ec4a0de164b486ec7ddb481ebc9cffb42a6dafbe99258b  tools/art/table_a/out/gimp_sheets.json
+b1d74b2556eb16a92ec8801b61fea9d452bde1321a0718a85a60694427aaee70  tools/art/table_a/out/inserts_altitude.png
+ea2f0fde0a8a0497da37eed3f201bd878be0b7af06218ce8626fba643b493023  tools/art/table_a/out/inserts_arrows.png
+ca88e9f5795457038707a2ec0485a90f1204942096dd9b282fa51a6fb5a87b34  tools/art/table_a/out/inserts_flaps.png
+6dda880f24fed229953d5eb009c7f0bd3ca30295b333716a0fe3c4739a9d0fd9  tools/art/table_a/out/jet_caps.png
+c50e5d08475f7c122de8abeb474e9887efb8be32bf385df8f558e24877ac6aa4  tools/art/table_a/out/plastic_sling_left.png
+f399616add0fdafe76037ce14d8d8ecd1a8cc56735408089bebdaed0d32fa47d  tools/art/table_a/out/plastic_sling_right.png
+dca1df262364c22096825b30b84f173a9c9565f87f2693c4621e9993dc0f9457  tools/art/table_a/out/propwash.png
+d5a959295916accee9bff807163839ea8aeadf740441484e4eea9fd48d7da1c0  tools/art/table_a/out/pylon.png
+9f9bb16c673c8b08df233972bc93bfee9d766440b96ec944b151b5f75abb58ba  tools/art/table_a/out/ramp_runway.png
+c55b0cedc5b0153dbec3db0394127d97f413379ee715102e1d53277727d6bf2b  tools/art/table_a/out/ramp_skyway.png
+cf2f5fcb086170d88603fb4790398499a96840097e454bf3e1ebb30144aa5089  tools/art/table_a/out/sheets.json

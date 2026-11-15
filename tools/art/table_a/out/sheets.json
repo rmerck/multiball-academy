@@ -1,0 +1,258 @@
+{
+ "note": "cells left to right, top to bottom, in frame order",
+ "pixelsPerUnit": 4,
+ "sheets": {
+  "bay_door": {
+   "anchor": "centre",
+   "cellPixels": [
+    160,
+    128
+   ],
+   "cellUnits": [
+    40,
+    32
+   ],
+   "columns": 3,
+   "file": "bay_door.png",
+   "frames": [
+    "closed",
+    "dropping",
+    "open"
+   ]
+  },
+  "drone": {
+   "anchor": "centre",
+   "cellPixels": [
+    192,
+    192
+   ],
+   "cellUnits": [
+    48,
+    48
+   ],
+   "columns": 5,
+   "file": "drone.png",
+   "frames": [
+    "armour6",
+    "armour5",
+    "armour4",
+    "armour3",
+    "armour2",
+    "armour1",
+    "armour0",
+    "dive",
+    "down1",
+    "down2"
+   ]
+  },
+  "flasher_domes": {
+   "anchor": "centre",
+   "cellPixels": [
+    112,
+    112
+   ],
+   "cellUnits": [
+    28,
+    28
+   ],
+   "colours": [
+    "ORANGE",
+    "YELLOW",
+    "GREEN",
+    "ORCHID",
+    "PINK",
+    "CREAM",
+    "AQUA",
+    "AQUA",
+    "AQUA",
+    "ORCHID"
+   ],
+   "columns": 10,
+   "file": "flasher_domes.png",
+   "frames": [
+    "hangar_off",
+    "mission_off",
+    "afterburner_off",
+    "runway_off",
+    "skyway_off",
+    "nest_off",
+    "sling_left_off",
+    "sling_right_off",
+    "deck_off",
+    "left_arch_off",
+    "hangar_on",
+    "mission_on",
+    "afterburner_on",
+    "runway_on",
+    "skyway_on",
+    "nest_on",
+    "sling_left_on",
+    "sling_right_on",
+    "deck_on",
+    "left_arch_on"
+   ]
+  },
+  "flight_deck": {
+   "anchor": [
+    471.0,
+    146.0
+   ],
+   "cellPixels": [
+    400,
+    688
+   ],
+   "cellUnits": [
+    100,
+    172
+   ],
+   "columns": 2,
+   "file": "flight_deck.png",
+   "frames": [
+    "off",
+    "lit"
+   ]
+  },
+  "gforce": {
+   "anchor": [
+    128.0,
+    224.0
+   ],
+   "cellPixels": [
+    352,
+    352
+   ],
+   "cellUnits": [
+    88,
+    88
+   ],
+   "columns": 1,
+   "file": "gforce.png",
+   "frames": [
+    "housing"
+   ]
+  },
+  "jet_caps": {
+   "anchor": "centre",
+   "cellPixels": [
+    224,
+    224
+   ],
+   "cellUnits": [
+    56,
+    56
+   ],
+   "columns": 2,
+   "file": "jet_caps.png",
+   "frames": [
+    "jet1_off",
+    "jet1_on",
+    "jet2_off",
+    "jet2_on",
+    "jet3_off",
+    "jet3_on"
+   ],
+   "radii": [
+    24.0,
+    20.0,
+    24.0
+   ]
+  },
+  "propwash": {
+   "anchor": "centre",
+   "cellPixels": [
+    336,
+    336
+   ],
+   "cellUnits": [
+    84,
+    84
+   ],
+   "columns": 6,
+   "file": "propwash.png",
+   "frames": [
+    "rot000",
+    "rot005",
+    "rot010",
+    "rot015",
+    "rot020",
+    "rot025",
+    "rot030",
+    "rot035",
+    "rot040",
+    "rot045",
+    "rot050",
+    "rot055",
+    "rot060",
+    "rot065",
+    "rot070",
+    "rot075",
+    "rot080",
+    "rot085",
+    "rot090",
+    "rot095",
+    "rot100",
+    "rot105",
+    "rot110",
+    "rot115"
+   ]
+  },
+  "pylon": {
+   "anchor": "centre",
+   "cellPixels": [
+    256,
+    256
+   ],
+   "cellUnits": [
+    64,
+    64
+   ],
+   "columns": 4,
+   "file": "pylon.png",
+   "frames": [
+    "down",
+    "rise1",
+    "rise2",
+    "up"
+   ]
+  },
+  "ramp_runway": {
+   "anchor": [
+    40.0,
+    276.0
+   ],
+   "cellPixels": [
+    704,
+    1648
+   ],
+   "cellUnits": [
+    176,
+    412
+   ],
+   "columns": 1,
+   "file": "ramp_runway.png",
+   "frames": [
+    "normal"
+   ]
+  },
+  "ramp_skyway": {
+   "anchor": [
+    495.0,
+    236.0
+   ],
+   "cellPixels": [
+    704,
+    1808
+   ],
+   "cellUnits": [
+    176,
+    452
+   ],
+   "columns": 2,
+   "file": "ramp_skyway.png",
+   "frames": [
+    "normal",
+    "to_deck"
+   ]
+  }
+ }
+}
