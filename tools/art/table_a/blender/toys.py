@@ -851,8 +851,8 @@ def build_flasher_domes():
         on = label.endswith("_on")
         for k, (root, gm, core_m) in enumerate(roots):
             key_show(root, f, k == i)
-            key_emit(gm, f, 2.2 if (on and k == i) else 0.15)
-            key_emit(core_m, f, 6.0 if (on and k == i) else 0.0)
+            key_emit(gm, f, 1.1 if (on and k == i) else 0.15)
+            key_emit(core_m, f, 2.5 if (on and k == i) else 0.0)
 
 
 BUILD = {
