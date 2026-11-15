@@ -88,6 +88,9 @@ class TableHarness {
   // Puts the ball of a live slot somewhere, moving. inPlay says whether it
   // counts as having left the launch channel.
   void put(std::size_t slot, Vec2 position, Vec2 velocity, bool inPlay);
+  // The same, as a hole lets the ball out there: a hole whose cup is there
+  // does not take it straight back.
+  void putLeaving(std::size_t slot, Vec2 position, Vec2 velocity);
   // Puts another ball on the table, in play. Returns its slot or kMaxBalls.
   std::size_t add(Vec2 position, Vec2 velocity);
 

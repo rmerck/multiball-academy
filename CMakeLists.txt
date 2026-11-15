@@ -404,7 +404,7 @@ elseif(PINBALL_IOS)
   # Named here, not left to SDL's own list, which follows SDL's options.
   target_link_libraries(pinball_platform PRIVATE
     "-framework Foundation" "-framework UIKit" "-framework AVFoundation"
-    "-framework StoreKit")
+    "-framework StoreKit" "-framework CoreHaptics")
 endif()
 
 if(PINBALL_MACOS)
@@ -843,15 +843,28 @@ if(BUILD_TESTING)
     # small domes in turn every 8 steps and the nest; mix: the review's
     # domes every 10 steps, the nest and a jackpot every 30; rev3storm: the
     # storm with the drone hit every 24 steps, the stand-ups and the captive
-    # ball every 24, the subway, and the eight flasher domes.
+    # ball every 24, the subway, and the eight flasher domes. Each also at the
+    # Altitude's top level (FL500), where the table is at its busiest and
+    # brightest; attract (the busiest the title gets) at both limits too.
     foreach(scene storm domes mix rev3storm)
       add_test(NAME fx_wcag_${scene}
         COMMAND pinball_fxreel ${scene} - --wcag 0.15 --frames 360)
       add_test(NAME fx_wcag_${scene}_reduce_motion
         COMMAND pinball_fxreel ${scene} - --wcag 0.05 --frames 360 --reduce-motion)
-      set_tests_properties(fx_wcag_${scene} fx_wcag_${scene}_reduce_motion PROPERTIES
+      add_test(NAME fx_wcag_${scene}_fl500
+        COMMAND pinball_fxreel ${scene} - --wcag 0.15 --frames 360 --altitude 4)
+      add_test(NAME fx_wcag_${scene}_fl500_reduce_motion
+        COMMAND pinball_fxreel ${scene} - --wcag 0.05 --frames 360 --altitude 4 --reduce-motion)
+      set_tests_properties(fx_wcag_${scene} fx_wcag_${scene}_reduce_motion
+        fx_wcag_${scene}_fl500 fx_wcag_${scene}_fl500_reduce_motion PROPERTIES
         ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 600 LABELS slow)
     endforeach()
+    add_test(NAME fx_wcag_attract
+      COMMAND pinball_fxreel attract - --wcag 0.15 --frames 900)
+    add_test(NAME fx_wcag_attract_reduce_motion
+      COMMAND pinball_fxreel attract - --wcag 0.05 --frames 900 --reduce-motion)
+    set_tests_properties(fx_wcag_attract fx_wcag_attract_reduce_motion PROPERTIES
+      ENVIRONMENT "${PINBALL_HEADLESS_ENV}" TIMEOUT 600 LABELS slow)
     add_test(NAME render_snapshot
       COMMAND pinball_snapshot 1200 render_snapshot.png
       WORKING_DIRECTORY ${PINBALL_TEST_DIR})

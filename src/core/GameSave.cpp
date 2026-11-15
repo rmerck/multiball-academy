@@ -82,7 +82,6 @@ save::RulesRecord Rules::record() const noexcept {
   r.doorCommand = std::to_underlying(doorCommand_);
   r.doorRaiseSteps = doorRaiseSteps_;
   r.droneHits = droneHits_;
-  r.altitude = altitude_;
   r.deckLit = deckLit_;
   r.flapsLit = flapsLit_;
   r.hangarHolding = hangarHolding_;
@@ -132,6 +131,7 @@ save::RulesRecord Rules::record() const noexcept {
   r.gradRampsNeeded = gradRampsNeeded_;
   r.examMade = examMade_;
   r.graduations = graduations_;
+  r.altitude = static_cast<std::uint8_t>(altitude_.level());
   r.commencementThisTime = commencementThisTime_;
 
   r.briefingVisited = briefingVisited_;
@@ -199,7 +199,6 @@ void Rules::restore(const save::RulesRecord& r) noexcept {
                      : DoorCommand::None;
   doorRaiseSteps_ = r.doorRaiseSteps;
   droneHits_ = r.droneHits;
-  altitude_ = r.altitude;
   deckLit_ = r.deckLit;
   flapsLit_ = r.flapsLit;
   hangarHolding_ = r.hangarHolding;
@@ -249,6 +248,7 @@ void Rules::restore(const save::RulesRecord& r) noexcept {
   gradRampsNeeded_ = r.gradRampsNeeded;
   examMade_ = r.examMade;
   graduations_ = r.graduations;
+  altitude_.restore(r.altitude);
   commencementThisTime_ = r.commencementThisTime;
 
   briefingVisited_ = r.briefingVisited;
@@ -296,10 +296,14 @@ void PhysicsWorld::saveBall(std::size_t slot, save::BallRecord& r) const {
   r.held = ball.held;
   r.heldBy = ball.held ? ball.heldBy : table::ElementRef{};
   r.sensorFromKnown = ball.sensorFromKnown;
-  r.sensorFrom = ball.sensorFrom;
+  // Unknown, it is never read: saved as nothing, so that two games alike in
+  // everything they will do save alike.
+  r.sensorFrom = ball.sensorFromKnown ? ball.sensorFrom : Vec2{};
   r.touchingBumper = ball.touchingBumper;
   r.onRollover = ball.onRollover;
   r.holeArmed = ball.holeArmed;
+  r.inBox = ball.inBox;
+  r.boxWelcome = ball.boxWelcome;
 }
 
 void PhysicsWorld::saveTable(save::TableRecord& r) const {
@@ -384,6 +388,8 @@ void PhysicsWorld::restoreBalls(std::span<const save::BallRecord> records) {
     ball.touchingBumper = r.touchingBumper;
     ball.onRollover = r.onRollover;
     ball.holeArmed = r.holeArmed;
+    ball.inBox = r.inBox;
+    ball.boxWelcome = r.boxWelcome;
     if (r.held) {
       // As holdBall leaves it: still, and out of every collision.
       ball.held = true;

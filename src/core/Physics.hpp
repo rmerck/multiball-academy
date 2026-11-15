@@ -264,6 +264,10 @@ class PhysicsWorld {
   // they still take any other ball.
   void releaseBall(std::size_t ball, Vec2 position, Vec2 velocity);
   void releaseBall(Vec2 position, Vec2 velocity) { releaseBall(0, position, velocity); }
+  // Every hole within table::kHoleRearmDistance of position ignores this
+  // ball until it has moved clear, as after releaseBall (for tests that put
+  // a ball where a hole lets one out).
+  void disarmHolesNear(std::size_t ball, Vec2 position) noexcept;
 
   // Teleports an active ball and sets its velocity (pixels and pixels per
   // second). Non-finite input is ignored. The velocity is held to the speed
@@ -329,6 +333,9 @@ class PhysicsWorld {
   // Takes a free ball off the table for whatever element it is.
   void holdBall(std::size_t slot, table::ElementRef by, float speed);
   void checkZones(std::size_t slot);
+  // The funnels of the holes with a cup (table::kHoleFunnelPull), over a
+  // part of a slice.
+  void guideIntoCups(float seconds);
   void pushEvent(PhysicsEvent::Type type, table::ElementRef element, float speed, std::size_t slot,
                  std::size_t otherSlot = 0);
   // Kicks the ball if it is on the slingshot's kicker face. Returns whether it did.
@@ -374,11 +381,14 @@ class PhysicsWorld {
     std::array<bool, table::kBumpers.size()> touchingBumper{};
     // Rollovers the ball is currently on, so each pass reports once.
     std::array<bool, table::kRollovers.size()> onRollover{};
-    // Holes that will take the ball. A hole disarms when it returns it.
+    // Holes that will take the ball. A hole disarms when it returns it, and
+    // rearms once the ball is table::kHoleRearmDistance away.
     std::array<bool, table::kHoles.size()> holeArmed{};
     // Inside a hole's box at the last check, and put somewhere by hand since
     // (a placed ball is taken by the hole it is put in, however it moves).
     std::array<bool, table::kHoles.size()> inBox{};
+    // The Briefing room: whether the ball came into its pocket the right way.
+    std::array<bool, table::kHoles.size()> boxWelcome{};
     bool placed = false;
   };
   std::array<BallSlot, table::kMaxBalls> balls_{};

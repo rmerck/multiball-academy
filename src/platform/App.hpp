@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -83,6 +84,19 @@ struct AppOptions {
   // which give a scratch directory so that the player's files are never
   // touched; no command line sets it.
   std::string dataDirectory;
+  // Whether the device has haptics: given, it is used instead of the
+  // system's answer (ios::hapticsAvailable). For tests.
+  std::optional<bool> haptics;
+  // Given, every haptic the game plays goes here instead of to the device.
+  // For tests, which check that each event of the table reaches it.
+  std::function<void(Haptic)> hapticHook;
+  // For tests: the clock, in milliseconds, that the game's own guards and
+  // repeats go by: the initials prompt's guard, a held arrow's repeat, the
+  // cursor's blink, the haptics' rate and the TEST HAPTICS run. A test
+  // moves it itself, so what
+  // these do never depends on how fast the machine runs. Unset, SDL's.
+  // Frame pacing and the audio device's retries keep SDL's clock.
+  std::function<std::uint64_t()> clockMs;
 };
 
 enum class FrameResult : std::uint8_t { Continue, Quit };
@@ -177,6 +191,10 @@ class App {
     std::uint64_t steps;
     // Times the table's light show was started afresh for a restored game.
     std::uint32_t lightShowResets;
+    // The table's light show: the big moment it is showing, if any, and the
+    // multiball the game is in.
+    fx::Show lightShow;
+    Multiball multiball;
     // What the latest simulation step was given.
     InputState input;
     screen::Layout layout;
@@ -249,6 +267,8 @@ class App {
   App(const AppOptions& options, const screen::Layout& layout, SDL_Window* window,
       SDL_Renderer* renderer, bool vsync, std::unique_ptr<TableRenderer> table);
 
+  // The milliseconds the guards and repeats go by (AppOptions::clockMs).
+  [[nodiscard]] Uint64 nowMs() const;
   // How long the initials prompt ignores keys and touches after it appears.
   static constexpr Uint64 kEntryGuardMs = 700;
   // What is in front of the player. Fingers on one do not carry to the next.
@@ -313,6 +333,10 @@ class App {
   void setMusic(bool on);
   // A haptic for what the frame's sounds say happened, if one is due.
   void playHaptics(SoundSet sounds);
+  // The TEST HAPTICS button's run, one kind at a time as each falls due.
+  void stepHapticTest();
+  // One haptic to the device, or to the test's hook.
+  void playHaptic(Haptic kind);
   // At the title, after a game, now and then: the system's review prompt.
   void maybeRequestReview();
   // What VoiceOver finds on the screen, when that has changed.
@@ -543,6 +567,8 @@ class App {
   // Whether the device has haptics.
   bool hapticsAvailable_ = false;
   HapticGate hapticGate_;
+  // The TEST HAPTICS run, on nowMs() like the rate limit.
+  HapticTest hapticTest_;
   unsigned hapticsPlayed_ = 0;
   // A player's game ended in this run: the review may be asked for.
   bool gameEndedThisRun_ = false;

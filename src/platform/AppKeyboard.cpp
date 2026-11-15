@@ -158,7 +158,7 @@ void App::handleEntryKey(SDL_Keycode key, SDL_Keymod modifiers) {
   // The prompt appears the moment the last ball drains, while fingers are
   // still on the flipper keys. Presses in the first moments are play, not
   // typing.
-  if (SDL_GetTicks() - entryOpenedMs_ < kEntryGuardMs) {
+  if (nowMs() - entryOpenedMs_ < kEntryGuardMs) {
     return;
   }
   // Letters are matched by what the key types, so they follow the layout.

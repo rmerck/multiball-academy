@@ -1,7 +1,10 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string_view>
 
 #include "core/Settings.hpp"
@@ -57,6 +60,44 @@ class HapticGate {
 
 // The kind of haptic a set of sounds calls for, ignoring rate, or none.
 [[nodiscard]] std::optional<Haptic> hapticFor(SoundSet sounds) noexcept;
+
+// One event of a haptic as the device plays it, in Core Haptics' terms: a
+// transient tap, or a continuous buzz of a duration. Times in seconds from
+// the start of the haptic; intensity and sharpness from 0 to 1.
+struct HapticPulse {
+  float atSeconds = 0.0F;
+  float intensity = 0.0F;
+  float sharpness = 0.0F;
+  // 0 for a transient.
+  float durationSeconds = 0.0F;
+
+  [[nodiscard]] constexpr bool continuous() const noexcept { return durationSeconds > 0.0F; }
+};
+
+// What each kind feels like. Strong enough to be felt through a phone held
+// in two hands over the sound of the game: a flipper is a firm tick, a hit
+// a sharper knock, a drain a heavy buzz of a quarter second, a jackpot a
+// rising triple tap with a buzz under it.
+[[nodiscard]] std::span<const HapticPulse> hapticPattern(Haptic kind) noexcept;
+
+// The TEST HAPTICS button of the settings page: every kind once, lightest
+// first, kGapMs apart, so the player can feel each on the device. Ticked
+// once a frame; a press while one is running starts it again.
+class HapticTest {
+ public:
+  static constexpr std::uint64_t kGapMs = 700;
+  static constexpr std::array<Haptic, 4> kOrder = {Haptic::Flipper, Haptic::Hit, Haptic::Drain,
+                                                   Haptic::Jackpot};
+
+  void start(std::uint64_t nowMs) noexcept;
+  [[nodiscard]] bool running() const noexcept { return next_ < kOrder.size(); }
+  // The kind to play now, if one is due. At most one a call.
+  [[nodiscard]] std::optional<Haptic> take(std::uint64_t nowMs) noexcept;
+
+ private:
+  std::uint64_t startMs_ = 0;
+  std::size_t next_ = kOrder.size();
+};
 
 // When to ask for a store review: only once the player has finished
 // kReviewMinGames games, at most once for each version of the game, and

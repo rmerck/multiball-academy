@@ -1,10 +1,12 @@
 #include "platform/TableEffects.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <string_view>
 
+#include "core/HoleLook.hpp"
 #include "core/TableLayout.hpp"
 
 namespace pinball {
@@ -17,15 +19,53 @@ float length(Vec2 v) noexcept { return std::sqrt(v.x * v.x + v.y * v.y); }
 
 // Where and how large a ball is drawn: a hole drawing it in or out moves
 // it off its place and shrinks it (Game.hpp, BallView::drawnAt).
-float drawnRadius(const BallView& ball) noexcept {
-  return table::kBallRadius * ball.scale *
-         (1.0F - table::kHoleSinkShrink * std::clamp(ball.sink, 0.0F, 1.0F));
+float drawnRadius(const BallView& ball, bool reduceMotion) noexcept {
+  return table::kBallRadius * ball.scale * holeLook(ball.sink, reduceMotion).scale;
 }
 float shown(const BallView& ball) noexcept { return 1.0F - std::clamp(ball.sink, 0.0F, 1.0F); }
 
 Vec2 unit(Vec2 v) noexcept {
   const float l = length(v);
   return l > 0.0F ? v * (1.0F / l) : Vec2{0.0F, -1.0F};
+}
+
+// The rim the GI bulbs sit along and the perimeter lights run along: the
+// shell from the launch lane's foot round the arch to the left outlane
+// wall, kRimInset inside it.
+constexpr float kRimInset = 14.0F;
+struct RimPath {
+  std::array<Vec2, table::kShell.size() - 1> points{};
+  std::array<float, table::kShell.size() - 1> along{};
+  float length = 0.0F;
+  [[nodiscard]] Vec2 at(float distance) const noexcept {
+    for (std::size_t k = 1; k < points.size(); ++k) {
+      if (distance <= along[k]) {
+        const float run = along[k] - along[k - 1];
+        const float t = run > 0.0F ? (distance - along[k - 1]) / run : 0.0F;
+        return points[k - 1] + (points[k] - points[k - 1]) * t;
+      }
+    }
+    return points.back();
+  }
+};
+const RimPath& rimPath() noexcept {
+  static const RimPath path = [] {
+    RimPath p;
+    const Vec2 middle{table::kFieldCenterX, 520.0F};
+    for (std::size_t k = 0; k < p.points.size(); ++k) {
+      const Vec2 s = table::kShell[k + 1];
+      const Vec2 in = middle - s;
+      const float d = std::sqrt(in.x * in.x + in.y * in.y);
+      p.points[k] = d > 0.0F ? s + in * (kRimInset / d) : s;
+      if (k > 0) {
+        const Vec2 run = p.points[k] - p.points[k - 1];
+        p.along[k] = p.along[k - 1] + std::sqrt(run.x * run.x + run.y * run.y);
+      }
+    }
+    p.length = p.along.back();
+    return p;
+  }();
+  return path;
 }
 
 // The colour of each hole's shot (generated/ArtPalette.hpp), in kHoles order.
@@ -43,6 +83,14 @@ art::Rgb holeColour(std::size_t hole) noexcept {
 }
 
 }  // namespace
+
+art::Rgb altitudeGiColour(float place) noexcept {
+  const float top = static_cast<float>(art::kAltitudeGi.size() - 1);
+  place = std::clamp(place, 0.0F, top);
+  const auto low = static_cast<std::size_t>(std::floor(place));
+  const std::size_t high = std::min(low + 1, art::kAltitudeGi.size() - 1);
+  return mixRgb(art::kAltitudeGi[low], art::kAltitudeGi[high], place - static_cast<float>(low));
+}
 
 art::Rgb mixRgb(art::Rgb a, art::Rgb b, float t) noexcept {
   t = std::clamp(t, 0.0F, 1.0F);
@@ -184,9 +232,26 @@ void TableEffects::drawUnderlay(SDL_Renderer* r, const LightShow& show, bool lig
     const SDL_FRect field{0.0F, 0.0F, table::kWidth, table::kHeight};
     // In its own colours: amber walls, orange slingshots, magenta and cyan
     // under the bumpers, nothing over the open middle.
+    // Brighter the higher the game (steady light, eased: not a flash).
+    const float strength =
+        art::kGiStrength + (art::kGiStrengthTop - art::kGiStrength) * show.energy();
     SDL_SetTextureColorMod(textures_.gi, 255, 255, 255);
-    SDL_SetTextureAlphaModFloat(textures_.gi, std::min(1.0F, art::kGiStrength * gi));
+    SDL_SetTextureAlphaModFloat(textures_.gi, std::min(1.0F, strength * gi));
     SDL_RenderTexture(r, textures_.gi, nullptr, &field);
+  }
+  // The GI bulbs round the rim, in the Altitude's colour: day blue at
+  // FL100 through to night violet at FL500.
+  if (lightMap && textures_.glow != nullptr && gi > 0.0F) {
+    const RimPath& path = rimPath();
+    const art::Rgb colour = altitudeGiColour(show.giColour());
+    const float strength =
+        (art::kGiBulbStrength + (art::kGiBulbStrengthTop - art::kGiBulbStrength) * show.energy()) *
+        gi;
+    for (int k = 0; k < art::kGiBulbs; ++k) {
+      const float u = (static_cast<float>(k) + 0.5F) / static_cast<float>(art::kGiBulbs);
+      glow_.add(r, textures_.glow, path.at(u * path.length), 64.0F, colour, strength);
+    }
+    flushAll(r);
   }
 }
 
@@ -287,7 +352,20 @@ void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const L
       glow_.add(r, glow, mid, 14.0F, art::kFxWhite, 0.5F * s);
     }
   }
-  // Chases: three chevrons behind each blinking arrow, running toward it.
+  // The lights running round the rim, a little inside the wall.
+  if (const LightShow::PerimeterView rim = show.perimeter(); rim.count > 0 && rim.level > 0.0F) {
+    const RimPath& path = rimPath();
+    const art::Rgb colour = mixRgb(altitudeGiColour(show.giColour()), art::kFxWhite, 0.35F);
+    for (int k = 0; k < rim.count; ++k) {
+      float u = rim.phase + static_cast<float>(k) / static_cast<float>(rim.count);
+      u -= std::floor(u);
+      const Vec2 p = path.at(u * path.length);
+      glow_.add(r, glow, p, 26.0F, colour, 0.55F * rim.level);
+      glow_.add(r, glow, p, 9.0F, art::kFxWhite, 0.7F * rim.level);
+    }
+  }
+  // Chases: three chevrons behind each blinking arrow, running toward it
+  // (dimmer under an arrow the rules leave dark: the table's own).
   for (std::size_t i = 0; i < table::kLamps.size(); ++i) {
     const fx::ChaseView chase = show.chase(i);
     if (!chase.active) {
@@ -305,8 +383,9 @@ void TableEffects::drawElementFlashes(SDL_Renderer* r, const Game& game, const L
         continue;
       }
       const Vec2 p = at - u * (24.0F + 15.0F * static_cast<float>(k));
-      glow_.add(r, glow, p, 16.0F, colour, 0.85F * level);
-      glow_.add(r, glow, p, 6.0F, art::kFxWhite, 0.6F * level);
+      const float strength = chase.ambient ? 0.45F : 1.0F;
+      glow_.add(r, glow, p, 16.0F, colour, 0.85F * level * strength);
+      glow_.add(r, glow, p, 6.0F, art::kFxWhite, 0.6F * level * strength);
     }
   }
   flushAll(r);
@@ -396,7 +475,7 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
     if (trail.count < 3 || fast <= 0.0F) {
       continue;
     }
-    const float radius = drawnRadius(ball);
+    const float radius = drawnRadius(ball, show.reduceMotion());
     for (std::size_t k = 1; k < trail.count; ++k) {
       const float age = static_cast<float>(k) / static_cast<float>(trail.count);
       glow_.add(r, glow, trail.points[k], radius * (1.25F - 0.6F * age), art::kFxTrail,
@@ -413,8 +492,8 @@ void TableEffects::drawBallPools(SDL_Renderer* r, std::span<const BallView> ball
     return;
   }
   for (const BallView& ball : balls) {
-    if (!ball.visible) {
-      continue;
+    if (!ball.visible || ball.raised) {
+      continue;  // A ball up on a rail is over the table's light, not in it.
     }
     // Only as dark as the light round the ball calls for: none over the
     // plain table, deepest beside a lit lamp or a flash.
@@ -477,7 +556,7 @@ void TableEffects::drawBallPools(SDL_Renderer* r, std::span<const BallView> ball
       continue;
     }
     SDL_SetTextureAlphaModFloat(pool, alpha);
-    const float radius = drawnRadius(ball) * art::kBallPoolRadii;
+    const float radius = drawnRadius(ball, show.reduceMotion()) * art::kBallPoolRadii;
     const SDL_FRect dst{at.x - radius, at.y - radius, radius * 2.0F, radius * 2.0F};
     SDL_RenderTexture(r, pool, nullptr, &dst);
   }
@@ -495,7 +574,7 @@ void TableEffects::drawBallGlints(SDL_Renderer* r, const Game& /*game*/,
     if (!ball.visible) {
       continue;
     }
-    const float radius = drawnRadius(ball);
+    const float radius = drawnRadius(ball, show.reduceMotion());
     const float seen = shown(ball);
     const Vec2 here = ball.drawnAt();
     const Vec2 toLamp = unit(lamp - here);

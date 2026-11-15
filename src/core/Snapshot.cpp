@@ -239,7 +239,6 @@ void visit(V& v, RulesRecord& r) {
   v.integer(r.doorCommand, std::uint8_t{0}, std::to_underlying(Rules::DoorCommand::Raise));
   v.integer(r.doorRaiseSteps, 0U, kMaxTimerSteps);
   v.integer(r.droneHits, 0, 4);
-  v.integer(r.altitude, 0, table::kAltitudeLevels - 1);
   v.flag(r.deckLit);
   visit(v, r.flapsLit);
   v.integer(r.hangarHolding, 0, kMaxBalls);
@@ -290,6 +289,7 @@ void visit(V& v, RulesRecord& r) {
   v.integer(r.gradRampsNeeded, 0, 100);
   visit(v, r.examMade);
   v.integer(r.graduations, 0, kMaxCounter);
+  v.integer(r.altitude, std::uint8_t{0}, static_cast<std::uint8_t>(progression::kTopLevel));
   v.flag(r.commencementThisTime);
 
   v.flag(r.briefingVisited);
@@ -394,6 +394,8 @@ void visit(V& v, BallRecord& b) {
   visit(v, b.touchingBumper);
   visit(v, b.onRollover);
   visit(v, b.holeArmed);
+  visit(v, b.inBox);
+  visit(v, b.boxWelcome);
   v.element(b.holder);
   v.integer(b.heldSteps, 0U, kMaxHeldSteps);
   v.integer(b.deckSteps, 0U, kAnyU32);
@@ -633,6 +635,8 @@ Sha256Digest layoutFingerprint() noexcept {
     add(static_cast<float>(std::to_underlying(h.type)));
     addPoint(h.exitPosition);
     addPoint(h.exitVelocity);
+    addPoint(h.cup);
+    add(h.cupRadius);
   }
   for (const Vec2 p : table::kLockBays) {
     addPoint(p);

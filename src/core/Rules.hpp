@@ -7,6 +7,7 @@
 
 #include "core/Courses.hpp"
 #include "core/DisplayText.hpp"
+#include "core/Progression.hpp"
 #include "core/Sound.hpp"
 #include "core/TableLayout.hpp"
 
@@ -270,13 +271,6 @@ class Rules {
   void onCaptiveBall(float speed) noexcept;
   int droneHits() const noexcept { return droneHits_; }
   // --- Concept A (G1 stubs; the full rules are G5) ----------------------------
-  // Altitude, FL100 (0) to FL500 (4): the progression the devices read
-  // (table::airPocketPeriodSeconds, table::propWashSpin). Set by the rules
-  // as the game climbs; settable here so each level can be measured.
-  int altitude() const noexcept { return altitude_; }
-  void setAltitude(int level) noexcept {
-    altitude_ = level < 0 ? 0 : (level >= table::kAltitudeLevels ? table::kAltitudeLevels - 1 : level);
-  }
   // The Skyway's diverter sends its next ball to the Flight Deck. Stub:
   // every other Skyway (lit by one that went to the inlane), or always or
   // never when forced for measuring (setDeckPolicy: 0 alternate, 1 always,
@@ -379,6 +373,13 @@ class Rules {
   // multiball's grace (the short save after an eject stays). For measuring
   // how balls leave the table.
   void setBallSaveEnabled(bool enabled) noexcept { ballSaveEnabled_ = enabled; }
+  // The Altitude never below this level (0 to progression::kTopLevel), now
+  // and at every new game: for measuring each level's table with the bots,
+  // and for the tools' stills.
+  void setAltitudeFloor(int level) noexcept { altitude_.setFloor(level); }
+  // With this off the Altitude stays at its floor whatever is done: for
+  // testing a rule at one level.
+  void setProgressionEnabled(bool enabled) noexcept { progressionEnabled_ = enabled; }
 
   // --- What to show ----------------------------------------------------------
   std::uint64_t score() const noexcept { return score_; }
@@ -486,6 +487,17 @@ class Rules {
   // Times Graduation Day has been completed in this game.
   int graduations() const noexcept { return graduations_; }
 
+  // Progression (core/Progression.hpp): the Altitude level, 0 (FL100) to
+  // progression::kTopLevel (FL500). It climbs one level for each course
+  // passed and to the top when Graduation Day is completed, and never falls
+  // within a game. What the table is to do at it: altitudeKnobs(). These
+  // rules read none of the knobs: the level drives the light show, and the
+  // table layer applies its own knobs (devices, timers, guards) as it is
+  // built, so this table plays exactly as tuned at every level.
+  int altitude() const noexcept { return altitude_.level(); }
+  int flightLevel() const noexcept { return progression::flightLevel(altitude_.level()); }
+  const progression::Knobs& altitudeKnobs() const noexcept { return altitude_.knobs(); }
+
   // Awards waiting at the Briefing room.
   bool extraBallLit() const noexcept { return extraBallsLit_ > 0; }
   bool extraCreditLit() const noexcept { return extraCreditLit_; }
@@ -577,6 +589,8 @@ class Rules {
   // A flow shot was made: the combo chain.
   void flowShot(Shot shot) noexcept;
   void rampMade(Shot shot) noexcept;
+  // Progression: up this many Altitude levels, said on the display.
+  void climb(int levels) noexcept;
   void circuitMade(Shot shot) noexcept;
   void jackpot() noexcept;
 
@@ -725,6 +739,8 @@ class Rules {
   std::array<bool, kShotCount> examMade_{};
   int graduations_ = 0;
   bool commencementThisTime_ = false;
+  progression::Altitude altitude_;
+  bool progressionEnabled_ = true;
 
   // Bonus, for the ball in play.
   bool briefingVisited_ = false;
@@ -743,7 +759,6 @@ class Rules {
   std::size_t waitingCount_ = 0;
 
   // Concept A (G1 stubs).
-  int altitude_ = 0;
   bool deckLit_ = false;
   int deckPolicy_ = 0;
   int pylonPolicy_ = 0;

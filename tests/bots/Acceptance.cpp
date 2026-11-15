@@ -744,7 +744,14 @@ ExitResult exitAt(Vec2 position, Vec2 velocity, int releases) {
     TableHarness harness;
     const float jx = (static_cast<float>(j % 20) - 9.5F) * 0.05F;
     const float jv = (static_cast<float>(j / 20 % 10) - 4.5F) * 2.0F;
-    harness.put(0, {position.x + jx, position.y}, {velocity.x + jv, velocity.y}, true);
+    // A ball leaves the Hangar's cup through the door line: the bank is down
+    // (Game drops it for any ball the Hangar lets out).
+    const table::Hole& hangar = table::kHoles[table::kHangarHole];
+    if (std::fabs(position.x - hangar.center.x) < hangar.halfSize.x &&
+        std::fabs(position.y - hangar.center.y) < hangar.halfSize.y) {
+      GameTestAccess::dropDoorBank(harness.game());
+    }
+    harness.putLeaving(0, {position.x + jx, position.y}, {velocity.x + jv, velocity.y});
     const FirstTouch touch = firstTouch(harness, kStepsPerSecond * 10);
     ++result.releases;
     ++result.first[static_cast<std::size_t>(touch.touch)];
@@ -766,10 +773,9 @@ ExitResult scoopKicks(int releases) {
     // Every corner of the range, then through it both ways at once.
     const int ix = j < 4 ? (j % 2) * (across - 1) : (j * 7) % across;
     const int iy = j < 4 ? (j / 2) * (along - 1) : (j * 11) % along;
-    harness.put(0, scoop.exitPosition,
+    harness.putLeaving(0, scoop.exitPosition,
                 {scoop.exitVelocity.x + static_cast<float>(ix - table::kScoopExitJitterLeft),
-                 scoop.exitVelocity.y + static_cast<float>(iy - table::kScoopExitJitterDown)},
-                true);
+                 scoop.exitVelocity.y + static_cast<float>(iy - table::kScoopExitJitterDown)});
     const FirstTouch touch = firstTouch(harness, kStepsPerSecond * 10);
     ++result.releases;
     ++result.first[static_cast<std::size_t>(touch.touch)];

@@ -16,6 +16,40 @@ constexpr bool has(SoundSet sounds, Sound sound) noexcept {
 
 }  // namespace
 
+std::span<const HapticPulse> hapticPattern(Haptic kind) noexcept {
+  static constexpr HapticPulse kFlipper[] = {{0.0F, 0.6F, 0.5F, 0.0F}};
+  static constexpr HapticPulse kHit[] = {{0.0F, 0.8F, 0.7F, 0.0F}};
+  static constexpr HapticPulse kDrain[] = {{0.0F, 1.0F, 0.4F, 0.0F},
+                                           {0.0F, 0.9F, 0.2F, 0.25F}};
+  static constexpr HapticPulse kJackpot[] = {{0.0F, 0.7F, 0.8F, 0.0F},
+                                             {0.1F, 0.85F, 0.8F, 0.0F},
+                                             {0.2F, 1.0F, 0.9F, 0.0F},
+                                             {0.2F, 0.6F, 0.3F, 0.3F}};
+  switch (kind) {
+    case Haptic::Flipper:
+      return kFlipper;
+    case Haptic::Hit:
+      return kHit;
+    case Haptic::Drain:
+      return kDrain;
+    case Haptic::Jackpot:
+      return kJackpot;
+  }
+  return {};
+}
+
+void HapticTest::start(std::uint64_t nowMs) noexcept {
+  startMs_ = nowMs;
+  next_ = 0;
+}
+
+std::optional<Haptic> HapticTest::take(std::uint64_t nowMs) noexcept {
+  if (!running() || nowMs < startMs_ + next_ * kGapMs) {
+    return std::nullopt;
+  }
+  return kOrder[next_++];
+}
+
 std::optional<Haptic> hapticFor(SoundSet sounds) noexcept {
   if (has(sounds, Sound::Jackpot) || has(sounds, Sound::SuperJackpot) ||
       has(sounds, Sound::MultiballStart)) {

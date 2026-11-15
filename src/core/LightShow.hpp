@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -49,13 +50,40 @@ inline constexpr std::uint64_t kMinLargeFlashSteps = 120;
 inline constexpr std::uint64_t kMinLargeFadeSteps = 150;
 // Steps a ball's trail remembers.
 inline constexpr std::size_t kTrailLength = 8;
-// An unlit insert is never dark: it shows as dim coloured plastic at this
-// level. Over that the quiet table's chases run: each head at 1 with a
-// smaller halo, its tail from kChaseTail down to the floor. A lamp the
-// rules light blinks or holds, and has a star the chases never get.
-inline constexpr float kUnlitFloor = 0.34F;
-inline constexpr float kChaseHead = 0.80F;
-inline constexpr float kChaseTail = 0.60F;
+// An unlit insert is never dark: it shows as coloured plastic lit from
+// below at this level. Over that the quiet table's chases run: each head at
+// kChaseHead with a smaller halo, its tail from kChaseTail down to the
+// floor. A lamp the rules light blinks or holds, and has a star the chases
+// never get.
+inline constexpr float kUnlitFloor = 0.42F;
+inline constexpr float kChaseHead = 0.85F;
+inline constexpr float kChaseTail = 0.66F;
+// The table gets busier and brighter as the game climbs (the Altitude,
+// core/Progression.hpp; the show's energy is the level's lightEnergy, 0 to
+// 1): at the top the unlit inserts sit kFloorRise higher, the chases run up
+// to 1 + kChaseSpeedUp times as fast, two comets run where one did, more of
+// the arrows run chevrons and more lights run round the rim. Steady
+// brightness and running lights are not flashes, and no lamp is passed by a
+// chase more than kMaxPassesPerSecond times a second at any level (under the
+// three of WCAG 2.3.1); the limiter and reduce motion hold at every level.
+inline constexpr float kFloorRise = 0.10F;
+// In attract no lamp is darker than this (the patterns' own dark is under
+// it): the title's table is never dim.
+inline constexpr float kAttractFloor = 0.28F;
+inline constexpr float kChaseSpeedUp = 0.8F;
+inline constexpr float kMaxPassesPerSecond = 2.5F;
+// A climb is eased in over this many steps (three seconds): the table
+// brightens and its colour turns, never at once.
+inline constexpr float kEnergyEaseSteps = 360.0F;
+// Lights running round the playfield's rim, like a cabinet's GI bulbs
+// chasing: kPerimeterLights at a new game, twice as many at the top. A place
+// on the rim sees kPerimeterPassesPerSecond of them go by a second at every
+// level.
+inline constexpr int kPerimeterLights = 6;
+inline constexpr float kPerimeterPassesPerSecond = 1.5F;
+// The general illumination's colour follows the Altitude: day blue, clear
+// white, dusk amber, sunset, night violet (the renderer's
+// art::kAltitudeGi). In attract it turns through them, one a pattern.
 // A struck element's flash: about 220 ms. Elements that light the same
 // part of the table share a gate: a new flash starts there at most once in
 // kMinHitSteps (with reduce motion, kMinLargeFadeSteps); a hit sooner lets
@@ -150,6 +178,9 @@ struct TrailView {
 // arrow blinks.
 struct ChaseView {
   bool active = false;
+  // Not a shot the rules light: the table's own running chevrons, drawn
+  // dimmer (more of the arrows run them the higher the game).
+  bool ambient = false;
   float phase = 0.0F;   // 0 to 1, the leading chevron's place.
   bool steady = false;  // Reduce motion: all three lit, no running.
   bool fast = false;    // The arrow fast blinks (hurry up): runs twice as fast.
@@ -178,6 +209,18 @@ class LightShow {
 
   // Forget everything seen: for a new Game object.
   void reset() noexcept;
+
+  // The Altitude the lights follow: -1 (the default) follows the game's
+  // own; 0 to progression::kTopLevel holds that level, for the tools'
+  // stills and the flash tests at the top level.
+  void setAltitudeOverride(int level) noexcept;
+  // The level shown, and the energy eased toward its lightEnergy (0 to 1).
+  [[nodiscard]] int altitude() const noexcept { return altitude_; }
+  [[nodiscard]] float energy() const noexcept { return energy_; }
+  // The general illumination's colour: a place along the Altitude's
+  // colours, 0 (day blue) to progression::kTopLevel (night violet), eased
+  // between them.
+  [[nodiscard]] float giColour() const noexcept { return giColour_; }
 
   // --- Feeding it -----------------------------------------------------------
   // Reads the step the game has just made. A game whose step count went
@@ -221,6 +264,17 @@ class LightShow {
   [[nodiscard]] float giLevel() const noexcept { return gi_; }
   // The arrow lamps' chases, in LampId order (the first seven lamps).
   [[nodiscard]] ChaseView chase(std::size_t arrow) const noexcept;
+  // The lights running round the rim: how many, where the first is (0 to 1
+  // round the rim), and how bright (0 to 1).
+  struct PerimeterView {
+    int count = 0;
+    float phase = 0.0F;
+    float level = 0.0F;
+  };
+  [[nodiscard]] PerimeterView perimeter() const noexcept;
+  // Lamp passes a second of the fastest ambient chase now: what
+  // kMaxPassesPerSecond caps. For the tests.
+  [[nodiscard]] float fastestPassesPerSecond() const noexcept;
   // The running show and how far into it, in steps.
   [[nodiscard]] Show show() const noexcept { return show_; }
   [[nodiscard]] std::uint64_t showSteps() const noexcept { return now_ - showStart_; }
@@ -306,6 +360,7 @@ class LightShow {
   void strike(std::uint8_t gate, std::uint64_t& hit) noexcept;
   void updateShow(const Game& game) noexcept;
   void updateLamps(const Game& game) noexcept;
+  void updateAltitude(const Game& game, std::uint64_t steps, bool first) noexcept;
   void updateTrails(const Game& game) noexcept;
   void sweepGroup(std::uint8_t group, std::uint32_t delay = 0) noexcept;
   [[nodiscard]] float burstLevel(const Burst& b) const noexcept;
@@ -318,6 +373,33 @@ class LightShow {
   bool reduceMotion_ = false;
   bool attract_ = false;
   bool seen_ = false;
+  int altitudeOverride_ = -1;
+  int altitude_ = 0;
+  float energy_ = 0.0F;
+  float giColour_ = 0.0F;
+  // The ambient runs, each with its own clock in laps (0 to 1 a lap is its
+  // phase), going faster the higher the game, each under its cap.
+  enum Run : std::uint8_t {
+    kRunArrows,
+    kRunWing,
+    kRunRollCall,
+    kRunCourses,
+    kRunLocks,
+    kRunRest,
+    kRunSweep,
+    kRunChevrons,
+    kRunCount
+  };
+  std::array<double, kRunCount> runs_{};
+  [[nodiscard]] float runPhase(Run run) const noexcept {
+    return static_cast<float>(runs_[run] - std::floor(runs_[run]));
+  }
+  // Steps a lap of a run takes at the energy now.
+  [[nodiscard]] float runPeriod(std::size_t run) const noexcept;
+  // A second comet runs on the rings (and the other way on the arrows).
+  [[nodiscard]] bool twoComets() const noexcept { return energy_ >= 0.5F; }
+  [[nodiscard]] int perimeterCount() const noexcept;
+  double perimeterClock_ = 0.0;  // Rim lights gone round, in rims.
   std::uint64_t attractStart_ = 0;
   std::uint64_t now_ = 0;
 

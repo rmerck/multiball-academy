@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "core/AssetManifest.hpp"
+#include "core/HoleLook.hpp"
 #include "core/Polygon.hpp"
 #include "core/TableLayout.hpp"
 #include "generated/ArtPalette.hpp"
@@ -516,11 +517,17 @@ void drawLitLamps(SDL_Renderer* r, const std::array<SDL_Texture*, 4>& inserts,
   }
   for (std::size_t i = 0; i < sprites.size(); ++i) {
     const float level = show.lampLevel(table::kLamps[i].id);
-    if (level <= fx::kUnlitFloor + 0.02F && !show.lampLit(table::kLamps[i].id)) {
-      continue;  // Dim plastic: the lens alone.
-    }
     const Vec2 at = table::kLamps[i].position;
     const art::Rgb neon = art::kLampNeon[i];
+    // Every insert glows a little, lit from below even when the rules leave
+    // it dark, brighter the higher the game: steady, so the machine reads
+    // as lit at a glance at any size.
+    effects.addGlow(r, at, sprites[i].glowRadius * 1.6F, neon,
+                    (0.20F + 0.10F * show.energy()) * art::kNeonGlowStrength *
+                        std::min(1.0F, level / fx::kUnlitFloor));
+    if (level <= fx::kUnlitFloor + 0.02F && !show.lampLit(table::kLamps[i].id)) {
+      continue;  // The floor: the lens and that glow alone.
+    }
     // The halo grows with the lens. A lamp the rules light has the big
     // one, a hot core and a star; a chase's head a smaller halo alone.
     const bool lit = show.lampLit(table::kLamps[i].id);
@@ -545,9 +552,10 @@ void drawLitLamps(SDL_Renderer* r, const std::array<SDL_Texture*, 4>& inserts,
   effects.endLayer(r);
 }
 
-// The size a ball is drawn at: smaller the further down into a hole it is.
-float drawnScale(const BallView& ball) noexcept {
-  return ball.scale * (1.0F - table::kHoleSinkShrink * std::clamp(ball.sink, 0.0F, 1.0F));
+// The size a ball is drawn at: smaller the further down into a hole it is
+// (core/HoleLook.hpp; under Reduce Motion it keeps its size).
+float drawnScale(const BallView& ball, bool reduceMotion) noexcept {
+  return ball.scale * holeLook(ball.sink, reduceMotion).scale;
 }
 
 }  // namespace
@@ -1100,12 +1108,71 @@ void TableRenderer::drawFlippers(SDL_Renderer* r, const Game& game, float alpha,
   }
 }
 
-void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls) const {
+void TableRenderer::drawExitOpenings(SDL_Renderer* r, const Game& game) const {
+  // The art's cups: a dark well inside a gold rim, a little wider than a ball.
+  constexpr SDL_FColor kWell = rgb(16, 10, 30);
+  constexpr SDL_FColor kRim = rgb(214, 168, 58);
+  constexpr float kWellRadius = table::kBallRadius * 1.2F;
+  elements_.clear();
+  Mesh mesh(elements_);
+  for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
+    const float open = std::clamp(game.holeExitOpening(i), 0.0F, 1.0F);
+    if (!(open > 0.0F)) {
+      continue;
+    }
+    const Vec2 at = table::holeRisePoint(table::kHoles[i]);
+    SDL_FColor well = kWell;
+    SDL_FColor rim = kRim;
+    well.a = open;
+    rim.a = open;
+    // It opens out from a point as it fades in.
+    const float radius = kWellRadius * (0.6F + 0.4F * open);
+    mesh.disc(at, radius, well);
+    mesh.ring(at, radius + 1.25F, 2.5F, rim);
+  }
+  if (elements_.empty()) {
+    return;
+  }
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  SDL_RenderGeometry(r, nullptr, elements_.data(), static_cast<int>(elements_.size()), nullptr, 0);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+void TableRenderer::drawBallShadows(SDL_Renderer* r, std::span<const BallView> balls,
+                                    bool raised,
+                                    bool reduceMotion) const {
+  // Soft contact shadows, offset further when the ball is up on a rail.
+  // The glow texture is additive everywhere else: switched once for all of
+  // them, and back.
   SDL_Texture* const glow = textures_.glow.get();
+  SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_BLEND);
+  SDL_SetTextureColorMod(glow, art::kInk.r, art::kInk.g, art::kInk.b);
+  for (const BallView& ball : balls) {
+    if (!ball.visible || ball.raised != raised) {
+      continue;
+    }
+    // A ball going down into a hole leaves its shadow behind on the table.
+    const float sink = std::clamp(ball.sink, 0.0F, 1.0F);
+    const float radius = table::kBallRadius * drawnScale(ball, reduceMotion);
+    const float lift = (ball.scale - 1.0F) * 40.0F;
+    const float shadowRadius = radius * art::kBallShadowRadii;
+    const Vec2 at = ball.drawnAt();
+    const SDL_FRect shadow =
+        centred({at.x + art::kBallShadowOffsetX + lift, at.y + art::kBallShadowOffsetY + lift},
+                shadowRadius * 2.0F, shadowRadius * 2.0F);
+    SDL_SetTextureAlphaMod(glow, toByte(art::kBallShadowAlpha * (1.0F - sink)));
+    SDL_RenderTexture(r, glow, nullptr, &shadow);
+  }
+  SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_ADD);
+}
+
+void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls,
+                              bool reduceMotion) const {
   // Two rounds, so that a ball up on a rail passes over one on the table.
-  // Within a round all the shadows go down first, then the balls. The ball
-  // carries its own dark rim, so it needs no halo: nothing lighter than it
-  // is drawn after it.
+  // A ball on the table cast its shadow on the playfield, under the
+  // elements (drawTable); a raised ball's shadow goes down first in its
+  // round, over what is under the rail. The ball carries its own dark rim,
+  // so it needs no halo: nothing lighter than it is drawn after it.
   for (const bool raised : {false, true}) {
     const auto inRound = [raised](const BallView& ball) noexcept {
       return ball.visible && ball.raised == raised;
@@ -1113,28 +1180,9 @@ void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls) 
     if (std::ranges::none_of(balls, inRound)) {
       continue;
     }
-    // Soft contact shadows, offset further when the ball is up on a rail.
-    // The glow texture is additive everywhere else: switched once for all of
-    // them, and back.
-    SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_BLEND);
-    SDL_SetTextureColorMod(glow, art::kInk.r, art::kInk.g, art::kInk.b);
-    for (const BallView& ball : balls) {
-      if (!inRound(ball)) {
-        continue;
-      }
-      // A ball going down into a hole leaves its shadow behind on the table.
-      const float sink = std::clamp(ball.sink, 0.0F, 1.0F);
-      const float radius = table::kBallRadius * drawnScale(ball);
-      const float lift = (ball.scale - 1.0F) * 40.0F;
-      const float shadowRadius = radius * 1.55F;
-      const Vec2 at = ball.drawnAt();
-      const SDL_FRect shadow =
-          centred({at.x + art::kBallShadowOffsetX + lift, at.y + art::kBallShadowOffsetY + lift},
-                  shadowRadius * 2.0F, shadowRadius * 2.0F);
-      SDL_SetTextureAlphaMod(glow, toByte(art::kBallShadowAlpha * (1.0F - sink)));
-      SDL_RenderTexture(r, glow, nullptr, &shadow);
+    if (raised) {
+      drawBallShadows(r, balls, true, reduceMotion);
     }
-    SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_ADD);
 
     SDL_Texture* const sprite = textures_.ball.get();
     for (const BallView& ball : balls) {
@@ -1143,15 +1191,18 @@ void TableRenderer::drawBalls(SDL_Renderer* r, std::span<const BallView> balls) 
       }
       // The sprite is larger than the ball: its disc is two radii of the
       // art::kBallSpriteUnits it covers. Going down into a hole it is drawn
-      // smaller and darker.
-      const float size = art::kBallSpriteUnits * drawnScale(ball);
+      // smaller, darker and fading (only darker and fading under Reduce
+      // Motion).
+      const HoleLook look = holeLook(ball.sink, reduceMotion);
+      const float size = art::kBallSpriteUnits * drawnScale(ball, reduceMotion);
       const SDL_FRect dst = centred(ball.drawnAt(), size, size);
-      const auto shade = static_cast<Uint8>(std::lround(
-          255.0F * (1.0F - table::kHoleSinkDarken * std::clamp(ball.sink, 0.0F, 1.0F))));
+      const auto shade = static_cast<Uint8>(std::lround(255.0F * look.shade));
       SDL_SetTextureColorMod(sprite, shade, shade, shade);
+      SDL_SetTextureAlphaMod(sprite, toByte(look.alpha));
       SDL_RenderTexture(r, sprite, nullptr, &dst);
     }
     SDL_SetTextureColorMod(sprite, 255, 255, 255);
+    SDL_SetTextureAlphaMod(sprite, 255);
   }
 }
 
@@ -1263,8 +1314,8 @@ void TableRenderer::drawTable(SDL_Renderer* r, const Game& game, float alpha, in
   const SDL_Rect clip{-shakeX, -shakeY, view.w, view.h};
   SDL_SetRenderClipRect(r, &clip);
 
-  // The shadows, the gate and the subway's glow follow the same in-between
-  // positions as the balls.
+  // The shadows, pools, the gate and the subway's glow follow the same
+  // in-between positions as the balls.
   const DrawnBalls balls = ballsToDraw(game, alpha, options.extraBalls);
   SDL_RenderTexture(r, textures_.background.get(), nullptr, &playfield);
   const LightShow* const show = options.lightShow;
@@ -1279,6 +1330,15 @@ void TableRenderer::drawTable(SDL_Renderer* r, const Game& game, float alpha, in
     drawLamps(r, lights, show);
     drawSpinnerAndKickback(r, game);
   }
+  // A subway exit opening for a rising ball, on the playfield.
+  drawExitOpenings(r, game);
+  // On the playfield and its lamps, under every standing element: each
+  // ball's soft dark pool (with the light show) and its contact shadow.
+  // Neither is ever drawn over a target, bumper, slingshot, post or flipper.
+  if (show != nullptr) {
+    effects_.drawBallPools(r, balls.span(), *show);
+  }
+  drawBallShadows(r, balls.span(), false, options.reduceMotion);
   drawTargets(r, game, lights);
   if (show != nullptr) {
     effects_.drawElementFlashes(r, game, *show);
@@ -1295,9 +1355,8 @@ void TableRenderer::drawTable(SDL_Renderer* r, const Game& game, float alpha, in
     // drawn back over them, from the background itself.
     SDL_RenderGeometry(r, textures_.background.get(), outsideMesh_.data(),
                        static_cast<int>(outsideMesh_.size()), nullptr, 0);
-    effects_.drawBallPools(r, balls.span(), *show);
   }
-  drawBalls(r, balls.span());
+  drawBalls(r, balls.span(), options.reduceMotion);
   if (show != nullptr) {
     effects_.drawBallGlints(r, game, balls.span(), *show);
   }

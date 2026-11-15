@@ -105,7 +105,10 @@ GLOW_RADIUS_ARROW = 0.62   # glow radius as a share of the arrow sprite's drawn 
 GLOW_RADIUS_ROUND = 1.10   # glow radius as a multiple of a round lamp's diameter
 BALL_SPRITE_UNITS = 32.0  # ball.png covers this many units; the chrome disc is 24 of them
 BALL_SHADOW_OFFSET = (4.0, 6.0)
-BALL_SHADOW_ALPHA = 0.80
+# The ball's contact shadow (glow.png in INK) lies on the playfield, under every element: soft and small, never a
+# dark smudge over a bumper or a slingshot.
+BALL_SHADOW_ALPHA = 0.50
+BALL_SHADOW_RADII = 1.3   # its radius, in ball radii
 
 
 LUM_LIT_LENS = 0.42   # a lit lens is tinted no lighter than this, whatever its hue
@@ -129,10 +132,20 @@ GLOW_STRENGTH_NEON = 0.95      # glow.png alpha for a lit lamp at full level
 FLASHER_STRENGTH_MAX = 0.95    # strongest flasher burst (flare.png / glow.png); the ball is drawn after it, with its rim
 # The general illumination's colours (gi.png): amber walls, orange slingshots, the bumpers in turn.
 GI_COLOURS = {"walls": "#FF9A3C", "slings": "#FF8C28", "bumpers": ["#FF3CC8", "#3CE6FF", "#FF3CC8"]}
-GI_STRENGTH = 0.75             # gi.png, drawn additively in its own colours, at full illumination
+GI_STRENGTH = 0.85             # gi.png, drawn additively in its own colours, at full illumination, at FL100
+GI_STRENGTH_TOP = 1.00         # and at FL500 (the Altitude's top level): brighter as the game climbs
+# The GI bulbs round the rim take the Altitude's colour (core/Progression.hpp, LightShow::giColour): day blue,
+# clear white, dusk amber, sunset, night violet. Sunset is a coral, not a saturated red (R / (R + G + B) on
+# linearised channels 0.74, under WCAG 2.3.1's 0.8), and the colour only ever turns slowly.
+ALTITUDE_GI = ["#6FB4FF", "#F2F4FF", "#FFB050", "#FF8A5C", "#9A6BFF"]
+GI_BULBS = 40                  # bulbs round the rim
+GI_BULB_STRENGTH = 0.30        # glow.png alpha of each at FL100; GI_BULB_STRENGTH_TOP at FL500
+GI_BULB_STRENGTH_TOP = 0.45
 POOL = "#04040F"                # the pool's colour: darker than INK, so it is never taken for lettering
-BALL_POOL_ALPHA = 0.70        # the dark pool (pool.png) drawn round each ball under the light show
-BALL_POOL_RADII = 2.4         # its radius, in ball radii
+# The dark pool (pool.png) round each ball under the light show, on the playfield and the lamps but under every
+# element (bumpers, slingshots, targets, posts): only as deep as the light round the ball calls for.
+BALL_POOL_ALPHA = 0.50
+BALL_POOL_RADII = 2.2         # its radius, in ball radii
 FLARE_UNITS = 64.0             # flare.png and ring.png cover this many units at scale 1
 
 

@@ -11,6 +11,9 @@
 //          drain      a ball let go down the middle between still flippers
 //          attract    the attract sequence over the scripted game
 //          tilt       the table shoved until it tilts
+//          scoop      a ball sent gently up into the Briefing room, taken at
+//                     its cup and kicked back out (no multiball)
+//          hangar     the same for the open Hangar (doors down, no lock)
 //          storm      the worst case for photosensitivity: multiball, a jackpot
 //                     every 30 steps, a ball sent into the bumper nest every 20
 //          mix        multiball, domes in turn (top lanes 90, Turbine 100,
@@ -31,6 +34,8 @@
 //                     would measure the ball jumping, not the lights.)
 // options  --plain           draw without the light show (the look before it)
 //          --reduce-motion   the light show with reduce motion on
+//          --altitude N      the light show held at Altitude level N (0, FL100,
+//                            to 4, FL500); default: the game's own
 //          --every N         a frame every N steps (default 4: 30 a second)
 //          --frames N        how many frames (default 90)
 //          --skip N          steps before the first frame (default 0)
@@ -126,6 +131,7 @@ struct Options {
   bool time = false;
   bool gpu = false;
   float wcag = -1.0F;  // Negative: not measured.
+  int altitude = -1;   // Negative: the game's own.
   bool everyGiven = false;
   std::string mapPath;  // --wcag-map: where to write the worst frame's failing pixels.
   std::uint32_t every = 4;
@@ -151,7 +157,11 @@ class Script {
       // No ball saver: the ball is lost and the next one served.
       Seam::rules(game).setBallSaveEnabled(false);
     }
-    if (s == "hits" || s == "drain" || s == "tilt") {
+    if (s == "scoop" || s == "hangar") {
+      // Holes pass the ball through: no lock, no multiball.
+      Seam::rules(game).setMultiballEnabled(false);
+    }
+    if (s == "hits" || s == "drain" || s == "tilt" || s == "scoop" || s == "hangar") {
       // A ball in play first.
       for (std::uint32_t i = 0; i < 400 && !game.rules().ballInPlay(); ++i) {
         game.step(flipping(i));
@@ -310,6 +320,17 @@ class Script {
     if (s == "jackpot" && (t == 20 || t == 200)) {
       jackpot(game, slot);
     }
+    if (s == "scoop" && t == 10) {
+      Seam::placeBall(game, slot, {350.0F, 450.0F}, {20.0F, -420.0F});
+      Seam::putInPlay(game, slot);
+    }
+    if (s == "hangar" && t == 6) {
+      Seam::dropDoorBank(game);
+    }
+    if (s == "hangar" && t == 10) {
+      Seam::placeBall(game, slot, {285.0F, 450.0F}, {-10.0F, -470.0F});
+      Seam::putInPlay(game, slot);
+    }
     if (s == "drain" && t == 10) {
       Seam::placeBall(game, slot, {table::kWidth * 0.5F - 8.0F, 780.0F}, {0.0F, 400.0F});
     }
@@ -344,6 +365,12 @@ bool parse(int argc, char* argv[], Options& o) {
       o.plain = true;
     } else if (a == "--reduce-motion") {
       o.reduceMotion = true;
+    } else if (a == "--altitude") {
+      std::uint32_t level = 0;
+      if (!number(level) || level > static_cast<std::uint32_t>(pinball::progression::kTopLevel)) {
+        return false;
+      }
+      o.altitude = static_cast<int>(level);
     } else if (a == "--gpu") {
       o.gpu = true;
       o.time = true;
@@ -434,6 +461,7 @@ int run(const Options& o) {
     Game game;
     pinball::LightShow show;
     show.setReduceMotion(o.reduceMotion);
+    show.setAltitudeOverride(o.altitude);
     Script script(o);
     if (!script.setUp(game)) {
       std::fputs("the scene could not be set up\n", stderr);
@@ -486,6 +514,7 @@ int run(const Options& o) {
                            kFieldPhone / kMeterScale});
     }
     for (std::uint32_t frameIndex = 0; t < steps; ++t) {
+      const bool heldBefore = game.ballHeld();
       game.step(script.before(game, t));
       if (script.domeWanted && o.scene == "rev3storm") {
         script.domeWanted = false;
@@ -496,6 +525,11 @@ int run(const Options& o) {
             pinball::fx::Flasher::RampRight, pinball::fx::Flasher::Nest,
             pinball::fx::Flasher::SlingLeft, pinball::fx::Flasher::SlingRight};
         show.burst(kDomes[(t / 10) % kDomes.size()], pinball::fx::Colour::Yellow, 0.8F, 70.0F, 30);
+      }
+      if ((o.scene == "scoop" || o.scene == "hangar") && game.ballHeld() != heldBefore) {
+        // Which frames to look at: the step the hole took the ball, and the
+        // step it let it go.
+        std::printf("%s: step %u\n", game.ballHeld() ? "taken" : "let go", t);
       }
       if (script.domeWanted) {
         script.domeWanted = false;
@@ -532,6 +566,7 @@ int run(const Options& o) {
       SDL_RenderClear(r);
       pinball::DrawOptions options;
       options.lightShow = o.plain ? nullptr : &show;
+      options.reduceMotion = o.reduceMotion;
       drawer->draw(r, game, 1.0F, layout, options);
       SDL_FlushRenderer(r);
       if (o.gpu) {
@@ -625,7 +660,7 @@ int main(int argc, char* argv[]) {
   Options options;
   if (!parse(argc, argv, options)) {
     std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt|storm|domes|mix|rev3storm> <out_prefix>"
-               " [--plain] [--reduce-motion] [--every N] [--frames N] [--skip N] [--time] [--gpu]\n",
+               " [--plain] [--reduce-motion] [--altitude 0-4] [--every N] [--frames N] [--skip N] [--time] [--gpu]\n",
                stderr);
     return EXIT_FAILURE;
   }

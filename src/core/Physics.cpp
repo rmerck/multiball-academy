@@ -1030,6 +1030,9 @@ void PhysicsWorld::checkZones(std::size_t slot) {
     const float dy = p.y - c.y;
     return std::sqrt(dx * dx + dy * dy);
   };
+  // Where the ball was at the last check (the sensor lines keep it).
+  const Vec2 from = ball.sensorFrom;
+  const bool fromKnown = ball.sensorFromKnown;
 
   checkSensors(slot, p, v);
 
@@ -1057,29 +1060,56 @@ void PhysicsWorld::checkZones(std::size_t slot) {
       ball.holeArmed[i] = distance > table::kHoleRearmDistance;
       continue;
     }
-    // A box, not a point: the scoop and the hangar are pockets, and a ball
-    // inside one is taken whatever its speed. The box is deep enough that
-    // the fastest ball (about 6 px per slice) cannot step over it.
+    if (table::hasCup(hole)) {
+      // The Briefing room (the Mission scoop) judges a ball as it comes into
+      // its pocket: one that came in the wrong way is neither funnelled nor
+      // taken while it stays there (it rises to the roof and falls back
+      // out); one put there by hand is taken.
+      if (hole.type == table::HoleType::Subway) {
+        const bool inPocket = std::fabs(p.x - hole.center.x) < hole.halfSize.x &&
+                              std::fabs(p.y - hole.center.y) < hole.halfSize.y;
+        if (!inPocket) {
+          ball.inBox[i] = false;
+          ball.boxWelcome[i] = false;
+          continue;
+        }
+        if (!ball.inBox[i] || placed) {
+          ball.inBox[i] = true;
+          ball.boxWelcome[i] = placed || (v.y < 0.0F && v.x >= -v.y * table::kScoopMinRightward);
+        }
+        if (!ball.boxWelcome[i]) {
+          continue;
+        }
+      }
+      // Taken at the cup, wherever the ball's path since the last check
+      // came nearest the cup's centre, if that is within the cup's radius
+      // (so that a fast ball cannot step over it), and held there.
+      Vec2 nearest = p;
+      if (fromKnown) {
+        const Vec2 run = p - from;
+        const float runSquared = run.x * run.x + run.y * run.y;
+        if (runSquared > 0.0F) {
+          const float along =
+              ((hole.cup.x - from.x) * run.x + (hole.cup.y - from.y) * run.y) / runSquared;
+          nearest = from + run * std::clamp(along, 0.0F, 1.0F);
+        }
+      }
+      const Vec2 off = nearest - hole.cup;
+      if (off.x * off.x + off.y * off.y > hole.cupRadius * hole.cupRadius) {
+        continue;  // Not there yet (or not in the pocket at all).
+      }
+      b2Body_SetTransform(ball.body, b2ToPos(toMeters(nearest)), b2Body_GetRotation(ball.body));
+      holdBall(slot, {table::ElementKind::Hole, static_cast<std::uint8_t>(i)}, speed);
+      return;
+    }
+    // No cup: a box across its mouth, deep enough that the fastest ball
+    // (about 6 px per slice) cannot step over it. A ramp takes only a ball
+    // shot up the table, written so that a speed that is not a number is
+    // not taken.
     const bool inBox = std::fabs(p.x - hole.center.x) < hole.halfSize.x &&
                        std::fabs(p.y - hole.center.y) < hole.halfSize.y;
-    if (!inBox) {
-      ball.inBox[i] = false;
+    if (!inBox || (table::isRamp(hole.type) && !(v.y <= -table::kRampMinUpwardSpeed))) {
       continue;
-    }
-    // A ramp takes only a ball shot up the table. Written so that a speed
-    // that is not a number is not taken.
-    if (table::isRamp(hole.type) && !(v.y <= -table::kRampMinUpwardSpeed)) {
-      continue;
-    }
-    // The Briefing room judges a ball as it comes in: one that came in
-    // the wrong way is not taken while it stays in the box (it rises to the
-    // roof and falls back out); one put there by hand is taken.
-    if (hole.type == table::HoleType::Subway && !placed) {
-      const bool entering = !ball.inBox[i];
-      ball.inBox[i] = true;
-      if (!entering || !(v.y < 0.0F && v.x >= -v.y * table::kScoopMinRightward)) {
-        continue;
-      }
     }
     holdBall(slot, {table::ElementKind::Hole, static_cast<std::uint8_t>(i)}, speed);
     return;
@@ -1103,11 +1133,48 @@ void PhysicsWorld::releaseBall(std::size_t slot, Vec2 position, Vec2 velocity) {
   ball.held = false;
   resetBall(slot, position, velocity);
   // Any hole the ball now sits in must not swallow it again at once.
+  disarmHolesNear(slot, position);
+}
+
+void PhysicsWorld::disarmHolesNear(std::size_t slot, Vec2 position) noexcept {
+  if (slot >= balls_.size()) {
+    return;
+  }
+  BallSlot& ball = balls_[slot];
   for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
     const float dx = position.x - table::kHoles[i].center.x;
     const float dy = position.y - table::kHoles[i].center.y;
     if (std::sqrt(dx * dx + dy * dy) <= table::kHoleRearmDistance) {
       ball.holeArmed[i] = false;
+    }
+  }
+}
+
+void PhysicsWorld::guideIntoCups(float seconds) {
+  // A dished floor: towards the cup, and losing speed, for any ball in the
+  // pocket of a hole that will take it.
+  for (std::size_t slot = 0; slot < balls_.size(); ++slot) {
+    const BallSlot& ball = balls_[slot];
+    if (!ball.active || ball.held) {
+      continue;
+    }
+    const Vec2 p = ballPosition(slot);
+    for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
+      const table::Hole& hole = table::kHoles[i];
+      // A ball the Briefing room turned away is not drawn to its cup.
+      if (hole.type == table::HoleType::Subway && ball.inBox[i] && !ball.boxWelcome[i]) {
+        continue;
+      }
+      if (!table::hasCup(hole) || !ball.holeArmed[i] ||
+          !(std::fabs(p.x - hole.center.x) < hole.halfSize.x &&
+            std::fabs(p.y - hole.center.y) < hole.halfSize.y)) {
+        continue;
+      }
+      const Vec2 v = ballVelocity(slot);
+      const Vec2 change =
+          ((hole.cup - p) * table::kHoleFunnelPull - v * table::kHoleFunnelDamping) * seconds;
+      b2Body_SetLinearVelocity(ball.body, toMeters(v + change));
+      break;
     }
   }
 }
@@ -1150,6 +1217,7 @@ void PhysicsWorld::step(float stepSeconds) {
       drivePlunger(part);
       // The Air Pocket's kick is given once, at the start of its step.
       driveDevices(part, i == 0 && j == 0);
+      guideIntoCups(part);
       b2World_Step(world_, part, kSubSteps);
       if (skipTouches_) {
         // Contacts the restored world found already touching (restoreBalls).
@@ -1282,6 +1350,8 @@ void PhysicsWorld::clearLatches(std::size_t slot) noexcept {
   ball.touchingBumper.fill(false);
   ball.onRollover.fill(false);
   ball.holeArmed.fill(true);
+  ball.inBox.fill(false);
+  ball.boxWelcome.fill(false);
 }
 
 bool PhysicsWorld::activateBall(std::size_t slot, Vec2 position, Vec2 velocity) {

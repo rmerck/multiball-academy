@@ -33,7 +33,9 @@ namespace pinball::save {
 // and its look (recoil, sinking). 5: the captive ball (table revision 3
 // integrated: the captive and motion branches each called their own record
 // format 4; neither shipped, so one version, 5, holds both).
-inline constexpr std::uint16_t kFormatVersion = 6;
+// 7: main's format 3 (the Altitude in the rules' state, hole cups) merged
+// with concept A's 6.
+inline constexpr std::uint16_t kFormatVersion = 7;
 
 // The longest a build id may be ("2.0.0+123456789" is 15).
 inline constexpr std::size_t kMaxBuildIdLength = 32;
@@ -95,8 +97,7 @@ struct RulesRecord {
   std::uint8_t doorCommand = 0;
   std::uint32_t doorRaiseSteps = 0;
   std::int32_t droneHits = 0;  // Format 3.
-  // Format 6 (concept A): altitude 0 to 4, the deck diverter, F-L-A-P-S.
-  std::int32_t altitude = 0;
+  // Format 6 (concept A): the deck diverter, F-L-A-P-S.
   bool deckLit = false;
   std::array<bool, 5> flapsLit{};
   std::int32_t hangarHolding = 0;
@@ -144,6 +145,7 @@ struct RulesRecord {
   std::int32_t gradRampsNeeded = 0;
   std::array<bool, kShotCount> examMade{};
   std::int32_t graduations = 0;
+  std::uint8_t altitude = 0;  // progression::Altitude, 0 to kTopLevel.
   bool commencementThisTime = false;
 
   bool briefingVisited = false;
@@ -177,6 +179,10 @@ struct BallRecord {
   std::array<bool, table::kBumpers.size()> touchingBumper{};
   std::array<bool, table::kRollovers.size()> onRollover{};
   std::array<bool, table::kHoles.size()> holeArmed{};
+  // Format 7: in a hole's pocket at the last check, and (the Mission scoop)
+  // whether it came in the way the hole takes a ball.
+  std::array<bool, table::kHoles.size()> inBox{};
+  std::array<bool, table::kHoles.size()> boxWelcome{};
   // Game.
   table::ElementRef holder{};
   std::uint32_t heldSteps = 0;

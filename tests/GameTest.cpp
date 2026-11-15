@@ -1192,8 +1192,13 @@ void testGame() {
       }
       hiddenSteps += now.visible ? 0 : 1;
 
-      const bool taken = game.holeCount(table::kRunwayHole) != before[0] ||
-                         game.holeCount(table::kSkywayHole) != before[1];
+      // Followed while it is the only ball (game.ball() is the primary one).
+      if (game.ballCount() > 1) {
+        ramp = table::kHoles.size();
+      }
+      const bool taken = game.ballCount() == 1 &&
+                         (game.holeCount(table::kRunwayHole) != before[0] ||
+                          game.holeCount(table::kSkywayHole) != before[1]);
       if (taken) {
         ramp = game.holeCount(table::kRunwayHole) != before[0] ? table::kRunwayHole
                                                                : table::kSkywayHole;

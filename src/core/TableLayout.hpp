@@ -342,8 +342,10 @@ inline constexpr Vec2 kDeckHalfSize{45.0F, 80.0F};
          p.y > kDeckCenter.y - kDeckHalfSize.y && p.y < kDeckCenter.y + kDeckHalfSize.y;
 }
 // Where the Skyway's diverter sets a ball down on the deck: over the deck
-// flipper's base, so it rolls down the bat towards its tip.
-inline constexpr Vec2 kDeckSetDown{532.0F, 252.0F};
+// flipper's base, so it rolls down the bat towards its tip; high enough to
+// clear the bat raised as well (the right button held), which a ball set
+// down at y 252 overlapped by 7 units.
+inline constexpr Vec2 kDeckSetDown{532.0F, 236.0F};
 // A ball may stay this long on the deck; then the deck's bat stays down
 // until it has left (no stall under a held button).
 inline constexpr double kDeckVisitSeconds = 10.0;
@@ -569,14 +571,36 @@ inline constexpr float kTopLaneHalfLength = 18.0F;
 // CatShot, the deck's hole whose ride ends in the Hangar; DeckDrain, the
 // deck's drain, a subway to the left inlane.
 enum class HoleType : std::uint8_t { Subway, Hangar, RampLeft, RampRight, DeckRamp, CatShot, DeckDrain };
+// Two ways a hole takes the ball. A ramp takes it across its mouth: the box
+// is the mouth, and a ball inside it is taken (cupRadius 0). A hole with a
+// cup (a scoop, a saucer, a lock pocket, a subway's entry) takes it only at
+// the cup: the box is the pocket, a ball inside it rolls on under the
+// physics, drawn towards the cup by the pocket's shallow funnel
+// (kHoleFunnelPull), and is taken on the step its centre comes within
+// cupRadius of the cup's centre (anywhere along its path that step, so a
+// fast ball cannot skip over it). Then, all in fixed steps:
+//   pull-in  (kHoleSinkSeconds): drawn moving from where it was taken onto
+//            the cup's centre while it shrinks and darkens (sink 0 -> 1);
+//   down     out of sight, for the rest of its hold;
+//   rise     (kHoleRiseSeconds, the last part of the hold): drawn at
+//            exitPosition coming up, growing and brightening (sink 1 -> 0);
+//   let go   under the physics from exitPosition with exitVelocity.
+// For a ball kicked back out of its own cup exitPosition is the cup; for a
+// subway it is where the ball comes up. Nothing here names a particular
+// table: every hole with a cup works this way.
 struct Hole {
   Vec2 center;
-  Vec2 halfSize;  // The ball's centre is taken inside this box.
+  Vec2 halfSize;  // The mouth (a ramp) or the pocket (a hole with a cup).
   HoleType type;
   // Where and how fast the ball comes back, in pixels and pixels per second.
   Vec2 exitPosition;
   Vec2 exitVelocity;
+  // The cup, and how near its centre the ball's centre must come to be
+  // taken. 0: no cup (a ramp).
+  Vec2 cup;
+  float cupRadius;
 };
+[[nodiscard]] constexpr bool hasCup(const Hole& hole) noexcept { return hole.cupRadius > 0.0F; }
 [[nodiscard]] constexpr bool isRamp(HoleType type) noexcept {
   return type == HoleType::RampLeft || type == HoleType::RampRight || type == HoleType::DeckRamp;
 }
@@ -592,6 +616,25 @@ inline constexpr float kRampMinUpwardSpeed = 600.0F;
 inline constexpr float kScoopMinRightward = 0.20F;
 // After returning a ball, a hole ignores it until it has moved this far away.
 inline constexpr float kHoleRearmDistance = 46.0F;
+// The cups (before build 3 the ball was taken anywhere in the pocket's box,
+// i.e. at its mouth, and was seen to vanish there). How near the cup's
+// centre the ball's centre must come: a ball radius, so that the ball is
+// over the cup when it is taken.
+inline constexpr float kHoleCupRadius = kBallRadius;
+// Concept A: the Mission scoop's cup (the Briefing room's hole as the art
+// draws it), the Hangar's, the CAT SHOT's and the deck drain's.
+inline constexpr Vec2 kScoopCup{441.0F, 390.0F};
+inline constexpr Vec2 kHangarCup{279.0F, 349.0F};
+inline constexpr Vec2 kCatCup{495.0F, 196.0F};
+inline constexpr Vec2 kDeckDrainCup{495.0F, 296.0F};
+// The pocket's funnel, for a hole with a cup: inside the pocket a ball the
+// hole will take is pulled towards the cup by kHoleFunnelPull per second
+// squared for each pixel it is away, and its speed is let go at
+// kHoleFunnelDamping per second, like a dished floor: a ball that misses
+// the cup on the way in, or comes back off the roof, rolls to it instead of
+// out of the mouth.
+inline constexpr float kHoleFunnelPull = 150.0F;
+inline constexpr float kHoleFunnelDamping = 10.0F;
 inline constexpr std::size_t kScoopHole = 0;
 inline constexpr std::size_t kHangarHole = 1;
 inline constexpr std::size_t kRunwayHole = 2;
@@ -600,25 +643,34 @@ inline constexpr std::size_t kDeckRampHole = 4;
 inline constexpr std::size_t kCatHole = 5;
 inline constexpr std::size_t kDeckDrainHole = 6;
 inline constexpr std::array<Hole, 7> kHoles{{
-    // Briefing room (revision 3): off centre; returned by its subway, set
-    // down above the right inlane like the Skyway's rail, to the right
-    // flipper: a repeat needs a transfer.
-    {{441.0F, 385.0F}, {15.0F, 25.0F}, HoleType::Subway, {604.0F, 640.0F}, {0.0F, 80.0F}},
-    // Hangar: lobbed from below the door line to the left inlane.
-    {{279.0F, 349.0F}, {27.0F, 23.0F}, HoleType::Hangar, {279.0F, 420.0F}, {-211.0F, -60.0F}},
+    // Briefing room (revision 3; concept A's Mission scoop): off centre;
+    // taken at its cup and returned by its subway, set down above the right
+    // inlane like the Skyway's rail, to the right flipper: a repeat needs a
+    // transfer.
+    {{441.0F, 385.0F}, {15.0F, 25.0F}, HoleType::Subway, {604.0F, 640.0F}, {0.0F, 80.0F}, kScoopCup,
+     kHoleCupRadius},
+    // Hangar: taken at its cup between the bays; it comes up again below
+    // the door line, like a subway (the door bank may stand between the cup
+    // and the field), and is lobbed to the left inlane.
+    {{279.0F, 349.0F}, {27.0F, 23.0F}, HoleType::Hangar, {279.0F, 420.0F}, {-211.0F, -60.0F},
+     kHangarCup, kHoleCupRadius},
     // Runway and Skyway: set down at the far end of the rail, above an inlane.
-    {{192.0F, 425.0F}, {27.0F, 9.0F}, HoleType::RampLeft, {107.0F, 672.0F}, {0.0F, 80.0F}},
-    {{519.0F, 425.0F}, {27.0F, 9.0F}, HoleType::RampRight, {604.0F, 672.0F}, {0.0F, 80.0F}},
-    // Concept A. The Skyway diverted: a box of no size (the field never
-    // takes a ball into it), set down on the Flight Deck.
-    {{519.0F, 425.0F}, {0.0F, 0.0F}, HoleType::DeckRamp, kDeckSetDown, kDeckSetDownVelocity},
-    // CAT SHOT: the deck's top left corner, between its wall and C. Its
-    // ride ends in the Hangar, which locks or returns the ball as if it had
-    // been shot in (exit: the Hangar's).
-    {{495.0F, 196.0F}, {14.0F, 16.0F}, HoleType::CatShot, {279.0F, 420.0F}, {-211.0F, -60.0F}},
-    // Deck drain: past the deck flipper's tip, on the floor; a subway sets
-    // the ball down where the Runway's rail does, above the left inlane.
-    {{495.0F, 292.0F}, {14.0F, 12.0F}, HoleType::DeckDrain, {107.0F, 672.0F}, {0.0F, 80.0F}},
+    {{192.0F, 425.0F}, {27.0F, 9.0F}, HoleType::RampLeft, {107.0F, 672.0F}, {0.0F, 80.0F}, {}, 0.0F},
+    {{519.0F, 425.0F}, {27.0F, 9.0F}, HoleType::RampRight, {604.0F, 672.0F}, {0.0F, 80.0F}, {},
+     0.0F},
+    // Concept A. The Skyway diverted: a box of no size and no cup (the field
+    // never takes a ball into it), set down on the Flight Deck.
+    {{519.0F, 425.0F}, {0.0F, 0.0F}, HoleType::DeckRamp, kDeckSetDown, kDeckSetDownVelocity, {}, 0.0F},
+    // CAT SHOT: the deck's top left corner, between its wall and C, taken at
+    // its cup. Its ride ends in the Hangar, which locks or returns the ball
+    // as if it had been shot in (exit: the Hangar's).
+    {{495.0F, 196.0F}, {14.0F, 16.0F}, HoleType::CatShot, {279.0F, 420.0F}, {-211.0F, -60.0F},
+     kCatCup, kHoleCupRadius},
+    // Deck drain: past the deck flipper's tip, on the floor, taken at its
+    // cup; a subway sets the ball down where the Runway's rail does, above
+    // the left inlane.
+    {{495.0F, 292.0F}, {14.0F, 12.0F}, HoleType::DeckDrain, {107.0F, 672.0F}, {0.0F, 80.0F},
+     kDeckDrainCup, kHoleCupRadius},
 }};
 // Ramp rails: where a ball taken by a ramp is drawn while it rides. It moves
 // along the polyline at constant speed over kRampRideSeconds and is set down
@@ -657,9 +709,9 @@ inline constexpr std::array<Vec2, 9> kDeckRail{{
     {524.0F, 340.0F},
     {534.0F, 312.0F},
     {548.0F, 290.0F},
-    {556.0F, 270.0F},
-    {552.0F, 258.0F},
-    {543.0F, 253.0F},
+    {558.0F, 262.0F},
+    {554.0F, 246.0F},
+    {543.0F, 238.0F},
     kDeckSetDown,
 }};
 [[nodiscard]] constexpr const std::array<Vec2, 9>& rampRail(HoleType type) noexcept {
@@ -739,34 +791,39 @@ inline constexpr std::array<Vec2, 6> kBriefingSubway{{
 inline constexpr int kScoopExitJitterLeft = 0;
 inline constexpr int kScoopExitJitterRight = 0;
 inline constexpr int kScoopExitJitterDown = 20;
-// For the eye only: a ball the Briefing room or the Hangar takes is drawn
-// rolling on from where it was taken to the hole's centre and dropping in
-// (or, locked, to its bay) over kHoleSinkSeconds; one either returns is
-// drawn coming up out of the hole (or its bay) and onto its path from the
-// exit over kHoleRiseSeconds. Neither moves the ball in the game or changes
-// when anything happens: the hole takes and returns the ball when it did.
-// Where a ball is seen to drop: the Briefing room's hole as the art draws
-// it (tools/art/make_table.py, briefing()), a little below the middle of
-// the box that takes the ball; the Hangar's own centre, under its roof.
-inline constexpr Vec2 kScoopDropPoint{441.0F, 390.0F};
+// Where a ball is seen to drop: the cup (for the Briefing room, its hole as
+// the art draws it).
 [[nodiscard]] constexpr Vec2 holeDropPoint(const Hole& hole) noexcept {
-  return hole.type == HoleType::Subway ? kScoopDropPoint : hole.center;
+  return hasCup(hole) ? hole.cup : hole.center;
 }
-// Where a ball is seen to come up when a hole returns it: out of the hole
-// itself for the Hangar, out of the floor at the set-down for the subway.
-[[nodiscard]] constexpr Vec2 holeRisePoint(const Hole& hole) noexcept {
-  return hole.type == HoleType::Subway || hole.type == HoleType::DeckDrain ? hole.exitPosition
-                                                                             : holeDropPoint(hole);
-}
+// Where a ball is seen to come up when a hole with a cup returns it, and
+// where it is let go: the hole's exit (the subway's set-down, the Hangar's
+// exit below the door line).
+[[nodiscard]] constexpr Vec2 holeRisePoint(const Hole& hole) noexcept { return hole.exitPosition; }
+inline constexpr Vec2 kScoopDropPoint = kScoopCup;
 static_assert(kBriefingSubway.front().x == kScoopDropPoint.x &&
               kBriefingSubway.front().y == kScoopDropPoint.y);
 static_assert(kBriefingSubway.back().x == kHoles[kScoopHole].exitPosition.x &&
               kBriefingSubway.back().y == kHoles[kScoopHole].exitPosition.y);
+static_assert(kDeckSubway.front().x == kDeckDrainCup.x && kDeckSubway.front().y == kDeckDrainCup.y);
 static_assert(kSubwayRideSeconds < kScoopHoldSeconds);
-inline constexpr double kHoleSinkSeconds = 0.15;
-inline constexpr double kHoleRiseSeconds = 0.15;
+// The pull-in: from where it was taken onto the cup's centre, shrinking and
+// darkening, then out of sight. A locked ball is drawn rolling from the cup
+// to its bay over kLockRollSeconds instead, in view.
+inline constexpr double kHoleSinkSeconds = 0.125;
+// The rise: coming up at the exit, growing and brightening, before the
+// physics has the ball again. The last part of the hold.
+inline constexpr double kHoleRiseSeconds = 0.125;
+// A locked ball rolls from the cup to its bay over this long; let go, it
+// rolls from its bay back to the cup over the same time, dropping in as it
+// gets there, and then comes up at the exit like any other.
+inline constexpr double kLockRollSeconds = 0.15;
+static_assert(kHoleSinkSeconds >= 0.08 && kHoleSinkSeconds <= 0.15);
+static_assert(kHoleSinkSeconds + kHoleRiseSeconds <= kScoopHoldSeconds &&
+              kHoleSinkSeconds + kHoleRiseSeconds <= kHangarHoldSeconds &&
+              kHoleSinkSeconds + kHoleRiseSeconds <= kDeckDrainWaitSeconds + kDeckDrainRideSeconds);
 // How much smaller and darker a ball is drawn when it is all the way down.
-inline constexpr float kHoleSinkShrink = 0.45F;
+inline constexpr float kHoleSinkShrink = 0.5F;
 inline constexpr float kHoleSinkDarken = 0.7F;
 // A ball that drains this soon after the Briefing room or the Hangar
 // returned it is owed back to the player: the rules are told so.
@@ -1103,10 +1160,8 @@ inline constexpr int kDroneArmour = 5;
 // Altitude (the game's progression, FL100 to FL500) is 0 to 4: the rules
 // own it; the devices below read it. Every one of them sits off the eight
 // shot lines and, idle, does nothing to the ball.
-inline constexpr int kAltitudeLevels = 5;
-
 // Air Pocket: a magnet under the insert field. It pulses: once every
-// airPocketPeriodSeconds(altitude) it is on for kAirPocketOnSeconds, and
+// progression::Knobs::airPocketPeriod seconds it is on for kAirPocketOnSeconds, and
 // any free ball whose centre is within kAirPocketRadius and which is not
 // rising fast (a ball just flipped is never robbed) is drawn to its centre
 // and held; at the end of the pulse each held ball is let go with a kick of
@@ -1122,9 +1177,6 @@ inline constexpr float kAirPocketPull = 9.0F;  // Per second: velocity = pull x 
 inline constexpr float kAirPocketRisingLimit = -250.0F;  // px/s; faster upward is not taken.
 inline constexpr float kAirPocketKickSpeed = 420.0F;
 inline constexpr double kAirPocketFlipQuietSeconds = 1.5;
-[[nodiscard]] constexpr double airPocketPeriodSeconds(int altitude) noexcept {
-  return altitude >= 4 ? 3.0 : (altitude == 3 ? 5.0 : (altitude == 2 ? 9.0 : 0.0));
-}
 
 // Prop Wash: a flat disc turning in the field. A ball rolling on it is
 // dragged towards the disc's own surface speed, at most kPropWashGrip px/s
@@ -1132,10 +1184,8 @@ inline constexpr double kAirPocketFlipQuietSeconds = 1.5;
 // slow ball is spun off). Still at FL100; it turns faster with altitude.
 inline constexpr Circle kPropWash{{355.5F, 712.0F}, 38.0F};
 inline constexpr float kPropWashGrip = 700.0F;
-[[nodiscard]] constexpr float propWashSpin(int altitude) noexcept {
-  // Radians per second, clockwise on screen.
-  return altitude >= 3 ? 9.0F : (altitude >= 1 ? 4.5F : 0.0F);
-}
+// Its spin (radians per second, clockwise on screen) is the Altitude's:
+// progression::Knobs::propWashSpin.
 
 // Pylon: a pop-up target in the centre of the insert field. Flush (not in
 // play) unless the rules raise it (sorties and multiballs); it rises only

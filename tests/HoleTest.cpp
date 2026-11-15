@@ -49,22 +49,17 @@ float distance(Vec2 a, Vec2 b) {
 // arithmetic, and the table's curves are point tables written out in
 // TableLayout.hpp, not computed with the C library.
 // (Table revision 3, integrated (table/rev3-int): re-recorded once for the
-// two changes that move it, each recorded on its own branch first. 2a puts
-// the captive ball (a new body) where the G-force post stood:
-// 0xc31b6c8b27321eed on table/rev3-captive. 2b makes a knocked-down drone
-// come up when its 20 s are out, as TABLE_REV3 3.3 says, and not at the end
-// of the patrol cycle after them: 0x70d54ca980541b8e on table/rev3-motion.
-// Checked: this tree with 2b's old rise gives 2a's value exactly, so
-// nothing else here moves it; the three spinners' payouts, the subway's
-// drawing, the drone's look and the light show do not.)
-// (Concept A, G0/G1 (table/a-geometry): re-recorded deliberately for the new
-// upper right: the right bumper moved and made smaller, the Flight Deck's
-// walls, flipper, stand-ups and holes, the right turbo target on the deck's
-// wall, F-L-A-P-S. Was 0xb4240991f33e56a4 on table/rev3-int. Two runs on
+// captive ball (2a) and the drone's rise after its 20 s (2b); see those
+// branches. Concept A G0/G1 (table/a-geometry): re-recorded for the new upper
+// right (the Flight Deck, its flipper, stand-ups and holes, F-L-A-P-S), as
+// 0xdd2e8503b7c67182. Then merged with main's hole cups (#50, main's value
+// 0x1cb50251cc53d2f3) and Altitude (#49): re-recorded deliberately for the
+// capture at the cup and the pocket funnels of the Mission scoop, Hangar,
+// CAT SHOT and deck drain, the deck's set-down moved clear of the raised
+// deck bat (532, 236), and the shelf under the resting deck bat. Two runs on
 // x86-64 give the same value; arm64 is checked by the macOS CI job. The soak
-// plays at FL100, where the Air Pocket and the Prop Wash are idle; their
-// determinism at FL500 is SaveGameTest's.)
-constexpr std::uint64_t kSoakTrajectory = 0xdd2e8503b7c67182ULL;
+// plays at FL100, where the Air Pocket and the Prop Wash are idle.)
+constexpr std::uint64_t kSoakTrajectory = 0x4213a29dab26e639ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {
@@ -112,6 +107,12 @@ void testHoles() {
       // the exit must be where that works: within the rearm distance of its
       // own box, or well away from it.
       for (const table::Hole& other : table::kHoles) {
+        // A hole that kicks the ball back out of its own cup lets it go
+        // there: it ignores the ball until it is clear (kHoleRearmDistance).
+        if (&other == &hole && table::hasCup(hole) && hole.exitPosition.x == hole.cup.x &&
+            hole.exitPosition.y == hole.cup.y) {
+          continue;
+        }
         const bool inBox = std::fabs(hole.exitPosition.x - other.center.x) <
                                other.halfSize.x + table::kBallRadius &&
                            std::fabs(hole.exitPosition.y - other.center.y) <
@@ -138,7 +139,11 @@ void testHoles() {
     const table::Hole& hole = table::kHoles[i];
     for (const float speed : {40.0F, 900.0F, 2600.0F}) {
       PhysicsWorld world;
-      world.resetBall({hole.center.x, hole.center.y + hole.halfSize.y - 2.0F}, {0.0F, -speed});
+      // (Into the Mission scoop up and to the right, as it takes a ball.)
+      const float across = hole.type == table::HoleType::Subway ? 0.3F * speed : 0.0F;
+      world.resetBall({hole.center.x - (hole.type == table::HoleType::Subway ? 6.0F : 0.0F),
+                       hole.center.y + hole.halfSize.y - 2.0F},
+                      {across, -speed});
       const table::ElementRef captured = stepUntil(world, PhysicsEvent::Type::Capture, 20);
       CHECK(captured.kind == table::ElementKind::Hole);
       CHECK(captured.index == i);
@@ -334,6 +339,8 @@ void testHoles() {
       const float dv = (static_cast<float>(j / 4) - 1.0F) * 8.0F;
       world.resetBall({hole.exitPosition.x + dx, hole.exitPosition.y},
                       {hole.exitVelocity.x + dv, hole.exitVelocity.y});
+      // As the hole lets it go: it does not take it straight back.
+      world.disarmHolesNear(0, hole.exitPosition);
       bool safe = false;
       for (int s = 0; s < 120 * 6 && !safe; ++s) {
         world.step(kStep);

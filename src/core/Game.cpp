@@ -25,8 +25,31 @@ std::uint32_t stepsIn(double seconds) noexcept {
   return static_cast<std::uint32_t>(seconds / Game::kStepSeconds + 0.5);
 }
 
-// Fast at first, slowing to the end.
+// Fast at first, slowing to the end; and slow at both ends.
 float easeOut(float t) noexcept { return 1.0F - (1.0F - t) * (1.0F - t); }
+float smooth(float t) noexcept {
+  const float c = std::clamp(t, 0.0F, 1.0F);
+  return c * c * (3.0F - 2.0F * c);
+}
+
+// The hold of a hole with a cup, in steps: the first step count at which
+// the ball has been held its time.
+std::uint32_t holdSteps(table::HoleType type) noexcept {
+  std::uint32_t steps = 0;
+  while (static_cast<double>(steps) * Game::kStepSeconds < table::holdSeconds(type)) {
+    ++steps;
+  }
+  return steps;
+}
+constexpr std::uint32_t kRiseSteps = Game::kHoleRiseSteps;
+
+// The pull-in moves the ball onto the cup's centre over its first 60
+// percent, fast at first; the sink runs over all of it.
+float pullShare(float in) noexcept { return easeOut(std::min(in / 0.6F, 1.0F)); }
+// How far up a rising ball is after this many steps of its rise.
+float riseShare(std::uint32_t steps) noexcept {
+  return easeOut(std::min(static_cast<float>(steps) / static_cast<float>(kRiseSteps), 1.0F));
+}
 
 // The point a share of the way along a polyline, by length.
 template <std::size_t N>
@@ -185,8 +208,9 @@ void Game::lockBall(std::size_t slot) {
 
 void Game::releaseLocks() noexcept {
   for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
-    if (ballLocked(slot)) {
+    if (ballLocked(slot) && !balls_[slot].releasing) {
       balls_[slot].releasing = true;
+      balls_[slot].heldSteps = 0;  // Its roll to the cup has not begun.
     }
   }
 }
@@ -886,9 +910,9 @@ void Game::updateHeldBall(std::size_t slot) {
     return;
   }
 
-  // The scoop and the hangar hold one ball at a time. A locked ball stays
-  // until it is told to go; any other waits its turn, and its hold runs
-  // only once it is the next to leave.
+  // A hole with a cup holds one ball at a time. A locked ball stays until
+  // it is told to go; any other waits its turn, and its hold runs only once
+  // it is the next to leave.
   const bool locked = ball.lockBay != 0;
   if ((locked && !ball.releasing) || !firstInHole(slot)) {
     return;
@@ -898,30 +922,47 @@ void Game::updateHeldBall(std::size_t slot) {
   if (lastReleaseStep_[index] == stepCount_ + 1) {
     return;
   }
-  if (!locked) {
-    ++ball.heldSteps;
-    if (hole.type == table::HoleType::Subway && ball.heldSteps == kSubwayWaitSteps) {
-      note(GameEvent::Type::SubwayRide, slot, index);
-    }
-    if (static_cast<double>(ball.heldSteps) * kStepSeconds < holdSeconds(hole.type)) {
+  const bool hangar = hole.type == table::HoleType::Hangar;
+  const double spacing = hangar ? table::kLockReleaseSpacingSeconds : kHoleReleaseSpacingSeconds;
+  // The whole of its time in the hole from now on: a locked ball let go
+  // rolls back to the cup and drops in first.
+  const std::uint32_t hold = locked ? kLockRollSteps + kRiseSteps : holdSteps(hole.type);
+  if (locked && ball.heldSteps == 0) {
+    // Let go: its roll starts so that it leaves, hold - 1 steps after
+    // this one, just as the ball ahead has had its spacing.
+    const std::uint64_t last = lastReleaseStep_[index];
+    if (last != 0 && static_cast<double>(stepCount_ + hold - last) * kStepSeconds < spacing) {
       return;
     }
   }
-  const bool hangar = hole.type == table::HoleType::Hangar;
-  if (!exitIsClear(slot, index,
-                   hangar ? table::kLockReleaseSpacingSeconds : kHoleReleaseSpacingSeconds)) {
+  // Down in the cup for its hold less the rise; then, once the way out is
+  // clear, it comes up at the exit over the rise and goes from there. While
+  // the way out is not clear the clock waits with the ball still down, so
+  // that it never comes up onto another ball.
+  // (The ball ahead needs its spacing by the time this one leaves, at the
+  // end of the rise.)
+  const double spacingAtRise = spacing - static_cast<double>(kRiseSteps - 1U) * kStepSeconds;
+  if (ball.heldSteps + kRiseSteps == hold && !exitIsClear(slot, index, spacingAtRise)) {
+    return;
+  }
+  if (ball.heldSteps < hold) {
+    ++ball.heldSteps;
+    if (!locked && hole.type == table::HoleType::Subway && ball.heldSteps == kSubwayWaitSteps) {
+      note(GameEvent::Type::SubwayRide, slot, index);
+    }
+  }
+  if (ball.heldSteps < hold || !exitIsClear(slot, index, spacing)) {
     return;
   }
   const Vec2 velocity = hangar ? nextHangarExitVelocity()
                                : (hole.type == table::HoleType::DeckDrain
                                       ? jittered(hole.exitVelocity)
                                       : nextScoopExitVelocity());
-  returnBall(slot, index, hole.exitPosition, velocity);
+  // Under the physics again where it was drawn coming up.
+  returnBall(slot, index, table::holeRisePoint(hole), velocity);
   ball.ejectStep = stepCount_ + 1;
   ball.ejectFromBay = locked;
-  // Drawn coming up out of its bay, out of the Hangar, or out of the floor
-  // at the subway's set-down.
-  ball.ejectFrom = locked ? table::kLockBays[ball.lockBay - 1U] : table::holeRisePoint(hole);
+  ball.ejectFrom = table::holeRisePoint(hole);
   note(GameEvent::Type::HoleEject, slot, index);
   if (locked) {
     const std::size_t bay = ball.lockBay - 1U;
@@ -936,6 +977,7 @@ void Game::updateHeldBall(std::size_t slot) {
 }
 
 bool Game::doorMouthClear() const {
+  const table::Hole& hangar = table::kHoles[table::kHangarHole];
   for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
     if (!physics_.ballActive(slot) || physics_.ballHeld(slot)) {
       continue;
@@ -943,6 +985,12 @@ bool Game::doorMouthClear() const {
     const Vec2 p = physics_.ballPosition(slot);
     if (std::fabs(p.x - table::kDoorMouthCenter.x) < table::kDoorMouthHalfSize.x &&
         std::fabs(p.y - table::kDoorMouthCenter.y) < table::kDoorMouthHalfSize.y) {
+      return false;
+    }
+    // Nor shut one in that is loose inside the Hangar, on its way to the
+    // cup or bouncing off its roof: the pocket and a ball's width round it.
+    if (std::fabs(p.x - hangar.center.x) < hangar.halfSize.x + table::kBallRadius &&
+        std::fabs(p.y - hangar.center.y) < hangar.halfSize.y + 2.0F * table::kBallRadius) {
       return false;
     }
   }
@@ -967,8 +1015,8 @@ void Game::applyRules() {
       break;
   }
   // The bank never comes up onto a ball: it waits, a step at a time, until
-  // the mouth is clear. A ball held inside the Hangar is no obstacle: it
-  // comes out below the door line.
+  // the mouth and the Hangar's pocket are clear (a ball held inside the
+  // Hangar is no obstacle: it comes up below the door line).
   if (doorRaisePending_ && doorMouthClear()) {
     doorRaisePending_ = false;
     physics_.setDoorBank(true);
@@ -1148,10 +1196,10 @@ bool Game::deckFlipperAllowed() {
 
 void Game::driveDevices(bool playable) {
   using AirPocket = PhysicsWorld::AirPocket;
-  const int altitude = rules_.altitude();
+  const progression::Knobs& knobs = rules_.altitudeKnobs();
   AirPocket mode = AirPocket::Off;
   Vec2 kick{};
-  const double period = table::airPocketPeriodSeconds(altitude);
+  const double period = knobs.airPocketPeriod;
   // Never while a drain would be saved (the saver, a multiball's grace), and
   // never within kAirPocketFlipQuietSeconds of a flipper press.
   const bool flipQuiet = lastFlipStep_ != 0 &&
@@ -1175,11 +1223,11 @@ void Game::driveDevices(bool playable) {
     }
   }
   airPocketOn_ = mode == AirPocket::Pull;
-  physics_.setDevices(mode, kick, table::propWashSpin(altitude));
+  physics_.setDevices(mode, kick, knobs.propWashSpin);
 }
 
 float Game::propWashAngle() const noexcept {
-  const float spin = table::propWashSpin(rules_.altitude());
+  const float spin = rules_.altitudeKnobs().propWashSpin;
   const double turns = static_cast<double>(spin) * static_cast<double>(stepCount_) * kStepSeconds /
                        (2.0 * static_cast<double>(table::kPi));
   return static_cast<float>((turns - static_cast<double>(static_cast<std::int64_t>(turns))) * 2.0 *
@@ -1276,21 +1324,52 @@ float Game::progressSince(std::uint64_t mark, double seconds) const noexcept {
       0.0F, 1.0F);
 }
 
+float Game::holeExitOpening(std::size_t hole) const noexcept {
+  if (hole >= table::kHoles.size()) {
+    return 0.0F;
+  }
+  const table::Hole& h = table::kHoles[hole];
+  const Vec2 rise = table::holeRisePoint(h);
+  // (The CAT SHOT has no exit of its own: its ride ends in the Hangar.)
+  if (!table::hasCup(h) || h.type == table::HoleType::CatShot ||
+      (rise.x == h.cup.x && rise.y == h.cup.y)) {
+    return 0.0F;
+  }
+  // It opens and closes over as long as a ball takes to come up.
+  constexpr float kOpenSteps = static_cast<float>(kRiseSteps);
+  float open = 0.0F;
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    const BallState& state = balls_[slot];
+    if (!physics_.ballActive(slot) || state.holder.kind != table::ElementKind::Hole ||
+        state.holder.index != hole) {
+      continue;
+    }
+    if (!physics_.ballHeld(slot)) {
+      // Closing behind a ball that came up out of it.
+      if (state.ejectStep != 0) {
+        open = std::max(open, 1.0F - progressSince(state.ejectStep, table::kHoleRiseSeconds));
+      }
+      continue;
+    }
+    const bool locked = state.lockBay != 0;
+    if ((locked && !state.releasing) || state.heldSteps == 0) {
+      continue;  // Not on its way out yet.
+    }
+    // The step after which it is drawn coming up (as ballView has it).
+    const std::uint32_t riseAfter = locked ? kLockRollSteps : holdSteps(h.type) - kRiseSteps;
+    const float ahead = static_cast<float>(riseAfter) - static_cast<float>(state.heldSteps);
+    open = std::max(open, std::clamp(1.0F - ahead / kOpenSteps, 0.0F, 1.0F));
+  }
+  return open;
+}
+
 BallView Game::ballView(std::size_t slot) const {
   BallView view{physics_.ballPosition(slot), physics_.ballAngle(slot)};
   view.id = static_cast<std::uint8_t>(slot);
   const BallState& state = balls_[slot];
   if (!physics_.ballHeld(slot)) {
-    // Just let out of the Briefing room or the Hangar: drawn coming up out
-    // of the hole, or its bay, and onto the path it has from the exit.
-    const float t = progressSince(state.ejectStep, table::kHoleRiseSeconds);
-    if (t < 1.0F && state.holder.kind == table::ElementKind::Hole &&
-        state.holder.index < table::kHoles.size()) {
-      const Vec2 exit = table::kHoles[state.holder.index].exitPosition;
-      view.drawOffset = (state.ejectFrom - exit) * (1.0F - easeOut(t));
-      // Coming up, and brightening, on the same curve as it moves.
-      view.sink = state.ejectFromBay ? 0.0F : 1.0F - easeOut(t);
-    }
+    // On the table, where the physics has it. (A ball a hole with a cup let
+    // out came up out of the cup while still held, and leaves from there.)
     return view;
   }
   if (state.holder.kind == table::ElementKind::Kickback) {
@@ -1321,52 +1400,75 @@ BallView Game::ballView(std::size_t slot) const {
     return view;
   }
   const table::Hole& hole = table::kHoles[state.holder.index];
-  // How far the ball is on its way in.
-  const float in = progressSince(state.takenStep, table::kHoleSinkSeconds);
   if (state.lockBay != 0) {
-    // In its bay, in view, until it is let go; drawn rolling there from
-    // where it was taken.
+    // In its bay, in view, until it is let go; drawn rolling there from the
+    // cup where it was taken. Let go, it rolls back to the cup, drops in,
+    // and comes up at the exit like any other.
     view.position = table::kLockBays[state.lockBay - 1U];
     view.angle = 0.0F;
     view.locked = true;
-    view.drawOffset = (state.takenAt - view.position) * (1.0F - easeOut(in));
+    if (!state.releasing || state.heldSteps == 0) {
+      const float in = progressSince(state.takenStep, table::kLockRollSeconds);
+      view.drawOffset = (state.takenAt - view.position) * (1.0F - easeOut(in));
+      return view;
+    }
+    if (state.heldSteps <= kLockRollSteps) {
+      const float roll = static_cast<float>(state.heldSteps) / static_cast<float>(kLockRollSteps);
+      view.drawOffset = (table::holeDropPoint(hole) - view.position) * smooth(roll);
+      view.sink = smooth((roll - 0.5F) * 2.0F);
+      return view;
+    }
+    view.locked = false;
+    view.position = table::holeRisePoint(hole);
+    view.sink = 1.0F - riseShare(state.heldSteps - kLockRollSteps);
     return view;
   }
   const bool cat = hole.type == table::HoleType::CatShot;
-  if (!table::isRamp(hole.type) && !cat) {
-    // Drawn rolling on from where it was taken to the hole's centre and
-    // dropping in; then out of sight until it is returned.
-    if (in >= 1.0F) {
+  if (table::hasCup(hole)) {
+    const std::uint32_t hold = holdSteps(hole.type);
+    if (!cat && state.heldSteps + kRiseSteps > hold) {
+      // The rise: coming up at the exit at the end of its hold, where the
+      // physics will have it again.
+      view.position = table::holeRisePoint(hole);
+      view.sink = 1.0F - riseShare(state.heldSteps + kRiseSteps - hold);
+      return view;
+    }
+    const float in = progressSince(state.takenStep, table::kHoleSinkSeconds);
+    if (in < 1.0F) {
+      // The pull-in: onto the cup's centre, dropping in as it goes.
+      view.drawOffset = (table::holeDropPoint(hole) - view.position) * pullShare(in);
+      view.sink = smooth(in);
+      return view;
+    }
+    if (!cat) {
+      // Down: out of sight until it comes up again.
       view.visible = false;
       if (hole.type == table::HoleType::Subway || hole.type == table::HoleType::DeckDrain) {
-        // Under the playfield: a glow building under the room while the
-        // ball waits its turn and its time there, then running along the
-        // subway to the set-down, fast at first and slowing to it.
+        // Under the playfield: a glow building under the cup while the ball
+        // waits its turn and its time there, then running along the subway
+        // to the exit, fast at first and slowing to it, by the time the
+        // ball starts to come up there.
         view.underground = true;
-        if (hole.type == table::HoleType::DeckDrain) {
-          // Concept A: the deck drain's subway to the left inlane.
-          const auto wait = stepsIn(table::kDeckDrainWaitSeconds);
-          const float ride = state.heldSteps < wait
-                                 ? 0.0F
-                                 : static_cast<float>(state.heldSteps - wait) /
-                                       static_cast<float>(stepsIn(table::kDeckDrainRideSeconds));
-          view.glowAt = alongPolyline(table::kDeckSubway, easeOut(std::min(ride, 1.0F)));
-          view.glow = 1.0F;
-        } else if (state.heldSteps < kSubwayWaitSteps) {
-          view.glowAt = table::kBriefingSubway.front();
-          view.glow = static_cast<float>(state.heldSteps) / static_cast<float>(kSubwayWaitSteps);
+        const bool deck = hole.type == table::HoleType::DeckDrain;
+        const std::uint32_t wait = deck ? stepsIn(table::kDeckDrainWaitSeconds) : kSubwayWaitSteps;
+        const std::uint32_t rideEnd = hold > kRiseSteps ? hold - kRiseSteps : hold;
+        if (state.heldSteps < wait) {
+          view.glowAt = deck ? table::kDeckSubway.front() : table::kBriefingSubway.front();
+          view.glow = static_cast<float>(state.heldSteps) / static_cast<float>(wait);
         } else {
-          const float ride = static_cast<float>(state.heldSteps - kSubwayWaitSteps) /
-                             static_cast<float>(kSubwayRideSteps);
-          view.glowAt = alongPolyline(table::kBriefingSubway, easeOut(std::min(ride, 1.0F)));
+          const float ride = rideEnd > wait ? static_cast<float>(state.heldSteps - wait) /
+                                                  static_cast<float>(rideEnd - wait)
+                                            : 1.0F;
+          const float share = easeOut(std::min(ride, 1.0F));
+          view.glowAt = deck ? alongPolyline(table::kDeckSubway, share)
+                             : alongPolyline(table::kBriefingSubway, share);
           view.glow = 1.0F;
         }
       }
       return view;
     }
-    view.drawOffset = (table::holeDropPoint(hole) - view.position) * easeOut(in);
-    view.sink = in;
-    return view;
+    // The CAT SHOT: after its pull-in, it rides its rail over the field
+    // into the Hangar, in view.
   }
   // On a ramp the ball stays in sight, riding the rail over the table to the
   // exit at a steady speed. The ride starts from where the ball was taken,
@@ -1379,9 +1481,11 @@ BallView Game::ballView(std::size_t slot) const {
   for (std::size_t i = 1; i < rail.size(); ++i) {
     length += lengthOf(point(i) - point(i - 1));
   }
+  const double rideFrom = cat ? table::kHoleSinkSeconds : 0.0;
   const float t = std::clamp(
-      static_cast<float>(static_cast<double>(state.heldSteps) * kStepSeconds / rideSeconds), 0.0F,
-      1.0F);
+      static_cast<float>((static_cast<double>(state.heldSteps) * kStepSeconds - rideFrom) /
+                         (rideSeconds - rideFrom)),
+      0.0F, 1.0F);
   view.raised = true;
   // Larger while it rides; a ball kept waiting at the end for the exit to
   // clear is drawn there full size.

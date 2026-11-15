@@ -7,6 +7,7 @@
 
 #include "core/Game.hpp"
 #include "core/Physics.hpp"
+#include "core/Progression.hpp"
 #include "core/Sound.hpp"
 
 namespace pinball::fx {
@@ -159,6 +160,28 @@ float bell(float distance, float width) noexcept {
   return std::exp(-u * u);
 }
 
+constexpr float kStepsPerSecond = 120.0F;
+
+// The ambient runs (LightShow::Run order): steps a lap at a new game, and
+// how many times one lamp of the run is passed in a lap with one comet and
+// with two. The higher the game the shorter a lap, but never so short that
+// a lamp is passed more than kMaxPassesPerSecond times a second.
+struct RunSpeed {
+  float base;
+  float passesOne;
+  float passesTwo;
+};
+constexpr std::array<RunSpeed, 8> kRunSpeeds{{
+    {168.0F, 2.0F, 4.0F},  // Arrows: there and back; a second comet the other way.
+    {64.0F, 1.0F, 1.0F},   // W-I-N-G (four lamps: one comet).
+    {54.0F, 1.0F, 1.0F},   // Roll call (three: one comet).
+    {140.0F, 1.0F, 2.0F},  // The courses and Graduation.
+    {80.0F, 1.0F, 1.0F},   // The lock lamps, in turn.
+    {150.0F, 1.0F, 1.0F},  // The rest, breathing.
+    {360.0F, 1.0F, 1.0F},  // A band sweeping up over the rest.
+    {48.0F, 1.0F, 1.0F},   // The arrows' own chevrons.
+}};
+
 }  // namespace
 
 table::FlasherId domeOf(Flasher flasher) noexcept {
@@ -251,9 +274,15 @@ void LightShow::reset() noexcept {
   // The settings stay; everything seen goes.
   const bool reduce = reduceMotion_;
   const bool attract = attract_;
+  const int altitude = altitudeOverride_;
   *this = LightShow();
   reduceMotion_ = reduce;
   attract_ = attract;
+  altitudeOverride_ = altitude;
+}
+
+void LightShow::setAltitudeOverride(int level) noexcept {
+  altitudeOverride_ = level < 0 ? -1 : progression::clampLevel(level);
 }
 
 void LightShow::setAttract(bool on) noexcept {
@@ -290,8 +319,11 @@ void LightShow::observe(const Game& game) noexcept {
     wasCombo_ = game.rules().comboLevel();
     wasBonus_ = game.rules().bonusMultiplier();
   }
+  const bool first = !seen_;
+  const std::uint64_t steps = first ? 0 : step - now_;
   seen_ = true;
   now_ = step;
+  updateAltitude(game, steps, first);
   readEvents(game);
   readSounds(game);
   updateShow(game);
@@ -1075,56 +1107,149 @@ float LightShow::attractLevel(std::size_t lamp) const noexcept {
 
 // --- Lamps ------------------------------------------------------------------
 
-float LightShow::ambientLevel(std::size_t lamp) const noexcept {
-  // A machine between shots is never still: every unlit insert shows as dim
-  // coloured plastic (kUnlitFloor), and over that the lamps run chases of
-  // their own, the head at full, the tail from kChaseTail down. A lamp the
-  // rules light is told apart by its blink and its star (lampLit). With
-  // reduce motion the chases run four times slower, as soft waves.
-  const auto id = static_cast<LampId>(lamp);
-  if (reduceMotion_) {
-    // No running lights at all: a steady gentle glow.
-    return kUnlitFloor + 0.08F;
+void LightShow::updateAltitude(const Game& game, std::uint64_t steps, bool first) noexcept {
+  // The level the rules have reached, or the one a tool holds. In attract
+  // the table shows off: the energy of the top level, and the general
+  // illumination turning through the Altitude's colours, one a pattern.
+  const int level = altitudeOverride_ >= 0 ? altitudeOverride_ : game.rules().altitude();
+  altitude_ = progression::clampLevel(level);
+  const float target = attract_ ? 1.0F : progression::knobs(altitude_).lightEnergy;
+  const float colour = attract_ ? static_cast<float>(attractPattern() % progression::kLevels)
+                                : static_cast<float>(altitude_);
+  if (first || altitudeOverride_ >= 0) {
+    // As found: a look at any step shows the lights as the level has them
+    // (the one look a still takes included).
+    energy_ = target;
+    giColour_ = colour;
+  } else {
+    const float ease = static_cast<float>(steps) / kEnergyEaseSteps;
+    energy_ = energy_ < target ? std::min(target, energy_ + ease) : std::max(target, energy_ - ease);
+    // Through the colours between, a level's worth every kEnergyEaseSteps.
+    giColour_ = giColour_ < colour ? std::min(colour, giColour_ + ease)
+                                   : std::max(colour, giColour_ - ease);
   }
-  const float slow = 1.0F;
-  const auto at = [this, slow](float period) {
-    const auto steps = static_cast<std::uint64_t>(period * slow);
-    return static_cast<float>(now_ % steps) / static_cast<float>(steps);
-  };
+  if (first) {
+    // Each run where its clock would have it at this step: a replay, or a
+    // restored game, picks the lights up where they would be.
+    for (std::size_t k = 0; k < runs_.size(); ++k) {
+      runs_[k] = static_cast<double>(now_) / static_cast<double>(runPeriod(k));
+    }
+    perimeterClock_ = static_cast<double>(now_) / static_cast<double>(kStepsPerSecond) *
+                      static_cast<double>(kPerimeterPassesPerSecond) /
+                      static_cast<double>(perimeterCount());
+    return;
+  }
+  if (reduceMotion_) {
+    return;  // Nothing runs: the ambient lights hold still.
+  }
+  for (std::size_t k = 0; k < runs_.size(); ++k) {
+    runs_[k] += static_cast<double>(steps) / static_cast<double>(runPeriod(k));
+  }
+  // Each of the rim's lights goes round at passes / count rims a second, so
+  // a place on the rim sees kPerimeterPassesPerSecond of them go by.
+  perimeterClock_ += static_cast<double>(steps) / static_cast<double>(kStepsPerSecond) *
+                     static_cast<double>(kPerimeterPassesPerSecond) /
+                     static_cast<double>(perimeterCount());
+}
+
+float LightShow::runPeriod(std::size_t run) const noexcept {
+  const RunSpeed& speed = kRunSpeeds[run];
+  const float passes = twoComets() ? speed.passesTwo : speed.passesOne;
+  const float fastest = kStepsPerSecond * passes / kMaxPassesPerSecond;
+  return std::max(fastest, speed.base / (1.0F + kChaseSpeedUp * energy_));
+}
+
+float LightShow::fastestPassesPerSecond() const noexcept {
+  float most = 0.0F;
+  for (std::size_t k = 0; k < kRunSpeeds.size(); ++k) {
+    const float passes = twoComets() ? kRunSpeeds[k].passesTwo : kRunSpeeds[k].passesOne;
+    most = std::max(most, kStepsPerSecond * passes / runPeriod(k));
+  }
+  return most;
+}
+
+int LightShow::perimeterCount() const noexcept {
+  return kPerimeterLights + static_cast<int>(std::lround(energy_ * kPerimeterLights));
+}
+
+LightShow::PerimeterView LightShow::perimeter() const noexcept {
+  PerimeterView view;
+  if (!seen_) {
+    return view;
+  }
+  view.count = perimeterCount();
+  view.phase = static_cast<float>(perimeterClock_ - std::floor(perimeterClock_));
+  // Brighter the higher the game; down with the lights in a drain or tilt.
+  view.level = (0.55F + 0.35F * energy_) * gi_;
+  return view;
+}
+
+float LightShow::ambientLevel(std::size_t lamp) const noexcept {
+  // A machine between shots is never still: every unlit insert shows as
+  // coloured plastic lit from below (the floor, higher the higher the
+  // game), and over that the lamps run chases of their own, the head at
+  // kChaseHead, the tail from kChaseTail down. A lamp the rules light is
+  // told apart by its blink and its star (lampLit). The higher the game the
+  // faster the runs (each under its cap: kRunSpeeds) and the more of them at
+  // once. With reduce motion nothing runs: a steady glow.
+  const auto id = static_cast<LampId>(lamp);
+  const float floor = kUnlitFloor + kFloorRise * energy_;
+  if (reduceMotion_) {
+    return floor + 0.08F;
+  }
   // A comet's head at `head`, this lamp at `place`, on a ring of `count`
   // places when `ring`.
-  const auto comet = [](float head, float place, float count, bool ring) {
+  const auto comet = [floor](float head, float place, float count, bool ring) {
     float d = std::fabs(head - place);
     if (ring) {
       d = std::min(d, count - d);
     }
-    // The head at kChaseHead (never as bright as a lamp the rules light),
-    // the tail from kChaseTail down to the floor over the next two places.
     if (d < 0.5F) {
       return kChaseHead - (kChaseHead - kChaseTail) * d * 2.0F;
     }
     const float k = std::max(0.0F, 1.0F - (d - 0.5F) / 2.0F);
-    return kUnlitFloor + (kChaseTail - kUnlitFloor) * k;
+    return floor + (kChaseTail - floor) * k;
+  };
+  const bool two = twoComets();
+  const auto ring = [&](Run run, std::size_t first, std::size_t count) {
+    const auto n = static_cast<float>(count);
+    const auto place = static_cast<float>(lamp - first);
+    const float head = runPhase(run) * n;
+    float level = comet(head, place, n, true);
+    if (two && count >= 5) {
+      level = std::max(level, comet(std::fmod(head + n * 0.5F, n), place, n, true));
+    }
+    return level;
   };
   const std::size_t i = lampIndex(id);
   if (table::isArrowLamp(id)) {
-    // Back and forth along the seven shots.
-    const float p = at(168.0F) * 12.0F;
-    return comet(p < 6.0F ? p : 12.0F - p, static_cast<float>(i), 7.0F, false);
+    // Back and forth along the seven shots; a second comet the other way
+    // once the game is high.
+    const float p = runPhase(kRunArrows) * 12.0F;
+    float level = comet(p < 6.0F ? p : 12.0F - p, static_cast<float>(i), 7.0F, false);
+    if (two) {
+      level = std::max(level, comet(p < 6.0F ? 6.0F - p : p - 6.0F, static_cast<float>(i), 7.0F,
+                                    false));
+    }
+    return level;
   }
   if (id >= LampId::WingW && id <= LampId::WingG) {
-    return comet(at(64.0F) * 4.0F, static_cast<float>(i - lampIndex(LampId::WingW)), 4.0F, true);
+    return ring(kRunWing, lampIndex(LampId::WingW), 4);
   }
   if (id >= LampId::RollCall1 && id <= LampId::RollCall3) {
-    return comet(at(54.0F) * 3.0F, static_cast<float>(i - lampIndex(LampId::RollCall1)), 3.0F,
-                 true);
+    return ring(kRunRollCall, lampIndex(LampId::RollCall1), 3);
   }
   if (table::isCourseLamp(id)) {
     // Round the six courses and Graduation in the middle of them.
-    return comet(at(140.0F) * 7.0F, static_cast<float>(i - lampIndex(LampId::Course1)), 7.0F, true);
+    return ring(kRunCourses, lampIndex(LampId::Course1), 7);
   }
   // Revision 3's ladders: each runs its own way, up the table or out from
-  // the middle; the T-A-X-I letters go round.
+  // the middle; the T-A-X-I letters go round. Each on a clock of its own
+  // period in steps (not yet on the Altitude's runs).
+  const auto at = [this](float period) {
+    const auto steps = static_cast<std::uint64_t>(period);
+    return static_cast<float>(now_ % steps) / static_cast<float>(steps);
+  };
   const auto ladder = [&](LampId first, std::size_t count, float period) {
     return comet(at(period) * static_cast<float>(count + 2),
                  static_cast<float>(i - lampIndex(first)), static_cast<float>(count + 2), true);
@@ -1148,12 +1273,18 @@ float LightShow::ambientLevel(std::size_t lamp) const noexcept {
     return ladder(LampId::Bonus2X, 4, 72.0F);
   }
   if (id == LampId::Lock1 || id == LampId::Lock2) {
-    const bool first = at(80.0F) < 0.5F;
-    return (first == (id == LampId::Lock1)) ? 0.5F : kUnlitFloor;
+    const bool first = runPhase(kRunLocks) < 0.5F;
+    return (first == (id == LampId::Lock1)) ? 0.6F : floor;
   }
-  // The rest breathe, each a little after the one before.
-  const float wave = 0.5F + 0.5F * std::cos(kTau * (at(150.0F) - static_cast<float>(i) * 0.13F));
-  return kUnlitFloor + (0.45F - kUnlitFloor) * wave;
+  // The rest breathe, each a little after the one before; and as the game
+  // climbs a band of light sweeps up over them.
+  const float wave =
+      0.5F + 0.5F * std::cos(kTau * (runPhase(kRunRest) - static_cast<float>(i) * 0.13F));
+  const float breathe = floor + (0.55F - floor) * wave;
+  const float bandY = table::kHeight * (1.1F - 1.3F * runPhase(kRunSweep));
+  const float band =
+      std::min(1.0F, energy_ * 3.0F) * bell(table::kLamps[i].position.y - bandY, 70.0F);
+  return std::max(breathe, floor + (kChaseHead - floor) * band);
 }
 
 void LightShow::updateLamps(const Game& game) noexcept {
@@ -1181,8 +1312,10 @@ void LightShow::updateLamps(const Game& game) noexcept {
       const std::size_t k = static_cast<std::size_t>(ta / 90) % kDomes.size();
       burst(kDomes[k], kColours[k], 0.6F, 100.0F, 40);
     }
+    // Brighter than it was (lit plastic at the least, kAttractFloor), yet
+    // dark enough between the patterns' lights for them to read.
     for (std::size_t i = 0; i < kLampCount; ++i) {
-      levels_[i] = clamp01(attractLevel(i));
+      levels_[i] = clamp01(std::max(attractLevel(i), kAttractFloor));
     }
     return;
   }
@@ -1279,11 +1412,26 @@ LampState LightShow::lampState(table::LampId lamp) const noexcept {
 
 ChaseView LightShow::chase(std::size_t arrow) const noexcept {
   ChaseView view;
-  if (arrow >= kLampCount || !table::isArrowLamp(table::kLamps[arrow].id) || attract_) {
+  if (arrow >= kLampCount || !table::isArrowLamp(table::kLamps[arrow].id)) {
     return view;
   }
-  const LampState state = states_[arrow];
+  const LampState state = attract_ ? LampState::Off : states_[arrow];
   if (state != LampState::Blink && state != LampState::FastBlink) {
+    // The table's own chevrons under the arrows the rules leave dark: one
+    // shot at a time at a new game, more the higher the game, all seven at
+    // the top and in attract; the set moves on round the shots. Not with
+    // reduce motion.
+    if (reduceMotion_ || state == LampState::On || !seen_) {
+      return view;
+    }
+    const auto count = static_cast<std::size_t>(1 + std::lround(energy_ * 6.0F));
+    const auto start = static_cast<std::size_t>(runs_[kRunChevrons] / 6.0) % 7;
+    if ((arrow + 7 - start) % 7 >= count) {
+      return view;
+    }
+    view.active = true;
+    view.ambient = true;
+    view.phase = runPhase(kRunChevrons);
     return view;
   }
   view.active = true;

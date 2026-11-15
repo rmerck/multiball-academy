@@ -83,6 +83,13 @@ void TableHarness::put(std::size_t slot, Vec2 position, Vec2 velocity, bool inPl
   }
 }
 
+void TableHarness::putLeaving(std::size_t slot, Vec2 position, Vec2 velocity) {
+  put(slot, position, velocity, true);
+  if (slot < balls_.size() && live(slot)) {
+    Seam::placeLeaving(game_, slot, position, velocity);
+  }
+}
+
 std::size_t TableHarness::add(Vec2 position, Vec2 velocity) {
   const std::size_t slot = Seam::addBall(game_, position, velocity);
   if (slot < balls_.size()) {

@@ -175,6 +175,7 @@ void Rules::startGame() noexcept {
   gradRampsNeeded_ = 0;
   examMade_.fill(false);
   graduations_ = 0;
+  altitude_.reset();
   bonusTally_ = {};
   waitingCount_ = 0;
   beginBall();
@@ -1242,6 +1243,7 @@ void Rules::endGraduation() noexcept {
     rampsNeeded_ = 0;
     coursesEnded_ = 0;
     say(display::Message("COURSES REOPENED"));
+    climb(progression::kTopLevel);
     return;
   }
   // Not finished: the exam shots made stay made, and ramps light it again.
@@ -1324,6 +1326,18 @@ std::uint64_t Rules::hurryUpValue() const noexcept {
   return kHurryUpStart - fallen;
 }
 
+void Rules::climb(int levels) noexcept {
+  // The display names each new flight level once, after what earned it.
+  static constexpr std::array<display::Message, progression::kLevels> kClimbed{
+      display::Message("FL100"), display::Message("CLIMB TO FL200"),
+      display::Message("CLIMB TO FL300"), display::Message("CLIMB TO FL400"),
+      display::Message("CLIMB TO FL500  NIGHT FLIGHT")};
+  if (dead() || !progressionEnabled_ || altitude_.climb(levels) == 0) {
+    return;
+  }
+  sayThen(kClimbed[static_cast<std::size_t>(altitude_.level())]);
+}
+
 void Rules::passCourse() noexcept {
   const std::size_t index = course_;
   std::uint64_t value = index == std::to_underlying(CourseId::TurbineTheory)
@@ -1348,6 +1362,7 @@ void Rules::passCourse() noexcept {
     // The top rank is held already.
     say(display::Message("COURSE PASSED"));
   }
+  climb(1);
   if (coursePasses_ == 3) {
     lightExtraBall();
   }

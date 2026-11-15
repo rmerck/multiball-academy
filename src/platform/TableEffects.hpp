@@ -27,6 +27,9 @@ namespace pinball {
 [[nodiscard]] art::Rgb fxColour(fx::Colour colour) noexcept;
 // From a to b, t from 0 to 1.
 [[nodiscard]] art::Rgb mixRgb(art::Rgb a, art::Rgb b, float t) noexcept;
+// The general illumination's colour at a place along the Altitude's colours
+// (LightShow::giColour): art::kAltitudeGi, mixed between levels.
+[[nodiscard]] art::Rgb altitudeGiColour(float place) noexcept;
 
 // Quads of one texture, additive, in a fixed array.
 class GlowBatch {
@@ -88,8 +91,9 @@ class TableEffects {
   // the jackpot ring, the flippers' highlight, the balls' trails.
   void drawShow(SDL_Renderer* r, const Game& game, std::span<const BallView> balls, float alpha,
                 const LightShow& show);
-  // Just under the balls: a soft dark pool round each, so that the ball
-  // keeps its contrast over any light.
+  // On the playfield and its lamps, under every standing element (targets,
+  // bumpers, slingshots, posts, flippers): a small soft dark pool round each
+  // ball on the table, so that it keeps its contrast over any light.
   void drawBallPools(SDL_Renderer* r, std::span<const BallView> balls, const LightShow& show);
   // Over the balls: a moving specular glint and the colour of the nearest
   // light on the chrome.

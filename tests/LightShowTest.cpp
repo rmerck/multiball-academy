@@ -13,6 +13,7 @@
 #include "core/Game.hpp"
 #include "core/Input.hpp"
 #include "core/Physics.hpp"
+#include "core/Progression.hpp"
 #include "core/LightShow.hpp"
 #include "core/Rules.hpp"
 #include "core/Scenes.hpp"
@@ -1069,9 +1070,128 @@ void testCircuitSpinnersLight() {
   CHECK(show.spinnerLevel(table::kSpinners.size()) == 0.0F);
 }
 
+// Progression: the higher the game, the busier and brighter the table, and
+// never a flash for it.
+void testAltitudeLights() {
+  namespace progression = pinball::progression;
+  {  // A new game: FL100, day blue, one comet a ring, six lights round the rim.
+    Game game;
+    LightShow show;
+    inPlay(game, show);
+    CHECK(show.altitude() == 0 && show.energy() == 0.0F && show.giColour() == 0.0F);
+    CHECK(show.perimeter().count == fx::kPerimeterLights);
+    CHECK(show.fastestPassesPerSecond() <= fx::kMaxPassesPerSecond + 1e-4F);
+  }
+  // Each level: the floor higher, more chevrons, more rim lights, and no
+  // lamp passed by a chase more than kMaxPassesPerSecond times a second.
+  int chevronsBefore = 0;
+  int rimBefore = 0;
+  for (int level = 0; level <= progression::kTopLevel; ++level) {
+    Game game;
+    LightShow show;
+    show.setAltitudeOverride(level);
+    inPlay(game, show);
+    const float energy = progression::knobs(level).lightEnergy;
+    CHECK(show.altitude() == level && show.energy() == energy);
+    CHECK(show.giColour() == static_cast<float>(level));
+    CHECK(show.fastestPassesPerSecond() <= fx::kMaxPassesPerSecond + 1e-4F);
+    float least = 1.0F;
+    int chevrons = 0;
+    for (int i = 0; i < 600; ++i) {
+      step(game, show, flipping(static_cast<std::uint32_t>(i)));
+      for (std::size_t k = 0; k < LightShow::kLampCount; ++k) {
+        const LampId id = table::kLamps[k].id;
+        if (show.lampState(id) == LampState::Off && show.show() == fx::Show::None) {
+          least = std::min(least, show.lampLevel(id));
+        }
+        const fx::ChaseView chase = show.chase(k);
+        chevrons += chase.active && chase.ambient ? 1 : 0;
+      }
+    }
+    CHECK(least >= fx::kUnlitFloor + fx::kFloorRise * energy - 1e-5F);
+    CHECK(chevrons >= chevronsBefore);
+    CHECK(show.perimeter().count >= rimBefore);
+    chevronsBefore = chevrons;
+    rimBefore = show.perimeter().count;
+  }
+  CHECK(rimBefore == 2 * fx::kPerimeterLights);
+  CHECK(chevronsBefore > 0);
+
+  {  // A climb in the game eases in: no step brightens the table or turns
+     // its colour by more than a level's worth over kEnergyEaseSteps.
+    Game game;
+    LightShow show;
+    inPlay(game, show);
+    Seam::rules(game).setAltitudeFloor(progression::kTopLevel);
+    CHECK(game.rules().altitude() == progression::kTopLevel);
+    float energy = show.energy();
+    float colour = show.giColour();
+    float steepest = 0.0F;
+    int steps = 0;
+    for (; steps < 4000 && show.giColour() < static_cast<float>(progression::kTopLevel); ++steps) {
+      step(game, show, flipping(static_cast<std::uint32_t>(steps)));
+      steepest = std::max({steepest, show.energy() - energy, show.giColour() - colour});
+      energy = show.energy();
+      colour = show.giColour();
+      CHECK(show.fastestPassesPerSecond() <= fx::kMaxPassesPerSecond + 1e-4F);
+    }
+    CHECK(show.energy() == 1.0F && show.giColour() == 4.0F);
+    CHECK(steepest <= 1.0F / fx::kEnergyEaseSteps + 1e-5F);
+    CHECK(steps >= static_cast<int>(4.0F * fx::kEnergyEaseSteps) - 2);
+    // A new Game object (step count back to 0) starts the show afresh.
+    Game next;
+    step(next, show);
+    CHECK(show.energy() == 0.0F && show.altitude() == 0);
+  }
+  {  // Reduce motion: nothing runs at any level; the rim lights stand.
+    Game game;
+    LightShow show;
+    show.setReduceMotion(true);
+    show.setAltitudeOverride(progression::kTopLevel);
+    inPlay(game, show);
+    const float phase = show.perimeter().phase;
+    bool still = true;
+    for (int i = 0; i < 240; ++i) {
+      step(game, show);
+      still = still && show.perimeter().phase == phase;
+      for (std::size_t k = 0; k < LightShow::kLampCount; ++k) {
+        still = still && !show.chase(k).ambient;
+      }
+    }
+    CHECK(still);
+  }
+  {  // Attract shows off: the top level's energy, the GI turning through the
+     // Altitude's colours, chevrons on every arrow; the same steps, the same
+     // lights.
+    Game game;
+    LightShow show;
+    show.setAttract(true);
+    float lowest = 9.0F;
+    float highest = -1.0F;
+    for (std::uint32_t i = 0; i < LightShow::kAttractPatternSteps * 5; ++i) {
+      step(game, show, flipping(i));
+      lowest = std::min(lowest, show.giColour());
+      highest = std::max(highest, show.giColour());
+    }
+    CHECK(show.energy() == 1.0F);
+    CHECK(lowest <= 0.5F && highest >= 3.5F);
+    int chevrons = 0;
+    for (std::size_t k = 0; k < LightShow::kLampCount; ++k) {
+      chevrons += show.chase(k).ambient ? 1 : 0;
+    }
+    CHECK(chevrons == 7);
+    float floor = 1.0F;
+    for (const float level : show.lampLevels()) {
+      floor = std::min(floor, level);
+    }
+    CHECK(floor >= fx::kAttractFloor - 1e-6F);
+  }
+}
+
 }  // namespace
 
 void testLightShow() {
+  testAltitudeLights();
   testBlinkPhases();
   testReduceMotionLamps();
   testLampsFollowRules();
