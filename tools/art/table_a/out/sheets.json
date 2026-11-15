@@ -30,7 +30,7 @@
     48,
     48
    ],
-   "columns": 5,
+   "columns": 6,
    "file": "drone.png",
    "frames": [
     "armour6",
@@ -40,6 +40,7 @@
     "armour2",
     "armour1",
     "armour0",
+    "hit",
     "dive",
     "down1",
     "down2"
@@ -94,22 +95,26 @@
   },
   "flight_deck": {
    "anchor": [
-    471.0,
-    146.0
+    465.0,
+    140.0
    ],
    "cellPixels": [
-    400,
-    688
+    448,
+    736
    ],
    "cellUnits": [
-    100,
-    172
+    112,
+    184
    ],
-   "columns": 2,
+   "columns": 3,
    "file": "flight_deck.png",
    "frames": [
     "off",
-    "lit"
+    "lit_fl100",
+    "lit_fl200",
+    "lit_fl300",
+    "lit_fl400",
+    "lit_fl500"
    ]
   },
   "gforce": {
@@ -196,6 +201,49 @@
     "rot115"
    ]
   },
+  "propwash_blur": {
+   "anchor": "centre",
+   "cellPixels": [
+    336,
+    336
+   ],
+   "cellUnits": [
+    84,
+    84
+   ],
+   "columns": 6,
+   "file": "propwash_blur.png",
+   "frames": [
+    "blur000",
+    "blur010",
+    "blur020",
+    "blur030",
+    "blur040",
+    "blur050",
+    "blur060",
+    "blur070",
+    "blur080",
+    "blur090",
+    "blur100",
+    "blur110"
+   ]
+  },
+  "propwash_ring": {
+   "anchor": "centre",
+   "cellPixels": [
+    400,
+    400
+   ],
+   "cellUnits": [
+    100,
+    100
+   ],
+   "columns": 1,
+   "file": "propwash_ring.png",
+   "frames": [
+    "ring"
+   ]
+  },
   "pylon": {
    "anchor": "centre",
    "cellPixels": [
@@ -228,10 +276,11 @@
     176,
     412
    ],
-   "columns": 1,
+   "columns": 2,
    "file": "ramp_runway.png",
    "frames": [
-    "normal"
+    "normal",
+    "lit"
    ]
   },
   "ramp_skyway": {
@@ -251,7 +300,9 @@
    "file": "ramp_skyway.png",
    "frames": [
     "normal",
-    "to_deck"
+    "lit",
+    "to_deck",
+    "to_deck_lit"
    ]
   }
  }

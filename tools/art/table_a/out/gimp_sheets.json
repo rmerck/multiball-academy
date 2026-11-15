@@ -5,19 +5,38 @@
   "altitude_plate": {
    "anchor": "centre",
    "cellPixels": [
-    240,
-    400
+    256,
+    448
    ],
    "cellUnits": [
-    60,
-    100
+    64,
+    112
    ],
-   "columns": 1,
+   "columns": 6,
    "file": "altitude_plate.png",
    "frames": [
-    "plate"
+    "base",
+    "fl100",
+    "fl200",
+    "fl300",
+    "fl400",
+    "fl500"
    ],
-   "note": "printed floor art (deck-dark), under the five rungs"
+   "note": "printed floor art (deck-dark): an altimeter tape whose five sockets hold inserts_altitude rungs (FL100 bottom); frames fl<N>00 are overlays holding only the pointer at that level",
+   "sockets": {
+    "centreXUnits": 38.0,
+    "centreYUnits": [
+     92.0,
+     74.0,
+     56.0,
+     38.0,
+     20.0
+    ],
+    "sizeUnits": [
+     46,
+     14
+    ]
+   }
   },
   "decals_nameplates": {
    "anchor": "centre",
