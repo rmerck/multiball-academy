@@ -1,9 +1,9 @@
 # tools/art/table_a: Table A (Flight Academy) art masters
 
-These are the masters for concept A's toys and finishes. They are not shipped yet: nothing here is under
-`assets/` or in the game's asset manifest. Renderer integration comes after the geometry gate G1, and moves the
-chosen files into `assets/` and `tools/art/SHA256SUMS`. The style board is kept outside the repository
-(`board/ios/art-A/STYLE.md`).
+These are the masters for concept A's toys and finishes. `ship.py` moves the ones the game draws into
+`assets/table_a/` at two pixels per unit (listed in `tools/art/SHA256SUMS`); `tools/art/gen_header.py` copies
+their sheet layout and the lamp plan into `src/generated/ArtPalette.hpp` for the renderer. The style board is kept
+outside the repository (`board/ios/art-A/STYLE.md`).
 
 | Path | What |
 |---|---|
@@ -16,7 +16,8 @@ chosen files into `assets/` and `tools/art/SHA256SUMS`. The style board is kept 
 | `layout_a.json` | Snapshot of `pinball_layout` from `table/a-geometry` (see `_source`); the ramps, G-FORCE and plastics are drawn from it. Refresh it when the geometry moves |
 | `make_floor.py` | Playfield base (skia, the pinned art venv, Linux): `floor_a.png` (flush only), `background_a.png` (plus raised static parts), `gi_a.png` (greyscale GI light map), `lamp_plan.json` (98 inserts: 58 from `kLamps`, 40 proposed). Needs the Blender/GIMP masters in `out/` |
 | `check.py` | Hashes against `SHA256SUMS`, PNG chunks and sizes, and the floor-luminance budget for flush pieces and `floor_a.png` |
-| `composite.py` | Full-table preview at iPhone 18 Pro width (1206 px), `fl100` or `fl500` sample state; not shipped |
+| `composite.py` | Full-table preview at iPhone 18 Pro width (1206 px), `fl100` or `fl500` sample state; not shipped. `render()` is also the table `tools/art/visibility_full.py --table-a` measures the ball against |
+| `ship.py` | The shipped copies: `assets/table_a/` (sheets halved to 2 px per unit on premultiplied alpha; `background.png` and `gi.png` copied) |
 | `contact.py` | Review contact sheet (every sheet, the floor images, a composite); not shipped |
 
 ## Regenerate (macOS arm64, where the reference was made)
@@ -36,6 +37,12 @@ build/art-venv/bin/python tools/art/table_a/make_floor.py
 build/art-venv/bin/python tools/art/table_a/check.py --report
 build/art-venv/bin/python tools/art/table_a/composite.py /tmp/composite_fl500.png fl500
 build/art-venv/bin/python tools/art/table_a/contact.py /tmp/contact.png /tmp/composite_fl500.png
+build/art-venv/bin/python tools/art/table_a/ship.py      # assets/table_a
+python3 tools/art/gen_header.py                          # src/generated/ArtPalette.hpp
+# then update tools/art/SHA256SUMS; gates:
+python3 tools/art/check_sums.py
+(cd tools/art && ../../build/art-venv/bin/python visibility_full.py build/art-review --fx --table-a)   # FL500
+(cd tools/art && ../../build/art-venv/bin/python visibility_full.py build/art-review --fx --table-a --fl100)
 ```
 
 Reproducibility, as verified on the reference Mac (Blender 5.3.0, GIMP 3.2):
