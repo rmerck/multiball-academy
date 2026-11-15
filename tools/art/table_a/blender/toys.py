@@ -39,8 +39,8 @@ HEX = {
     "DAY": "#6FB4FF", "CLEAR": "#F2F4FF", "DUSK": "#FFB050", "SUNSET": "#FF8A5C", "NIGHTV": "#9A6BFF",
     "CORAL": "#FF5A4E", "SLATE": "#2A3048",
     # floor paint for flush pieces under ball paths: deck-dark so the ball keeps 3:1 (palette LUM_DECK_MAX)
-    "F_DECK": "#161B3C", "F_PAINT_W": "#3E4670", "F_PAINT_Y": "#5A4A1E", "F_BLADE": "#262C58",
-    "F_BAND": "#5E2228", "F_TIP": "#5A4C18", "F_RING1": "#164A52", "F_RING2": "#24406E", "F_RING3": "#3A2C66",
+    "F_DECK": "#161B3C", "F_PAINT_W": "#3E4670", "F_PAINT_Y": "#5A4A1E", "F_BLADE": "#1E2450",
+    "F_BAND": "#5E2228", "F_TIP": "#5A4C18", "F_RING1": "#123E46", "F_RING2": "#1E365E", "F_RING3": "#302458",
     "F_STENCIL": "#262C52",
 }
 
@@ -112,6 +112,7 @@ def png_write(path, rgba):
 def reset():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.context.preferences.edit.keyframe_new_interpolation_type = "CONSTANT"
+    bpy.context.preferences.filepaths.save_version = 0   # no .blend1 backups
 
 
 def setup_scene(name, samples, cell, centre, shadow=True):
@@ -226,7 +227,7 @@ def mat(name, colour, metallic=0.0, rough=0.35, coat=0.0, trans=0.0, ior=1.45, e
 def chrome(floor=False):
     """Polished chrome; floor=True: the duller trim of flush pieces (highlights held under LUM_STATIC_MAX)."""
     if floor:
-        return mat("FloorChrome", "#6E7A90", metallic=1.0, rough=0.30)
+        return mat("FloorChrome", "#5A6478", metallic=1.0, rough=0.34)
     return mat("Chrome", "#E8F0FA", metallic=1.0, rough=0.12)
 
 
@@ -577,7 +578,7 @@ def build_flight_deck():
         x = 483.0 + k * 8
         stripe(x, 306.0, x + 4, 309.0, 1.2, paint_y)
     # deck-edge lights: 14 small lenses along both long edges (emit in the lit frame)
-    lens_m = mat("EdgeLens", HEX["AQUA"], rough=0.1, coat=1.0, emit=HEX["AQUA"], strength=0.0)
+    lens_m = mat("EdgeLens", "#1E5C5C", rough=0.2, coat=0.6, emit=HEX["AQUA"], strength=0.0)   # unlit lens: LUM_UNLIT_LENS
     for k in range(7):
         y = cy - hh + 14 + k * (2 * hh - 28) / 6
         for x in (cx - hw + 4.5, cx + hw - 4.5):
@@ -587,7 +588,7 @@ def build_flight_deck():
          font="SairaStencilOne-Regular.ttf", rot=(0, 0, math.radians(90)))
     frames = SHEETS["flight_deck"]["frames"]
     for f, label in enumerate(frames, start=1):
-        key_emit(lens_m, f, 6.0 if label == "lit" else 0.0)
+        key_emit(lens_m, f, 8.0 if label == "lit" else 0.0)
     _ = (plate, ang, L)
 
 
