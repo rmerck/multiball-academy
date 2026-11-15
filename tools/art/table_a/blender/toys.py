@@ -450,9 +450,10 @@ def build_propwash():
     R = 38.0
     rot = bpy.data.objects.new("Turntable", None)
     bpy.context.scene.collection.objects.link(rot)
-    parts = [cyl(R, 1.0, (0, 0, -0.5), 128, mat("Disc", HEX["F_DECK"], rough=0.4, coat=0.5)),
+    # matte disc: a clear-coated disc lit by the key rendered twice as bright as the floor round it
+    parts = [cyl(R, 1.0, (0, 0, -0.5), 128, mat("Disc", HEX["F_DECK"], rough=0.8, coat=0.0, spec=0.2)),
              cyl(R, 1.2, (0, 0, -0.4), 128, chrome(True)),
-             cyl(R - 2.2, 1.6, (0, 0, -0.4), 128, mat("Disc2", HEX["NIGHT"], rough=0.45, coat=0.4))]
+             cyl(R - 2.2, 1.6, (0, 0, -0.4), 128, mat("Disc2", HEX["NIGHT"], rough=0.8, coat=0.0, spec=0.2))]
     for k, rr in enumerate((14.0, 22.0, 30.0)):
         bpy.ops.mesh.primitive_torus_add(major_radius=rr, minor_radius=0.55, major_segments=96, minor_segments=8,
                                          location=(0, 0, 0.42))
