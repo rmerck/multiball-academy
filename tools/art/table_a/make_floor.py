@@ -29,7 +29,7 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.normpath(os.path.join(HERE, "..")))
 import palette as P  # noqa: E402
-from common import (C, Stage, blur, chrome_sweep, fill, font, hexrgb, lin, mix, ordered_dither, plus,  # noqa: E402
+from common import (C, Stage, blur, chrome_sweep, fill, font, hexrgb, lin, mix, ordered_dither, plus,  # noqa: E402,F401
                     poly_path, rad, ramp, save_png, shade, stroke, text_path)
 
 OUT = os.path.join(HERE, "out")

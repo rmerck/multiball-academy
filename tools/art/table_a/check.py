@@ -2,7 +2,7 @@
 #  1. every file listed in tools/art/table_a/SHA256SUMS has that hash, and every PNG in out/ is listed;
 #  2. every PNG holds IHDR, IDAT and IEND only (no text, time, profile or EXIF), 8-bit RGBA, no edge over
 #     4096 pixels (the game's own limits, tools/check_assets.py);
-#  3. sheet sizes match out/sheets.json;
+#  3. sheet sizes match out/sheets.json and out/gimp_sheets.json;
 #  4. floor pieces (flush with the playfield, under ball paths) keep to the deck's luminance budget
 #     (tools/art/palette.py LUM_DECK_MAX for paint, LUM_STATIC_MAX for baked highlights, LUM_UNLIT_LENS
 #     for unlit lenses): reported per sheet. The check fails, in an unlit frame, if the 75th percentile of
@@ -24,7 +24,11 @@ OUT = os.path.join(HERE, "out")
 LUM_DECK_MAX = 0.060
 LUM_STATIC_MAX = 0.45
 # sheet -> frames that are flush with the playfield and unlit
-FLOOR = {"propwash": None, "flight_deck": ["off"], "inserts": None}
+FLOOR = {"propwash": None, "propwash_blur": None, "propwash_ring": None, "flight_deck": ["off"],
+         "altitude_plate": ["base"]}
+# whole images flush with the playfield, checked inside the shell (layout_a.json)
+FLOOR_IMAGES = {"floor_a.png": 2}
+OTHER_IMAGES = ["background_a.png", "gi_a.png"]
 
 
 def chunks(path):
@@ -75,7 +79,9 @@ def main():
         rel = "tools/art/table_a/out/" + file
         if file.endswith(".png") and rel not in listed:
             problems.append("not in SHA256SUMS: " + rel)
-    meta = json.load(open(os.path.join(OUT, "sheets.json")))
+    meta = {"sheets": {}}
+    for name in ("sheets.json", "gimp_sheets.json"):
+        meta["sheets"].update(json.load(open(os.path.join(OUT, name)))["sheets"])
     for name, sh in sorted(meta["sheets"].items()):
         path = os.path.join(OUT, sh["file"])
         names, ihdr = chunks(path)
@@ -110,6 +116,27 @@ def main():
                     problems.append("%s %s: p75 luminance %.3f over %.3f" % (name, label, p75, LUM_DECK_MAX))
                 if p995 > LUM_STATIC_MAX:
                     problems.append("%s %s: p99.5 luminance %.3f over %.3f" % (name, label, p995, LUM_STATIC_MAX))
+    shell = json.load(open(os.path.join(HERE, "layout_a.json")))["shell"]
+    for file in list(FLOOR_IMAGES) + OTHER_IMAGES:
+        path = os.path.join(OUT, file)
+        names, ihdr = chunks(path)
+        if names is None or sorted(set(names)) != ["IDAT", "IEND", "IHDR"]:
+            problems.append("%s: not a clean PNG" % file)
+            continue
+        if max(ihdr[0], ihdr[1]) > 4096:
+            problems.append("%s: over 4096" % file)
+        if file in FLOOR_IMAGES:
+            from PIL import ImageDraw
+            k = FLOOR_IMAGES[file]
+            arr = np.asarray(Image.open(path).convert("RGB"))
+            mask = Image.new("L", (arr.shape[1], arr.shape[0]), 0)
+            ImageDraw.Draw(mask).polygon([(x * k, y * k) for x, y in shell], fill=255)
+            lum = luminance(arr)[np.asarray(mask) > 0]
+            p50, p75, p995 = np.percentile(lum, [50, 75, 99.5])
+            if report:
+                print("%-12s %-8s lum p50 %.3f p75 %.3f p99.5 %.3f" % (file, "shell", p50, p75, p995))
+            if p75 > LUM_DECK_MAX or p995 > LUM_STATIC_MAX:
+                problems.append("%s: p75 %.3f / p99.5 %.3f over the floor budget" % (file, p75, p995))
     if problems:
         sys.exit("\n".join(problems))
     print("table_a check: %d file(s) ok" % len(listed))

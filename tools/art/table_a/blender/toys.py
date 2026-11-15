@@ -39,9 +39,9 @@ HEX = {
     "DAY": "#6FB4FF", "CLEAR": "#F2F4FF", "DUSK": "#FFB050", "SUNSET": "#FF8A5C", "NIGHTV": "#9A6BFF",
     "CORAL": "#FF5A4E", "SLATE": "#2A3048",
     # floor paint for flush pieces under ball paths: deck-dark so the ball keeps 3:1 (palette LUM_DECK_MAX)
-    "F_DECK": "#161B3C", "F_PAINT_W": "#3E4670", "F_PAINT_Y": "#5A4A1E", "F_BLADE": "#1E2450",
+    "F_DECK": "#161B3C", "F_PAINT_W": "#3E4670", "F_PAINT_Y": "#5A4A1E", "F_BLADE": "#191F46",
     "F_BAND": "#6A5418", "F_TIP": "#B04428", "F_RING1": "#123E46", "F_RING2": "#1E365E", "F_RING3": "#302458",
-    "F_STENCIL": "#262C52", "F_EDGE": "#4A5698", "F_RINGBG": "#10163A",
+    "F_STENCIL": "#262C52", "F_EDGE": "#38427C", "F_RINGBG": "#10163A",
 }
 
 
@@ -480,7 +480,7 @@ def build_propwash():
         parts.append(prism(tip, 2.15, 2.4, plastic("F_TIP", 0.25, 0.6), "Tip%d" % k))
     hub = cyl(7.5, 7.0, (0, 0, 5.0), 64, chrome(), r2=1.2)
     smooth(hub)
-    parts += [hub, cyl(9.0, 1.8, (0, 0, 1.6), 64, chrome(True))]
+    parts += [hub, cyl(8.2, 1.8, (0, 0, 1.6), 64, chrome(True))]
     for k in range(3):
         a = math.radians(30 + 120 * k)
         parts.append(cyl(1.1, 0.8, (7.6 * math.cos(a), 7.6 * math.sin(a), 2.6), 16, chrome()))
