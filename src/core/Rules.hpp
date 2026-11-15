@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -62,6 +63,23 @@ inline constexpr std::uint64_t kBonusLaneSet = 5'000;
 inline constexpr std::uint64_t kBonusSwitch = 250;
 inline constexpr int kBonusSwitchCap = 400;
 inline constexpr std::uint64_t kMaxScore = 999'999'999'999ULL;
+// Concept A (G5).
+inline constexpr std::uint64_t kTaxiLetter = 1'000;
+inline constexpr std::uint64_t kTaxiComplete = 25'000;
+inline constexpr std::uint64_t kAceLetter = 5'000;
+inline constexpr std::uint64_t kAceComplete = 50'000;  // Then 25,000 more each time.
+inline constexpr std::uint64_t kGForce = 2'500;         // Each G.
+inline constexpr std::uint64_t kGForceTop = 50'000;     // 5G.
+inline constexpr std::uint64_t kFlapsLetter = 250;
+inline constexpr std::uint64_t kFlapsComplete = 10'000;
+inline constexpr std::uint64_t kDroneHit = 1'000;
+inline constexpr std::uint64_t kBanditDown = 25'000;
+inline constexpr std::uint64_t kCatShot = 5'000;
+inline constexpr std::uint64_t kDeckDrain = 1'000;
+inline constexpr std::uint64_t kPylon = 2'500;
+inline constexpr std::uint64_t kPylonJackpotAdd = 25'000;  // To the next jackpot.
+inline constexpr std::uint64_t kDogfightJackpot = 100'000;
+inline constexpr std::uint64_t kWingsShot = 100'000;  // 2X of an Air Show shot.
 }  // namespace points
 
 // The numbers that set the pace of a game. Tuned against the rule rows of
@@ -91,12 +109,16 @@ inline constexpr bool kFirstBankAnyThreeHits = false;
 // a second bank before the shot that starts it, 0 a bank for every shot.
 // Later multiballs always need a bank for every shot. (At 2, two games in
 // three had an Academy multiball; at 0, one in eight.)
-inline constexpr int kFirstMultiballOpenLocks = 1;
+inline constexpr int kFirstMultiballOpenLocks = 0;
+// G5 tuning pass (C3b: Squadron in 96.8% of games, 5 a game): the lock is
+// lit by this many completed bay-door banks (a CAT SHOT counts as one).
+inline constexpr int kBanksPerLock = 3;
 inline constexpr int kJackpotsForSuper = 3;
-inline constexpr double kBallSaveSeconds = 15.0;
+// At FL100; the Altitude's ballSaveScale shortens it (4 s at FL500).
+inline constexpr double kBallSaveSeconds = 10.0;
 inline constexpr double kExtraCreditSaveSeconds = 10.0;
-inline constexpr double kTurboGraceSeconds = 10.0;
-inline constexpr double kAcademyGraceSeconds = 15.0;
+inline constexpr double kTurboGraceSeconds = 6.0;
+inline constexpr double kAcademyGraceSeconds = 10.0;
 inline constexpr double kGraduationGraceSeconds = 30.0;
 inline constexpr double kComboSeconds = 4.0;
 inline constexpr double kOverdriveSeconds = 20.0;
@@ -105,6 +127,29 @@ inline constexpr double kSuperSkillSeconds = 5.0;
 // of the arch or a roll call lane by the same ball within this long.
 inline constexpr float kCircuitMinSpeed = 900.0F;
 inline constexpr double kCircuitSeconds = 2.5;
+// Concept A (G5).
+// Bandit armour: hits that knock the drone down, plus the Altitude's
+// extraHits (3, 4, 4, 5, 6); the Air Show finale's drone takes this many.
+inline constexpr int kDroneArmourBase = 3;
+inline constexpr int kFinaleArmour = 9;
+// The scramble meter: what a made CAT SHOT adds to it (two of them fill the
+// first meter, as the concept's "CAT SHOT twice").
+inline constexpr int kTurboPerCatShot = 30;
+inline constexpr int kTurboPerDroneHit = 3;
+// Ramp shots that light the Flight Deck's diverter.
+inline constexpr int kRampsForDeck = 2;
+// A second Mission scoop this soon after one that paid pays a quarter.
+inline constexpr double kMissionRepeatSeconds = 20.0;
+// Sorties qualified by their own shots: after this many sorties have been
+// started in a round, each qualifier asks for twice as many.
+inline constexpr int kSortiesBeforeHarder = 2;
+// F-L-A-P-S letters time out at FL300 and above (Knobs::guardsUp), after
+// this long times the Altitude's timerScale.
+inline constexpr double kFlapsLetterSeconds = 20.0;
+// The captive ball: a strike at least this fast is worth 2G.
+inline constexpr float kGForceHardSpeed = 600.0F;
+inline constexpr int kGForceForDogfight = 3;
+inline constexpr int kGForceTop = 5;
 }  // namespace tuning
 
 // How a ball came to drain.
@@ -169,7 +214,11 @@ inline constexpr std::size_t kFeatureCount = 26;
 
 enum class LampState : std::uint8_t { Off, On, Blink, FastBlink };
 
-enum class Multiball : std::uint8_t { None, Turbo, Academy, Graduation };
+// Concept A's names: Turbo is SCRAMBLE MULTIBALL (the scramble meter's second
+// ball), Academy is SQUADRON MULTIBALL (two balls locked in the Hangar, the
+// third starts it), Graduation is the AIR SHOW, Dogfight the DOGFIGHT
+// sortie's second ball.
+enum class Multiball : std::uint8_t { None, Turbo, Academy, Graduation, Dogfight };
 
 // The end-of-ball bonus as it was last tallied.
 struct BonusTally {
@@ -187,7 +236,10 @@ class Rules;
 // Rules::lampState answers for them, from the rules' public queries alone.
 [[nodiscard]] LampState conceptLampState(const Rules& rules, table::LampId lamp) noexcept;
 
-// The rules of the game: scoring, balls, courses, multiball and messages.
+// The rules of the game: scoring, balls, sorties, multiball and messages.
+// Concept A (docs/RULES.md): the code's "course" is a sortie, "Briefing" the
+// Mission scoop, "circuit" a loop, "Turbine" the Afterburner lane, "turbo"
+// the scramble meter, "Graduation" the Air Show.
 // It knows nothing about physics. Game tells it what the balls did and how
 // many there are, asks it what the table should do (doors, kickback, balls
 // to launch, locks to let go), and the display asks it what to show.
@@ -203,7 +255,7 @@ class Rules {
  public:
   static constexpr int kBallsPerGame = 3;
   static constexpr int kLocksNeeded = 2;
-  static constexpr int kMaxExtraBalls = 2;      // Awarded in a game.
+  static constexpr int kMaxExtraBalls = 1;      // Awarded in a game.
   static constexpr int kMaxExtraBallsHeld = 1;  // Waiting to be played.
   static constexpr int kMaxBonusMultiplier = 5;
   static constexpr int kMaxOverdrive = 3;
@@ -275,20 +327,27 @@ class Rules {
   void onStandup(std::size_t index, float speed) noexcept;
   void onCaptiveBall(float speed) noexcept;
   int droneHits() const noexcept { return droneHits_; }
-  // --- Concept A (G1 stubs; the full rules are G5) ----------------------------
-  // The Skyway's diverter sends its next ball to the Flight Deck. Stub:
-  // every other Skyway (lit by one that went to the inlane), or always or
-  // never when forced for measuring (setDeckPolicy: 0 alternate, 1 always,
-  // 2 never).
+  // Hits that knock the drone down now (the Altitude adds armour; the Air
+  // Show finale's drone has its own).
+  int droneArmour() const noexcept;
+  // --- Concept A --------------------------------------------------------------
+  // The Skyway's diverter sends its next ball to the Flight Deck: lit by
+  // kRampsForDeck ramps, by the super skill shot's window and all through
+  // a Scramble multiball; or always or never when forced for measuring
+  // (setDeckPolicy: 0 rules, 1 always, 2 never).
   bool deckLit() const noexcept {
-    return deckPolicy_ == 1 || (deckPolicy_ == 0 && deckLit_);
+    return deckPolicy_ == 1 ||
+           (deckPolicy_ == 0 && !gameOver_ &&
+            (deckLit_ || superSkillSteps_ > 0 || turboMultiball_));
   }
   void setDeckPolicy(int policy) noexcept { deckPolicy_ = policy < 0 || policy > 2 ? 0 : policy; }
-  // The pylon is wanted up: during a multiball (a sortie, G5, will add its
-  // own), or forced for measuring (setPylonPolicy: 0 rules, 1 always up,
-  // 2 never).
+  // The pylon is wanted up: during a sortie, Wings Ceremony or a multiball
+  // (a hit adds time to the sortie or value to the next jackpot), or forced
+  // for measuring (setPylonPolicy: 0 rules, 1 always up, 2 never).
   bool pylonWanted() const noexcept {
-    return pylonPolicy_ == 1 || (pylonPolicy_ == 0 && !gameOver_ && multiballRunning());
+    return pylonPolicy_ == 1 ||
+           (pylonPolicy_ == 0 && !gameOver_ &&
+            (multiballRunning() || courseRunning() || wingsRunning()));
   }
   void setPylonPolicy(int policy) noexcept { pylonPolicy_ = policy < 0 || policy > 2 ? 0 : policy; }
   void onPylon() noexcept;
@@ -298,6 +357,33 @@ class Rules {
   bool flapLit(std::size_t letter) const noexcept {
     return letter < flapsLit_.size() && flapsLit_[letter];
   }
+  // T-A-X-I (stand-ups 0 to 3) and the deck's A-C-E (stand-ups 4 to 6).
+  bool taxiLit(std::size_t letter) const noexcept {
+    return letter < taxiLit_.size() && taxiLit_[letter];
+  }
+  bool aceLit(std::size_t letter) const noexcept {
+    return letter < aceLit_.size() && aceLit_[letter];
+  }
+  // A-C-E has been spelt (one of the Air Show's requirements).
+  bool aceDone() const noexcept { return aceDone_; }
+  // The G-meter: 0 to tuning::kGForceTop.
+  int gForce() const noexcept { return gForce_; }
+  // A sortie's qualifier has been met: the Mission starts it.
+  bool courseQualified(std::size_t index) const noexcept {
+    return index < kCourseCount && ready_[index];
+  }
+  // Qualifying shots still needed for a sortie (0 once qualified).
+  int qualifyRemaining(std::size_t index) const noexcept;
+  // Wings Ceremony (the mini-wizard: every sortie started).
+  bool wingsLit() const noexcept;
+  bool wingsRunning() const noexcept { return wingsSteps_ > 0 && !gameOver_; }
+  double wingsSecondsLeft() const noexcept { return secondsOf(wingsSteps_); }
+  // The Air Show's finale: the Bandit is down and the Hangar is lit.
+  bool finaleHangarLit() const noexcept {
+    return gradStage_ == GradStage::Commencement && finaleBanditDown_;
+  }
+  // DOGFIGHT: a drone hit has lit the Hangar's dogfight jackpot.
+  bool dogfightJackpotLit() const noexcept;
   void onRollover(std::size_t index, std::size_t ball = 0) noexcept;
   // A ball was taken by a hole (Game tells it from the physics state, once
   // per capture). The answer matters for the Hangar only; any other hole
@@ -380,6 +466,9 @@ class Rules {
   // multiball's grace (the short save after an eject stays). For measuring
   // how balls leave the table.
   void setBallSaveEnabled(bool enabled) noexcept { ballSaveEnabled_ = enabled; }
+  // Completed bay-door banks that light the lock (tuning::kBanksPerLock in
+  // play): 1 for tests and benches of the bank and the lock themselves.
+  void setBanksPerLock(int banks) noexcept { banksPerLock_ = std::clamp(banks, 1, tuning::kBanksPerLock); }
   // The Altitude never below this level (0 to progression::kTopLevel), now
   // and at every new game: for measuring each level's table with the bots,
   // and for the tools' stills.
@@ -524,6 +613,10 @@ class Rules {
   // for them.
   LampState doorLampState(std::size_t door) const noexcept;
 
+  // The ramp RAMP RUNS wants next (Runway or Skyway); meaningful only while
+  // it runs.
+  Shot rampRunsShot() const noexcept { return navShot_; }
+
   // Points earned from each feature this game.
   std::uint64_t scoreFrom(Feature feature) const noexcept {
     return featureScore_[std::to_underlying(feature)];
@@ -532,6 +625,7 @@ class Rules {
   int turboMultiballs() const noexcept { return turboMultiballs_; }
   int academyMultiballs() const noexcept { return academyMultiballs_; }
   int coursesStarted() const noexcept { return coursesStarted_; }
+  int wingsCeremonies() const noexcept { return wingsCeremonies_; }
   int jackpotsCollected() const noexcept { return jackpotsCollected_; }
 
   // Sounds the rules asked for since the last call. Calling it clears them.
@@ -616,6 +710,18 @@ class Rules {
   void failCourse() noexcept;
   void courseOver() noexcept;
   void hopNavigation() noexcept;
+  // Concept A (G5).
+  void qualifyCourse(CourseId id, int amount = 1) noexcept;
+  int qualifyNeeded(std::size_t index) const noexcept;
+  bool airShowReady() const noexcept;
+  void checkAirShow() noexcept;
+  void startWings() noexcept;
+  void endWings() noexcept;
+  void banditDown() noexcept;
+  // A bay-door bank completed (or a CAT SHOT): toward lighting the lock.
+  void addBank() noexcept;
+  void loopMade(Shot shot) noexcept;
+  std::uint32_t courseStepsFor(double seconds) const noexcept;
   bool navigable(Shot shot) const noexcept;
 
   // Whether the rules want the bay doors down now.
@@ -770,6 +876,30 @@ class Rules {
   int deckPolicy_ = 0;
   int pylonPolicy_ = 0;
   std::array<bool, 5> flapsLit_{};
+
+  // Concept A (G5).
+  std::array<bool, 4> taxiLit_{};
+  std::array<bool, 3> aceLit_{};
+  bool aceDone_ = false;
+  int aceSets_ = 0;
+  int gForce_ = 0;
+  int deckRamps_ = 0;
+  // The ball (slot) on the CAT SHOT's ride: the Hangar locks it.
+  std::uint8_t catBall_ = 0xFF;
+  std::uint32_t flapsSteps_ = 0;
+  std::uint32_t missionRepeatSteps_ = 0;
+  std::array<int, kCourseCount> qualify_{};
+  std::array<bool, kCourseCount> ready_{};
+  std::array<bool, kCourseCount> courseTried_{};
+  std::uint8_t lastLoop_ = kNoShot;
+  bool dogfightMultiball_ = false;
+  std::uint32_t wingsSteps_ = 0;
+  bool wingsDone_ = false;
+  int wingsCeremonies_ = 0;
+  bool finaleBanditDown_ = false;
+  std::uint64_t jackpotAdd_ = 0;
+  int banks_ = 0;
+  int banksPerLock_ = tuning::kBanksPerLock;
 
   // The rules' own source of chance: the same events give the same game.
   std::uint64_t random_ = 0xD1B54A32D192ED03ULL;

@@ -930,7 +930,7 @@ void testRev3LampStubs() {
   CHECK(state(LampId::DroneArmour5) == LampState::Off);
   step(game, show);
   CHECK(show.lampState(LampId::DroneArmour2) == LampState::On);
-  CHECK(!rules.onDrone() && !rules.onDrone() && rules.onDrone());  // DRONE DOWN.
+  CHECK(rules.onDrone());  // BANDIT DOWN: three at FL100.
   bool dark = true;
   for (int k = 0; k < 5; ++k) {
     dark = dark && state(static_cast<LampId>(std::to_underlying(LampId::DroneArmour1) + k)) ==
@@ -1043,16 +1043,17 @@ void testLaddersFill() {
   Game game;
   LightShow show;
   inPlay(game, show);
-  // Bumper Basics, offered at the start: into the Briefing room, then its
-  // twelve thrusters (as core/Scenes.cpp starts a course).
+  // LOOP DRILL, offered at the start: into the Mission scoop, then its
+  // three loops.
   pinball::Rules& rules = Seam::rules(game);
   const std::size_t rank = rules.rank();
   CHECK(rules.briefingLit() && rules.courseOffered() == 0);
   rules.onHole(table::kScoopHole, game.ball().id);
   rules.onEject(table::kScoopHole);
   CHECK(rules.courseRunning());
-  for (std::size_t i = 0; i < 12; ++i) {
-    rules.onBumper(i % table::kBumpers.size());
+  for (int i = 0; i < 3; ++i) {
+    rules.onSensor(0, 1, 1200.0F, game.ball().id);
+    rules.onSensor(2, 1, 900.0F, game.ball().id);
   }
   CHECK(rules.rank() == rank + 1);
   float bottom = 0.0F;

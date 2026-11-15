@@ -34,6 +34,8 @@ struct RulesBench {
   bool announce = true;
 
   RulesBench() {
+    // One bank lights the lock here; the play value (three) has its own test.
+    rules.setBanksPerLock(1);
     apply();
     rules.onBallInPlay();
   }
@@ -123,10 +125,16 @@ struct RulesBench {
     rules.onEject(table::kScoopHole);
   }
   void door(std::size_t index) { rules.onDropTarget(index); }
-  // All three doors, and the step in which the bank drops.
+  // All three doors, as many banks as light the lock (a bank short of it
+  // clears the marks), and the step in which the bank drops.
   void doors() {
-    for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
-      door(i);
+    for (int bank = 0; bank < pinball::tuning::kBanksPerLock; ++bank) {
+      for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
+        door(i);
+      }
+      if (rules.doorMarked(0)) {
+        break;
+      }
     }
     step();
   }

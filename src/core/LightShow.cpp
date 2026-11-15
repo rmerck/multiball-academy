@@ -817,6 +817,7 @@ float LightShow::targetEnergy(const Game& game) const noexcept {
       return level;
     case Multiball::Turbo:
     case Multiball::Academy:
+    case Multiball::Dogfight:  // Concept A's G5 multiball: as busy as the others.
       break;
   }
   return std::min(1.0F, level + 0.35F);

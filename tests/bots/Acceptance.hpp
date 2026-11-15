@@ -402,7 +402,7 @@ struct GamesResult {
   std::vector<double> multiballSeconds;
   int multiballs = 0;
   int multiballsWithJackpot = 0;
-  std::array<int, 4> multiballsOfKind{};  // By Multiball.
+  std::array<int, 5> multiballsOfKind{};  // By Multiball.
   // Points from each feature, all games together.
   std::array<std::uint64_t, kFeatureCount> featureScore{};
   std::uint64_t totalScore = 0;

@@ -113,6 +113,8 @@ bool near(Vec2 a, Vec2 b) { return distance(a, b) < 0.01F; }
 
 // Marks all three doors, as three hits would: the bank drops on the next step.
 void markDoors(Game& game) {
+  // One bank lights the lock for these tests (three in play).
+  Seam::rules(game).setBanksPerLock(1);
   for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
     Seam::rules(game).onDropTarget(i);
   }
@@ -254,6 +256,7 @@ void testDoorBank() {
   {  // The bank drops as one, and only when all three doors have been hit:
      // one door hit again and again opens nothing.
     Game game;
+    Seam::rules(game).setBanksPerLock(1);
     run(game, 2);
     CHECK(game.doorBankUp());
     for (int i = 0; i < 5; ++i) {
@@ -452,7 +455,11 @@ void testLock() {
     const BallView inBay = viewOf(game, 0);
     CHECK(inBay.visible && inBay.locked && !inBay.raised);
     CHECK(inBay.position.x == table::kLockBays[0].x && inBay.position.y == table::kLockBays[0].y);
-    // The doors stay down and the lock stays lit.
+    // The doors come back up behind it; a bank lights the lock again.
+    run(game, kSecond);
+    CHECK(game.doorBankUp() && !game.rules().lockLit());
+    markDoors(game);
+    run(game, 2);
     CHECK(!game.doorBankUp());
 
     CHECK(shootHangar(game, 1));
@@ -603,6 +610,9 @@ void testLock() {
     markDoors(game);
     run(game, 1);
     CHECK(shootHangar(game, 0));
+    run(game, kSecond);
+    markDoors(game);  // Open again for the next.
+    run(game, 2);
     const std::size_t next = otherFreeSlot(game, 0);
     CHECK(next == 1);
     putBall(game, next, {table::kLockBays[0].x, 440.0F}, {0.0F, -900.0F});
@@ -654,7 +664,7 @@ void testLock() {
         CHECK(game.queuedBalls() == 0 && game.ballCount() == 3);
         CHECK(rules.multiball() == pinball::Multiball::None);
         CHECK(rules.scoreFrom(pinball::Feature::TurboBonus) - bonus == pinball::points::kTurboBonus);
-        CHECK(rules.message() == std::string_view("TURBO BONUS"));
+        CHECK(rules.message() == std::string_view("SCRAMBLE BONUS"));
       }
     }
   }
@@ -1404,18 +1414,20 @@ void testDrone() {
     run(game, 2);
     std::vector<int> stages;
     int downAt = -1;
-    for (int hit = 0; hit < 5; ++hit) {
+    const int armour = game.rules().droneArmour();
+    CHECK(armour == pinball::tuning::kDroneArmourBase);  // FL100.
+    for (int hit = 0; hit < armour; ++hit) {
       stages.push_back(hitDrone(game));
       if (findEvent(game, GameEvent::Type::DroneDown) != nullptr) {
         downAt = static_cast<int>(game.stepCount());
       }
       // Away, and the recoil over, before the next.
-      for (int i = 0; i < 30 && hit < 4; ++i) {
+      for (int i = 0; i < 30 && hit < armour - 1; ++i) {
         Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
         game.step(idle);
       }
     }
-    CHECK((stages == std::vector<int>{1, 2, 3, 4, table::kDroneArmour}));
+    CHECK((stages == std::vector<int>{1, 2, table::kDroneArmour}));
     CHECK(downAt >= 0 && game.rules().droneHits() == 0);
     pinball::DroneView drone = game.drone();
     CHECK(drone.knocked && !drone.up && drone.downLeft > 0.99F);
@@ -1439,9 +1451,10 @@ void testDrone() {
   {  // While it is down its time counts down, and it is drawn out of sight.
     Game game;
     run(game, 2);
-    for (int hit = 0; hit < 5; ++hit) {
-      CHECK(hitDrone(game) == hit + 1);
-      for (int i = 0; i < 30 && hit < 4; ++i) {
+    const int armour = game.rules().droneArmour();
+    for (int hit = 0; hit < armour; ++hit) {
+      CHECK(hitDrone(game) == (hit + 1 < armour ? hit + 1 : table::kDroneArmour));
+      for (int i = 0; i < 30 && hit < armour - 1; ++i) {
         Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
         game.step(idle);
       }

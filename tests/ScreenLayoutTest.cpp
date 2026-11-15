@@ -849,6 +849,7 @@ void testTableLights() {
   CHECK(on && off);
   // Every door hit, as three hits would; then a ball sent into the Hangar.
   using Seam = GameTestAccess;
+  Seam::rules(game).setBanksPerLock(1);
   for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
     Seam::rules(game).onDropTarget(door);
   }

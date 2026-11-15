@@ -202,7 +202,7 @@ void testRules() {
     CHECK(bench.score() - before == 3 * points::kRollCallLane + points::kRollCallComplete);
     CHECK(!bench.rules.rollCallLit(0) && !bench.rules.rollCallLit(1) && !bench.rules.rollCallLit(2));
     CHECK(bench.rules.overdriveLit() && bench.rules.overdrive() == 1);
-    CHECK(bench.message() == std::string_view("ROLL CALL COMPLETE"));
+    CHECK(bench.message() == std::string_view("R-A-D COMPLETE"));
     bench.wait(1.0);
     CHECK(bench.message() == std::string_view("OVERDRIVE IS LIT"));
     CHECK(bench.rules.lampState(LampId::ArrowTurbine) == LampState::Blink);
@@ -363,7 +363,7 @@ void testRules() {
         if (said.starts_with("EXTRA CREDIT")) {
           const std::string_view what[] = {"EXTRA CREDIT 25,000",        "EXTRA CREDIT 50,000",
                                            "EXTRA CREDIT  KICKBACK LIT", "EXTRA CREDIT  BONUS X",
-                                           "EXTRA CREDIT  BALL SAVER",   "EXTRA CREDIT  TURBO BOOST",
+                                           "EXTRA CREDIT  BALL SAVER",   "EXTRA CREDIT  SCRAMBLE BOOST",
                                            "EXTRA CREDIT  OVERDRIVE LIT"};
           for (int k = 0; k < 7; ++k) {
             seen[k] += said == what[k] ? 1 : 0;
@@ -451,8 +451,8 @@ void testRules() {
     bench.scoop();  // Starts the first course.
     CHECK(bench.score() - before == points::kBriefingRoom && bench.rules.courseRunning());
     before = bench.score();
-    bench.scoop();
-    CHECK(bench.score() - before == points::kBriefingRepeat);
+    bench.scoop();  // Again within 20 s: a quarter.
+    CHECK(bench.score() - before == points::kBriefingRepeat / 4);
     bench.rules.onTarget(0);
     bench.rules.onTarget(1);
     before = bench.score();
@@ -616,7 +616,7 @@ void testRules() {
     bench.wait(60.0);
     CHECK(rules.ballSaveActive());
     bench.balls.free = 1;
-    bench.wait(7.5);
+    bench.wait(2.5);
     CHECK(rules.ballSaveActive());
     CHECK(rules.lampState(LampId::ShootAgain) == LampState::FastBlink);
     bench.wait(3.0);

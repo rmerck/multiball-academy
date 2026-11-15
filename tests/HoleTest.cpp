@@ -61,8 +61,11 @@ float distance(Vec2 a, Vec2 b) {
 // plays at FL100, where the Air Pocket and the Prop Wash are idle.
 // G2: re-recorded for the frictionless Hangar roof, the one-shape bay door
 // bank, deck stand-up A lowered, the deck set-down (507, 228) moving right,
-// the BOGEY drops and the RADAR stand-ups. Was 0x4213a29dab26e639.)
-constexpr std::uint64_t kSoakTrajectory = 0xa1fa4e7df9970e85ULL;
+// the BOGEY drops and the RADAR stand-ups (0xa1fa4e7df9970e85), then merged
+// with concept A's rules (G5, feat/a-rules, recorded there as
+// 0x09482ffd3c224202 for the new rules the script reaches): re-recorded on
+// the merge. Was 0x4213a29dab26e639.)
+constexpr std::uint64_t kSoakTrajectory = 0x9671ef8fc1d10394ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {

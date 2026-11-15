@@ -7,6 +7,7 @@
 #include "core/Game.hpp"
 #include "core/Input.hpp"
 #include "core/Rules.hpp"
+#include "core/Snapshot.hpp"
 #include "core/TableLayout.hpp"
 
 namespace pinball {
@@ -54,8 +55,14 @@ struct SceneStage {
     if (!runUntil(600, [this] { return game.doorBankUp() && !game.doorRaisePending(); })) {
       return false;
     }
-    for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
-      rules().onDropTarget(door);
+    // As many banks as light the lock (one short of it clears the marks).
+    for (int bank = 0; bank < tuning::kBanksPerLock; ++bank) {
+      for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
+        rules().onDropTarget(door);
+      }
+      if (rules().doorMarked(0)) {
+        break;
+      }
     }
     return runUntil(10, [this] { return !game.doorBankUp(); });
   }
@@ -114,57 +121,53 @@ struct SceneStage {
     run(1);
   }
 
-  // Lights the Briefing room with ramps if it is not, moves the blinking
-  // course with the thrusters to this one, and starts it.
+  // Qualifies this sortie alone (as its own shots would) and starts it at
+  // the Mission scoop.
   bool startCourse(CourseId id) {
     const auto index = static_cast<std::size_t>(id);
-    for (int i = 0; i < 4 && !rules().briefingLit(); ++i) {
-      shoot(Shot::Runway);
-    }
-    for (int i = 0; i < 6 && rules().courseOffered() != index; ++i) {
-      rules().onBumper(static_cast<std::size_t>(i) % table::kBumpers.size());
-    }
-    if (!rules().briefingLit() || rules().courseOffered() != index) {
+    save::RulesRecord record = rules().record();
+    record.ready = {};
+    record.ready[index] = true;
+    record.courseBlink = static_cast<std::uint8_t>(index);
+    rules().restore(record);
+    if (!rules().briefingLit()) {
       return false;
     }
     shoot(Shot::Briefing);
     return rules().course() == index;
   }
 
-  // What the running course asks for, until it is passed.
+  // What the running sortie asks for, until it is passed.
   bool passCourse() {
     const std::size_t course = rules().course();
     for (int i = 0; i < 64 && rules().course() == course; ++i) {
       switch (static_cast<CourseId>(course)) {
-        case CourseId::BumperBasics:
-          rules().onBumper(static_cast<std::size_t>(i) % table::kBumpers.size());
-          run(1);
-          break;
-        case CourseId::RunwayDrills:
-          shoot(i % 2 == 0 ? Shot::Runway : Shot::Skyway);
-          break;
-        case CourseId::CircuitTraining:
+        case CourseId::LoopDrill:
           shoot(i % 2 == 0 ? Shot::CircuitLeft : Shot::CircuitRight);
           break;
-        case CourseId::HangarSafety:
-          if (rules().goalText() == kGoalEnterHangar) {
+        case CourseId::RampRuns:
+          shoot(rules().rampRunsShot());
+          break;
+        case CourseId::Gunnery:
+          rules().onDrone();
+          run(1);
+          break;
+        case CourseId::Formation:
+          shoot(rules().navigationShot());
+          break;
+        case CourseId::NightLanding:
+          shoot(rules().goalText() == kGoalLanding ? Shot::Skyway : Shot::Runway);
+          break;
+        case CourseId::Dogfight:
+          if (rules().dogfightJackpotLit()) {
             if (!runUntil(10, [this] { return !game.doorBankUp(); })) {
               return false;
             }
             hangarEntry();
           } else {
-            for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
-              rules().onDropTarget(door);
-            }
+            rules().onDrone();
             run(1);
           }
-          break;
-        case CourseId::TurbineTheory:
-          rules().onSpin();
-          run(1);
-          break;
-        case CourseId::Navigation:
-          shoot(rules().navigationShot());
           break;
       }
     }
@@ -198,7 +201,7 @@ struct SceneStage {
         return rules().multiball() == Multiball::Academy && rules().multiballJackpotLit() &&
                game.ballCount() == 3;
       case Scene::Course: {
-        if (!startCourse(CourseId::RunwayDrills)) {
+        if (!startCourse(CourseId::RampRuns)) {
           return false;
         }
         shoot(Shot::Skyway);
@@ -207,6 +210,13 @@ struct SceneStage {
         return plunge() && rules().courseRunning() && rules().goalRemaining() > 0;
       }
       case Scene::Graduation: {
+        // The Air Show asks for both multiballs and A-C-E as well as the six
+        // sorties: those three are given as played.
+        save::RulesRecord record = rules().record();
+        record.academyMultiballs = 1;
+        record.turboMultiballs = 1;
+        record.aceDone = true;
+        rules().restore(record);
         for (std::size_t course = 0; course < kCourseCount; ++course) {
           if (!startCourse(static_cast<CourseId>(course)) || !passCourse()) {
             return false;

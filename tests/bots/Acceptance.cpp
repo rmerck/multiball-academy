@@ -846,7 +846,9 @@ LockBurstResult lockBursts(int bursts) {
     Game& game = harness.game();
     harness.kickbackOff = true;
     harness.advance();
-    // Open the Hangar with the lock lit, as three door hits do.
+    // Open the Hangar with the lock lit, as three door hits do (one bank
+    // lighting the lock here).
+    GameTestAccess::rules(game).setBanksPerLock(1);
     for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
       GameTestAccess::rules(game).onDropTarget(door);
     }

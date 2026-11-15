@@ -35,8 +35,9 @@ namespace pinball::save {
 // format 4; neither shipped, so one version, 5, holds both).
 // 7: main's format 3 (the Altitude in the rules' state, hole cups) merged
 // with concept A's 6.
-// 8: the BOGEY drop targets.
-inline constexpr std::uint16_t kFormatVersion = 8;
+// 8: the BOGEY drop targets. 9: concept A's rules (G5): sorties, multiballs,
+// Wings Ceremony, Air Show.
+inline constexpr std::uint16_t kFormatVersion = 9;
 
 // The longest a build id may be ("2.0.0+123456789" is 15).
 inline constexpr std::size_t kMaxBuildIdLength = 32;
@@ -155,6 +156,28 @@ struct RulesRecord {
   std::int32_t switchesThisBall = 0;
   std::int32_t bonusMultiplier = 1;
   BonusTally bonusTally{};
+
+  // Format 8 (concept A rules, G5).
+  std::array<bool, 4> taxiLit{};
+  std::array<bool, 3> aceLit{};
+  bool aceDone = false;
+  std::int32_t aceSets = 0;
+  std::int32_t gForce = 0;
+  std::int32_t deckRamps = 0;
+  std::uint8_t catBall = 0xFF;
+  std::uint32_t flapsSteps = 0;
+  std::uint32_t missionRepeatSteps = 0;
+  std::array<std::int32_t, kCourseCount> qualify{};
+  std::array<bool, kCourseCount> ready{};
+  std::array<bool, kCourseCount> courseTried{};
+  std::uint8_t lastLoop = 0xFF;
+  bool dogfightMultiball = false;
+  std::uint32_t wingsSteps = 0;
+  bool wingsDone = false;
+  std::int32_t wingsCeremonies = 0;
+  bool finaleBanditDown = false;
+  std::uint64_t jackpotAdd = 0;
+  std::int32_t banks = 0;
 
   std::uint64_t random = 0xD1B54A32D192ED03ULL;
 };

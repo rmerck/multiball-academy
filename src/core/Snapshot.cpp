@@ -238,7 +238,7 @@ void visit(V& v, RulesRecord& r) {
   v.flag(r.doorsDown);
   v.integer(r.doorCommand, std::uint8_t{0}, std::to_underlying(Rules::DoorCommand::Raise));
   v.integer(r.doorRaiseSteps, 0U, kMaxTimerSteps);
-  v.integer(r.droneHits, 0, 4);
+  v.integer(r.droneHits, 0, tuning::kFinaleArmour - 1);
   v.flag(r.deckLit);
   visit(v, r.flapsLit);
   v.integer(r.hangarHolding, 0, kMaxBalls);
@@ -304,6 +304,29 @@ void visit(V& v, RulesRecord& r) {
   v.integer(r.bonusTally.switches, std::uint64_t{0}, kMaxScore);
   v.integer(r.bonusTally.multiplier, 1, Rules::kMaxBonusMultiplier);
   v.integer(r.bonusTally.total, std::uint64_t{0}, kMaxScore);
+
+  visit(v, r.taxiLit);
+  visit(v, r.aceLit);
+  v.flag(r.aceDone);
+  v.integer(r.aceSets, 0, kMaxCounter);
+  v.integer(r.gForce, 0, tuning::kGForceTop - 1);
+  v.integer(r.deckRamps, -1, tuning::kRampsForDeck);
+  v.integer(r.catBall, std::uint8_t{0}, std::uint8_t{0xFF});
+  v.integer(r.flapsSteps, 0U, kMaxTimerSteps);
+  v.integer(r.missionRepeatSteps, 0U, kMaxTimerSteps);
+  for (std::int32_t& count : r.qualify) {
+    v.integer(count, 0, 255);
+  }
+  visit(v, r.ready);
+  visit(v, r.courseTried);
+  v.integer(r.lastLoop, std::uint8_t{0}, std::uint8_t{0xFF});
+  v.flag(r.dogfightMultiball);
+  v.integer(r.wingsSteps, 0U, kMaxTimerSteps);
+  v.flag(r.wingsDone);
+  v.integer(r.wingsCeremonies, 0, kMaxCounter);
+  v.flag(r.finaleBanditDown);
+  v.integer(r.jackpotAdd, std::uint64_t{0}, std::uint64_t{250'000});
+  v.integer(r.banks, 0, tuning::kBanksPerLock - 1);
 
   // xorshift never leaves 0, and never reaches it.
   v.integer(r.random, std::uint64_t{1}, std::numeric_limits<std::uint64_t>::max());
@@ -794,7 +817,9 @@ bool valid(const Snapshot& snapshot) {
     return false;
   }
   if (rules.turboMeter > rules.turboGoal ||
-      (rules.comboShot >= kShotCount && rules.comboShot != 0xFF)) {
+      (rules.comboShot >= kShotCount && rules.comboShot != 0xFF) ||
+      (rules.lastLoop >= kShotCount && rules.lastLoop != 0xFF) ||
+      (rules.catBall >= kMaxBalls && rules.catBall != 0xFF)) {
     return false;
   }
   if (rules.bonusTally.total > kMaxScore) {
