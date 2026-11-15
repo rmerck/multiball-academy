@@ -376,6 +376,19 @@ inline constexpr std::array<Capsule, 20> kWalls{{
 // Every static capsule wall with the ordinary wall surface: kWalls, then the
 // rim arcs, a left part and its mirror in turn. (Dead posts are apart.)
 inline constexpr std::size_t kRimArcParts = kRimLeftArc.size() - 1;
+// The Hangar roof's two walls meet in a rounded apex. With friction a ball that
+// crept over it could stop a little off the top and stay (G1, P2 E=3 at FL100:
+// at rest at (277.7, 279.0), freed by the ball search). Frictionless, a ball
+// on that convex corner always has a sideways pull and rolls off: no shelf.
+inline constexpr std::array<Capsule, 2> kSlickWalls{{kHangarRoofLeft, kHangarRoofRight}};
+[[nodiscard]] constexpr bool isSlickWall(const Capsule& c) noexcept {
+  for (const Capsule& s : kSlickWalls) {
+    if (s.a.x == c.a.x && s.a.y == c.a.y && s.b.x == c.b.x && s.b.y == c.b.y) {
+      return true;
+    }
+  }
+  return false;
+}
 inline constexpr std::array<Capsule, kWalls.size() + 2 * kRimArcParts> kAllWalls = [] {
   std::array<Capsule, kWalls.size() + 2 * kRimArcParts> walls{};
   std::size_t n = 0;
@@ -494,6 +507,20 @@ inline constexpr std::array<Capsule, 3> kDropTargets{{
     {{297.0F, kDoorY}, {310.5F, kDoorY}, 5.0F},
 }};
 
+// The door a ball at x strikes: the nearest door's (the bank is one shape).
+[[nodiscard]] constexpr std::size_t doorAt(float x) noexcept {
+  std::size_t best = 0;
+  float bestDistance = 1.0e9F;
+  for (std::size_t i = 0; i < kDropTargets.size(); ++i) {
+    const float mid = 0.5F * (kDropTargets[i].a.x + kDropTargets[i].b.x);
+    const float d = x > mid ? x - mid : mid - x;
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = i;
+    }
+  }
+  return best;
+}
 // The bank does not come up onto a ball: it waits until no free ball's centre
 // is inside this box in front of and behind the door line.
 inline constexpr Vec2 kDoorMouthCenter{279.0F, kDoorY};

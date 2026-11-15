@@ -253,9 +253,11 @@ void PhysicsWorld::buildTable() {
   addOneSided(table::kInnerArch, material);
 
   const b2ShapeDef shapeDef = wallShapeDef();
+  b2ShapeDef slickDef = wallShapeDef();
+  slickDef.material.friction = 0.0F;
   for (const table::Capsule& wall : table::kAllWalls) {
     const b2Capsule capsule{toMeters(wall.a), toMeters(wall.b), toMeters(wall.radius)};
-    b2CreateCapsuleShape(table_, &shapeDef, &capsule);
+    b2CreateCapsuleShape(table_, table::isSlickWall(wall) ? &slickDef : &shapeDef, &capsule);
   }
   b2ShapeDef deadDef = wallShapeDef();
   deadDef.material.restitution = table::kDeadPostRestitution;
@@ -439,15 +441,18 @@ void PhysicsWorld::buildDoorBank() {
   b2BodyDef bodyDef = b2DefaultBodyDef();
   bodyDef.type = b2_staticBody;
   doorBank_ = b2CreateBody(world_, &bodyDef);
+  // One capsule across all three doors (G2): with a shape per door a ball
+  // striking a seam touched two shapes of the body at once, and Box2D could
+  // meet the two contacts in either order (a restored game parted from its
+  // original there). Which door was struck is told from where the ball was
+  // (doorAt), in collectEvents.
   b2ShapeDef shapeDef = wallShapeDef();
   shapeDef.material.restitution = kRubberRestitution;
-  for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
-    const table::Capsule& c = table::kDropTargets[i];
-    shapeDef.userData =
-        packElement({table::ElementKind::DropTarget, static_cast<std::uint8_t>(i)});
-    const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
-    b2CreateCapsuleShape(doorBank_, &shapeDef, &capsule);
-  }
+  shapeDef.userData = packElement({table::ElementKind::DropTarget, 0});
+  const table::Capsule& first = table::kDropTargets.front();
+  const table::Capsule& last = table::kDropTargets.back();
+  const b2Capsule capsule{toMeters(first.a), toMeters(last.b), toMeters(first.radius)};
+  b2CreateCapsuleShape(doorBank_, &shapeDef, &capsule);
 }
 
 void PhysicsWorld::buildStandups() {
@@ -910,7 +915,7 @@ void PhysicsWorld::collectEvents() {
     const std::size_t slot = ballIsA ? slotA : slotB;
     const b2BodyId body = balls_[slot].body;
     const b2ShapeId other = ballIsA ? touch.shapeIdB : touch.shapeIdA;
-    const table::ElementRef element = unpackElement(b2Shape_GetUserData(other));
+    table::ElementRef element = unpackElement(b2Shape_GetUserData(other));
     if (element.kind == table::ElementKind::None) {
       continue;
     }
@@ -936,6 +941,10 @@ void PhysicsWorld::collectEvents() {
       if (!fieldSide) {
         continue;
       }
+    }
+    if (element.kind == table::ElementKind::DropTarget) {
+      element = {table::ElementKind::DropTarget,
+                 static_cast<std::uint8_t>(table::doorAt(ballPosition(slot).x))};
     }
     if (element.kind == table::ElementKind::CaptiveBall) {
       // The switch, when the captive ball reaches it, is this ball's.
