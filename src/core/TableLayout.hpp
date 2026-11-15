@@ -248,7 +248,7 @@ inline constexpr std::array<Capsule, 7> kStandups{{
     mirrored(kRimLeftFoot),
     kStandupX,
     kRailEnd,
-    {{482.0F, 228.0F}, {482.0F, 244.0F}, 4.0F},
+    {{482.0F, 236.0F}, {482.0F, 252.0F}, 4.0F},  // A (G2: 8 lower, the CAT SHOT window 3+ on every feed)
     {{518.5F, 200.5F}, {528.3F, 213.0F}, 4.0F},
     {{538.4F, 228.3F}, {547.2F, 246.3F}, 4.0F},
 }};

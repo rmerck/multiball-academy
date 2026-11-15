@@ -725,6 +725,77 @@ int main(int argc, char** argv) {
     }
     return 0;
   }
+  if (mode == "apexroll") {
+    // The Hangar roof's apex (D1, P2 E=3 at FL100): balls sent up each roof
+    // slope from its foot at a sweep of speeds, so that some reach the top
+    // slowly. Any still within 2 ball radii of the apex 5 s later is a trap.
+    const table::Capsule slopes[2] = {table::kHangarRoofLeft, table::kHangarRoofRight};
+    const Vec2 apex = table::kHangarRoofLeft.b;
+    int sent = 0, kept = 0;
+    for (int side = 0; side < 2; ++side) {
+      const table::Capsule& c = slopes[side];
+      const Vec2 foot = side == 0 ? c.a : c.b;
+      Vec2 up = apex - foot;
+      const float len = std::sqrt(up.x * up.x + up.y * up.y);
+      up = up * (1.0F / len);
+      Vec2 normal{up.y, -up.x};
+      if (normal.y > 0.0F) normal = normal * -1.0F;
+      const float lift = c.radius + table::kBallRadius + 0.2F;
+      for (float along = 0.25F; along <= 0.55F; along += 0.15F) {
+        for (float speed = 150.0F; speed <= 700.0F; speed += 2.0F) {
+          TableHarness h;
+          const Vec2 start = foot + up * (len * along) + normal * lift;
+          h.put(0, start, up * speed, true);
+          float moved = 0.0F;
+          Vec2 mark{};
+          for (int i = 0; i < kHz * 6; ++i) {
+            h.advance();
+            if (i == kHz * 4) mark = h.position(0);
+            if (i > kHz * 4) {
+              const Vec2 d = h.position(0) - mark;
+              moved = std::max(moved, std::sqrt(d.x * d.x + d.y * d.y));
+            }
+          }
+          ++sent;
+          const Vec2 q = h.position(0);
+          const float fromApex = std::sqrt((q.x - apex.x) * (q.x - apex.x) + (q.y - apex.y) * (q.y - apex.y));
+          if (!h.held(0) && moved < 2.0F && fromApex < 3.0F * table::kBallRadius) {
+            ++kept;
+            if (kept <= 10) std::printf("  kept at (%.2f, %.2f): side %d along %.2f speed %.0f\n",
+                                        static_cast<double>(q.x), static_cast<double>(q.y), side,
+                                        static_cast<double>(along), static_cast<double>(speed));
+          }
+        }
+      }
+    }
+    // And in flight onto it, around the traced state 80 steps before the stop.
+    for (int k = 0; k < 2000; ++k) {
+      const float ox = static_cast<float>(k % 10) * 0.6F - 3.0F;
+      const float oy = static_cast<float>((k / 10) % 10) * 0.6F - 3.0F;
+      const float sv = 0.9F + 0.01F * static_cast<float>(k / 100);
+      TableHarness h;
+      h.put(0, {338.6F + ox, 314.4F + oy}, Vec2{-281.5F, -674.4F} * sv, true);
+      float moved = 0.0F;
+      Vec2 mark{};
+      for (int i = 0; i < kHz * 6; ++i) {
+        h.advance();
+        if (i == kHz * 4) mark = h.position(0);
+        if (i > kHz * 4) {
+          const Vec2 d = h.position(0) - mark;
+          moved = std::max(moved, std::sqrt(d.x * d.x + d.y * d.y));
+        }
+      }
+      ++sent;
+      const Vec2 q = h.position(0);
+      const float fromApex = std::sqrt((q.x - apex.x) * (q.x - apex.x) + (q.y - apex.y) * (q.y - apex.y));
+      if (!h.held(0) && moved < 2.0F && fromApex < 3.0F * table::kBallRadius) {
+        ++kept;
+        if (kept <= 10) std::printf("  kept at (%.2f, %.2f): flight k %d\n", static_cast<double>(q.x), static_cast<double>(q.y), k);
+      }
+    }
+    std::printf("apexroll: %d balls sent up the Hangar roof, %d still over 2 s (4 to 6 s after the send)\n", sent, kept);
+    return 0;
+  }
   if (mode == "deckrest" || mode == "pocketrest") {
     // Concept A D1 bench: balls put on a grid over a box with random
     // velocities, buttons idle: any still in the box after 30 s, or freed by
@@ -737,6 +808,8 @@ int main(int argc, char** argv) {
       boxCentre = {static_cast<float>(std::atof(argv[3])), static_cast<float>(std::atof(argv[4]))};
       boxHalf = {static_cast<float>(std::atof(argv[5])), static_cast<float>(std::atof(argv[6]))};
     }
+    // Optional 7th argument: the largest starting speed (default 600 px/s).
+    const float maxSpeed = mode == "pocketrest" && argc > 7 ? static_cast<float>(std::atof(argv[7])) : 600.0F;
     const auto inBox = [&](Vec2 q) {
       return std::fabs(q.x - boxCentre.x) < boxHalf.x && std::fabs(q.y - boxCentre.y) < boxHalf.y;
     };
@@ -749,8 +822,8 @@ int main(int argc, char** argv) {
         for (int k = 0; k < per; ++k) {
           const Vec2 p{x + static_cast<float>(rng.unit()) * 3.0F, y + static_cast<float>(rng.unit()) * 3.0F};
           if (!acceptance::placeableAt(p)) continue;
-          const Vec2 v{static_cast<float>(rng.unit()) * 1200.0F - 600.0F,
-                       static_cast<float>(rng.unit()) * 1200.0F - 600.0F};
+          const Vec2 v{(static_cast<float>(rng.unit()) * 2.0F - 1.0F) * maxSpeed,
+                       (static_cast<float>(rng.unit()) * 2.0F - 1.0F) * maxSpeed};
           TableHarness h;
           h.put(0, p, v, true);
           ++placed;
