@@ -58,6 +58,9 @@ def layer(img, name, opacity=100.0, mode=Gimp.LayerMode.NORMAL):
 
 
 def fill_sel(lyr, hexstr):
+    # an empty selection would fill the whole layer: refuse instead
+    if Gimp.Selection.is_empty(lyr.get_image()):
+        raise RuntimeError("empty selection while filling " + lyr.get_name())
     Gimp.context_set_foreground(colour(hexstr))
     lyr.edit_fill(Gimp.FillType.FOREGROUND)
 
@@ -281,10 +284,9 @@ def make_arrows():
         lens(img, cx, cy, arrow, name)
         # a speed stripe across the shaft, printed in ink (90s graphic accent)
         st = layer(img, name + " stripe", 55.0)
-        img.select_rectangle(Gimp.ChannelOps.REPLACE, cx - w * 0.30, cy + L * 0.08, w * 0.60, 3 * PPU * 0.5)
-        arrow(Gimp.ChannelOps.INTERSECT)
-        Gimp.Selection.shrink(img, 6)
-        img.select_rectangle(Gimp.ChannelOps.INTERSECT, cx - w * 0.30, cy + L * 0.08, w * 0.60, 3 * PPU * 0.5)
+        arrow(Gimp.ChannelOps.REPLACE)
+        Gimp.Selection.shrink(img, 8)
+        img.select_rectangle(Gimp.ChannelOps.INTERSECT, cx - w * 0.5, cy + L * 0.10, w, 2 * PPU)
         fill_sel(st, INK)
         none(img)
     cx, cy = 2 * c + c / 2, c / 2
@@ -341,14 +343,17 @@ def make_plastics():
     shape(Gimp.ChannelOps.INTERSECT)
     fill_sel(dots, PAL["AQUA"])
     stripes = layer(img, "speed stripes")
-    none(img)
+    shape(Gimp.ChannelOps.REPLACE)
+    Gimp.Selection.shrink(img, 10)
+    inside = Gimp.Selection.save(img)
     for j, col in enumerate((PAL["YELLOW"], PAL["AQUA"], CREAM)):
         o = j * 30
         poly(img, [(min(xs) + 40 + o, max(ys)), (min(xs) + 58 + o, max(ys)), (min(xs) + 150 + o, min(ys) + 60),
                    (min(xs) + 132 + o, min(ys) + 60)])
-        shape(Gimp.ChannelOps.INTERSECT)
-        Gimp.Selection.shrink(img, 10)
-        fill_sel(stripes, col)
+        img.select_item(Gimp.ChannelOps.INTERSECT, inside)
+        if not Gimp.Selection.is_empty(img):
+            fill_sel(stripes, col)
+    img.remove_channel(inside)
     none(img)
     # academy wings: two swept chevrons (original emblem; no roundel, star or insignia)
     wx, wy = ix * 1.0, iy
