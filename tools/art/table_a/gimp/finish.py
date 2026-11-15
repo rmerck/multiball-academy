@@ -363,6 +363,11 @@ def make_plastics():
         poly(img, [(wx, wy), (wx + side * 70, wy - 34), (wx + side * 92, wy - 30), (wx + side * 30, wy + 4),
                    (wx + side * 60, wy - 6), (wx + side * 12, wy + 22)], Gimp.ChannelOps.ADD)
     img.select_ellipse(Gimp.ChannelOps.ADD, wx - 12, wy - 6, 24, 24)
+    emblem = Gimp.Selection.save(img)
+    shape(Gimp.ChannelOps.REPLACE)
+    Gimp.Selection.shrink(img, 12)
+    img.select_item(Gimp.ChannelOps.INTERSECT, emblem)
+    img.remove_channel(emblem)
     fill_sel(wings, CREAM)
     none(img)
     shadow_of(img, wings, 5, 6, INK, "wings shadow")
