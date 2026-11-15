@@ -329,6 +329,11 @@ inline constexpr float kCaptiveSlack = 3.0F;
 // off the Briefing room's roof, so the nest still empties to the right.
 inline constexpr Capsule kDeckLeftWall{{476.0F, 157.0F}, {476.0F, 312.0F}, kWallRadius};
 inline constexpr Capsule kDeckFloor{{476.0F, 312.0F}, {566.0F, 312.0F}, kWallRadius};
+// Under the deck bat at rest (150 degrees; it only swings up from there) the
+// bat, its pivot and the floor closed a pocket that a ball pushed out of the
+// bat's body could be left in (D2: at rest at (549.5, 296.5)). A shelf on
+// the floor fills it; the resting bat clears it by 1.4 units.
+inline constexpr Capsule kDeckBatShelf{{530.0F, 307.0F}, {560.0F, 307.0F}, kWallRadius};
 // The box a ball's centre is inside while it is on the deck.
 inline constexpr Vec2 kDeckCenter{521.0F, 232.0F};
 inline constexpr Vec2 kDeckHalfSize{45.0F, 80.0F};
@@ -344,7 +349,7 @@ inline constexpr Vec2 kDeckSetDown{532.0F, 252.0F};
 inline constexpr double kDeckVisitSeconds = 10.0;
 inline constexpr Vec2 kDeckSetDownVelocity{0.0F, 40.0F};
 
-inline constexpr std::array<Capsule, 19> kWalls{{
+inline constexpr std::array<Capsule, 20> kWalls{{
     kLeftDividerUpper,
     kLeftDividerLower,
     mirrored(kLeftDividerUpper),
@@ -364,6 +369,7 @@ inline constexpr std::array<Capsule, 19> kWalls{{
     kCaptiveWallLower,
     kDeckLeftWall,
     kDeckFloor,
+    kDeckBatShelf,
 }};
 // Every static capsule wall with the ordinary wall surface: kWalls, then the
 // rim arcs, a left part and its mirror in turn. (Dead posts are apart.)

@@ -120,6 +120,15 @@ bool clearOfSolids(Vec2 p) noexcept {
       return false;
     }
   }
+  // A flipper at rest: a ball cannot start inside a bat (pushed out of one,
+  // it can be left where no ball could go; concept A's deck bat).
+  for (const table::Flipper& flipper : table::kFlippers) {
+    const Vec2 tip = flipper.pivot + Vec2{std::cos(flipper.restAngle), std::sin(flipper.restAngle)} *
+                                         flipper.length;
+    if (reachOf(p, flipper.pivot, tip).distance < flipper.baseRadius + kClear) {
+      return false;
+    }
+  }
   // The Hangar's pocket, from its roof down to the doors.
   const bool inHangar = p.x > table::kHangarLeft.a.x && p.x < table::kHangarRight.a.x &&
                         p.y > table::kHangarRoofRight.a.y && p.y < table::kDoorY;
@@ -498,6 +507,8 @@ char touchChar(Touch touch) noexcept {
   const auto index = static_cast<std::size_t>(touch);
   return index < sizeof(kChars) - 1 ? kChars[index] : '?';
 }
+
+bool placeableAt(Vec2 p) noexcept { return clearOfSolids(p); }
 
 std::string deckFan(int variant) {
   std::string fan;

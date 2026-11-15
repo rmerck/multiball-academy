@@ -112,6 +112,8 @@ struct ShotMap {
 // met, one character a press: A, C, E (stand-ups), K (CAT SHOT), k (deck
 // drain), '.' (nothing within 5 s), '?' anything else.
 [[nodiscard]] std::string deckFan(int variant);
+// Whether a ball can be put at p without starting inside a solid.
+[[nodiscard]] bool placeableAt(Vec2 p) noexcept;
 
 // Concept A G1 gate: make-rate of each shot from each flipper. For every
 // standard feed (inlane, ramp exit, circuit return, cradle) and every one of

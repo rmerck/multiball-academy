@@ -725,6 +725,44 @@ int main(int argc, char** argv) {
     }
     return 0;
   }
+  if (mode == "deckrest") {
+    // Concept A D1 deck bench: balls put on the Flight Deck on a grid with
+    // random velocities, buttons idle: any still on the deck after 30 s, or
+    // freed by the ball search, is a trap.
+    const int per = argc > 2 ? std::atoi(argv[2]) : 4;
+    Rng rng(0xDEC4ULL);
+    int placed = 0, kept = 0, searched = 0;
+    for (float y = table::kDeckCenter.y - table::kDeckHalfSize.y + 14.0F;
+         y < table::kDeckCenter.y + table::kDeckHalfSize.y; y += 6.0F) {
+      for (float x = table::kDeckCenter.x - table::kDeckHalfSize.x + 14.0F;
+           x < table::kDeckCenter.x + table::kDeckHalfSize.x; x += 6.0F) {
+        for (int k = 0; k < per; ++k) {
+          const Vec2 p{x + static_cast<float>(rng.unit()) * 3.0F, y + static_cast<float>(rng.unit()) * 3.0F};
+          if (!acceptance::placeableAt(p)) continue;
+          const Vec2 v{static_cast<float>(rng.unit()) * 1200.0F - 600.0F,
+                       static_cast<float>(rng.unit()) * 1200.0F - 600.0F};
+          TableHarness h;
+          h.put(0, p, v, true);
+          ++placed;
+          bool left = false;
+          for (int i = 0; i < kHz * 30 && !left; ++i) {
+            h.advance();
+            left = h.held(0) || !table::onDeck(h.position(0));
+          }
+          if (h.game().ballSearchCount() > 0) ++searched;
+          if (!left) {
+            ++kept;
+            if (kept <= 12) std::printf("  kept at (%.1f, %.1f) from (%.0f, %.0f)\n",
+                                        static_cast<double>(h.position(0).x), static_cast<double>(h.position(0).y),
+                                        static_cast<double>(p.x), static_cast<double>(p.y));
+          }
+        }
+      }
+    }
+    std::printf("deck rest: %d balls placed on the deck, %d still there after 30 s, %d needed a ball search\n",
+                placed, kept, searched);
+    return 0;
+  }
   if (mode == "makerate") {
     // Concept A G1 gate: per-shot make-rate from its flipper(s); variants and
     // timing error as arguments (default 5 and 3).
