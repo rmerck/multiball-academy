@@ -42,7 +42,6 @@ std::uint32_t holdSteps(table::HoleType type) noexcept {
   return steps;
 }
 constexpr std::uint32_t kRiseSteps = Game::kHoleRiseSteps;
-constexpr std::uint32_t kLockRollSteps = Game::kLockRollSteps;
 
 // The pull-in moves the ball onto the cup's centre over its first 60
 // percent, fast at first; the sink runs over all of it.
