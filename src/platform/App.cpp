@@ -255,6 +255,9 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
                   static_cast<int>(name.size()), name.data());
     }
   }
+  if (options.altitude) {
+    game_.setAltitude(std::clamp(*options.altitude, 0, 4));
+  }
 #endif
 
   // A game left in progress last time, offered until it is resumed or a

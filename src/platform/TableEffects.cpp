@@ -237,8 +237,17 @@ void TableEffects::drawUnderlay(SDL_Renderer* r, const LightShow& show, bool lig
     // Brighter the higher the game (steady light, eased: not a flash).
     const float strength =
         art::kGiStrength + (art::kGiStrengthTop - art::kGiStrength) * show.energy();
-    SDL_SetTextureColorMod(textures_.gi, 255, 255, 255);
-    SDL_SetTextureAlphaModFloat(textures_.gi, std::min(1.0F, strength * gi));
+    if (textures_.giGrey) {
+      // Table A: one light, the Altitude's colour (day blue at FL100 to
+      // night violet at FL500), over the grey map.
+      const art::Rgb colour = altitudeGiColour(show.giColour());
+      const float a = art::kAGiStrength + (art::kAGiStrengthTop - art::kAGiStrength) * show.energy();
+      SDL_SetTextureColorMod(textures_.gi, colour.r, colour.g, colour.b);
+      SDL_SetTextureAlphaModFloat(textures_.gi, std::min(1.0F, a * gi));
+    } else {
+      SDL_SetTextureColorMod(textures_.gi, 255, 255, 255);
+      SDL_SetTextureAlphaModFloat(textures_.gi, std::min(1.0F, strength * gi));
+    }
     SDL_RenderTexture(r, textures_.gi, nullptr, &field);
   }
   // The GI bulbs round the rim, in the Altitude's colour: day blue at
@@ -443,7 +452,27 @@ void TableEffects::drawShow(SDL_Renderer* r, const Game& game, std::span<const B
   }
   // The domes themselves, lit in their colour (their unlit bases are in
   // the art), under their light.
-  if (textures_.dome != nullptr) {
+  if (textures_.domeSheet != nullptr) {
+    // Table A: the dome's own lit cell (28 units, two pixels each).
+    constexpr float kCell = art::sheet::kFlasherDomes.cellW;
+    for (const fx::BurstView& b : bursts.span()) {
+      const table::FlasherId dome = fx::domeOf(b.where);
+      if (dome == table::FlasherId::Count) {
+        continue;
+      }
+      const auto k = static_cast<std::size_t>(dome);
+      const int frame = art::flasher_domes::kHangarOn + static_cast<int>(k);
+      const auto columns = art::sheet::kFlasherDomes.columns;
+      const SDL_FRect src{static_cast<float>(frame % columns) * kCell * 2.0F,
+                          static_cast<float>(frame / columns) * kCell * 2.0F, kCell * 2.0F,
+                          kCell * 2.0F};
+      SDL_SetTextureAlphaModFloat(textures_.domeSheet, std::min(1.0F, b.level * 1.4F));
+      const Vec2 at = table::kFlasherDomes[k];
+      const SDL_FRect dst{at.x - kCell * 0.5F, at.y - kCell * 0.5F, kCell, kCell};
+      SDL_RenderTexture(r, textures_.domeSheet, &src, &dst);
+    }
+    SDL_SetTextureAlphaMod(textures_.domeSheet, 255);
+  } else if (textures_.dome != nullptr) {
     for (const fx::BurstView& b : bursts.span()) {
       const table::FlasherId dome = fx::domeOf(b.where);
       if (dome == table::FlasherId::Count) {

@@ -132,6 +132,28 @@ class TableRenderer {
     TexturePtr insertChevron;  // And its rank ladder.
     std::array<TexturePtr, 2> spinner;  // Edge-on, flat.
     TexturePtr kickback;
+    // Table A's art (assets/table_a, tools/art/table_a): when the build has
+    // table_a/background.png, the table is drawn from it and these sheets
+    // (generated/ArtPalette.hpp art::sheet), over the art's baked unlit
+    // inserts, walls and plastics.
+    bool tableA = false;
+    struct TableA {
+      TexturePtr drone;
+      TexturePtr propwash;
+      TexturePtr propwashBlur;
+      TexturePtr pylon;
+      TexturePtr bayDoor;
+      TexturePtr flightDeck;
+      TexturePtr rampRunway;
+      TexturePtr rampSkyway;
+      TexturePtr jetCaps;
+      TexturePtr domes;
+      TexturePtr arrows;
+      TexturePtr flaps;
+      TexturePtr rungs;
+      TexturePtr plate;
+      TexturePtr captiveBall;
+    } a;
     // The rest may be null: see TextureSet.
     TexturePtr title;
     TexturePtr dialog;
@@ -186,6 +208,38 @@ class TableRenderer {
   // Every ball that is in sight, those on the table first and those riding
   // a ramp's rail over them.
   void drawBalls(SDL_Renderer* renderer, std::span<const BallView> balls, bool reduceMotion) const;
+  // One of drawBalls' two rounds: the balls on the table, or those up on a
+  // rail (with their shadows). Table A draws its ramps between the two.
+  // through: the balls alone (no shadows) at that share of their alpha,
+  // for a ball seen through a ramp's plastic.
+  void drawBallRound(SDL_Renderer* renderer, std::span<const BallView> balls, bool raised,
+                     bool reduceMotion, float through = 1.0F) const;
+
+  // --- Table A (concept A's art) ---------------------------------------------------
+  // What is flush with the playfield and moves or lights: the altimeter's
+  // pointer at the Altitude, the Prop Wash turning (its blur sheet at FL400
+  // and over).
+  void drawFloorA(SDL_Renderer* renderer, const Game& game, const LightShow* show) const;
+  // Every insert of the art's lamp plan that is lit (art::kAInserts): the
+  // rules' lamps and those the renderer lights from the game (the shots'
+  // progress pips, the Altitude ladder, F-L-A-P-S, the approach lights).
+  void drawInsertsA(SDL_Renderer* renderer, const Game& game, const TableLights& lights,
+                    const LightShow* show) const;
+  // The Flight Deck's plate, open (lit in the GI colour) or closed, its
+  // flood of light and its flasher dome.
+  void drawDeckA(SDL_Renderer* renderer, const Game& game, const LightShow* show) const;
+  // Over the deck and the ball pools: the deck's A-C-E stand-ups and the
+  // captive ball.
+  void drawStandupsA(SDL_Renderer* renderer, const Game& game) const;
+  void drawDoorsA(SDL_Renderer* renderer, const Game& game, const TableLights& lights) const;
+  void drawPylonA(SDL_Renderer* renderer, const Game& game) const;
+  void drawDroneA(SDL_Renderer* renderer, const Game& game, const LightShow* show) const;
+  // The clear plastic ramps, over the balls on the table and under those
+  // riding them.
+  void drawRampsA(SDL_Renderer* renderer, const Game& game, const TableLights& lights,
+                  const LightShow* show) const;
+  // The Altitude, 0 (FL100) to 4 (FL500): the light show's, or the rules'.
+  [[nodiscard]] static int altitudeOf(const Game& game, const LightShow* show) noexcept;
   // The balls' contact shadows: those on the table (on the playfield, under
   // the elements) or those up on a rail.
   void drawBallShadows(SDL_Renderer* renderer, std::span<const BallView> balls, bool raised,
@@ -210,6 +264,19 @@ class TableRenderer {
   mutable std::vector<SDL_Vertex> elements_;
   // The same for revision 3's pieces (drawDrone, drawLaneGate).
   mutable std::vector<SDL_Vertex> motion_;
+  // Table A's moving toys that the game shows only as up or down: when each
+  // last changed, by the game's step, for the frames between (the pylon
+  // rising, the bay doors dropping). Drawing only; a game started again
+  // (its step count going back) starts them afresh.
+  struct Toggle {
+    bool on = false;
+    std::uint64_t since = 0;
+    bool seen = false;
+    // How far through a change of the given length, 0 to 1; 1 when settled.
+    float progress(bool now, std::uint64_t step, std::uint64_t length) noexcept;
+  };
+  mutable Toggle pylonToggle_;
+  mutable Toggle doorToggle_;
 };
 
 }  // namespace pinball

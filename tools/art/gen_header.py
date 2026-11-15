@@ -110,8 +110,108 @@ def text():
               "inline constexpr float kCaptiveBallSpriteUnits = %.1fF;" % P.CAPTIVE_BALL_SPRITE_UNITS,
               "inline constexpr float kStandupSpriteWidth = %.1fF;  // standup_*.png, upright" % P.STANDUP_SPRITE_UNITS[0],
               "inline constexpr float kStandupSpriteHeight = %.1fF;" % P.STANDUP_SPRITE_UNITS[1],
-              "", "}  // namespace pinball::art", ""]
+              ""]
+    lines += table_a()
+    lines += ["}  // namespace pinball::art", ""]
     return "\n".join(lines)
+
+
+TABLE_A_OUT = os.path.join(HERE, "table_a", "out")
+# The sheets tools/art/table_a/ship.py puts in assets/table_a (two pixels per unit), as the renderer draws them.
+TABLE_A_SHIPPED = ["drone", "propwash", "propwash_blur", "pylon", "bay_door", "flight_deck", "ramp_runway",
+                   "ramp_skyway", "jet_caps", "flasher_domes", "inserts_arrows", "inserts_flaps", "inserts_altitude",
+                   "altitude_plate"]
+TABLE_A_GROUPS = ["Layout", "Ladder", "Altitude", "Flaps", "Bogey", "Radar", "SafetyPost", "Multiball", "DeckLit",
+                  "Approach"]
+
+
+def camel(label):
+    return "k" + "".join(w[:1].upper() + w[1:].lower() for w in label.replace(" ", "_").split("_"))
+
+
+def table_a():
+    """Table A (concept A): the shipped sheets' layout and the whole insert plan, from tools/art/table_a/out."""
+    import json
+    import math
+    sheets = {}
+    for name in ("sheets.json", "gimp_sheets.json"):
+        with open(os.path.join(TABLE_A_OUT, name)) as f:
+            sheets.update(json.load(f)["sheets"])
+    with open(os.path.join(TABLE_A_OUT, "lamp_plan.json")) as f:
+        plan = json.load(f)["lamps"]
+    lines = ["// ---- Table A (concept A, Flight Academy): tools/art/table_a, shipped in assets/table_a ----",
+             "// Colours of the masters (palette.py TABLE_A).",
+             *["inline constexpr Rgb kA%s%s;" % ("".join(w.capitalize() for w in k.split("_")), rgb(v))
+               for k, v in P.TABLE_A.items()],
+             "inline constexpr float kAUnlitFloor = %.2fF;" % P.TABLE_A_UNLIT_FLOOR,
+             "inline constexpr float kADeckFloodOff = %.2fF;" % P.TABLE_A_DECK_FLOOD[0],
+             "inline constexpr float kADeckFloodOn = %.2fF;" % P.TABLE_A_DECK_FLOOD[1],
+             "inline constexpr float kAApproach = %.2fF;" % P.TABLE_A_APPROACH,
+             "inline constexpr float kAReticle = %.2fF;" % P.TABLE_A_RETICLE,
+             "inline constexpr float kABallThrough = %.2fF;" % P.TABLE_A_BALL_THROUGH,
+             "inline constexpr float kAGiStrength = %.2fF;" % P.TABLE_A_GI_STRENGTH[0],
+             "inline constexpr float kAGiStrengthTop = %.2fF;" % P.TABLE_A_GI_STRENGTH[1],
+             "inline constexpr float kAAltitudePlateX = %.1fF;  // its top-left corner" % P.TABLE_A_ALT_PLATE[0],
+             "inline constexpr float kAAltitudePlateY = %.1fF;" % P.TABLE_A_ALT_PLATE[1],
+             "// A sprite sheet: cells left to right, top to bottom, in frame order; a cell is cellW x cellH units",
+             "// (two pixels each); centred on its toy, or its top-left corner at (x, y).",
+             "struct Sheet {", "  std::string_view file;", "  float cellW, cellH;", "  int columns, frames;",
+             "  bool centred;", "  float x, y;", "};", "namespace sheet {"]
+    for name in TABLE_A_SHIPPED:
+        sh = sheets[name]
+        centred = sh["anchor"] == "centre"
+        x, y = (0.0, 0.0) if centred else sh["anchor"]
+        lines.append('inline constexpr Sheet k%s{"table_a/%s", %.1fF, %.1fF, %d, %d, %s, %.1fF, %.1fF};' % (
+            "".join(w.capitalize() for w in name.split("_")), sh["file"], sh["cellUnits"][0], sh["cellUnits"][1],
+            sh["columns"], len(sh["frames"]), "true" if centred else "false", x, y))
+    lines.append("}  // namespace sheet")
+    radii = sheets["jet_caps"]["radii"]
+    lines.append("// The bumper radius each jet cap cell was rendered for (sheets.json).")
+    lines.append("inline constexpr std::array<float, %d> kAJetCapRadii{%s};" % (
+        len(radii), ", ".join("%.1fF" % r for r in radii)))
+    for name in TABLE_A_SHIPPED:
+        lines.append("namespace %s {" % name)
+        lines.append("  " + " ".join("inline constexpr int %s = %d;" % (camel(f), i)
+                                     for i, f in enumerate(sheets[name]["frames"])))
+        lines.append("}  // namespace %s" % name)
+    shapes = {"arrow": "Arrow", "arrow_mission": "ArrowMission", "pip": "Pip", "rung": "Rung", "flaps": "Flaps",
+              "round": "Round", "hex": "Hex", "chevron": "Chevron"}
+    lines += ["// Every insert of Table A (tools/art/table_a/out/lamp_plan.json): the unlit lens is baked into",
+              "// table_a/background.png; the game draws it lit. group Layout: lamp is a LampId; the others are lit",
+              "// by the renderer from the game's state (index: the ladder's arrow * 3 + step, the Altitude level, the",
+              "// F-L-A-P-S letter, the approach light's row).",
+              "enum class AShape : std::uint8_t { %s };" % ", ".join(shapes[k] for k in shapes),
+              "enum class AGroup : std::uint8_t { %s };" % ", ".join(TABLE_A_GROUPS),
+              "struct AInsert {", "  AShape shape;", "  AGroup group;", "  int index;", "  float x, y, size, angle;",
+              "  Rgb neon;", "  float neonLevel;", "};",
+              "inline constexpr std::array<AInsert, %d> kAInserts{{" % len(plan)]
+    arrows = [e["name"] for e in plan if e["shape"] in ("arrow", "arrow_mission")]
+    for e in plan:
+        name, shape = e["name"], e["shape"]
+        x, y = e["c"]
+        angle = 0.0
+        if shape.startswith("arrow"):
+            ax, ay = e["aim"]
+            angle = math.degrees(math.atan2(ay - y, ax - x)) + 90.0
+        if e["source"] == "layout":
+            group, index = "Layout", e["id"]
+        elif name.startswith("Ladder"):
+            group, index = "Ladder", arrows.index(name[:-1].replace("Ladder", "Arrow")) * 3 + int(name[-1]) - 1
+        elif name.startswith("Altitude"):
+            group, index = "Altitude", int(name[-3]) - 1
+        elif name.startswith("Flaps"):
+            group, index = "Flaps", "FLAPS".index(name[-1])
+        elif name.startswith("Approach"):
+            group, index = "Approach", int(name[len("Approach"):-2]) - 1
+        else:
+            group = next(g for g in TABLE_A_GROUPS if name.startswith(g))
+            index = int(name[-1]) - 1 if name[-1].isdigit() else 0
+        size = {"arrow": 28.0, "arrow_mission": 34.0}.get(shape, e.get("d", 12.0))
+        neon = P.NEON.get(e["colour"], e["colour"])
+        lines.append("    {AShape::%s, AGroup::%s, %d, %.1fF, %.1fF, %.1fF, %.2fF, %s, %.2fF},  // %s" % (
+            shapes[shape], group, index, x, y, size, angle, rgb(neon), P.neon_level(neon), name))
+    lines += ["}};", ""]
+    return lines
 
 
 def main(path):
