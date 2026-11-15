@@ -51,7 +51,7 @@ static_assert(table::kAllWalls.size() == table::kWalls.size() + 20);
 static_assert(table::kAllWalls[table::kWalls.size() + 1].a.x ==
               2.0F * table::kFieldCenterX - table::kRimLeftArc[0].x);
 static_assert(table::kSkywayRail[8].x == 604.0F && table::kSkywayRail[0].x == 519.0F);
-static_assert(table::kLamps.size() == 58);  // 29 from revision 2, 29 ladder and letter lamps.
+static_assert(table::kLamps.size() == 102);  // 29 from revision 2, 29 of revision 3, 44 of concept A.
 // The shell and the island are wound opposite ways: the table is inside the
 // one and outside the other.
 static_assert(signedArea(table::kShell) * signedArea(table::kLaneIsland) < 0.0F);
@@ -367,9 +367,12 @@ void testTableGeometry() {
         // No two lamps share a place, except a lane's lamp and its switch.
         // Revision 3's ladders are of small inserts, 11 to 12 across (the
         // rank's chevrons 9 high), stacked closer.
+        // Concept A's progress pips are 8 across, 10 apart at the closest.
         const bool ladders = table::isLadderLamp(lamp.id) && table::isLadderLamp(other.id);
         const bool ladder = table::isLadderLamp(lamp.id) || table::isLadderLamp(other.id);
-        const float apart = ladders  ? 11.0F
+        const bool pips = table::isPipLamp(lamp.id) && table::isPipLamp(other.id);
+        const float apart = pips      ? 9.5F
+                            : ladders ? 11.0F
                             : ladder ? (table::kStatusLampDiameter + 12.0F) * 0.5F
                                      : table::kStatusLampDiameter;
         CHECK(distance(lamp.position, other.position) >= apart);

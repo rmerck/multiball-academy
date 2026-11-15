@@ -33,7 +33,7 @@ inline constexpr Rgb kChLo{43, 53, 80};
 inline constexpr Rgb kBackdrop{18, 18, 58};
 
 // Lamp colours in LampId order: tint for the insert sprite and for its glow.
-inline constexpr std::array<Rgb, 58> kLampColours{{
+inline constexpr std::array<Rgb, 102> kLampColours{{
     {99, 230, 216},  // ArrowCircuitLeft
     {185, 140, 255},  // ArrowRunway
     {255, 107, 26},  // ArrowHangar
@@ -92,11 +92,55 @@ inline constexpr std::array<Rgb, 58> kLampColours{{
     {255, 46, 136},  // Bonus3X
     {255, 46, 136},  // Bonus4X
     {255, 46, 136},  // Bonus5X
+    {99, 230, 216},  // LadderCircuitLeft1
+    {99, 230, 216},  // LadderCircuitLeft2
+    {99, 230, 216},  // LadderCircuitLeft3
+    {185, 140, 255},  // LadderRunway1
+    {185, 140, 255},  // LadderRunway2
+    {185, 140, 255},  // LadderRunway3
+    {255, 107, 26},  // LadderHangar1
+    {255, 107, 26},  // LadderHangar2
+    {255, 107, 26},  // LadderHangar3
+    {255, 210, 60},  // LadderBriefing1
+    {255, 210, 60},  // LadderBriefing2
+    {255, 210, 60},  // LadderBriefing3
+    {46, 209, 107},  // LadderTurbine1
+    {46, 209, 107},  // LadderTurbine2
+    {46, 209, 107},  // LadderTurbine3
+    {255, 46, 136},  // LadderSkyway1
+    {255, 46, 136},  // LadderSkyway2
+    {255, 46, 136},  // LadderSkyway3
+    {99, 230, 216},  // LadderCircuitRight1
+    {99, 230, 216},  // LadderCircuitRight2
+    {99, 230, 216},  // LadderCircuitRight3
+    {47, 140, 255},  // AltitudeFL100
+    {255, 244, 214},  // AltitudeFL200
+    {255, 210, 60},  // AltitudeFL300
+    {255, 107, 26},  // AltitudeFL400
+    {185, 140, 255},  // AltitudeFL500
+    {255, 244, 214},  // FlapsF
+    {255, 244, 214},  // FlapsL
+    {255, 244, 214},  // FlapsA
+    {255, 244, 214},  // FlapsP
+    {255, 244, 214},  // FlapsS
+    {255, 107, 26},  // Bogey1
+    {255, 107, 26},  // Bogey2
+    {255, 107, 26},  // Bogey3
+    {99, 230, 216},  // Radar1
+    {99, 230, 216},  // Radar2
+    {99, 230, 216},  // Radar3
+    {46, 209, 107},  // SafetyPost
+    {255, 210, 60},  // Multiball
+    {255, 46, 136},  // DeckLit
+    {255, 46, 136},  // DeckA
+    {255, 46, 136},  // DeckC
+    {255, 46, 136},  // DeckE
+    {255, 107, 26},  // CatShot
 }};
 
 // Colour multiplier for each lamp when lit (light hues are held down so the ball stays the lightest thing).
-inline constexpr std::array<float, 58> kLampLitLevels{{
-    0.82F, 1.00F, 1.00F, 0.81F, 0.95F, 1.00F, 0.82F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.81F, 0.82F, 1.00F, 0.81F, 0.95F, 0.81F, 0.70F, 0.70F, 0.70F, 0.70F, 0.82F, 0.82F, 0.82F, 0.82F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.95F, 0.95F, 0.81F, 1.00F, 1.00F, 0.81F, 0.81F, 0.81F, 0.81F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.82F, 0.82F, 0.82F, 0.82F, 1.00F, 1.00F, 1.00F, 1.00F
+inline constexpr std::array<float, 102> kLampLitLevels{{
+    0.82F, 1.00F, 1.00F, 0.81F, 0.95F, 1.00F, 0.82F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.81F, 0.82F, 1.00F, 0.81F, 0.95F, 0.81F, 0.70F, 0.70F, 0.70F, 0.70F, 0.82F, 0.82F, 0.82F, 0.82F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.95F, 0.95F, 0.81F, 1.00F, 1.00F, 0.81F, 0.81F, 0.81F, 0.81F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.82F, 0.82F, 0.82F, 0.82F, 1.00F, 1.00F, 1.00F, 1.00F, 0.82F, 0.82F, 0.82F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.81F, 0.81F, 0.81F, 0.95F, 0.95F, 0.95F, 1.00F, 1.00F, 1.00F, 0.82F, 0.82F, 0.82F, 1.00F, 0.70F, 0.81F, 1.00F, 1.00F, 0.70F, 0.70F, 0.70F, 0.70F, 0.70F, 1.00F, 1.00F, 1.00F, 0.82F, 0.82F, 0.82F, 0.95F, 0.81F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F
 }};
 
 // Where each of the seven shot arrows points, in LampId order (playfield units).
@@ -139,7 +183,7 @@ inline constexpr float kBallShadowAlpha = 0.50F;
 inline constexpr float kBallShadowRadii = 1.3F;    // the contact shadow, in ball radii
 
 // Light show: lit lamps in the neon of their colour, LampId order, with the lens level for each.
-inline constexpr std::array<Rgb, 58> kLampNeon{{
+inline constexpr std::array<Rgb, 102> kLampNeon{{
     {30, 235, 255},  // ArrowCircuitLeft
     {196, 92, 255},  // ArrowRunway
     {255, 138, 0},  // ArrowHangar
@@ -198,9 +242,53 @@ inline constexpr std::array<Rgb, 58> kLampNeon{{
     {255, 46, 200},  // Bonus3X
     {255, 46, 200},  // Bonus4X
     {255, 46, 200},  // Bonus5X
+    {30, 235, 255},  // LadderCircuitLeft1
+    {30, 235, 255},  // LadderCircuitLeft2
+    {30, 235, 255},  // LadderCircuitLeft3
+    {196, 92, 255},  // LadderRunway1
+    {196, 92, 255},  // LadderRunway2
+    {196, 92, 255},  // LadderRunway3
+    {255, 138, 0},  // LadderHangar1
+    {255, 138, 0},  // LadderHangar2
+    {255, 138, 0},  // LadderHangar3
+    {255, 234, 40},  // LadderBriefing1
+    {255, 234, 40},  // LadderBriefing2
+    {255, 234, 40},  // LadderBriefing3
+    {157, 255, 30},  // LadderTurbine1
+    {157, 255, 30},  // LadderTurbine2
+    {157, 255, 30},  // LadderTurbine3
+    {255, 46, 200},  // LadderSkyway1
+    {255, 46, 200},  // LadderSkyway2
+    {255, 46, 200},  // LadderSkyway3
+    {30, 235, 255},  // LadderCircuitRight1
+    {30, 235, 255},  // LadderCircuitRight2
+    {30, 235, 255},  // LadderCircuitRight3
+    {60, 200, 255},  // AltitudeFL100
+    {255, 242, 176},  // AltitudeFL200
+    {255, 234, 40},  // AltitudeFL300
+    {255, 138, 0},  // AltitudeFL400
+    {196, 92, 255},  // AltitudeFL500
+    {255, 242, 176},  // FlapsF
+    {255, 242, 176},  // FlapsL
+    {255, 242, 176},  // FlapsA
+    {255, 242, 176},  // FlapsP
+    {255, 242, 176},  // FlapsS
+    {255, 138, 0},  // Bogey1
+    {255, 138, 0},  // Bogey2
+    {255, 138, 0},  // Bogey3
+    {30, 235, 255},  // Radar1
+    {30, 235, 255},  // Radar2
+    {30, 235, 255},  // Radar3
+    {157, 255, 30},  // SafetyPost
+    {255, 234, 40},  // Multiball
+    {255, 46, 200},  // DeckLit
+    {255, 46, 200},  // DeckA
+    {255, 46, 200},  // DeckC
+    {255, 46, 200},  // DeckE
+    {255, 138, 0},  // CatShot
 }};
-inline constexpr std::array<float, 58> kLampNeonLevels{{
-    0.83F, 1.00F, 1.00F, 0.77F, 0.78F, 1.00F, 0.83F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.77F, 0.83F, 1.00F, 0.77F, 0.78F, 0.77F, 0.74F, 0.74F, 0.74F, 0.74F, 0.83F, 0.83F, 0.83F, 0.83F, 0.96F, 0.96F, 0.96F, 0.96F, 0.96F, 0.78F, 0.78F, 0.77F, 1.00F, 1.00F, 0.77F, 0.77F, 0.77F, 0.77F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.83F, 0.83F, 0.83F, 0.83F, 1.00F, 1.00F, 1.00F, 1.00F
+inline constexpr std::array<float, 102> kLampNeonLevels{{
+    0.83F, 1.00F, 1.00F, 0.77F, 0.78F, 1.00F, 0.83F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.77F, 0.83F, 1.00F, 0.77F, 0.78F, 0.77F, 0.74F, 0.74F, 0.74F, 0.74F, 0.83F, 0.83F, 0.83F, 0.83F, 0.96F, 0.96F, 0.96F, 0.96F, 0.96F, 0.78F, 0.78F, 0.77F, 1.00F, 1.00F, 0.77F, 0.77F, 0.77F, 0.77F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.83F, 0.83F, 0.83F, 0.83F, 1.00F, 1.00F, 1.00F, 1.00F, 0.83F, 0.83F, 0.83F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F, 0.77F, 0.77F, 0.77F, 0.78F, 0.78F, 0.78F, 1.00F, 1.00F, 1.00F, 0.83F, 0.83F, 0.83F, 0.96F, 0.74F, 0.77F, 1.00F, 1.00F, 0.74F, 0.74F, 0.74F, 0.74F, 0.74F, 1.00F, 1.00F, 1.00F, 0.83F, 0.83F, 0.83F, 0.78F, 0.77F, 1.00F, 1.00F, 1.00F, 1.00F, 1.00F
 }};
 
 inline constexpr Rgb kFxCyan{30, 235, 255};
@@ -235,7 +323,7 @@ inline constexpr float kFlareUnits = 64.0F;    // flare.png and ring.png at scal
 // Revision 3 (TABLE_REV3.md 3.10): the inserts baked into the background for the LampIds from
 // DroneArmour1 on (in this order, after the rev 2 lamps in kLampColours and the rest), and the flasher
 // domes (FlasherId). Positions are the art's (tools/art/palette.py); TableLayout.hpp uses exactly these.
-enum class InsertShape : std::uint8_t { Round, Hex, Chevron };
+enum class InsertShape : std::uint8_t { Round, Hex, Chevron, Pip };
 struct PlannedLamp {
   std::string_view name;
   InsertShape shape;
@@ -244,10 +332,11 @@ struct PlannedLamp {
   float litLevel, neonLevel;
 };
 inline constexpr float kLadderDiameter = 12.0F;
+inline constexpr float kPipDiameter = 8.0F;
 inline constexpr float kHexDiameter = 11.0F;
 inline constexpr float kChevronWidth = 18.0F;
 inline constexpr float kChevronHeight = 9.0F;
-inline constexpr std::array<PlannedLamp, 29> kPlannedLamps{{
+inline constexpr std::array<PlannedLamp, 73> kPlannedLamps{{
     {"DroneArmour1", InsertShape::Hex, 356.0F, 386.0F, {47, 140, 255}, {60, 200, 255}, 1.00F, 0.96F},
     {"DroneArmour2", InsertShape::Hex, 356.0F, 373.5F, {47, 140, 255}, {60, 200, 255}, 1.00F, 0.96F},
     {"DroneArmour3", InsertShape::Hex, 356.0F, 361.0F, {47, 140, 255}, {60, 200, 255}, 1.00F, 0.96F},
@@ -277,6 +366,50 @@ inline constexpr std::array<PlannedLamp, 29> kPlannedLamps{{
     {"Bonus3X", InsertShape::Round, 433.0F, 658.0F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
     {"Bonus4X", InsertShape::Round, 417.0F, 652.0F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
     {"Bonus5X", InsertShape::Round, 401.0F, 646.0F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"LadderCircuitLeft1", InsertShape::Pip, 118.0F, 535.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"LadderCircuitLeft2", InsertShape::Pip, 118.0F, 548.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"LadderCircuitLeft3", InsertShape::Pip, 118.0F, 561.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"LadderRunway1", InsertShape::Pip, 209.9F, 492.2F, {185, 140, 255}, {196, 92, 255}, 1.00F, 1.00F},
+    {"LadderRunway2", InsertShape::Pip, 213.3F, 504.8F, {185, 140, 255}, {196, 92, 255}, 1.00F, 1.00F},
+    {"LadderRunway3", InsertShape::Pip, 216.6F, 517.3F, {185, 140, 255}, {196, 92, 255}, 1.00F, 1.00F},
+    {"LadderHangar1", InsertShape::Pip, 283.4F, 463.0F, {255, 107, 26}, {255, 138, 0}, 1.00F, 1.00F},
+    {"LadderHangar2", InsertShape::Pip, 284.2F, 475.9F, {255, 107, 26}, {255, 138, 0}, 1.00F, 1.00F},
+    {"LadderHangar3", InsertShape::Pip, 285.1F, 488.9F, {255, 107, 26}, {255, 138, 0}, 1.00F, 1.00F},
+    {"LadderBriefing1", InsertShape::Pip, 429.0F, 490.8F, {255, 210, 60}, {255, 234, 40}, 0.81F, 0.77F},
+    {"LadderBriefing2", InsertShape::Pip, 427.3F, 503.7F, {255, 210, 60}, {255, 234, 40}, 0.81F, 0.77F},
+    {"LadderBriefing3", InsertShape::Pip, 425.6F, 516.6F, {255, 210, 60}, {255, 234, 40}, 0.81F, 0.77F},
+    {"LadderTurbine1", InsertShape::Pip, 356.0F, 476.0F, {46, 209, 107}, {157, 255, 30}, 0.95F, 0.78F},
+    {"LadderTurbine2", InsertShape::Pip, 356.0F, 486.0F, {46, 209, 107}, {157, 255, 30}, 0.95F, 0.78F},
+    {"LadderTurbine3", InsertShape::Pip, 356.0F, 496.0F, {46, 209, 107}, {157, 255, 30}, 0.95F, 0.78F},
+    {"LadderSkyway1", InsertShape::Pip, 501.1F, 492.2F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"LadderSkyway2", InsertShape::Pip, 497.7F, 504.8F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"LadderSkyway3", InsertShape::Pip, 494.4F, 517.3F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"LadderCircuitRight1", InsertShape::Pip, 593.0F, 535.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"LadderCircuitRight2", InsertShape::Pip, 593.0F, 548.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"LadderCircuitRight3", InsertShape::Pip, 593.0F, 561.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"AltitudeFL100", InsertShape::Chevron, 211.0F, 676.0F, {47, 140, 255}, {60, 200, 255}, 1.00F, 0.96F},
+    {"AltitudeFL200", InsertShape::Chevron, 211.0F, 658.0F, {255, 244, 214}, {255, 242, 176}, 0.70F, 0.74F},
+    {"AltitudeFL300", InsertShape::Chevron, 211.0F, 640.0F, {255, 210, 60}, {255, 234, 40}, 0.81F, 0.77F},
+    {"AltitudeFL400", InsertShape::Chevron, 211.0F, 622.0F, {255, 107, 26}, {255, 138, 0}, 1.00F, 1.00F},
+    {"AltitudeFL500", InsertShape::Chevron, 211.0F, 604.0F, {185, 140, 255}, {196, 92, 255}, 1.00F, 1.00F},
+    {"FlapsF", InsertShape::Round, 291.0F, 626.0F, {255, 244, 214}, {255, 242, 176}, 0.70F, 0.74F},
+    {"FlapsL", InsertShape::Round, 323.0F, 618.0F, {255, 244, 214}, {255, 242, 176}, 0.70F, 0.74F},
+    {"FlapsA", InsertShape::Round, 355.5F, 616.0F, {255, 244, 214}, {255, 242, 176}, 0.70F, 0.74F},
+    {"FlapsP", InsertShape::Round, 388.0F, 618.0F, {255, 244, 214}, {255, 242, 176}, 0.70F, 0.74F},
+    {"FlapsS", InsertShape::Round, 420.0F, 626.0F, {255, 244, 214}, {255, 242, 176}, 0.70F, 0.74F},
+    {"Bogey1", InsertShape::Round, 188.0F, 505.0F, {255, 107, 26}, {255, 138, 0}, 1.00F, 1.00F},
+    {"Bogey2", InsertShape::Round, 190.0F, 525.0F, {255, 107, 26}, {255, 138, 0}, 1.00F, 1.00F},
+    {"Bogey3", InsertShape::Round, 192.0F, 545.0F, {255, 107, 26}, {255, 138, 0}, 1.00F, 1.00F},
+    {"Radar1", InsertShape::Round, 523.0F, 505.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"Radar2", InsertShape::Round, 521.0F, 525.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"Radar3", InsertShape::Round, 519.0F, 545.0F, {99, 230, 216}, {30, 235, 255}, 0.82F, 0.83F},
+    {"SafetyPost", InsertShape::Round, 355.5F, 904.0F, {46, 209, 107}, {157, 255, 30}, 0.95F, 0.78F},
+    {"Multiball", InsertShape::Round, 312.0F, 530.0F, {255, 210, 60}, {255, 234, 40}, 0.81F, 0.77F},
+    {"DeckLit", InsertShape::Round, 540.0F, 498.0F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"DeckA", InsertShape::Pip, 493.0F, 236.0F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"DeckC", InsertShape::Pip, 514.7F, 213.6F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"DeckE", InsertShape::Pip, 532.9F, 242.1F, {255, 46, 136}, {255, 46, 200}, 1.00F, 1.00F},
+    {"CatShot", InsertShape::Pip, 497.0F, 220.0F, {255, 107, 26}, {255, 138, 0}, 1.00F, 1.00F},
 }};
 struct FlasherDome {
   std::string_view name;
@@ -284,7 +417,7 @@ struct FlasherDome {
   Rgb colour, neon;
 };
 inline constexpr float kFlasherDomeUnits = 16.0F;
-inline constexpr std::array<FlasherDome, 8> kFlasherDomes{{
+inline constexpr std::array<FlasherDome, 10> kFlasherDomes{{
     {"Hangar", 279.0F, 296.0F, {255, 107, 26}, {255, 138, 0}},
     {"Briefing", 473.0F, 357.0F, {255, 210, 60}, {255, 234, 40}},
     {"Afterburner", 391.0F, 360.0F, {46, 209, 107}, {157, 255, 30}},
@@ -293,6 +426,8 @@ inline constexpr std::array<FlasherDome, 8> kFlasherDomes{{
     {"Nest", 324.0F, 168.0F, {255, 244, 214}, {255, 242, 176}},
     {"SlingLeft", 150.0F, 692.0F, {99, 230, 216}, {30, 235, 255}},
     {"SlingRight", 561.0F, 692.0F, {99, 230, 216}, {30, 235, 255}},
+    {"Deck", 476.0F, 165.0F, {255, 46, 136}, {255, 46, 200}},
+    {"LeftArch", 145.0F, 300.0F, {99, 230, 216}, {30, 235, 255}},
 }};
 inline constexpr float kDroneSpriteUnits = 44.0F;    // drone.png, drone_dive.png, drone_down.png
 inline constexpr float kCaptiveBallSpriteUnits = 30.0F;

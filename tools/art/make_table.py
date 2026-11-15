@@ -849,6 +849,8 @@ class Table:
                 self.sprite("insert_hex.png", x, y, 16.0 * P.HEX_DIAMETER / 11.0, col, P.UNLIT_LEVEL)
             elif shape == "chevron":
                 self.sprite("insert_chevron.png", x, y, P.CHEVRON_SIZE[0] + 6.0, col, P.UNLIT_LEVEL)
+            elif shape == "pip":
+                self.sprite("insert_round.png", x, y, P.PIP_DIAMETER * P.INSERT_ROUND_PER_DIAMETER, col, P.UNLIT_LEVEL)
             else:
                 self.sprite("insert_round.png", x, y, P.LADDER_DIAMETER * P.INSERT_ROUND_PER_DIAMETER, col, P.UNLIT_LEVEL)
 
