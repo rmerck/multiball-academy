@@ -235,6 +235,12 @@ std::unique_ptr<Bot> makeBot(const std::string& kind, std::uint64_t seed, int er
   return std::make_unique<ReflexBot>(seed, error);
 }
 
+// Ball occupancy on an 8-unit grid, filled by playGames when HEAT names a file.
+std::vector<std::uint32_t> gHeat;
+constexpr int kHeatCell = 8;
+constexpr int kHeatW = static_cast<int>(table::kWidth) / kHeatCell;
+constexpr int kHeatH = static_cast<int>(table::kHeight) / kHeatCell;
+
 Stats playGames(const std::string& kind, int error, int games, std::uint64_t seed,
                 std::array<int, 2> aim) {
   Stats st;
@@ -342,6 +348,11 @@ Stats playGames(const std::string& kind, int error, int games, std::uint64_t see
         }
         if (h.held(s)) continue;
         const Vec2 p = h.position(s);
+        if (!gHeat.empty()) {
+          const int cx = static_cast<int>(p.x) / kHeatCell;
+          const int cy = static_cast<int>(p.y) / kHeatCell;
+          if (cx >= 0 && cx < kHeatW && cy >= 0 && cy < kHeatH) ++gHeat[static_cast<std::size_t>(cy * kHeatW + cx)];
+        }
         for (std::size_t f = 0; f < 2; ++f) {
           if (h.nearFlipper(p, f, 1.0F)) {
             t.flipStep = now;
@@ -765,7 +776,17 @@ int main(int argc, char** argv) {
     if (a < 0) a = 60;
   }
   if (kind == "hunt") std::printf("aim steps L %d R %d (%s)\n", aim[0], aim[1], target.c_str());
+  const char* heatFile = std::getenv("HEAT");
+  if (heatFile != nullptr) gHeat.assign(static_cast<std::size_t>(kHeatW * kHeatH), 0U);
   const Stats st = playGames(kind, error, games, seed, aim);
+  if (heatFile != nullptr) {
+    if (std::FILE* f = std::fopen(heatFile, "w")) {
+      for (int y = 0; y < kHeatH; ++y) {
+        for (int x = 0; x < kHeatW; ++x) std::fprintf(f, "%u%c", gHeat[static_cast<std::size_t>(y * kHeatW + x)], x + 1 < kHeatW ? ',' : '\n');
+      }
+      std::fclose(f);
+    }
+  }
   const std::string label = kind + " E=" + std::to_string(error) + " " +
                             (kind == "hunt" ? target : std::string{});
   report(label.c_str(), st);
