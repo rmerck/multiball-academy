@@ -275,7 +275,8 @@ App::App(const AppOptions& options, const screen::Layout& layout, SDL_Window* wi
   attractShow_.setReduceMotion(reduceMotion_);
   guideShow_.setReduceMotion(reduceMotion_);
   ios::attachWindow(window_.get());
-  hapticsAvailable_ = ios::hapticsAvailable();
+  hapticsAvailable_ = options.haptics.value_or(ios::hapticsAvailable());
+  SDL_Log("Haptics: %s", hapticsAvailable_ ? "available" : "none on this device");
   accessibilityEvent_ = SDL_RegisterEvents(1);
   // The player's settings, read and written by a player's run only: a timed
   // run, a staged scene or a test that keeps no scores leaves the file
@@ -374,6 +375,14 @@ FrameResult App::iterate(bool restWhenStill) {
           : static_cast<double>(frameStartNs_ - previousNs_) / 1e9;
   previousNs_ = frameStartNs_;
 
+  {
+    // Whole milliseconds, the fractions carried to the next frame.
+    feedbackRemainderMs_ += std::clamp(frameSeconds, 0.0, 1.0) * 1000.0;
+    const auto whole = static_cast<std::uint64_t>(feedbackRemainderMs_);
+    feedbackMs_ += whole;
+    feedbackRemainderMs_ -= static_cast<double>(whole);
+  }
+  stepHapticTest();
   serviceAudio();
   readInput();
   repeatHeldArrow();

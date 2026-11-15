@@ -167,8 +167,21 @@ SettingsLayout settingsLayout(const Layout& layout, const FrontConfig& config) n
       s.rows[i] = s.page.back;
       continue;
     }
-    if (row == SettingsRow::Haptics && !config.hapticsShown) {
+    if ((row == SettingsRow::Haptics || row == SettingsRow::TestHaptics) &&
+        !config.hapticsShown) {
       s.rows[i] = {body.x, y, kNone, kNone};
+      continue;
+    }
+    // HAPTICS and TEST HAPTICS share a row, side by side, so the page is
+    // no taller where they are shown.
+    const float half = (body.w - gap) * 0.5F;
+    if (row == SettingsRow::Haptics) {
+      s.rows[i] = {body.x, y, half, kButton};
+      continue;
+    }
+    if (row == SettingsRow::TestHaptics) {
+      s.rows[i] = {body.x + body.w - half, y, half, kButton};
+      y += kButton + gap;
       continue;
     }
     s.rows[i] = {body.x, y, body.w, kButton};

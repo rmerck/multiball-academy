@@ -29,7 +29,7 @@ bool FrontMenu::shown(TitleItem item) const noexcept {
 }
 
 bool FrontMenu::shown(SettingsRow row) const noexcept {
-  return row != SettingsRow::Haptics || config_.hapticsShown;
+  return (row != SettingsRow::Haptics && row != SettingsRow::TestHaptics) || config_.hapticsShown;
 }
 
 void FrontMenu::moveTitle(int step) noexcept {
@@ -138,6 +138,8 @@ FrontAction FrontMenu::activateRow(SettingsRow row) noexcept {
       return FrontAction::ToggleMusic;
     case SettingsRow::Haptics:
       return FrontAction::ToggleHaptics;
+    case SettingsRow::TestHaptics:
+      return FrontAction::TestHaptics;
     case SettingsRow::Reset:
       if (!state_.confirmReset) {
         state_.confirmReset = true;

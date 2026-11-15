@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -83,6 +84,12 @@ struct AppOptions {
   // which give a scratch directory so that the player's files are never
   // touched; no command line sets it.
   std::string dataDirectory;
+  // Whether the device has haptics: given, it is used instead of the
+  // system's answer (ios::hapticsAvailable). For tests.
+  std::optional<bool> haptics;
+  // Given, every haptic the game plays goes here instead of to the device.
+  // For tests, which check that each event of the table reaches it.
+  std::function<void(Haptic)> hapticHook;
 };
 
 enum class FrameResult : std::uint8_t { Continue, Quit };
@@ -313,6 +320,10 @@ class App {
   void setMusic(bool on);
   // A haptic for what the frame's sounds say happened, if one is due.
   void playHaptics(SoundSet sounds);
+  // The TEST HAPTICS button's run, one kind at a time as each falls due.
+  void stepHapticTest();
+  // One haptic to the device, or to the test's hook.
+  void playHaptic(Haptic kind);
   // At the title, after a game, now and then: the system's review prompt.
   void maybeRequestReview();
   // What VoiceOver finds on the screen, when that has changed.
@@ -543,6 +554,11 @@ class App {
   // Whether the device has haptics.
   bool hapticsAvailable_ = false;
   HapticGate hapticGate_;
+  HapticTest hapticTest_;
+  // The haptics' clock, ms: the frames' time added up (the fixed time of a
+  // test's frames), so that the rate limit and the test run follow it.
+  std::uint64_t feedbackMs_ = 0;
+  double feedbackRemainderMs_ = 0.0;
   unsigned hapticsPlayed_ = 0;
   // A player's game ended in this run: the review may be asked for.
   bool gameEndedThisRun_ = false;

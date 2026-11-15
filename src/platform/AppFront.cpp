@@ -257,6 +257,15 @@ void App::frontAct(FrontAction action) {
       saveSettings();
       mixer_.trigger(kMoveSound);
       break;
+    case FrontAction::TestHaptics:
+      // Every kind once, to feel them. Only with HAPTICS on: the setting
+      // holds for the test as for the game (the button is drawn off then).
+      // No click: it would hide the first.
+      if (settings_.haptics) {
+        hapticTest_.start(feedbackMs_);
+      }
+      SDL_Log("TEST HAPTICS pressed (haptics %s)", settings_.haptics ? "on" : "off");
+      break;
     case FrontAction::AskReset:
       mixer_.trigger(kAskSound);
       break;
@@ -405,10 +414,29 @@ void App::playHaptics(SoundSet sounds) {
   if (!hapticsAvailable_ || !settings_.haptics || sounds == 0 || options_.frameLimit) {
     return;
   }
-  if (const std::optional<Haptic> kind = hapticGate_.take(sounds, SDL_GetTicks())) {
-    ios::haptic(*kind);
-    ++hapticsPlayed_;
+  if (const std::optional<Haptic> kind = hapticGate_.take(sounds, feedbackMs_)) {
+    playHaptic(*kind);
   }
+}
+
+void App::stepHapticTest() {
+  if (!hapticsAvailable_ || !settings_.haptics) {
+    // Switched off part way: the rest of the run is dropped.
+    hapticTest_ = HapticTest{};
+    return;
+  }
+  if (const std::optional<Haptic> kind = hapticTest_.take(feedbackMs_)) {
+    playHaptic(*kind);
+  }
+}
+
+void App::playHaptic(Haptic kind) {
+  if (options_.hapticHook) {
+    options_.hapticHook(kind);
+  } else {
+    ios::haptic(kind);
+  }
+  ++hapticsPlayed_;
 }
 
 void App::maybeRequestReview() {
@@ -595,6 +623,8 @@ std::vector<App::AccessItem> App::accessibilityItems() const {
           if (config.hapticsShown) {
             add(onOff("HAPTICS", settings_.haptics), row(SettingsRow::Haptics),
                 rowCode(SettingsRow::Haptics), Role::Button);
+            add("TEST HAPTICS", row(SettingsRow::TestHaptics),
+                rowCode(SettingsRow::TestHaptics), Role::Button, settings_.haptics);
           }
           add(state.confirmReset ? "TAP AGAIN TO RESET HIGH SCORES" : "RESET HIGH SCORES",
               row(SettingsRow::Reset), rowCode(SettingsRow::Reset), Role::Button);
