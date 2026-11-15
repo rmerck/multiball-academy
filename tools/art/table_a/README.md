@@ -1,4 +1,4 @@
-# tools/art/table_a: Table A (Flight Academy) art masters, phase 1
+# tools/art/table_a: Table A (Flight Academy) art masters
 
 These are the masters for concept A's toys and finishes. They are not shipped yet: nothing here is under
 `assets/` or in the game's asset manifest. Renderer integration comes after the geometry gate G1, and moves the
@@ -14,8 +14,10 @@ chosen files into `assets/` and `tools/art/SHA256SUMS`. The style board is kept 
 | `out/*.png` | The masters: 8-bit RGBA, straight alpha, IHDR/IDAT/IEND only, 4 pixels per playfield unit |
 | `out/sheets.json`, `out/gimp_sheets.json` | Per sheet: cell size (units and pixels), columns, frame labels in order, anchor (`"centre"` = centred on the toy; `[x, y]` = the cell's top-left corner in playfield units) |
 | `layout_a.json` | Snapshot of `pinball_layout` from `table/a-geometry` (see `_source`); the ramps, G-FORCE and plastics are drawn from it. Refresh it when the geometry moves |
-| `check.py` | Hashes against `SHA256SUMS`, PNG chunks and sizes, and the floor-luminance budget for flush pieces |
-| `contact.py` | Review contact sheet (every sheet plus an in-place preview); not shipped |
+| `make_floor.py` | Playfield base (skia, the pinned art venv, Linux): `floor_a.png` (flush only), `background_a.png` (plus raised static parts), `gi_a.png` (greyscale GI light map), `lamp_plan.json` (98 inserts: 58 from `kLamps`, 40 proposed). Needs the Blender/GIMP masters in `out/` |
+| `check.py` | Hashes against `SHA256SUMS`, PNG chunks and sizes, and the floor-luminance budget for flush pieces and `floor_a.png` |
+| `composite.py` | Full-table preview at iPhone 18 Pro width (1206 px), `fl100` or `fl500` sample state; not shipped |
+| `contact.py` | Review contact sheet (every sheet, the floor images, a composite); not shipped |
 
 ## Regenerate (macOS arm64, where the reference was made)
 
@@ -29,12 +31,17 @@ R=$PWD; printf '(font-path "%s")\n' "$R/tools/art/sources/fonts" > /tmp/table_a.
 GIMP3_DIRECTORY=$(mktemp -d) /Applications/GIMP.app/Contents/MacOS/gimp-console-3.2 -i -n \
    --gimprc=/tmp/table_a.gimprc --batch-interpreter=python-fu-eval \
    -b "TABLE_A_ROOT='$R'; exec(open('$R/tools/art/table_a/gimp/finish.py').read())" --quit
-python3 tools/art/table_a/check.py --report
+# then, on Linux with the pinned venv (tools/art/README.md):
+build/art-venv/bin/python tools/art/table_a/make_floor.py
+build/art-venv/bin/python tools/art/table_a/check.py --report
+build/art-venv/bin/python tools/art/table_a/composite.py /tmp/composite_fl500.png fl500
+build/art-venv/bin/python tools/art/table_a/contact.py /tmp/contact.png /tmp/composite_fl500.png
 ```
 
 Reproducibility, as verified on the reference Mac (Blender 5.3.0, GIMP 3.2):
 - Building from the script and re-rendering from the saved `.blend` files give byte-identical sheets.
 - Two GIMP runs give byte-identical PNGs.
+- Two `make_floor.py` runs (Linux x86_64, pinned venv) give byte-identical files.
 - Other platforms or versions are expected to differ in anti-aliased edges, as with skia (`docs/ASSETS.md`).
   The committed files are the reference.
 

@@ -476,6 +476,13 @@ def gi_map():
         if by > 940 or bx > L["lane"]["wallX"]:
             continue
         acc += np.exp(-(((xs - bx) ** 2 + (ys - by) ** 2) / (2 * 22.0 ** 2)))
+    # the sides the rim walk misses: the lower left shell and the playfield's right edge by the plunger lane
+    for y in range(620, 921, 50):
+        for bx in (58.0, L["lane"]["wallX"] - 16.0):
+            acc += np.exp(-(((xs - bx) ** 2 + (ys - y) ** 2) / (2 * 22.0 ** 2)))
+    for y in range(360, 600, 50):
+        bx = L["lane"]["wallX"] - 16.0
+        acc += np.exp(-(((xs - bx) ** 2 + (ys - y) ** 2) / (2 * 22.0 ** 2)))
     for tri in L["slingshots"]:
         gx = sum(p[0] for p in tri) / 3
         gy = sum(p[1] for p in tri) / 3
