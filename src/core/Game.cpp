@@ -250,7 +250,46 @@ void Game::startNewGame() {
   for (SpinnerState& spinner : spinner_) {
     spinner.owed = 0;
   }
+  // A new game: the BOGEY bank comes up as soon as it is clear.
+  for (std::uint64_t& down : bogeyDownStep_) {
+    if (down != 0) {
+      down = 1;
+    }
+  }
+  bogeyNewGame_ = true;
   serveBall();
+}
+
+void Game::driveBogeys() {
+  // The bank comes up kBogeyResetSeconds after its third target fell; from
+  // the Altitude's autoReset level a target down kBogeyAutoResetSeconds
+  // rises alone. A new game raises every one. Each only when clear.
+  const std::uint64_t now = stepCount_ + 1;
+  bool allDown = true;
+  std::uint64_t lastDown = 0;
+  for (const std::uint64_t down : bogeyDownStep_) {
+    allDown = allDown && down != 0;
+    lastDown = std::max(lastDown, down);
+  }
+  const bool bankDue = allDown && now - lastDown >= stepsIn(table::kBogeyResetSeconds);
+  const bool autoReset = rules_.altitudeKnobs().autoReset;
+  bool anyDown = false;
+  for (std::size_t i = 0; i < bogeyDownStep_.size(); ++i) {
+    std::uint64_t& down = bogeyDownStep_[i];
+    if (down == 0) {
+      continue;
+    }
+    const bool due = bogeyNewGame_ || bankDue ||
+                     (autoReset && now - down >= stepsIn(table::kBogeyAutoResetSeconds));
+    if (due && physics_.bogeySpotClear(i)) {
+      physics_.setBogey(i, true);
+      down = 0;
+    }
+    anyDown = anyDown || down != 0;
+  }
+  if (!anyDown) {
+    bogeyNewGame_ = false;
+  }
 }
 
 void Game::handleNudges(const InputState& input) {
@@ -659,6 +698,16 @@ void Game::handleEvents() {
         hitSounds |= soundBit(Sound::Target);
         rules_.onStandup(index, event.speed);
         break;
+      case Bogey:
+        // A BOGEY target drops when struck (a hit reported after it went
+        // down in this same step is not one).
+        if (physics_.bogeyUp(index)) {
+          hitSounds |= soundBit(Sound::Target);
+          physics_.setBogey(index, false);
+          bogeyDownStep_[index] = stepCount_ + 1;
+          rules_.onBogey(index);
+        }
+        break;
       case Pylon:
         if (physics_.pylonUp()) {
           hitSounds |= soundBit(Sound::Target);
@@ -1024,6 +1073,7 @@ void Game::applyRules() {
     rules_.onDoorBank(true);
   }
   physics_.setKickbackArmed(rules_.kickbackLit());
+  driveBogeys();
   // Concept A: the pylon rises when the rules want it and nothing is over
   // it; it goes flush at once when they do not.
   if (rules_.pylonWanted()) {

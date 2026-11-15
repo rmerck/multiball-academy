@@ -287,6 +287,8 @@ class Rules {
   }
   void setPylonPolicy(int policy) noexcept { pylonPolicy_ = policy < 0 || policy > 2 ? 0 : policy; }
   void onPylon() noexcept;
+  // Concept A G2 stub (G5 owns the BOGEY rules): a target struck down.
+  void onBogey(std::size_t index) noexcept;
   // F-L-A-P-S: letters lit this ball.
   bool flapLit(std::size_t letter) const noexcept {
     return letter < flapsLit_.size() && flapsLit_[letter];

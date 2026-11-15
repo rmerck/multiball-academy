@@ -784,6 +784,13 @@ void TableRenderer::drawElements(SDL_Renderer* r, const Game& game,
                                  const TableLights& lights) const {
   elements_.clear();
   Mesh mesh(elements_);
+  // Concept A G2: the BOGEY drop targets that stand (placeholder colour);
+  // down, nothing is drawn where they stood.
+  for (std::size_t i = 0; i < table::kBogeys.size(); ++i) {
+    if (game.bogeyUp(i)) {
+      mesh.capsule(table::kBogeys[i], kSwitchColor);
+    }
+  }
   // Doors that have dropped lie flat: an outline where each stood.
   if (!game.doorBankUp()) {
     for (const table::Capsule& door : table::kDropTargets) {

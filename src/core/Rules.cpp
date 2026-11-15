@@ -404,6 +404,15 @@ void Rules::onStandup(std::size_t index, float /*speed*/) noexcept {
   award(500, Feature::Slingshots);
 }
 
+void Rules::onBogey(std::size_t index) noexcept {
+  // Stub (G5: BOGEY complete lights Night Landing, adds to the lock at FL300+).
+  if (dead() || index >= table::kBogeys.size()) {
+    return;
+  }
+  noteSwitch();
+  award(1'000, Feature::TurboTargets);
+}
+
 void Rules::onPylon() noexcept {
   // Stub (G5: a sortie step or a jackpot add).
   if (dead()) {

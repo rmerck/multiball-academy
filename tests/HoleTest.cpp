@@ -58,8 +58,11 @@ float distance(Vec2 a, Vec2 b) {
 // CAT SHOT and deck drain, the deck's set-down moved clear of the raised
 // deck bat (532, 236), and the shelf under the resting deck bat. Two runs on
 // x86-64 give the same value; arm64 is checked by the macOS CI job. The soak
-// plays at FL100, where the Air Pocket and the Prop Wash are idle.)
-constexpr std::uint64_t kSoakTrajectory = 0x4213a29dab26e639ULL;
+// plays at FL100, where the Air Pocket and the Prop Wash are idle.
+// G2: re-recorded for the frictionless Hangar roof, the one-shape bay door
+// bank, deck stand-up A lowered, the deck set-down (507, 228) moving right,
+// the BOGEY drops and the RADAR stand-ups. Was 0x4213a29dab26e639.)
+constexpr std::uint64_t kSoakTrajectory = 0xa1fa4e7df9970e85ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {

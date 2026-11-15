@@ -202,6 +202,13 @@ class PhysicsWorld {
   void setPylon(bool up);
   [[nodiscard]] bool pylonUp() const noexcept { return pylonUp_; }
   [[nodiscard]] bool pylonSpotClear() const;
+  // Concept A G2: the BOGEY drop targets, each up or down on its own; one
+  // rises only when no free ball is over it (bogeySpotClear).
+  void setBogey(std::size_t index, bool up);
+  [[nodiscard]] bool bogeyUp(std::size_t index) const noexcept {
+    return index < bogeyUp_.size() && bogeyUp_[index];
+  }
+  [[nodiscard]] bool bogeySpotClear(std::size_t index) const;
   // The Air Pocket for the next step: Off, Pull (draw and hold free balls
   // in its reach that are not rising fast), or Release (each ball in its
   // reach is given kick, in px/s). The Prop Wash's spin in radians per
@@ -317,6 +324,7 @@ class PhysicsWorld {
   void kickFromBumper(std::size_t slot, const table::Bumper& bumper);
   void buildTargets();
   void buildDoorBank();
+  void buildBogeys();
   void buildStandups();
   void buildDrone();
   void buildPylon();
@@ -399,6 +407,8 @@ class PhysicsWorld {
   // return to the table as one.
   b2BodyId doorBank_{};
   bool doorBankUp_ = true;
+  std::array<b2BodyId, table::kBogeys.size()> bogey_{};
+  std::array<bool, table::kBogeys.size()> bogeyUp_{};
   // The drone. The clock counts steps through one patrol and dive.
   b2BodyId drone_{};
   bool droneUp_ = true;

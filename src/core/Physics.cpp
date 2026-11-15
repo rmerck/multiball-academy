@@ -53,7 +53,7 @@ table::ElementRef unpackElement(const void* data) noexcept {
   for (const table::ElementKind kind :
        {table::ElementKind::Bumper, table::ElementKind::Slingshot, table::ElementKind::Target,
         table::ElementKind::DropTarget, table::ElementKind::Drone, table::ElementKind::Standup,
-        table::ElementKind::CaptiveBall}) {
+        table::ElementKind::CaptiveBall, table::ElementKind::Bogey}) {
     if (kindValue == std::to_underlying(kind)) {
       const table::ElementRef ref{kind, index};
       return table::isValid(ref) ? ref : table::ElementRef{};
@@ -188,6 +188,7 @@ PhysicsWorld::PhysicsWorld() {
     buildBall(slot, false);
   }
   buildDoorBank();
+  buildBogeys();
   buildStandups();
   buildDrone();
   buildPylon();
@@ -533,6 +534,58 @@ void PhysicsWorld::setPylon(bool up) {
   } else {
     b2Body_Disable(pylon_);
   }
+}
+
+void PhysicsWorld::buildBogeys() {
+  // Each target its own static body, so that it drops (is disabled) alone.
+  b2ShapeDef deadDef = wallShapeDef();
+  deadDef.material.restitution = table::kDeadPostRestitution;
+  deadDef.material.userMaterialId = kDeadMaterial;
+  for (std::size_t i = 0; i < table::kBogeys.size(); ++i) {
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    bodyDef.type = b2_staticBody;
+    bogey_[i] = b2CreateBody(world_, &bodyDef);
+    b2ShapeDef def = deadDef;
+    def.userData = packElement({table::ElementKind::Bogey, static_cast<std::uint8_t>(i)});
+    const table::Capsule& c = table::kBogeys[i];
+    const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
+    b2CreateCapsuleShape(bogey_[i], &def, &capsule);
+    bogeyUp_[i] = true;
+  }
+}
+
+void PhysicsWorld::setBogey(std::size_t index, bool up) {
+  if (index >= bogeyUp_.size() || bogeyUp_[index] == up) {
+    return;
+  }
+  bogeyUp_[index] = up;
+  if (up) {
+    b2Body_Enable(bogey_[index]);
+  } else {
+    b2Body_Disable(bogey_[index]);
+  }
+}
+
+bool PhysicsWorld::bogeySpotClear(std::size_t index) const {
+  if (index >= table::kBogeys.size()) {
+    return false;
+  }
+  const table::Capsule& c = table::kBogeys[index];
+  const float reach = c.radius + table::kBallRadius + 2.0F;
+  for (std::size_t slot = 0; slot < balls_.size(); ++slot) {
+    if (!balls_[slot].active || balls_[slot].held) {
+      continue;
+    }
+    const Vec2 p = ballPosition(slot);
+    const Vec2 ab = c.b - c.a;
+    const float lengthSquared = ab.x * ab.x + ab.y * ab.y;
+    const float t = std::clamp(((p.x - c.a.x) * ab.x + (p.y - c.a.y) * ab.y) / lengthSquared, 0.0F, 1.0F);
+    const Vec2 d = p - (c.a + ab * t);
+    if (d.x * d.x + d.y * d.y < reach * reach) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool PhysicsWorld::pylonSpotClear() const {

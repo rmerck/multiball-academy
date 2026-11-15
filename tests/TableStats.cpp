@@ -537,7 +537,7 @@ int main(int argc, char** argv) {
     Rng rng(0xABCDEFULL);
     std::array<int, kTouchCount> lastBy5{}, lastBy10{};
     int under5 = 0, under10 = 0;
-    std::array<int, 5> standup10{};
+    std::array<int, table::kStandups.size() + 1> standup10{};
     for (int n = 0; n < balls; ++n) {
       h.left = h.right = false;
       for (int i = 0; i < 20; ++i) h.advance();
@@ -722,6 +722,21 @@ int main(int argc, char** argv) {
       const std::string fan = acceptance::deckFan(v);
       std::printf("deck v%d: %s  widest A %d C %d E %d K %d\n", v, fan.c_str(), widest(fan, 'A'),
                   widest(fan, 'C'), widest(fan, 'E'), widest(fan, 'K'));
+    }
+    return 0;
+  }
+  if (mode == "path" && argc > 5) {
+    // A ball put at (x, y) with velocity (vx, vy), buttons idle: where it is
+    // every 6 steps for 3 s (and what it touches).
+    TableHarness h;
+    h.put(0, {static_cast<float>(std::atof(argv[2])), static_cast<float>(std::atof(argv[3]))},
+          {static_cast<float>(std::atof(argv[4])), static_cast<float>(std::atof(argv[5]))}, true);
+    h.events.clear();
+    std::size_t seen = 0;
+    for (int i = 0; i < kHz * 3; ++i) {
+      h.advance();
+      for (; seen < h.events.size(); ++seen) std::printf("  touch %s at step %d\n", touchName(h.events[seen].touch), i);
+      if (i % 6 == 0) std::printf("%d (%.1f, %.1f)\n", i, static_cast<double>(h.position(0).x), static_cast<double>(h.position(0).y));
     }
     return 0;
   }

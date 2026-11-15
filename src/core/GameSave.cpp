@@ -314,6 +314,7 @@ void PhysicsWorld::saveTable(save::TableRecord& r) const {
   r.plungerReleaseSpeed = plungerReleaseSpeed_;
   r.doorBankUp = doorBankUp_;
   r.pylonUp = pylonUp_;
+  r.bogeyUp = bogeyUp_;
   r.kickbackArmed = kickbackArmed_;
   r.droneUp = droneUp_;
   r.droneClock = droneClock_;
@@ -422,6 +423,9 @@ void PhysicsWorld::restoreTable(const save::TableRecord& r) {
   b2Body_SetLinearVelocity(plunger_, {0.0F, 0.0F});
   setDoorBank(r.doorBankUp);
   setPylon(r.pylonUp);
+  for (std::size_t i = 0; i < r.bogeyUp.size(); ++i) {
+    setBogey(i, r.bogeyUp[i]);
+  }
   kickbackArmed_ = r.kickbackArmed;
   droneClock_ = r.droneClock;
   droneDownSteps_ = r.droneDownSteps;
@@ -472,6 +476,8 @@ save::Snapshot Game::snapshot() const {
   g.droneMoveStep = droneMoveStep_;
   g.droneHitStep = droneHitStep_;
   g.lastFlipStep = lastFlipStep_;
+  g.bogeyDownStep = bogeyDownStep_;
+  g.bogeyNewGame = bogeyNewGame_;
   g.droneRecoilDirection = droneRecoilDirection_;
   g.droneHitCount = droneHitCount_;
   g.random = random_;
@@ -546,6 +552,8 @@ bool Game::restore(const save::Snapshot& s) {
   droneMoveStep_ = g.droneMoveStep;
   droneHitStep_ = g.droneHitStep;
   lastFlipStep_ = g.lastFlipStep;
+  bogeyDownStep_ = g.bogeyDownStep;
+  bogeyNewGame_ = g.bogeyNewGame;
   droneRecoilDirection_ = g.droneRecoilDirection;
   droneHitCount_ = g.droneHitCount;
   random_ = g.random;

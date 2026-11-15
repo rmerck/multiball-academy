@@ -329,6 +329,8 @@ class Game {
   void setDeckPolicy(int policy) noexcept { rules_.setDeckPolicy(policy); }
   void setPylonPolicy(int policy) noexcept { rules_.setPylonPolicy(policy); }
   [[nodiscard]] bool pylonUp() const noexcept { return physics_.pylonUp(); }
+  // Concept A G2: a BOGEY drop target standing.
+  [[nodiscard]] bool bogeyUp(std::size_t index) const noexcept { return physics_.bogeyUp(index); }
   [[nodiscard]] std::uint32_t airPocketCatches() const noexcept {
     return physics_.airPocketCatches();
   }
@@ -580,6 +582,11 @@ class Game {
   std::uint64_t droneMoveStep_ = 0;
   std::uint64_t droneHitStep_ = 0;
   std::uint64_t lastFlipStep_ = 0;  // One more than the latest flipper press's step; 0 none.
+  // One more than the step each BOGEY target fell; 0 while it stands. And a
+  // new game's reset still to finish.
+  std::array<std::uint64_t, table::kBogeys.size()> bogeyDownStep_{};
+  bool bogeyNewGame_ = false;
+  void driveBogeys();
   Vec2 droneRecoilDirection_{0.0F, -1.0F};
   std::uint32_t droneHitCount_ = 0;
   static constexpr std::size_t kMaxGameEvents = 24;

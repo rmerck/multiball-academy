@@ -520,7 +520,7 @@ void testTableGeometry() {
   {  // Revision 3: the dead posts are the lane's right flare and the
      // Briefing room's rail, the T-A-X-I stand-ups keep their bounce, and
      // none of them is also a plain wall.
-    CHECK(table::kDeadPosts.size() == 2 && table::kStandups.size() == 7 &&
+    CHECK(table::kDeadPosts.size() == 2 && table::kStandups.size() == 10 &&
           table::kTaxiStandups == 4);
     for (const table::Capsule& post : table::kDeadPosts) {
       for (const table::Capsule& wall : table::kAllWalls) {

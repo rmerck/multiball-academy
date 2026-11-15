@@ -344,6 +344,10 @@ void visit(V& v, GameRecord& g) {
   v.integer(g.droneMoveStep, std::uint64_t{0}, kMaxStepCount + 1U);
   v.integer(g.droneHitStep, std::uint64_t{0}, kMaxStepCount + 1U);
   v.integer(g.lastFlipStep, std::uint64_t{0}, kMaxStepCount + 1U);
+  for (std::uint64_t& down : g.bogeyDownStep) {
+    v.integer(down, std::uint64_t{0}, kMaxStepCount + 1U);
+  }
+  v.flag(g.bogeyNewGame);
   // A unit vector (or near enough).
   visit(v, g.droneRecoilDirection, -1.001F, 1.001F);
   v.integer(g.droneHitCount, 0U, kAnyU32);
@@ -366,6 +370,7 @@ void visit(V& v, TableRecord& t) {
   v.real(t.plungerReleaseSpeed, 0.0F, kMaxPlungerSpeedPixels * 1.01F);
   v.flag(t.doorBankUp);
   v.flag(t.pylonUp);
+  visit(v, t.bogeyUp);
   v.flag(t.kickbackArmed);
   v.flag(t.droneUp);
   v.integer(t.droneClock, 0U, 120U * 3600U);
@@ -803,7 +808,9 @@ bool valid(const Snapshot& snapshot) {
   }
   if (game.lastAutoServeStep > game.stepCount + 1U || game.arrivals > game.stepCount + 1U ||
       game.droneMoveStep > game.stepCount + 1U || game.droneHitStep > game.stepCount + 1U ||
-      game.lastFlipStep > game.stepCount + 1U) {
+      game.lastFlipStep > game.stepCount + 1U ||
+      std::ranges::any_of(game.bogeyDownStep,
+                          [&game](std::uint64_t s) { return s > game.stepCount + 1U; })) {
     return false;
   }
   // The spinners: the total is the sum of each one's count (both only ever
@@ -858,6 +865,12 @@ bool valid(const Snapshot& snapshot) {
   }
   if (active == 0 || active + game.queuedBalls > table::kMaxBalls) {
     return false;
+  }
+  // A BOGEY target stands exactly when it has no step it fell at.
+  for (std::size_t i = 0; i < table::kBogeys.size(); ++i) {
+    if (snapshot.table.bogeyUp[i] != (snapshot.game.bogeyDownStep[i] == 0)) {
+      return false;
+    }
   }
   return captiveConsistent(snapshot.captive);
 }

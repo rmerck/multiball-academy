@@ -35,7 +35,8 @@ namespace pinball::save {
 // format 4; neither shipped, so one version, 5, holds both).
 // 7: main's format 3 (the Altitude in the rules' state, hole cups) merged
 // with concept A's 6.
-inline constexpr std::uint16_t kFormatVersion = 7;
+// 8: the BOGEY drop targets.
+inline constexpr std::uint16_t kFormatVersion = 8;
 
 // The longest a build id may be ("2.0.0+123456789" is 15).
 inline constexpr std::size_t kMaxBuildIdLength = 32;
@@ -218,6 +219,7 @@ struct TableRecord {
   float droneX = table::kDroneLeftX;
   bool droneKnocked = false;  // Format 4.
   bool pylonUp = false;       // Format 6 (concept A).
+  std::array<bool, table::kBogeys.size()> bogeyUp{true, true, true};  // Format 8.
 };
 
 // Format 5 (table revision 3): the captive ball. Its body exactly as Box2D
@@ -270,6 +272,10 @@ struct GameRecord {
   // One more than the step of the latest flipper press; 0 if none (the Air
   // Pocket rests after one).
   std::uint64_t lastFlipStep = 0;
+  // Format 8 (concept A G2): one more than the step each BOGEY target fell
+  // (0: standing), and a new game's reset still to finish.
+  std::array<std::uint64_t, table::kBogeys.size()> bogeyDownStep{};
+  bool bogeyNewGame = false;
   Vec2 droneRecoilDirection{0.0F, -1.0F};
   std::uint32_t droneHitCount = 0;
   std::uint64_t random = 0x9E3779B97F4A7C15ULL;

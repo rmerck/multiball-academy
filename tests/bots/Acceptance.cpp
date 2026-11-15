@@ -517,7 +517,7 @@ Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bo
 }  // namespace
 
 char touchChar(Touch touch) noexcept {
-  static constexpr char kChars[] = ".OLwDHSPWRQbs^ijxyc*dTGeKkYf";
+  static constexpr char kChars[] = ".OLwDHSPWRQbs^ijxyc*dTGeKkYfgr";
   const auto index = static_cast<std::size_t>(touch);
   return index < sizeof(kChars) - 1 ? kChars[index] : '?';
 }
@@ -539,7 +539,7 @@ std::string deckFan(int variant) {
       const auto standups = harness.standupHits;
       const std::size_t before = harness.events.size();
       harness.advance();
-      for (std::size_t s = table::kDeckStandupA; s < table::kStandups.size(); ++s) {
+      for (std::size_t s = table::kDeckStandupA; s < table::kRadarStandup; ++s) {
         if (harness.standupHits[s] > standups[s] && i >= press) {
           got = "ACE"[s - table::kDeckStandupA];
         }

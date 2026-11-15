@@ -283,7 +283,7 @@ void sectionShots(bool quick) {
   for (const Touch touch :
        {Touch::CircuitLeft, Touch::Runway, Touch::Door, Touch::Hangar, Touch::Briefing,
         Touch::Turbine, Touch::Skyway, Touch::CircuitRight, Touch::Bumper, Touch::Slingshot,
-        Touch::TargetLeft, Touch::TargetRight, Touch::RollCall}) {
+        Touch::TargetLeft, Touch::TargetRight, Touch::RollCall, Touch::Bogey, Touch::Radar}) {
     const ShotWindow& window = shots.shots[static_cast<std::size_t>(touch)];
     if (window.firstHits == 0) {
       continue;
