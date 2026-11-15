@@ -255,6 +255,19 @@ def make_altimeter():
     img = new_image(pw * len(labels), ph)
     for i, lab in enumerate(labels):
         ox = i * pw
+        if lab != "base":
+            # pointer frames are overlays: only the pointer, drawn over the plate and its lit rungs
+            k = int(lab[2]) - 1
+            yc = ALT_SOCKET_Y[k] * PPU
+            ptr = layer(img, lab + " pointer")
+            poly(img, [(ox + 14, yc - 13), (ox + 40, yc), (ox + 14, yc + 13)])
+            fill_sel(ptr, "#B8C4DC")
+            shadow_of(img, ptr, 3, 3, INK, lab + " pointer shadow")
+            hi = layer(img, lab + " pointer light", 70.0)
+            poly(img, [(ox + 16, yc - 10), (ox + 34, yc - 1), (ox + 16, yc - 2)])
+            fill_sel(hi, "#FFFFFF")
+            none(img)
+            continue
 
         def plate(op, ox=ox):
             img.select_round_rectangle(op, ox + 2, 2, pw - 4, ph - 4, 28, 28)
@@ -308,22 +321,11 @@ def make_altimeter():
         title = text_layer(img, "ALTITUDE", "Saira Stencil One Regular", 6 * PPU, "#3A4470", pw / 2 + ox,
                            ph - 6.5 * PPU, lab + " title")
         _ = title
-        if lab != "base":
-            k = int(lab[2]) - 1
-            yc = ALT_SOCKET_Y[k] * PPU
-            ptr = layer(img, lab + " pointer")
-            poly(img, [(ox + 14, yc - 13), (ox + 40, yc), (ox + 14, yc + 13)])
-            fill_sel(ptr, "#B8C4DC")
-            shadow_of(img, ptr, 3, 3, INK, lab + " pointer shadow")
-            hi = layer(img, lab + " pointer light", 70.0)
-            poly(img, [(ox + 16, yc - 10), (ox + 34, yc - 1), (ox + 16, yc - 2)])
-            fill_sel(hi, "#FFFFFF")
-            none(img)
     save(img, "altitude_plate")
     sheet("altitude_plate", ALT_PLATE_UNITS, len(labels), labels,
           sockets={"centreXUnits": ALT_SOCKET_X, "centreYUnits": ALT_SOCKET_Y, "sizeUnits": list(ALT_SOCKET)},
           note="printed floor art (deck-dark): an altimeter tape whose five sockets hold inserts_altitude rungs "
-               "(FL100 bottom); frame fl<N>00 adds the pointer at that level")
+               "(FL100 bottom); frames fl<N>00 are overlays holding only the pointer at that level")
 
 
 # ---- shot arrows: chunky arrow (28 long), Mission arrow (34), progress pip (10) ----------------------------
