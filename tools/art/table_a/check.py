@@ -7,7 +7,8 @@
 #     (tools/art/palette.py LUM_DECK_MAX for paint, LUM_STATIC_MAX for baked highlights, LUM_UNLIT_LENS
 #     for unlit lenses): reported per sheet. The check fails, in an unlit frame, if the 75th percentile of
 #     opaque pixels (the paint) is over LUM_DECK_MAX, or the 99.5th (chrome rims, the hub) over LUM_STATIC_MAX.
-#     Specular glints on chrome, under half a percent of a frame, are the only pixels allowed above it.
+#     Specular glints on chrome, under half a percent of a frame, are the only pixels allowed above it;
+#  5. palette.py TABLE_A (and ALTITUDE_GI) match blender/toys.py HEX.
 # Needs Python 3 with numpy and Pillow (the art venv).   python3 tools/art/table_a/check.py [--report]
 import hashlib
 import json
@@ -137,6 +138,13 @@ def main():
                 print("%-12s %-8s lum p50 %.3f p75 %.3f p99.5 %.3f" % (file, "shell", p50, p75, p995))
             if p75 > LUM_DECK_MAX or p995 > LUM_STATIC_MAX:
                 problems.append("%s: p75 %.3f / p99.5 %.3f over the floor budget" % (file, p75, p995))
+    # 5. the Table A colours in palette.py (what the game and the floor use) are the ones Blender rendered with
+    sys.path.insert(0, os.path.join(ROOT, "tools", "art"))
+    import palette as P
+    toys = open(os.path.join(HERE, "blender", "toys.py")).read()
+    for name, colour in list(P.TABLE_A.items()) + list(zip(P.TABLE_A_GI_NAMES, P.ALTITUDE_GI)):
+        if '"%s": "%s"' % (name, colour) not in toys:
+            problems.append("palette.py TABLE_A %s %s differs from blender/toys.py HEX" % (name, colour))
     if problems:
         sys.exit("\n".join(problems))
     print("table_a check: %d file(s) ok" % len(listed))

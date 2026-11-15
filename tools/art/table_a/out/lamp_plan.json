@@ -1,5 +1,6 @@
 {
  "counts": {
+  "decor": 24,
   "layout": 58,
   "proposed": 40
  },
@@ -159,8 +160,8 @@
   },
   {
    "c": [
-    330.0,
-    600.0
+    327.0,
+    596.0
    ],
    "colour": "#B98CFF",
    "d": 22.0,
@@ -171,8 +172,8 @@
   },
   {
    "c": [
-    381.0,
-    600.0
+    384.0,
+    596.0
    ],
    "colour": "#B98CFF",
    "d": 22.0,
@@ -208,7 +209,7 @@
   {
    "c": [
     355.5,
-    566.0
+    572.0
    ],
    "colour": "#FFD23C",
    "d": 22.0,
@@ -543,7 +544,7 @@
   },
   {
    "c": [
-    355.5,
+    500.0,
     662.0
    ],
    "colour": "#B98CFF",
@@ -555,7 +556,7 @@
   },
   {
    "c": [
-    355.5,
+    500.0,
     650.0
    ],
    "colour": "#B98CFF",
@@ -567,7 +568,7 @@
   },
   {
    "c": [
-    355.5,
+    500.0,
     638.0
    ],
    "colour": "#B98CFF",
@@ -579,7 +580,7 @@
   },
   {
    "c": [
-    355.5,
+    500.0,
     626.0
    ],
    "colour": "#B98CFF",
@@ -591,7 +592,7 @@
   },
   {
    "c": [
-    355.5,
+    500.0,
     614.0
    ],
    "colour": "#B98CFF",
@@ -603,7 +604,7 @@
   },
   {
    "c": [
-    355.5,
+    500.0,
     602.0
    ],
    "colour": "#B98CFF",
@@ -615,7 +616,7 @@
   },
   {
    "c": [
-    355.5,
+    500.0,
     590.0
    ],
    "colour": "#B98CFF",
@@ -628,7 +629,7 @@
   {
    "c": [
     262.0,
-    648.0
+    664.0
    ],
    "colour": "#63E6D8",
    "d": 12.0,
@@ -640,7 +641,7 @@
   {
    "c": [
     278.0,
-    642.0
+    658.0
    ],
    "colour": "#63E6D8",
    "d": 12.0,
@@ -652,7 +653,7 @@
   {
    "c": [
     294.0,
-    636.0
+    652.0
    ],
    "colour": "#63E6D8",
    "d": 12.0,
@@ -664,7 +665,7 @@
   {
    "c": [
     310.0,
-    630.0
+    646.0
    ],
    "colour": "#63E6D8",
    "d": 12.0,
@@ -676,7 +677,7 @@
   {
    "c": [
     449.0,
-    648.0
+    664.0
    ],
    "colour": "#FF2E88",
    "d": 12.0,
@@ -688,7 +689,7 @@
   {
    "c": [
     433.0,
-    642.0
+    658.0
    ],
    "colour": "#FF2E88",
    "d": 12.0,
@@ -700,7 +701,7 @@
   {
    "c": [
     417.0,
-    636.0
+    652.0
    ],
    "colour": "#FF2E88",
    "d": 12.0,
@@ -712,7 +713,7 @@
   {
    "c": [
     401.0,
-    630.0
+    646.0
    ],
    "colour": "#FF2E88",
    "d": 12.0,
@@ -868,7 +869,7 @@
   {
    "c": [
     356.0,
-    481.0
+    476.0
    ],
    "colour": "#2ED16B",
    "d": 10.0,
@@ -880,7 +881,7 @@
   {
    "c": [
     356.0,
-    494.0
+    486.0
    ],
    "colour": "#2ED16B",
    "d": 10.0,
@@ -892,7 +893,7 @@
   {
    "c": [
     356.0,
-    507.0
+    496.0
    ],
    "colour": "#2ED16B",
    "d": 10.0,
@@ -1162,12 +1163,300 @@
   },
   {
    "c": [
+    311.5,
+    848.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 137,
+   "name": "Approach1Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    848.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 138,
+   "name": "Approach1Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    848.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 139,
+   "name": "Approach1Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    848.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 140,
+   "name": "Approach1Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    311.5,
+    866.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 141,
+   "name": "Approach2Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    866.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 142,
+   "name": "Approach2Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    866.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 143,
+   "name": "Approach2Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    866.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 144,
+   "name": "Approach2Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    311.5,
+    884.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 145,
+   "name": "Approach3Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    884.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 146,
+   "name": "Approach3Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    884.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 147,
+   "name": "Approach3Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    884.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 148,
+   "name": "Approach3Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    311.5,
+    902.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 149,
+   "name": "Approach4Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    902.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 150,
+   "name": "Approach4Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    902.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 151,
+   "name": "Approach4Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    902.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 152,
+   "name": "Approach4Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    311.5,
+    920.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 153,
+   "name": "Approach5Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    920.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 154,
+   "name": "Approach5Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    920.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 155,
+   "name": "Approach5Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    920.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 156,
+   "name": "Approach5Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    311.5,
+    938.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 157,
+   "name": "Approach6Lo",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    329.5,
+    938.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 158,
+   "name": "Approach6Li",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    381.5,
+    938.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 159,
+   "name": "Approach6Ri",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
+    399.5,
+    938.0
+   ],
+   "colour": "#FFF4D6",
+   "d": 7.0,
+   "id": 160,
+   "name": "Approach6Ro",
+   "shape": "round",
+   "source": "decor"
+  },
+  {
+   "c": [
     355.5,
     904.0
    ],
    "colour": "#2ED16B",
    "d": 14.0,
-   "id": 137,
+   "id": 161,
    "name": "SafetyPost",
    "shape": "round",
    "source": "proposed"
@@ -1179,7 +1468,7 @@
    ],
    "colour": "#FFD23C",
    "d": 14.0,
-   "id": 138,
+   "id": 162,
    "name": "Multiball",
    "shape": "round",
    "source": "proposed"
@@ -1191,11 +1480,11 @@
    ],
    "colour": "#FF2E88",
    "d": 14.0,
-   "id": 139,
+   "id": 163,
    "name": "DeckLit",
    "shape": "round",
    "source": "proposed"
   }
  ],
- "note": "every insert of concept A; source 'proposed' = not yet in table/a-geometry kLamps"
+ "note": "every insert of concept A; source 'proposed' = not yet in table/a-geometry kLamps; 'decor' = lit by the renderer alone (approach lights)"
 }

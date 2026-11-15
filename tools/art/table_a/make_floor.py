@@ -65,7 +65,10 @@ COLOUR.update({"Bonus%dX" % i: P.PINK for i in range(2, 6)})
 AIM = {"ArrowCircuitLeft": (118.0, 440.0), "ArrowRunway": (192.0, 425.0), "ArrowHangar": (279.0, 392.0),
        "ArrowBriefing": (441.0, 400.0), "ArrowTurbine": (356.0, 415.0), "ArrowSkyway": (519.0, 425.0),
        "ArrowCircuitRight": (593.0, 440.0)}
-ALT_PLATE_AT = (173.0, 584.0)       # top-left of the altimeter plate (units)
+ALT_PLATE_AT = P.TABLE_A_ALT_PLATE   # top-left of the altimeter plate (units)
+APPROACH_ROWS = (848.0, 866.0, 884.0, 902.0, 920.0, 938.0)
+APPROACH_XS = (CX - 44.0, CX - 26.0, CX + 26.0, CX + 44.0)
+MOVED_PIPS = {"LadderTurbine1": (356.0, 476.0), "LadderTurbine2": (356.0, 486.0), "LadderTurbine3": (356.0, 496.0)}
 
 
 def lamp_plan():
@@ -96,8 +99,11 @@ def lamp_plan():
         dx, dy = dx / n, dy / n
         for k in range(3):
             d = 23.0 + 13.0 * k
-            plan.append({"id": nid, "name": e["name"].replace("Arrow", "Ladder") + str(k + 1),
-                         "c": [round(lx - dx * d, 1), round(ly - dy * d, 1)], "colour": e["colour"], "shape": "pip",
+            name = e["name"].replace("Arrow", "Ladder") + str(k + 1)
+            # The geometry owner's decision (TABLE_A_G1.md): the Afterburner's pips move to (356, 476/486/496),
+            # clear of TurboCharge.
+            at = MOVED_PIPS.get(name, (round(lx - dx * d, 1), round(ly - dy * d, 1)))
+            plan.append({"id": nid, "name": name, "c": [at[0], at[1]], "colour": e["colour"], "shape": "pip",
                          "d": 10.0, "source": "proposed"})
             nid += 1
     # Altitude FL100..FL500: the altimeter's sockets
@@ -119,6 +125,13 @@ def lamp_plan():
         plan.append({"id": nid + 1, "name": "Radar%d" % (k + 1), "c": [round(2 * CX - x, 1), y], "colour": P.AQUA,
                      "shape": "round", "d": 12.0, "source": "proposed"})
         nid += 2
+    # Approach lights (concept A art, lower third): two pairs of rows up the runway's threshold, lit by the
+    # renderer as a running "rabbit" in the Altitude GI colour; not rules lamps (source "decor").
+    for k, y in enumerate(APPROACH_ROWS):
+        for x in APPROACH_XS:
+            plan.append({"id": nid, "name": "Approach%d%s" % (k + 1, "L" if x < CX else "R") + ("o" if abs(x - CX) > 30 else "i"),
+                         "c": [x, y], "colour": P.CREAM, "shape": "round", "d": 7.0, "source": "decor"})
+            nid += 1
     for name, c, col in (("SafetyPost", (CX, 904.0), P.GREEN), ("Multiball", (312.0, 530.0), P.YELLOW),
                          ("DeckLit", (540.0, 498.0), P.PINK)):
         plan.append({"id": nid, "name": name, "c": list(c), "colour": col, "shape": "round", "d": 14.0,
@@ -269,6 +282,24 @@ class Floor:
             for sd in (-1, 1):
                 c.drawRect(skia.Rect.MakeXYWH(CX + sd * 30 - 5, 560 + k * 60, 10, 22), fill(C(RUNWAY)))
                 c.drawRect(skia.Rect.MakeXYWH(CX + sd * 30 - 4, 561 + k * 60, 8, 20), stroke(C(PAINT_W, 120), 1.0))
+
+    def halftone(self):
+        """90s halftone print in the lower third, beside the runway: dots that grow toward the flippers, in
+        floor-dark paint (F_RING2), flush, under the budget."""
+        c = self.c
+        col = C("#2A4A82", 215)
+        for side in (-1, 1):
+            for j, y in enumerate(np.arange(668.0, 940.0, 9.0)):
+                t = (y - 668.0) / 272.0
+                for i, d in enumerate(np.arange(66.0, 64.0 + 120.0 * (1.0 - 0.35 * t), 9.0)):
+                    x = CX + side * (d + (4.5 if j % 2 else 0.0))
+                    r = 0.6 + 2.2 * t * (1.0 - (d - 66.0) / 130.0)
+                    if r > 0.5:
+                        c.drawCircle(x, y, r, fill(col))
+        # a zigzag band in the shot colours' floor tones across the runway's foot
+        for k, colr in enumerate(("#164A52", "#3A2C66")):
+            pts = [(CX - 58 + 8 * i, 952.0 - 6 * k + (4 if i % 2 else -4)) for i in range(15)]
+            c.drawPath(poly_path(pts, close=False), stroke(C(colr), 2.2, join=skia.Paint.kMiter_Join))
 
     def compass(self):
         c = self.c
@@ -422,8 +453,10 @@ class Floor:
             draw_frame(c, name, "plastic", *META[name]["anchor"], centre=False)
         draw_frame(c, "gforce", "housing", *META["gforce"]["anchor"], centre=False)
         domes = [(279.0, 296.0), (473.0, 357.0), (391.0, 360.0), (145.0, 392.0), (566.0, 392.0), (324.0, 168.0),
-                 (150.0, 692.0), (561.0, 692.0)]
-        names = ["hangar", "mission", "afterburner", "runway", "skyway", "nest", "sling_left", "sling_right"]
+                 (150.0, 692.0), (561.0, 692.0), (145.0, 300.0)]
+        # The Flight Deck's dome (476, 165) stands on the deck's wall: the game draws it over the deck sprite.
+        names = ["hangar", "mission", "afterburner", "runway", "skyway", "nest", "sling_left", "sling_right",
+                 "left_arch"]
         for (x, y), n in zip(domes, names):
             draw_frame(c, "flasher_domes", n + "_off", x, y)
         sh = self.shell
@@ -434,6 +467,7 @@ class Floor:
         self.base()
         c = self.c
         c.save(); c.clipPath(self.shell, skia.ClipOp.kIntersect, True)
+        self.halftone()
         self.runway()
         self.compass()
         self.radar()
@@ -510,10 +544,12 @@ def main():
     save_png(background, os.path.join(OUT, "background_a.png"))
     save_png(gi_map(), os.path.join(OUT, "gi_a.png"))
     with open(os.path.join(OUT, "lamp_plan.json"), "w") as f:
-        json.dump({"note": "every insert of concept A; source 'proposed' = not yet in table/a-geometry kLamps",
+        json.dump({"note": "every insert of concept A; source 'proposed' = not yet in table/a-geometry kLamps; "
+                           "'decor' = lit by the renderer alone (approach lights)",
                    "lamps": fl.plan,
                    "counts": {"layout": sum(e["source"] == "layout" for e in fl.plan),
-                              "proposed": sum(e["source"] == "proposed" for e in fl.plan)}},
+                              "proposed": sum(e["source"] == "proposed" for e in fl.plan),
+                              "decor": sum(e["source"] == "decor" for e in fl.plan)}},
                   f, indent=1, sort_keys=True)
         f.write("\n")
     print("floor: %d inserts (%d layout, %d proposed)" % (

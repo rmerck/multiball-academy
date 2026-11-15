@@ -177,3 +177,23 @@ def mix_teal(row):
     r, g, b = rgb("#27D6CC")
     k = max(0.35, 1.0 - 0.12 * row)
     return "#%02x%02x%02x" % (int(r * k), int(g * k), int(b * k))
+
+# ---- Table A (concept A, Flight Academy): board/ios/art-A/STYLE.md section 2 ------------------------------
+# The colours of the Table A masters (tools/art/table_a/blender/toys.py HEX, which Blender's Python reads on its
+# own; tools/art/table_a/check.py fails if the two disagree). F_* are floor-dark paints for anything flush under
+# ball paths (LUM_DECK_MAX); bright paint is only for raised toys and lit lamps.
+TABLE_A = {
+    "CORAL": "#FF5A4E", "SLATE": "#2A3048",
+    "F_DECK": "#161B3C", "F_PAINT_W": "#3E4670", "F_PAINT_Y": "#5A4A1E", "F_BLADE": "#191F46",
+    "F_BAND": "#6A5418", "F_TIP": "#B04428", "F_RING1": "#123E46", "F_RING2": "#1E365E", "F_RING3": "#302458",
+    "F_STENCIL": "#262C52", "F_EDGE": "#38427C", "F_RINGBG": "#10163A",
+}
+# The Altitude GI ladder's names in toys.py (FL100..FL500), the same colours as ALTITUDE_GI.
+TABLE_A_GI_NAMES = ["DAY", "CLEAR", "DUSK", "SUNSET", "NIGHTV"]
+# How the game draws Table A (src/platform/TableRenderer.cpp, from assets/table_a, 2 px per unit).
+TABLE_A_UNLIT_FLOOR = 0.34    # an insert the rules leave dark keeps its baked unlit lens; the light show's floor
+TABLE_A_DECK_FLOOD = (0.16, 0.30)   # additive GI-coloured light over the Flight Deck's plate: closed / open
+TABLE_A_APPROACH = 0.95       # strongest approach light (the "rabbit" running up the runway), times the GI level
+TABLE_A_RETICLE = 0.85        # the drone's lock-on reticle (ring.png alpha, steady, slow turn)
+TABLE_A_ALT_PLATE = (173.0, 584.0)   # top-left of the altimeter plate (units); its pointer frames go over it
+TABLE_A_GI_STRENGTH = (0.40, 0.52)   # table_a/gi.png in the Altitude GI colour, additive: FL100 / FL500
