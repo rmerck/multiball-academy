@@ -182,6 +182,11 @@ struct BonusTally {
   std::uint64_t total = 0;  // The sum times the multiplier: what was paid.
 };
 
+class Rules;
+// Concept A's lamps (the ladders, the altimeter, F-L-A-P-S, the deck): what
+// Rules::lampState answers for them, from the rules' public queries alone.
+[[nodiscard]] LampState conceptLampState(const Rules& rules, table::LampId lamp) noexcept;
+
 // The rules of the game: scoring, balls, courses, multiball and messages.
 // It knows nothing about physics. Game tells it what the balls did and how
 // many there are, asks it what the table should do (doors, kickback, balls

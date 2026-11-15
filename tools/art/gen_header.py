@@ -87,15 +87,16 @@ def text():
     lines += ["// Revision 3 (TABLE_REV3.md 3.10): the inserts baked into the background for the LampIds from",
               "// DroneArmour1 on (in this order, after the rev 2 lamps in kLampColours and the rest), and the flasher",
               "// domes (FlasherId). Positions are the art's (tools/art/palette.py); TableLayout.hpp uses exactly these.",
-              "enum class InsertShape : std::uint8_t { Round, Hex, Chevron };",
+              "enum class InsertShape : std::uint8_t { Round, Hex, Chevron, Pip };",
               "struct PlannedLamp {", "  std::string_view name;", "  InsertShape shape;", "  float x, y;",
               "  Rgb colour, neon;", "  float litLevel, neonLevel;", "};",
               "inline constexpr float kLadderDiameter = %.1fF;" % P.LADDER_DIAMETER,
+              "inline constexpr float kPipDiameter = %.1fF;" % P.PIP_DIAMETER,
               "inline constexpr float kHexDiameter = %.1fF;" % P.HEX_DIAMETER,
               "inline constexpr float kChevronWidth = %.1fF;" % P.CHEVRON_SIZE[0],
               "inline constexpr float kChevronHeight = %.1fF;" % P.CHEVRON_SIZE[1],
               "inline constexpr std::array<PlannedLamp, %d> kPlannedLamps{{" % len(P.PLANNED_LAMPS)]
-    shapes = {"round": "Round", "hex": "Hex", "chevron": "Chevron"}
+    shapes = {"round": "Round", "hex": "Hex", "chevron": "Chevron", "pip": "Pip"}
     for name, col, shape, (x, y) in P.PLANNED_LAMPS:
         lines.append('    {"%s", InsertShape::%s, %.1fF, %.1fF, %s, %s, %.2fF, %.2fF},' % (
             name, shapes[shape], x, y, rgb(col), rgb(P.NEON[col]), P.lit_level(col), P.neon_level(P.NEON[col])))

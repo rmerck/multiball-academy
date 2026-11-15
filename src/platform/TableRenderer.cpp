@@ -198,6 +198,14 @@ std::array<LampSprite, table::kLamps.size()> makeLampSprites() noexcept {
                         .glowRadius = art::kLadderDiameter * art::kRoundGlowRadiusPerDiameter};
           break;
         }
+        case art::InsertShape::Pip: {
+          // Concept A's progress pips and deck letters: a smaller round insert.
+          const float size = art::kPipDiameter * art::kInsertRoundPerDiameter;
+          sprites[i] = {.insert = {centred(lamp.position, size, size), 0.0},
+                        .kind = InsertKind::Round,
+                        .glowRadius = art::kPipDiameter * art::kRoundGlowRadiusPerDiameter};
+          break;
+        }
       }
     } else {
       const float diameter = table::isCourseLamp(lamp.id) ? table::kCourseLampDiameter

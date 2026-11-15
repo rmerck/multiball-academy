@@ -106,6 +106,8 @@ class Sim:
             sprite, size, glow_r = "sprites/insert_hex.png", 16.0 * P.HEX_DIAMETER / 11.0, P.HEX_DIAMETER * P.GLOW_RADIUS_ROUND
         elif shape == "chevron":
             sprite, size, glow_r = "sprites/insert_chevron.png", P.CHEVRON_SIZE[0] + 6.0, P.CHEVRON_SIZE[0] * 0.8
+        elif shape == "pip":
+            sprite, size, glow_r = "sprites/insert_round.png", P.PIP_DIAMETER * P.INSERT_ROUND_PER_DIAMETER, P.PIP_DIAMETER * P.GLOW_RADIUS_ROUND
         else:
             sprite, size, glow_r = "sprites/insert_round.png", P.LADDER_DIAMETER * P.INSERT_ROUND_PER_DIAMETER, P.LADDER_DIAMETER * P.GLOW_RADIUS_ROUND
         if FX:

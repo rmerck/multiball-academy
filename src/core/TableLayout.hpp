@@ -1066,13 +1066,60 @@ enum class LampId : std::uint8_t {
   Bonus3X,
   Bonus4X,
   Bonus5X,
+  // Concept A (G6): the art's proposed lamps (tools/art/table_a lamp_plan.json,
+  // adopted at G1), then the Flight Deck's letters. Each shot's progress
+  // ladder: three pips below its arrow, the first nearest the arrow.
+  LadderCircuitLeft1,
+  LadderCircuitLeft2,
+  LadderCircuitLeft3,
+  LadderRunway1,
+  LadderRunway2,
+  LadderRunway3,
+  LadderHangar1,
+  LadderHangar2,
+  LadderHangar3,
+  LadderBriefing1,
+  LadderBriefing2,
+  LadderBriefing3,
+  LadderTurbine1,
+  LadderTurbine2,
+  LadderTurbine3,
+  LadderSkyway1,
+  LadderSkyway2,
+  LadderSkyway3,
+  LadderCircuitRight1,
+  LadderCircuitRight2,
+  LadderCircuitRight3,
+  AltitudeFL100,  // The altimeter, bottom (FL100) to top (FL500).
+  AltitudeFL200,
+  AltitudeFL300,
+  AltitudeFL400,
+  AltitudeFL500,
+  FlapsF,  // One under each F-L-A-P-S rollover (kRollovers order).
+  FlapsL,
+  FlapsA,
+  FlapsP,
+  FlapsS,
+  Bogey1,  // Beside the BOGEY drops and the RADAR stand-ups (G2 builds them).
+  Bogey2,
+  Bogey3,
+  Radar1,
+  Radar2,
+  Radar3,
+  SafetyPost,
+  Multiball,
+  DeckLit,  // The Skyway's diverter sends the next ball to the deck.
+  DeckA,    // On the field side of the deck's A-C-E stand-ups.
+  DeckC,
+  DeckE,
+  CatShot,  // Below the CAT SHOT cup.
   Count,
 };
 struct Lamp {
   LampId id;
   Vec2 position;
 };
-inline constexpr std::array<Lamp, 58> kLamps{{
+inline constexpr std::array<Lamp, 102> kLamps{{
     {LampId::ArrowCircuitLeft, {118.0F, 512.0F}},
     {LampId::ArrowRunway, {204.0F, 470.0F}},
     {LampId::ArrowHangar, {282.0F, 440.0F}},
@@ -1137,6 +1184,52 @@ inline constexpr std::array<Lamp, 58> kLamps{{
     {LampId::Bonus3X, {433.0F, 658.0F}},
     {LampId::Bonus4X, {417.0F, 652.0F}},
     {LampId::Bonus5X, {401.0F, 646.0F}},
+    // Concept A (G6). Where the art placed them (lamp_plan.json), except the
+    // Afterburner's pips, which G1 moved to clear TurboCharge.
+    {LampId::LadderCircuitLeft1, {118.0F, 535.0F}},
+    {LampId::LadderCircuitLeft2, {118.0F, 548.0F}},
+    {LampId::LadderCircuitLeft3, {118.0F, 561.0F}},
+    {LampId::LadderRunway1, {209.9F, 492.2F}},
+    {LampId::LadderRunway2, {213.3F, 504.8F}},
+    {LampId::LadderRunway3, {216.6F, 517.3F}},
+    {LampId::LadderHangar1, {283.4F, 463.0F}},
+    {LampId::LadderHangar2, {284.2F, 475.9F}},
+    {LampId::LadderHangar3, {285.1F, 488.9F}},
+    {LampId::LadderBriefing1, {429.0F, 490.8F}},
+    {LampId::LadderBriefing2, {427.3F, 503.7F}},
+    {LampId::LadderBriefing3, {425.6F, 516.6F}},
+    {LampId::LadderTurbine1, {356.0F, 476.0F}},
+    {LampId::LadderTurbine2, {356.0F, 486.0F}},
+    {LampId::LadderTurbine3, {356.0F, 496.0F}},
+    {LampId::LadderSkyway1, {501.1F, 492.2F}},
+    {LampId::LadderSkyway2, {497.7F, 504.8F}},
+    {LampId::LadderSkyway3, {494.4F, 517.3F}},
+    {LampId::LadderCircuitRight1, {593.0F, 535.0F}},
+    {LampId::LadderCircuitRight2, {593.0F, 548.0F}},
+    {LampId::LadderCircuitRight3, {593.0F, 561.0F}},
+    {LampId::AltitudeFL100, {211.0F, 676.0F}},
+    {LampId::AltitudeFL200, {211.0F, 658.0F}},
+    {LampId::AltitudeFL300, {211.0F, 640.0F}},
+    {LampId::AltitudeFL400, {211.0F, 622.0F}},
+    {LampId::AltitudeFL500, {211.0F, 604.0F}},
+    {LampId::FlapsF, {291.0F, 626.0F}},
+    {LampId::FlapsL, {323.0F, 618.0F}},
+    {LampId::FlapsA, {355.5F, 616.0F}},
+    {LampId::FlapsP, {388.0F, 618.0F}},
+    {LampId::FlapsS, {420.0F, 626.0F}},
+    {LampId::Bogey1, {188.0F, 505.0F}},
+    {LampId::Bogey2, {190.0F, 525.0F}},
+    {LampId::Bogey3, {192.0F, 545.0F}},
+    {LampId::Radar1, {523.0F, 505.0F}},
+    {LampId::Radar2, {521.0F, 525.0F}},
+    {LampId::Radar3, {519.0F, 545.0F}},
+    {LampId::SafetyPost, {355.5F, 904.0F}},
+    {LampId::Multiball, {312.0F, 530.0F}},
+    {LampId::DeckLit, {540.0F, 498.0F}},
+    {LampId::DeckA, {493.0F, 236.0F}},
+    {LampId::DeckC, {514.7F, 213.6F}},
+    {LampId::DeckE, {532.9F, 242.1F}},
+    {LampId::CatShot, {497.0F, 220.0F}},
 }};
 static_assert(kLamps.size() == static_cast<std::size_t>(LampId::Count), "one lamp per id");
 [[nodiscard]] constexpr bool isArrowLamp(LampId id) noexcept {
@@ -1152,6 +1245,33 @@ static_assert(kLamps.size() == static_cast<std::size_t>(LampId::Count), "one lam
   return static_cast<LampId>(static_cast<std::size_t>(LampId::TaxiT) +
                              (standup < kTaxiStandups ? standup : 0));
 }
+// Concept A's lamp groups (G6). Each shot's arrow (LampId order, the first
+// seven lamps) has a ladder of three pips; k is 0 (nearest the arrow) to 2.
+inline constexpr std::size_t kShotLadderPips = 3;
+[[nodiscard]] constexpr LampId ladderLamp(std::size_t arrow, std::size_t k) noexcept {
+  return static_cast<LampId>(static_cast<std::size_t>(LampId::LadderCircuitLeft1) +
+                             (arrow < 7 ? arrow : 0) * kShotLadderPips +
+                             (k < kShotLadderPips ? k : 0));
+}
+[[nodiscard]] constexpr bool isPipLamp(LampId id) noexcept {
+  return id >= LampId::LadderCircuitLeft1 && id <= LampId::LadderCircuitRight3;
+}
+// The altimeter's rung for a level, 0 (FL100) to 4 (FL500).
+[[nodiscard]] constexpr LampId altitudeLamp(std::size_t level) noexcept {
+  return static_cast<LampId>(static_cast<std::size_t>(LampId::AltitudeFL100) +
+                             (level < 5 ? level : 4));
+}
+// F-L-A-P-S letter 0 to 4.
+[[nodiscard]] constexpr LampId flapsLamp(std::size_t letter) noexcept {
+  return static_cast<LampId>(static_cast<std::size_t>(LampId::FlapsF) + (letter < 5 ? letter : 0));
+}
+// A deck stand-up's letter (kStandups index kDeckStandupA to kDeckStandupA + 2).
+[[nodiscard]] constexpr LampId deckLetterLamp(std::size_t standup) noexcept {
+  return static_cast<LampId>(static_cast<std::size_t>(LampId::DeckA) +
+                             (standup >= kDeckStandupA && standup < kDeckStandupA + 3
+                                  ? standup - kDeckStandupA
+                                  : 0));
+}
 
 // --- Flasher domes (revision 3, TABLE_REV3.md 3.10) ------------------------------------
 // Each stands on a solid where no ball rolls; the art bakes its base unlit
@@ -1166,9 +1286,13 @@ enum class FlasherId : std::uint8_t {
   Nest,
   SlingLeft,
   SlingRight,
+  // Concept A (G1): on the top of the deck's left wall, and on the top of
+  // the left rim straight (the Left Loop's arch).
+  Deck,
+  LeftArch,
   Count,
 };
-inline constexpr std::array<Vec2, 8> kFlasherDomes{{
+inline constexpr std::array<Vec2, 10> kFlasherDomes{{
     {279.0F, 296.0F},
     {473.0F, 357.0F},
     {391.0F, 360.0F},
@@ -1177,6 +1301,8 @@ inline constexpr std::array<Vec2, 8> kFlasherDomes{{
     {324.0F, 168.0F},
     {150.0F, 692.0F},
     {561.0F, 692.0F},
+    {476.0F, 165.0F},
+    {145.0F, 300.0F},
 }};
 static_assert(kFlasherDomes.size() == static_cast<std::size_t>(FlasherId::Count));
 
