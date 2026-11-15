@@ -59,7 +59,13 @@ float distance(Vec2 a, Vec2 b) {
 // deck bat (532, 236), and the shelf under the resting deck bat. Two runs on
 // x86-64 give the same value; arm64 is checked by the macOS CI job. The soak
 // plays at FL100, where the Air Pocket and the Prop Wash are idle.)
-constexpr std::uint64_t kSoakTrajectory = 0x4213a29dab26e639ULL;
+// Concept A rules (G5, feat/a-rules): re-recorded deliberately from
+// 0x4213a29dab26e639 for the new rules the script reaches: the scoring of
+// the Bandit, stand-ups, G-meter and CAT SHOT, the Flight Deck's diverter
+// lit by two ramps (no longer every other Skyway), the 10 s saver, the
+// pylon up during sorties and three banks per lock. Same value on two runs
+// on x86-64; arm64 is checked by the macOS CI job.
+constexpr std::uint64_t kSoakTrajectory = 0x09482ffd3c224202ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {

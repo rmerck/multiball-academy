@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -108,13 +109,16 @@ inline constexpr bool kFirstBankAnyThreeHits = false;
 // a second bank before the shot that starts it, 0 a bank for every shot.
 // Later multiballs always need a bank for every shot. (At 2, two games in
 // three had an Academy multiball; at 0, one in eight.)
-inline constexpr int kFirstMultiballOpenLocks = 1;
+inline constexpr int kFirstMultiballOpenLocks = 0;
+// G5 tuning pass (C3b: Squadron in 96.8% of games, 5 a game): the lock is
+// lit by this many completed bay-door banks (a CAT SHOT counts as one).
+inline constexpr int kBanksPerLock = 3;
 inline constexpr int kJackpotsForSuper = 3;
 // At FL100; the Altitude's ballSaveScale shortens it (4 s at FL500).
 inline constexpr double kBallSaveSeconds = 10.0;
 inline constexpr double kExtraCreditSaveSeconds = 10.0;
-inline constexpr double kTurboGraceSeconds = 10.0;
-inline constexpr double kAcademyGraceSeconds = 15.0;
+inline constexpr double kTurboGraceSeconds = 6.0;
+inline constexpr double kAcademyGraceSeconds = 10.0;
 inline constexpr double kGraduationGraceSeconds = 30.0;
 inline constexpr double kComboSeconds = 4.0;
 inline constexpr double kOverdriveSeconds = 20.0;
@@ -138,7 +142,7 @@ inline constexpr int kRampsForDeck = 2;
 inline constexpr double kMissionRepeatSeconds = 20.0;
 // Sorties qualified by their own shots: after this many sorties have been
 // started in a round, each qualifier asks for twice as many.
-inline constexpr int kSortiesBeforeHarder = 3;
+inline constexpr int kSortiesBeforeHarder = 2;
 // F-L-A-P-S letters time out at FL300 and above (Knobs::guardsUp), after
 // this long times the Altitude's timerScale.
 inline constexpr double kFlapsLetterSeconds = 20.0;
@@ -246,7 +250,7 @@ class Rules {
  public:
   static constexpr int kBallsPerGame = 3;
   static constexpr int kLocksNeeded = 2;
-  static constexpr int kMaxExtraBalls = 2;      // Awarded in a game.
+  static constexpr int kMaxExtraBalls = 1;      // Awarded in a game.
   static constexpr int kMaxExtraBallsHeld = 1;  // Waiting to be played.
   static constexpr int kMaxBonusMultiplier = 5;
   static constexpr int kMaxOverdrive = 3;
@@ -455,6 +459,9 @@ class Rules {
   // multiball's grace (the short save after an eject stays). For measuring
   // how balls leave the table.
   void setBallSaveEnabled(bool enabled) noexcept { ballSaveEnabled_ = enabled; }
+  // Completed bay-door banks that light the lock (tuning::kBanksPerLock in
+  // play): 1 for tests and benches of the bank and the lock themselves.
+  void setBanksPerLock(int banks) noexcept { banksPerLock_ = std::clamp(banks, 1, tuning::kBanksPerLock); }
   // The Altitude never below this level (0 to progression::kTopLevel), now
   // and at every new game: for measuring each level's table with the bots,
   // and for the tools' stills.
@@ -704,6 +711,8 @@ class Rules {
   void startWings() noexcept;
   void endWings() noexcept;
   void banditDown() noexcept;
+  // A bay-door bank completed (or a CAT SHOT): toward lighting the lock.
+  void addBank() noexcept;
   void loopMade(Shot shot) noexcept;
   std::uint32_t courseStepsFor(double seconds) const noexcept;
   bool navigable(Shot shot) const noexcept;
@@ -882,6 +891,8 @@ class Rules {
   int wingsCeremonies_ = 0;
   bool finaleBanditDown_ = false;
   std::uint64_t jackpotAdd_ = 0;
+  int banks_ = 0;
+  int banksPerLock_ = tuning::kBanksPerLock;
 
   // The rules' own source of chance: the same events give the same game.
   std::uint64_t random_ = 0xD1B54A32D192ED03ULL;

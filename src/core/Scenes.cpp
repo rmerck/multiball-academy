@@ -55,8 +55,14 @@ struct SceneStage {
     if (!runUntil(600, [this] { return game.doorBankUp() && !game.doorRaisePending(); })) {
       return false;
     }
-    for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
-      rules().onDropTarget(door);
+    // As many banks as light the lock (one short of it clears the marks).
+    for (int bank = 0; bank < tuning::kBanksPerLock; ++bank) {
+      for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
+        rules().onDropTarget(door);
+      }
+      if (rules().doorMarked(0)) {
+        break;
+      }
     }
     return runUntil(10, [this] { return !game.doorBankUp(); });
   }

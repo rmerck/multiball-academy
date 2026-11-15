@@ -175,6 +175,7 @@ struct RulesRecord {
   std::int32_t wingsCeremonies = 0;
   bool finaleBanditDown = false;
   std::uint64_t jackpotAdd = 0;
+  std::int32_t banks = 0;
 
   std::uint64_t random = 0xD1B54A32D192ED03ULL;
 };

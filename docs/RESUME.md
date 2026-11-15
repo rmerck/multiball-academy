@@ -144,15 +144,15 @@ longer than the moment before suspension. Little-endian:
 | Bytes | Field |
 | --- | --- |
 | 8 | `MBA-SAVE` |
-| 2 | format version (`save::kFormatVersion`, now 8: 3 added table revision 3's drone, 4 the three spinners, the drone's knock-down and look, 5 the captive ball, 6 concept A's deck, F-L-A-P-S and devices, 7 main's Altitude and hole cups merged in, 8 concept A's rules: sortie qualifiers, T-A-X-I, A-C-E, the G-meter, the deck's ramps, the CAT SHOT's ball, Wings Ceremony, the Air Show finale, DOGFIGHT) |
+| 2 | format version (`save::kFormatVersion`, now 8: 3 added table revision 3's drone, 4 the three spinners, the drone's knock-down and look, 5 the captive ball, 6 concept A's deck, F-L-A-P-S and devices, 7 main's Altitude and hole cups merged in, 8 concept A's rules: sortie qualifiers, T-A-X-I, A-C-E, the G-meter, the deck's ramps, the CAT SHOT's ball, Wings Ceremony, the Air Show finale, DOGFIGHT, the bay-door banks toward the lock) |
 | 1 + n | build id: version and build number, `2.0.0+1` |
 | 32 | layout fingerprint: SHA-256 of the geometry a saved ball depends on (walls, flippers, bumpers, targets, doors, rollovers, holes and their exits, bays, sensors, kickback, plunger, stand-ups, the drone's track, the captive ball's channel, travel, switch and spring) |
 | 14 | the count of each kind of element (balls, bumpers, slingshots, targets, doors, rollovers, holes, sensors, bays, flippers, courses, shots, features, ranks) |
 | 4 | payload size |
-| 1494 | the records, fixed size |
+| 1498 | the records, fixed size |
 | 32 | SHA-256 of everything before it |
 
-1,594 bytes in all for build `2.0.0+1`. Everything is keyed to element ids
+1,598 bytes in all for build `2.0.0+1`. Everything is keyed to element ids
 of `core/TableLayout.hpp` (a hole is its index in `kHoles`, a bay its index
 in `kLockBays`), never to a shape or a body.
 

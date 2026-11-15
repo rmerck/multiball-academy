@@ -103,6 +103,7 @@ save::RulesRecord Rules::record() const noexcept {
   r.wingsCeremonies = wingsCeremonies_;
   r.finaleBanditDown = finaleBanditDown_;
   r.jackpotAdd = jackpotAdd_;
+  r.banks = banks_;
   r.hangarHolding = hangarHolding_;
   r.locksHeld = locksHeld_;
   r.bayFull = bayFull_;
@@ -239,6 +240,7 @@ void Rules::restore(const save::RulesRecord& r) noexcept {
   wingsCeremonies_ = r.wingsCeremonies;
   finaleBanditDown_ = r.finaleBanditDown;
   jackpotAdd_ = r.jackpotAdd;
+  banks_ = r.banks;
   hangarHolding_ = r.hangarHolding;
   locksHeld_ = r.locksHeld;
   bayFull_ = r.bayFull;

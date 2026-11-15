@@ -143,6 +143,7 @@ void Rules::clearModes() noexcept {
   jackpotAdd_ = 0;
   catBall_ = 0xFF;
   lastLoop_ = kNoShot;
+  banks_ = 0;
 }
 
 void Rules::startGame() noexcept {
@@ -583,11 +584,26 @@ void Rules::onDropTarget(std::size_t index) noexcept {
   if (!std::ranges::all_of(doorMarked_, [](bool marked) { return marked; })) {
     return;
   }
-  // All three: the bank drops as one.
+  // All three: a bank toward the lock.
   award(points::kBayDoorsOpen, Feature::BayDoors);
-  doorsOpen_ = true;
   firstBank_ = false;
   cue(Sound::SetComplete);
+  addBank();
+}
+
+void Rules::addBank() noexcept {
+  // While a multiball runs, or with one ball at a time, the bank opens the
+  // Hangar for a shot (a super jackpot, a plain Hangar shot) as it always
+  // has; otherwise kBanksPerLock of them light the lock.
+  if (++banks_ < banksPerLock_ && multiballEnabled_ && !multiballRunning()) {
+    doorMarked_.fill(false);
+    static constexpr std::array<display::Message, 3> kMore{
+        "BAY DOORS  1 MORE FOR LOCK", "BAY DOORS  2 MORE FOR LOCK", "BAY DOORS  3 MORE FOR LOCK"};
+    say(kMore[static_cast<std::size_t>(std::clamp(banksPerLock_ - banks_, 1, 3) - 1)]);
+    return;
+  }
+  banks_ = 0;
+  doorsOpen_ = true;
   say(lockLit() ? display::Message("LOCK IS LIT") : display::Message("BAY DOORS OPEN"));
 }
 
@@ -875,6 +891,9 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
       say(display::Message("CAT SHOT"));
       catBall_ = static_cast<std::uint8_t>(std::min<std::size_t>(ball, 0xFE));
       addTurbo(tuning::kTurboPerCatShot);
+      if (multiballEnabled_ && !multiballRunning() && !doorsOpen_) {
+        addBank();  // It counts as a bank; lit, its own ball locks.
+      }
       break;
     case DeckDrain:
       award(points::kDeckDrain, Feature::Hangar);
@@ -965,7 +984,8 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
       award(points::kHangar, Feature::Hangar);
       // CAT SHOT spots a lock: its ball is locked whatever the doors say
       // (it came in behind them), while a lock could be lit at all.
-      const bool catLock = cat && multiballEnabled_ && !multiballRunning() && !superLit_;
+      const bool catLock =
+          cat && doorsOpen_ && multiballEnabled_ && !multiballRunning() && !superLit_;
       if (catLock && locksHeld_ < kLocksNeeded) {
         return HoleResult::Lock;
       }
@@ -987,9 +1007,6 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
         graceSteps_ = stepsFor(tuning::kAcademyGraceSeconds);
         sayAlso(display::Message("SQUADRON MULTIBALL"));
         cue(Sound::MultiballStart);
-        if (academyMultiballs_ == 2) {
-          lightExtraBall();
-        }
         checkAirShow();
         return HoleResult::StartMultiball;
       }

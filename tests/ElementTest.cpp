@@ -113,6 +113,8 @@ bool near(Vec2 a, Vec2 b) { return distance(a, b) < 0.01F; }
 
 // Marks all three doors, as three hits would: the bank drops on the next step.
 void markDoors(Game& game) {
+  // One bank lights the lock for these tests (three in play).
+  Seam::rules(game).setBanksPerLock(1);
   for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
     Seam::rules(game).onDropTarget(i);
   }
@@ -254,6 +256,7 @@ void testDoorBank() {
   {  // The bank drops as one, and only when all three doors have been hit:
      // one door hit again and again opens nothing.
     Game game;
+    Seam::rules(game).setBanksPerLock(1);
     run(game, 2);
     CHECK(game.doorBankUp());
     for (int i = 0; i < 5; ++i) {
@@ -452,7 +455,11 @@ void testLock() {
     const BallView inBay = viewOf(game, 0);
     CHECK(inBay.visible && inBay.locked && !inBay.raised);
     CHECK(inBay.position.x == table::kLockBays[0].x && inBay.position.y == table::kLockBays[0].y);
-    // The doors stay down and the lock stays lit.
+    // The doors come back up behind it; a bank lights the lock again.
+    run(game, kSecond);
+    CHECK(game.doorBankUp() && !game.rules().lockLit());
+    markDoors(game);
+    run(game, 2);
     CHECK(!game.doorBankUp());
 
     CHECK(shootHangar(game, 1));
@@ -603,6 +610,9 @@ void testLock() {
     markDoors(game);
     run(game, 1);
     CHECK(shootHangar(game, 0));
+    run(game, kSecond);
+    markDoors(game);  // Open again for the next.
+    run(game, 2);
     const std::size_t next = otherFreeSlot(game, 0);
     CHECK(next == 1);
     putBall(game, next, {table::kLockBays[0].x, 440.0F}, {0.0F, -900.0F});

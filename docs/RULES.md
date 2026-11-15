@@ -34,7 +34,7 @@ Every ball you plunge yourself has a skill shot.
 
 ## Sorties and rank
 
-Six sorties, each lit by its own kind of shot and started at the Mission. At the start of a game the Mission is lit and offers LOOP DRILL; the jets move the offer. Once a sortie is over, two ramp shots (three after the third) or F-L-A-P-S light the Mission again.
+Six sorties, each lit by its own kind of shot and started at the Mission. At the start of a game the Mission is lit and offers LOOP DRILL; the jets move the offer. Once a sortie is over, two ramp shots (three after the third sortie) or F-L-A-P-S light the Mission again.
 
 | Sortie | Lit by | Task | Clock | Each step | Pass |
 |---|---|---|---|---|---|
@@ -45,24 +45,24 @@ Six sorties, each lit by its own kind of shot and started at the Mission. At the
 | NIGHT LANDING | both nest targets | The Runway (the approach), then the Skyway (the landing) | 40 s | 10,000 | a hurry-up from 300,000, 7,500 less each second, at least 100,000 |
 | DOGFIGHT | 3G on G-FORCE | Two balls. A Bandit hit lights the Hangar: DOGFIGHT JACKPOT 100,000, twice | 45 s | 25,000 | 200,000 |
 
-- A qualified sortie blinks its lamp and holds the Mission's offer; the Mission starts the qualified ones first. From the third sortie started in a round, each qualifier asks for twice as many.
+- A qualified sortie blinks its lamp and holds the Mission's offer; the Mission starts the qualified ones first. From the second sortie started in a round, each qualifier asks for twice as many.
 - A sortie's clock stands still while no ball is free and through any multiball except DOGFIGHT's own. The pylon in the middle of the field rises during sorties: a hit adds 3 seconds.
 - A sortie carried over a drain keeps its progress and at least 15 seconds. A tilt ends it.
 - Each sortie won raises your rank (ROOKIE, TRAINEE, WINGMATE, PILOT, ACE, INSTRUCTOR) and your Altitude by one flight level.
 
 ## Altitude
 
-The game climbs from FL100 to FL500, one level for each sortie won and to the top after the Air Show. It never comes down within a game. Each level makes the table busier and harder: the devices run faster (the Prop Wash spins at FL200, the Air Pocket pulls at FL300), the Bandit takes more hits to knock down (3, 4, 4, 5, 6), sortie clocks and the ball saver get shorter (the saver is 10 seconds at FL100 and 4 at FL500), F-L-A-P-S letters time out from FL300, and from FL300 every lock shuts the Hangar again. The lights move from day blue to night violet.
+The game climbs from FL100 to FL500, one level for each sortie won and to the top after the Air Show. It never comes down within a game. Each level makes the table busier and harder: the devices run faster (the Prop Wash spins at FL200, the Air Pocket pulls at FL300), the Bandit takes more hits to knock down (3, 4, 4, 5, 6), sortie clocks and the ball saver get shorter (the saver is 10 seconds at FL100 and 4 at FL500), F-L-A-P-S letters time out from FL300. The lights move from day blue to night violet.
 
 ## Scramble multiball (two balls)
 
-Jets, spins, Bandit hits, the nest targets and CAT SHOTs fill the boost meter (two CAT SHOTs fill the first one). Full: a second ball launches, `SCRAMBLE MULTIBALL`. The meter asks for more each time. The ramps are lit for jackpots, and the Flight Deck stays open. With three balls already on the table a full meter pays `SCRAMBLE BONUS` 25,000 instead.
+Jets, spins, Bandit hits, the nest targets and CAT SHOTs fill the boost meter (two CAT SHOTs fill the first one). Full: a second ball launches, `SCRAMBLE MULTIBALL`, with 6 seconds of grace. The meter asks for more each time. The ramps are lit for jackpots, and the Flight Deck stays open. With three balls already on the table a full meter pays `SCRAMBLE BONUS` 25,000 instead.
 
 ## Squadron multiball (three balls)
 
-Hit all three bay doors and the bank drops: the Hangar is open and `LOCK IS LIT`. A ball shot into it is locked in view (`BALL 1 LOCKED`) and you get a new ball. The first multiball of a game keeps the Hangar open for one more lock; later ones (and every lock from FL300) need the doors again. A CAT SHOT from the Flight Deck locks its ball whatever the doors say. With two locked, the third ball in starts `SQUADRON MULTIBALL`: all three are let go, with 15 seconds of grace.
+Hit all three bay doors to complete a bank. Three banks light the lock (`BAY DOORS  2 MORE FOR LOCK`, then 1 more); the third drops the doors: the Hangar is open and `LOCK IS LIT`. A ball shot into it is locked in view (`BALL 1 LOCKED`) and you get a new ball; the doors come back up and the next lock needs three banks again. A CAT SHOT from the Flight Deck counts as a bank, and when it lights the lock its own ball, arriving by the rail, is locked. With two locked, the third ball in starts `SQUADRON MULTIBALL`: all three are let go, with 10 seconds of grace.
 
-Ramps and loops are lit for jackpots: 50,000, 75,000, 100,000, then 150,000. A pylon hit adds 25,000 to the next. Knock down the Bandit (or make three jackpots) and the Hangar is lit for the `SUPER JACKPOT`, 500,000. The second Squadron multiball of a game lights the extra ball.
+Ramps and loops are lit for jackpots: 50,000, 75,000, 100,000, then 150,000. A pylon hit adds 25,000 to the next. Knock down the Bandit (or make three jackpots) and the Hangar is lit for the `SUPER JACKPOT`, 500,000.
 
 ## The Flight Deck
 
@@ -79,7 +79,7 @@ Light all three R-A-D lanes, then shoot the Afterburner: `OVERDRIVE 2X` doubles 
 ## Extra credit and extra balls
 
 - Extra credit: light both nest targets, then shoot the Mission. One of: 25,000, 50,000, kickback relit, bonus multiplier +1, 10 seconds of ball saver, boost meter +15, overdrive lit.
-- Extra ball: lit at the Mission by the third sortie won, the first five-shot combo chain and the second Squadron multiball. At most two a game, one held at a time; otherwise 100,000.
+- Extra ball: lit at the Mission by the third sortie won and the first five-shot combo chain. At most one a game; otherwise 100,000.
 
 ## Saves
 

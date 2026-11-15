@@ -326,6 +326,7 @@ void visit(V& v, RulesRecord& r) {
   v.integer(r.wingsCeremonies, 0, kMaxCounter);
   v.flag(r.finaleBanditDown);
   v.integer(r.jackpotAdd, std::uint64_t{0}, std::uint64_t{250'000});
+  v.integer(r.banks, 0, tuning::kBanksPerLock - 1);
 
   // xorshift never leaves 0, and never reaches it.
   v.integer(r.random, std::uint64_t{1}, std::numeric_limits<std::uint64_t>::max());
