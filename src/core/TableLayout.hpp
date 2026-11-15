@@ -533,20 +533,6 @@ inline constexpr std::array<Capsule, 3> kDropTargets{{
     {{297.0F, kDoorY}, {310.5F, kDoorY}, 5.0F},
 }};
 
-// The door a ball at x strikes: the nearest door's (the bank is one shape).
-[[nodiscard]] constexpr std::size_t doorAt(float x) noexcept {
-  std::size_t best = 0;
-  float bestDistance = 1.0e9F;
-  for (std::size_t i = 0; i < kDropTargets.size(); ++i) {
-    const float mid = 0.5F * (kDropTargets[i].a.x + kDropTargets[i].b.x);
-    const float d = x > mid ? x - mid : mid - x;
-    if (d < bestDistance) {
-      bestDistance = d;
-      best = i;
-    }
-  }
-  return best;
-}
 // The bank does not come up onto a ball: it waits until no free ball's centre
 // is inside this box in front of and behind the door line.
 inline constexpr Vec2 kDoorMouthCenter{279.0F, kDoorY};
