@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -83,6 +84,12 @@ struct AppOptions {
   // which give a scratch directory so that the player's files are never
   // touched; no command line sets it.
   std::string dataDirectory;
+  // For tests: the clock, in milliseconds, that the game's own guards and
+  // repeats go by: the initials prompt's guard, a held arrow's repeat, the
+  // cursor's blink and the haptics' rate. A test moves it itself, so what
+  // these do never depends on how fast the machine runs. Unset, SDL's.
+  // Frame pacing and the audio device's retries keep SDL's clock.
+  std::function<std::uint64_t()> clockMs;
 };
 
 enum class FrameResult : std::uint8_t { Continue, Quit };
@@ -177,6 +184,10 @@ class App {
     std::uint64_t steps;
     // Times the table's light show was started afresh for a restored game.
     std::uint32_t lightShowResets;
+    // The table's light show: the big moment it is showing, if any, and the
+    // multiball the game is in.
+    fx::Show lightShow;
+    Multiball multiball;
     // What the latest simulation step was given.
     InputState input;
     screen::Layout layout;
@@ -249,6 +260,8 @@ class App {
   App(const AppOptions& options, const screen::Layout& layout, SDL_Window* window,
       SDL_Renderer* renderer, bool vsync, std::unique_ptr<TableRenderer> table);
 
+  // The milliseconds the guards and repeats go by (AppOptions::clockMs).
+  [[nodiscard]] Uint64 nowMs() const;
   // How long the initials prompt ignores keys and touches after it appears.
   static constexpr Uint64 kEntryGuardMs = 700;
   // What is in front of the player. Fingers on one do not carry to the next.
