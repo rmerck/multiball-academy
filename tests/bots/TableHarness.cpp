@@ -1,5 +1,6 @@
 #include "bots/TableHarness.hpp"
 
+#include <cstdio>
 #include <cstdlib>
 #include <box2d/math_functions.h>
 
@@ -183,8 +184,23 @@ Touch TableHarness::advance() {
   input.nudgeUp = nudge == 3;
   nudge = 0;
   restart = false;
+  const std::uint32_t searchesBefore = game_.ballSearchCount();
   game_.step(input);
   ++step_;
+  if (const char* from = std::getenv("PINBALL_TRACE_FROM"); from != nullptr && step_ >= std::strtoull(from, nullptr, 10) && step_ % 10 == 0) {
+    const BallView v = game_.ball();
+    std::fprintf(stderr, "trace %llu p=(%.2f,%.2f) v=(%.1f,%.1f) held=%d visible=%d\n",
+                 static_cast<unsigned long long>(step_), static_cast<double>(position(0).x),
+                 static_cast<double>(position(0).y), static_cast<double>(velocity(0).x),
+                 static_cast<double>(velocity(0).y), held(0) ? 1 : 0, v.visible ? 1 : 0);
+  }
+  if (game_.ballSearchCount() != searchesBefore && std::getenv("PINBALL_LOG_SEARCH") != nullptr) {
+    for (std::size_t s = 0; s < table::kMaxBalls; ++s) {
+      std::fprintf(stderr, "ball search at step %llu: ball %zu at (%.1f, %.1f)\n",
+                   static_cast<unsigned long long>(step_), s, static_cast<double>(position(s).x),
+                   static_cast<double>(position(s).y));
+    }
+  }
   // Concept A: a Skyway diverted to the Flight Deck is a capture of its own
   // in the game's counts (no physics event: the Skyway's box took the ball).
   const std::uint32_t deckRides = game_.holeCount(table::kDeckRampHole);

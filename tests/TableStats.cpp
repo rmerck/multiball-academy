@@ -725,17 +725,27 @@ int main(int argc, char** argv) {
     }
     return 0;
   }
-  if (mode == "deckrest") {
-    // Concept A D1 deck bench: balls put on the Flight Deck on a grid with
-    // random velocities, buttons idle: any still on the deck after 30 s, or
-    // freed by the ball search, is a trap.
+  if (mode == "deckrest" || mode == "pocketrest") {
+    // Concept A D1 bench: balls put on a grid over a box with random
+    // velocities, buttons idle: any still in the box after 30 s, or freed by
+    // the ball search, is a trap. deckrest: the Flight Deck; pocketrest
+    // <per> <cx> <cy> <hx> <hy>: any box.
     const int per = argc > 2 ? std::atoi(argv[2]) : 4;
+    Vec2 boxCentre = table::kDeckCenter;
+    Vec2 boxHalf = table::kDeckHalfSize;
+    if (mode == "pocketrest" && argc > 6) {
+      boxCentre = {static_cast<float>(std::atof(argv[3])), static_cast<float>(std::atof(argv[4]))};
+      boxHalf = {static_cast<float>(std::atof(argv[5])), static_cast<float>(std::atof(argv[6]))};
+    }
+    const auto inBox = [&](Vec2 q) {
+      return std::fabs(q.x - boxCentre.x) < boxHalf.x && std::fabs(q.y - boxCentre.y) < boxHalf.y;
+    };
     Rng rng(0xDEC4ULL);
     int placed = 0, kept = 0, searched = 0;
-    for (float y = table::kDeckCenter.y - table::kDeckHalfSize.y + 14.0F;
-         y < table::kDeckCenter.y + table::kDeckHalfSize.y; y += 6.0F) {
-      for (float x = table::kDeckCenter.x - table::kDeckHalfSize.x + 14.0F;
-           x < table::kDeckCenter.x + table::kDeckHalfSize.x; x += 6.0F) {
+    const float stepSize = mode == "deckrest" ? 6.0F : 3.0F;
+    const float inset = mode == "deckrest" ? 14.0F : 0.0F;
+    for (float y = boxCentre.y - boxHalf.y + inset; y < boxCentre.y + boxHalf.y; y += stepSize) {
+      for (float x = boxCentre.x - boxHalf.x + inset; x < boxCentre.x + boxHalf.x; x += stepSize) {
         for (int k = 0; k < per; ++k) {
           const Vec2 p{x + static_cast<float>(rng.unit()) * 3.0F, y + static_cast<float>(rng.unit()) * 3.0F};
           if (!acceptance::placeableAt(p)) continue;
@@ -747,7 +757,7 @@ int main(int argc, char** argv) {
           bool left = false;
           for (int i = 0; i < kHz * 30 && !left; ++i) {
             h.advance();
-            left = h.held(0) || !table::onDeck(h.position(0));
+            left = h.held(0) || !inBox(h.position(0));
           }
           if (h.game().ballSearchCount() > 0) ++searched;
           if (!left) {
@@ -759,7 +769,7 @@ int main(int argc, char** argv) {
         }
       }
     }
-    std::printf("deck rest: %d balls placed on the deck, %d still there after 30 s, %d needed a ball search\n",
+    std::printf("%s: %d balls placed in the box, %d still there after 30 s, %d needed a ball search\n", mode.c_str(),
                 placed, kept, searched);
     return 0;
   }

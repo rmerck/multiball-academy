@@ -66,11 +66,13 @@ PLANNED_LAMPS = (
     # T-A-X-I: one lamp on the field side of each stand-up.
     [("TaxiT", YELLOW, "round", (176.0, 462.0)), ("TaxiA", YELLOW, "round", (535.0, 462.0)),
      ("TaxiX", YELLOW, "round", (221.0, 392.0)), ("TaxiI", YELLOW, "round", (487.0, 450.0))] +
-    # Rank ladder, 1 (bottom) to 7: chevrons down the centre line, under Graduation, between courses 201 and 202.
-    [("Rank%d" % (i + 1), ORCHID, "chevron", (355.5, 662.0 - 12.0 * i)) for i in range(7)] +
-    # Combo 2X..5X left of centre and bonus multiplier 2X..5X mirrored on the right, rising toward the middle.
-    [("Combo%dX" % (i + 2), AQUA, "round", (262.0 + 16.0 * i, 648.0 - 6.0 * i)) for i in range(4)] +
-    [("Bonus%dX" % (i + 2), PINK, "round", (449.0 - 16.0 * i, 648.0 - 6.0 * i)) for i in range(4)]
+    # Rank ladder, 1 (bottom) to 7: concept A moves it out of the centre (the pylon, F-L-A-P-S and the Air
+    # Pocket are there) to x 500, the mirror of the Altitude ladder's x 211.
+    [("Rank%d" % (i + 1), ORCHID, "chevron", (500.0, 662.0 - 12.0 * i)) for i in range(7)] +
+    # Combo 2X..5X left of centre and bonus multiplier 2X..5X mirrored on the right, rising toward the middle;
+    # concept A: 16 lower, clear of the F and S rollovers.
+    [("Combo%dX" % (i + 2), AQUA, "round", (262.0 + 16.0 * i, 664.0 - 6.0 * i)) for i in range(4)] +
+    [("Bonus%dX" % (i + 2), PINK, "round", (449.0 - 16.0 * i, 664.0 - 6.0 * i)) for i in range(4)]
 )
 # Flasher domes: each stands on a solid (a wall end, the Hangar's roof, a slingshot's plastic), never where a
 # ball can roll. The base is baked into the background with the dome unlit; the game draws flasher_dome.png
