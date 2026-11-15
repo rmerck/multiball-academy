@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <string_view>
 #include <limits>
+#include <memory>
 #include <vector>
 
 #include "Check.hpp"
@@ -13,7 +14,9 @@
 #include "Suites.hpp"
 #include "core/Game.hpp"
 #include "core/Physics.hpp"
+#include "core/HoleLook.hpp"
 #include "core/Rules.hpp"
+#include "core/Snapshot.hpp"
 #include "core/TableLayout.hpp"
 
 // The table's element types: the bay door bank, the lock, the Briefing
@@ -555,8 +558,9 @@ void testLock() {
     CHECK(returned && game.lockedBalls() == 2);
   }
 
-  {  // Let go on command, with no ball arriving: the first leaves at once,
-     // lobbed left, the second 0.4 s later, kicked right.
+  {  // Let go on command, with no ball arriving: the first leaves as soon as
+     // it has rolled from its bay to the cup and come up at the exit, lobbed
+     // left; the second 0.4 s later, kicked right.
     Game game;
     run(game, 2);
     markDoors(game);
@@ -584,7 +588,7 @@ void testLock() {
     CHECK(!game.bayTaken(0) && !game.bayTaken(1));
     CHECK(steps.size() == 2);
     if (steps.size() == 2) {
-      CHECK(steps[0] == 0);
+      CHECK(steps[0] == static_cast<int>(Game::kLockRollSteps + Game::kHoleRiseSteps) - 1);
       CHECK(steps[1] - steps[0] == static_cast<int>(table::kLockReleaseSpacingSeconds * kSecond));
       CHECK(near(velocities[0], kHangar.exitVelocity));
       CHECK(near(velocities[1], table::kHangarEjectRight));
@@ -821,7 +825,7 @@ void testScoop() {
   }
 
   {  // The scoop does not return a ball onto one sitting at its exit: it
-     // waits until the exit is clear.
+     // waits, down in the cup, until the exit is clear.
     Game game;
     run(game, 2);
     putBall(game, 0, {kScoop.center.x, 440.0F}, {0.0F, -900.0F});
@@ -844,8 +848,9 @@ void testScoop() {
               Game::kHoleExitClearance);
       }
     }
-    CHECK(returnedAt >= kBlockedSteps);
-    CHECK(returnedAt <= kBlockedSteps + 2);
+    // Once clear it comes up over the rise, and goes.
+    CHECK(returnedAt >= kBlockedSteps + static_cast<int>(Game::kHoleRiseSteps) - 1);
+    CHECK(returnedAt <= kBlockedSteps + static_cast<int>(Game::kHoleRiseSteps) + 2);
   }
 
   {  // The short save after an eject. A ball that drains within 2.5 s of
@@ -1538,7 +1543,14 @@ void testNothingTunnels() {
 }
 
 
-// --- How a hole is seen to take a ball and give it back. ---------------------------
+// --- How a hole with a cup is seen to take a ball and give it back. ----------
+//
+// Whatever the table: a hole with a cup takes the ball only once its centre
+// is over the cup; it is drawn pulled onto the cup's centre while it shrinks
+// and darkens (the pull-in, table::kHoleSinkSeconds, 80 to 150 ms), is out
+// of sight while it is held, is drawn coming up at the exit growing and
+// brightening (the rise, table::kHoleRiseSeconds), and the physics has it
+// again exactly where it was drawn last. All in fixed steps.
 
 // How far a point is from the segment a to b.
 float distanceToSegment(Vec2 p, Vec2 a, Vec2 b) {
@@ -1551,188 +1563,329 @@ float distanceToSegment(Vec2 p, Vec2 a, Vec2 b) {
   return distance(p, a + ab * t);
 }
 
-const int kSinkSteps = static_cast<int>(table::kHoleSinkSeconds * kSecond + 0.5);
-const int kRiseSteps = static_cast<int>(table::kHoleRiseSeconds * kSecond + 0.5);
+const int kSinkSteps = static_cast<int>(Game::kHoleSinkSteps);
+const int kRiseSteps = static_cast<int>(Game::kHoleRiseSteps);
 
-// The curve the drawing follows on the way in and out: fast, then slowing.
-float easeOut(float t) { return 1.0F - (1.0F - t) * (1.0F - t); }
-
-// The drawn ball of a slot, blended alpha of the way from the last step.
-BallView drawnView(const Game& game, std::size_t slot, float alpha) {
-  for (const BallView& ball : game.balls(alpha)) {
-    if (ball.id == slot) {
-      return ball;
-    }
+// What a ball looked like after one step: enough to compare two games.
+struct Frame {
+  bool visible = false;
+  bool locked = false;
+  Vec2 drawnAt{};
+  float sink = 0.0F;
+  bool operator==(const Frame& o) const {
+    return visible == o.visible && locked == o.locked && drawnAt.x == o.drawnAt.x &&
+           drawnAt.y == o.drawnAt.y && sink == o.sink;
   }
-  BallView gone;
-  gone.visible = false;
-  return gone;
+};
+Frame frameOf(const Game& game, std::size_t slot) {
+  const BallView view = viewOf(game, slot);
+  return {view.visible, view.locked, view.drawnAt(), view.sink};
 }
 
-// Follows a ball the Briefing room or the Hangar has just taken from where
-// it was taken (from) to where it goes (to): drawn on that line, moving
-// along it and sinking, never back, and where the game has it untouched.
-// sinks: it goes down out of sight (a hole) rather than into a bay. Returns
-// whether it arrived in time.
-bool followIn(Game& game, std::size_t slot, Vec2 from, Vec2 to, bool sinks) {
+// What following a ball through a hole with a cup found.
+struct CupRun {
+  bool released = false;
+  int pullFrames = 0;    // Drawn on its way in, sinking.
+  int hiddenFrames = 0;  // Out of sight.
+  int riseFrames = 0;    // Drawn coming up, before it is let go.
+  std::vector<Frame> frames;
+};
+
+// Follows a ball that a hole with a cup has just taken (call it right after
+// the step that took it) to the step it is let go, checking every frame.
+CupRun followCup(Game& game, std::size_t slot, const table::Hole& hole) {
   const InputState idle;
-  const float length = distance(from, to);
+  CupRun run;
+  const Vec2 takenAt = Seam::position(game, slot);
+  // Taken with its centre over the cup.
+  CHECK(distance(takenAt, hole.cup) <= hole.cupRadius + 0.01F);
+  enum class Phase { Pull, Hidden, Rise } phase = Phase::Pull;
   float lastAlong = -1.0F;
   float lastSink = -1.0F;
-  for (int step = 1; step <= kSinkSteps + 2; ++step) {
-    if (step >= 2 && step < kSinkSteps) {
-      // Drawn between steps, the offset is blended too: half way between
-      // the last step's and this one's, which differ.
-      const BallView before = drawnView(game, slot, 0.0F);
-      const BallView half = drawnView(game, slot, 0.5F);
-      const BallView now = drawnView(game, slot, 1.0F);
-      CHECK(before.visible && half.visible && now.visible);
-      CHECK(distance(before.drawOffset, now.drawOffset) > 0.005F * length);
-      CHECK(distance(half.drawOffset, (before.drawOffset + now.drawOffset) * 0.5F) < 0.001F);
+  Frame last{};
+  for (int i = 0; i < 4 * kSecond; ++i) {
+    const BallView view = viewOf(game, slot);
+    const Frame frame = frameOf(game, slot);
+    run.frames.push_back(frame);
+    if (phase == Phase::Pull && !view.visible) {
+      phase = Phase::Hidden;
     }
-    for (const float alpha : {0.5F, 1.0F}) {
-      // Between the step that took it and the one before, it is drawn
-      // between where it was free and where it was taken.
-      if (step == 1 && alpha < 1.0F) {
-        continue;
-      }
-      const BallView view = drawnView(game, slot, alpha);
-      if (!view.visible) {
-        // Gone only once all the way down, and only into a hole: all but
-        // at the hole when last seen.
-        CHECK(sinks && step > kSinkSteps - 1);
-        CHECK(lastAlong > 0.95F * length);
-        return sinks && step > kSinkSteps - 1;
-      }
-      const Vec2 at = view.drawnAt();
-      CHECK(distanceToSegment(at, from, to) < 0.05F);
-      const float along = distance(at, from);
-      if (alpha == 1.0F) {
-        // Each step a step further along the curve from where it was taken:
-        // drawn first next to that spot, not at the hole or in the bay.
-        const float expected =
-            length * easeOut(std::min(1.0F, static_cast<float>(step) / static_cast<float>(kSinkSteps)));
-        CHECK(std::fabs(along - expected) < 0.01F * length + 0.05F);
-      }
-      CHECK(along >= lastAlong - 0.001F);
-      lastAlong = along;
-      CHECK(view.sink >= lastSink && view.sink >= 0.0F && view.sink < 1.0F);
-      lastSink = view.sink;
-      if (!sinks) {
-        CHECK(view.sink == 0.0F && view.locked);
-      }
-      // The game's own place for the ball is not moved: only the drawing.
-      if (alpha == 1.0F) {
-        CHECK(near(view.position, sinks ? Seam::position(game, slot) : to));
-      }
-      if (!sinks && step > kSinkSteps) {
-        // In its bay, exactly.
-        CHECK(at.x == to.x && at.y == to.y);
-        return true;
-      }
+    if (phase == Phase::Hidden && view.visible) {
+      phase = Phase::Rise;
+      lastSink = 2.0F;
     }
+    switch (phase) {
+      case Phase::Pull: {
+        // On the line from where it was taken to the cup's centre, never
+        // back, sinking further each step; the game's own place for the ball
+        // is untouched.
+        CHECK(view.visible);
+        CHECK(distanceToSegment(view.drawnAt(), takenAt, hole.cup) < 0.05F);
+        const float along = distance(view.drawnAt(), takenAt);
+        CHECK(along >= lastAlong - 0.001F);
+        lastAlong = along;
+        CHECK(view.sink > lastSink && view.sink > 0.0F && view.sink < 1.0F);
+        lastSink = view.sink;
+        CHECK(near(view.position, Seam::position(game, slot)));
+        ++run.pullFrames;
+        break;
+      }
+      case Phase::Hidden:
+        CHECK(!view.visible);
+        ++run.hiddenFrames;
+        break;
+      case Phase::Rise:
+        // At the exit, rising (sink falling) each step, not moved off it.
+        CHECK(view.visible && near(view.position, table::holeRisePoint(hole)));
+        CHECK(view.drawOffset.x == 0.0F && view.drawOffset.y == 0.0F);
+        CHECK(view.sink < lastSink && view.sink >= 0.0F);
+        lastSink = view.sink;
+        ++run.riseFrames;
+        break;
+    }
+    last = frame;
     game.step(idle);
+    if (!Seam::held(game, slot)) {
+      // Let go exactly where it was last drawn, at full size, in view.
+      const BallView out = viewOf(game, slot);
+      CHECK(phase == Phase::Rise);
+      CHECK(out.visible && out.sink == 0.0F && !out.locked);
+      CHECK(out.drawOffset.x == 0.0F && out.drawOffset.y == 0.0F);
+      CHECK(distance(Seam::position(game, slot), table::holeRisePoint(hole)) < 1.0e-3F);
+      CHECK(distance(out.drawnAt(), last.drawnAt) < 1.0e-3F);
+      run.frames.push_back(frameOf(game, slot));
+      run.released = true;
+      return run;
+    }
   }
   CHECK(false);
+  return run;
+}
+
+// Puts a ball still in the pocket of a hole with a cup, a little off the
+// cup, and steps until the hole takes it. Returns whether it did.
+bool dropIntoCup(Game& game, std::size_t slot, const table::Hole& hole, Vec2 off) {
+  const InputState idle;
+  putBall(game, slot, hole.cup + off, {0.0F, 0.0F});
+  for (int i = 0; i < kSecond; ++i) {
+    game.step(idle);
+    if (Seam::held(game, slot)) {
+      return true;
+    }
+  }
   return false;
 }
 
-// Follows a ball the scoop or the hangar has just let out, from where it is
-// drawn coming out (from): it starts there, sunk as deep as sunk says, and
-// lands on its own path within the rise. Call in the step that returned it.
-void followOut(Game& game, std::size_t slot, Vec2 from, Vec2 exit, float sunk) {
-  const InputState idle;
-  BallView view = viewOf(game, slot);
-  CHECK(view.visible);
-  // Drawn in the hole, or the bay, still: at most a step's rise from it.
-  CHECK(distance(view.drawnAt(), from) < 0.15F * distance(from, view.position) + 0.5F);
-  // From there to the exit, the drawing's lead over the ball's own path
-  // closes step by step on the curve, and the ball brightens with it: no
-  // offset held and then dropped at the end.
-  const float length = distance(from, exit);
-  CHECK(length > 10.0F);
-  float lastOffset = 1.0e9F;
-  for (int step = 1; step < kRiseSteps; ++step) {
-    view = viewOf(game, slot);
-    const float left = 1.0F - easeOut(static_cast<float>(step) / static_cast<float>(kRiseSteps));
-    const float offset = distance(view.drawnAt(), view.position);
-    CHECK(std::fabs(offset - length * left) < 0.01F * length);
-    CHECK(offset < lastOffset - 0.002F * length);
-    CHECK(std::fabs(view.sink - sunk * left) < 0.01F);
-    lastOffset = offset;
-    CHECK(near(view.position, Seam::position(game, slot)));
-    game.step(idle);
-  }
-  // Within a hair of its path on the last step before it lands on it.
-  CHECK(lastOffset < 0.01F * length);
-  game.step(idle);
-  view = viewOf(game, slot);
-  CHECK(view.visible && view.sink == 0.0F);
-  CHECK(view.drawOffset.x == 0.0F && view.drawOffset.y == 0.0F);
-  CHECK(near(view.drawnAt(), Seam::position(game, slot)));
+// Every hole open and passing balls through: no lock, the doors down.
+void openTable(Game& game) {
+  Seam::rules(game).setMultiballEnabled(false);
+  run(game, 2);
+  Seam::dropDoorBank(game);
+  run(game, 2);
+}
+
+void checkCupTimes(const CupRun& run) {
+  CHECK(run.released);
+  // The pull-in: 80 to 150 ms, every step of it drawn.
+  CHECK(run.pullFrames == kSinkSteps - 1);
+  CHECK(static_cast<double>(run.pullFrames + 1) / kSecond >= 0.08 &&
+        static_cast<double>(run.pullFrames + 1) / kSecond <= 0.15);
+  // The rise, every step of it drawn, ending as the physics takes over.
+  CHECK(run.riseFrames == kRiseSteps - 1);
+  CHECK(run.hiddenFrames > 0);
 }
 
 void testHoleViews() {
   const InputState idle;
-  {  // The Briefing room: the ball is drawn rolling on into the hole and
-     // dropping in, not lost from sight where it crossed into the box; out
-     // of sight while held; and drawn coming up out of the hole when let go.
+  static_assert(table::kHoleSinkSeconds >= 0.08 && table::kHoleSinkSeconds <= 0.15);
+  static_assert(table::kHoleRiseSeconds >= 0.08 && table::kHoleRiseSeconds <= 0.15);
+
+  {  // The look of a sinking ball (core/HoleLook.hpp). Full motion: smaller,
+     // darker and fainter the further down, gone at the bottom. Reduce
+     // Motion: never a change of size, and a shorter change: nothing in the
+     // first quarter of the sink, all done by the last quarter.
+    float lastScale = 2.0F;
+    for (int i = 0; i <= 20; ++i) {
+      const float sink = static_cast<float>(i) / 20.0F;
+      const pinball::HoleLook full = pinball::holeLook(sink, false);
+      const pinball::HoleLook calm = pinball::holeLook(sink, true);
+      CHECK(full.scale < lastScale);
+      lastScale = full.scale;
+      CHECK(calm.scale == 1.0F);
+      if (sink <= 0.25F) {
+        CHECK(calm.shade == 1.0F && calm.alpha == 1.0F);
+      }
+      if (sink >= 0.75F) {
+        CHECK(calm.alpha == 0.0F);
+      }
+    }
+    CHECK(pinball::holeLook(0.0F, false).scale == 1.0F && pinball::holeLook(0.0F, false).alpha == 1.0F);
+    CHECK(pinball::holeLook(1.0F, false).alpha == 0.0F && pinball::holeLook(1.0F, false).scale < 0.6F);
+    // Out of range: no further than all the way down or all the way up.
+    CHECK(pinball::holeLook(5.0F, false).alpha == 0.0F && pinball::holeLook(-1.0F, true).alpha == 1.0F);
+  }
+
+  // Every hole with a cup, whatever table this is: a ball dropped near the
+  // cup is pulled in, held out of sight and comes up at the exit.
+  int cups = 0;
+  for (std::size_t h = 0; h < table::kHoles.size(); ++h) {
+    const table::Hole& hole = table::kHoles[h];
+    if (!table::hasCup(hole)) {
+      continue;
+    }
+    ++cups;
     Game game;
-    run(game, 2);
-    putBall(game, 0, {kScoop.center.x - 6.0F, 450.0F}, {20.0F, -900.0F});
+    openTable(game);
+    CHECK(dropIntoCup(game, 0, hole, {0.0F, -0.5F * hole.cupRadius}));
+    CHECK(Seam::held(game, 0) && !game.ballLocked(0));
+    const CupRun run = followCup(game, 0, hole);
+    checkCupTimes(run);
+    // Its whole hold, as before: pulled in and risen within it.
+    CHECK(static_cast<double>(run.frames.size() - 1) / kSecond >= Game::holdSeconds(hole.type) -
+                                                                       1.0 / kSecond);
+  }
+  CHECK(cups >= 2);
+
+  {  // The Briefing room: a ball shot gently into its pocket rolls on, in
+     // view and under the physics, past the line where it used to vanish,
+     // and is taken only at the cup.
+    Game game;
+    openTable(game);
+    putBall(game, 0, {kScoop.cup.x - 6.0F, 450.0F}, {20.0F, -420.0F});
+    int freeInPocket = 0;
     for (int i = 0; i < kSecond && !Seam::held(game, 0); ++i) {
       game.step(idle);
+      const Vec2 p = Seam::position(game, 0);
+      const bool inPocket = std::fabs(p.x - kScoop.center.x) < kScoop.halfSize.x &&
+                            std::fabs(p.y - kScoop.center.y) < kScoop.halfSize.y;
+      if (inPocket && !Seam::held(game, 0)) {
+        ++freeInPocket;
+        CHECK(viewOf(game, 0).visible && viewOf(game, 0).sink == 0.0F);
+        CHECK(distance(p, kScoop.cup) > kScoop.cupRadius);
+      }
     }
     CHECK(Seam::held(game, 0));
-    const Vec2 takenAt = Seam::position(game, 0);
-    // Taken at the box's lower edge, well short of the hole's centre: what
-    // a player saw vanish.
-    // It is seen to drop where the art draws the hole, below the middle of
-    // the box that takes it.
-    const Vec2 drop{356.0F, 400.0F};
-    CHECK(near(table::holeDropPoint(kScoop), drop) && !near(kScoop.center, drop));
-    CHECK(distance(takenAt, drop) > 15.0F);
-    CHECK(followIn(game, 0, takenAt, drop, true));
-    int returned = -1;
-    for (int i = 0; i < 2 * kSecond && returned < 0; ++i) {
-      CHECK(!viewOf(game, 0).visible);
-      game.step(idle);
-      if (findEvent(game, GameEvent::Type::HoleEject) != nullptr) {
-        returned = i;
-      }
-    }
-    CHECK(returned >= 0);
-    followOut(game, 0, drop, kScoop.exitPosition, 1.0F);
+    CHECK(freeInPocket >= 2);
+    checkCupTimes(followCup(game, 0, kScoop));
   }
 
-  {  // The Hangar, when it only passes the ball through: the same.
+  {  // A ball that comes to rest in the pocket away from the cup does not
+     // sit there: the pocket's funnel rolls it to the cup.
     Game game;
-    Seam::rules(game).setMultiballEnabled(false);
-    run(game, 2);
-    markDoors(game);
-    run(game, 2);
-    CHECK(!game.doorBankUp());
-    putBall(game, 0, kBelowDoors, {0.0F, -900.0F});
-    for (int i = 0; i < kSecond && !Seam::held(game, 0); ++i) {
-      game.step(idle);
-    }
-    CHECK(Seam::held(game, 0) && !game.ballLocked(0));
-    const Vec2 takenAt = Seam::position(game, 0);
-    CHECK(distance(takenAt, kHangar.center) > 10.0F);
-    CHECK(followIn(game, 0, takenAt, kHangar.center, true));
-    int returned = -1;
-    for (int i = 0; i < 2 * kSecond && returned < 0; ++i) {
-      game.step(idle);
-      if (findEvent(game, GameEvent::Type::HoleEject) != nullptr) {
-        returned = i;
-      }
-    }
-    CHECK(returned >= 0);
-    followOut(game, 0, kHangar.center, kHangar.exitPosition, 1.0F);
+    openTable(game);
+    CHECK(dropIntoCup(game, 0, kScoop, {12.0F, -25.0F}));
+    Game other;
+    openTable(other);
+    CHECK(dropIntoCup(other, 0, kHangar, {-20.0F, -15.0F}));
   }
 
-  {  // A lock: drawn rolling from where it was taken into its bay, and,
-     // let go, drawn leaving the bay, not appearing at the exit.
+  {  // A ball passing straight over the cup at speed is taken (the path of
+     // its step, not where it stops, is what counts).
+    Game game;
+    openTable(game);
+    putBall(game, 0, {kScoop.cup.x, 470.0F}, {0.0F, -2400.0F});
+    bool taken = false;
+    for (int i = 0; i < kSecond / 4 && !taken; ++i) {
+      game.step(idle);
+      taken = Seam::held(game, 0);
+    }
+    CHECK(taken && distance(Seam::position(game, 0), kScoop.cup) <= kScoop.cupRadius + 0.01F);
+  }
+
+  // A subway's exit (a hole that lets its ball up away from its cup) is
+  // drawn open only around the rise: shut while the ball goes in and is
+  // down, fully open for every frame it comes up, closing after it leaves.
+  // A hole that kicks the ball back out of its own cup has none.
+  for (std::size_t h = 0; h < table::kHoles.size(); ++h) {
+    const table::Hole& hole = table::kHoles[h];
+    if (!table::hasCup(hole)) {
+      CHECK(Game().holeExitOpening(h) == 0.0F);
+      continue;
+    }
+    const Vec2 rise = table::holeRisePoint(hole);
+    const bool subway = rise.x != hole.cup.x || rise.y != hole.cup.y;
+    Game game;
+    openTable(game);
+    CHECK(game.holeExitOpening(h) == 0.0F);
+    CHECK(dropIntoCup(game, 0, hole, {0.0F, -2.0F}));
+    int shutSteps = 0;
+    int risingOpen = 0;
+    int rising = 0;
+    for (int i = 0; i < 4 * kSecond && Seam::held(game, 0); ++i) {
+      const BallView view = viewOf(game, 0);
+      const float open = game.holeExitOpening(h);
+      CHECK(open >= 0.0F && open <= 1.0F);
+      const bool risingNow = view.visible && near(view.position, rise) && view.sink < 1.0F &&
+                             i > kSinkSteps;
+      if (risingNow) {
+        ++rising;
+        risingOpen += open == 1.0F ? 1 : 0;
+      } else if (open == 0.0F) {
+        ++shutSteps;
+      }
+      CHECK(subway || open == 0.0F);
+      game.step(idle);
+    }
+    CHECK(!Seam::held(game, 0));
+    if (!subway) {
+      continue;
+    }
+    CHECK(rising == kRiseSteps - 1 && risingOpen == rising);
+    // Shut from the pull-in to a moment before the rise.
+    CHECK(shutSteps >= static_cast<int>(Game::holdSeconds(hole.type) * kSecond) - 3 * kRiseSteps);
+    // Closing behind it, the same after a save part-way, then shut.
+    float last = game.holeExitOpening(h);
+    CHECK(last > 0.0F);
+    for (int i = 0; i < kRiseSteps + 2; ++i) {
+      if (i == kRiseSteps / 2) {
+        Game restored;
+        CHECK(restored.restore(game.snapshot()));
+        CHECK(restored.holeExitOpening(h) == game.holeExitOpening(h));
+      }
+      game.step(idle);
+      const float now = game.holeExitOpening(h);
+      CHECK(now <= last);
+      last = now;
+    }
+    CHECK(last == 0.0F);
+  }
+
+  {  // Played twice, the same frames; and a game saved part-way through any
+     // phase and put back plays on with the same frames to the step.
+    Game game;
+    openTable(game);
+    CHECK(dropIntoCup(game, 0, kScoop, {0.0F, -4.0F}));
+    Game twin;
+    openTable(twin);
+    CHECK(dropIntoCup(twin, 0, kScoop, {0.0F, -4.0F}));
+    const CupRun run = followCup(game, 0, kScoop);
+    const CupRun again = followCup(twin, 0, kScoop);
+    CHECK(run.frames == again.frames);
+
+    const int hold = static_cast<int>(run.frames.size()) - 1;
+    for (const int at : {kSinkSteps / 2, kSinkSteps + 10, hold - kRiseSteps / 2}) {
+      Game original;
+      openTable(original);
+      CHECK(dropIntoCup(original, 0, kScoop, {0.0F, -4.0F}));
+      for (int i = 0; i < at; ++i) {
+        original.step(idle);
+      }
+      Game restored;
+      CHECK(restored.restore(original.snapshot()));
+      for (int i = at; i <= hold + 5; ++i) {
+        CHECK(frameOf(original, 0) == frameOf(restored, 0));
+        CHECK(frameOf(original, 0) == run.frames[static_cast<std::size_t>(std::min(i, hold))] ||
+              i >= hold);
+        CHECK(Seam::held(original, 0) == Seam::held(restored, 0));
+        original.step(idle);
+        restored.step(idle);
+      }
+    }
+  }
+
+  {  // A lock: taken at the cup, drawn rolling into its bay and in view
+     // there; let go, drawn rolling back to the cup and dropping in, then
+     // coming up at the exit like any other.
     Game game;
     run(game, 2);
     markDoors(game);
@@ -1740,18 +1893,76 @@ void testHoleViews() {
     CHECK(shootHangar(game, 0));
     CHECK(game.ballLocked(0));
     const Vec2 takenAt = Seam::position(game, 0);
-    CHECK(followIn(game, 0, takenAt, table::kLockBays[0], false));
-    run(game, 30);
-    Seam::releaseLocks(game);
-    int returned = -1;
-    for (int i = 0; i < kSecond && returned < 0; ++i) {
+    CHECK(distance(takenAt, kHangar.cup) <= kHangar.cupRadius + 0.01F);
+    const Vec2 bay = table::kLockBays[0];
+    float lastAlong = -1.0F;
+    for (int i = 0; i < kSecond / 2; ++i) {
+      const BallView view = viewOf(game, 0);
+      CHECK(view.visible && view.locked && view.sink == 0.0F);
+      CHECK(distanceToSegment(view.drawnAt(), takenAt, bay) < 0.05F);
+      const float along = distance(view.drawnAt(), takenAt);
+      CHECK(along >= lastAlong - 0.001F);
+      lastAlong = along;
       game.step(idle);
-      if (findEvent(game, GameEvent::Type::LockReleased) != nullptr) {
-        returned = i;
-      }
     }
-    CHECK(returned >= 0);
-    followOut(game, 0, table::kLockBays[0], kHangar.exitPosition, 0.0F);
+    CHECK(near(viewOf(game, 0).drawnAt(), bay));
+    // Saved in the bay and put back: still there, still locked.
+    {
+      Game restored;
+      CHECK(restored.restore(game.snapshot()));
+      CHECK(frameOf(restored, 0) == frameOf(game, 0));
+    }
+    Seam::releaseLocks(game);
+    float lastSink = -1.0F;
+    lastAlong = -1.0F;
+    bool rising = false;
+    int rollFrames = 0;
+    int riseFrames = 0;
+    Frame last{};
+    // Saved part-way back to the cup, the game put back goes on alike.
+    std::unique_ptr<Game> restored;
+    for (int i = 0; i < kSecond && Seam::held(game, 0); ++i) {
+      if (i == 9) {
+        restored = std::make_unique<Game>();
+        CHECK(restored->restore(game.snapshot()));
+      }
+      game.step(idle);
+      if (restored) {
+        restored->step(idle);
+        CHECK(frameOf(*restored, 0) == frameOf(game, 0));
+        CHECK(Seam::held(*restored, 0) == Seam::held(game, 0));
+      }
+      if (!Seam::held(game, 0)) {
+        break;
+      }
+      const BallView view = viewOf(game, 0);
+      CHECK(view.visible);  // Never out of sight on the way out.
+      if (!rising && near(view.position, kHangar.exitPosition)) {
+        rising = true;
+        lastSink = 2.0F;
+      }
+      if (!rising) {
+        CHECK(view.locked);
+        CHECK(distanceToSegment(view.drawnAt(), bay, kHangar.cup) < 0.05F);
+        const float along = distance(view.drawnAt(), bay);
+        CHECK(along >= lastAlong - 0.001F);
+        lastAlong = along;
+        CHECK(view.sink >= lastSink);
+        lastSink = view.sink;
+        ++rollFrames;
+      } else {
+        CHECK(!view.locked && view.sink < lastSink);
+        lastSink = view.sink;
+        ++riseFrames;
+      }
+      last = frameOf(game, 0);
+    }
+    CHECK(!Seam::held(game, 0));
+    CHECK(rollFrames == static_cast<int>(Game::kLockRollSteps));
+    CHECK(riseFrames == kRiseSteps - 1);
+    CHECK(near(last.drawnAt, kHangar.exitPosition));
+    CHECK(distance(Seam::position(game, 0), kHangar.exitPosition) < 1.0e-3F);
+    CHECK(distance(viewOf(game, 0).drawnAt(), last.drawnAt) < 1.0e-3F);
   }
 }
 }  // namespace

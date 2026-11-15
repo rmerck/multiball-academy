@@ -382,14 +382,36 @@ inline constexpr float kTopLaneHalfLength = 18.0F;
 
 // --- Holes: anything that takes the ball off the field for a moment -----------------
 enum class HoleType : std::uint8_t { Scoop, Hangar, RampLeft, RampRight };
+// Two ways a hole takes the ball. A ramp takes it across its mouth: the box
+// is the mouth, and a ball inside it is taken (cupRadius 0). A hole with a
+// cup (a scoop, a saucer, a lock pocket, a subway's entry) takes it only at
+// the cup: the box is the pocket, a ball inside it rolls on under the
+// physics, drawn towards the cup by the pocket's shallow funnel
+// (kHoleFunnelPull), and is taken on the step its centre comes within
+// cupRadius of the cup's centre (anywhere along its path that step, so a
+// fast ball cannot skip over it). Then, all in fixed steps:
+//   pull-in  (kHoleSinkSeconds): drawn moving from where it was taken onto
+//            the cup's centre while it shrinks and darkens (sink 0 -> 1);
+//   down     out of sight, for the rest of its hold;
+//   rise     (kHoleRiseSeconds, the last part of the hold): drawn at
+//            exitPosition coming up, growing and brightening (sink 1 -> 0);
+//   let go   under the physics from exitPosition with exitVelocity.
+// For a ball kicked back out of its own cup exitPosition is the cup; for a
+// subway it is where the ball comes up. Nothing here names a particular
+// table: every hole with a cup works this way.
 struct Hole {
   Vec2 center;
-  Vec2 halfSize;  // The ball's centre is taken inside this box.
+  Vec2 halfSize;  // The mouth (a ramp) or the pocket (a hole with a cup).
   HoleType type;
   // Where and how fast the ball comes back, in pixels and pixels per second.
   Vec2 exitPosition;
   Vec2 exitVelocity;
+  // The cup, and how near its centre the ball's centre must come to be
+  // taken. 0: no cup (a ramp).
+  Vec2 cup;
+  float cupRadius;
 };
+[[nodiscard]] constexpr bool hasCup(const Hole& hole) noexcept { return hole.cupRadius > 0.0F; }
 [[nodiscard]] constexpr bool isRamp(HoleType type) noexcept {
   return type == HoleType::RampLeft || type == HoleType::RampRight;
 }
@@ -398,6 +420,22 @@ struct Hole {
 inline constexpr float kRampMinUpwardSpeed = 600.0F;
 // After returning a ball, a hole ignores it until it has moved this far away.
 inline constexpr float kHoleRearmDistance = 46.0F;
+// The cups (before build 3 the ball was taken anywhere in the pocket's box,
+// i.e. at its mouth, and was seen to vanish there). How near the cup's
+// centre the ball's centre must come: a ball radius, so that the ball is
+// over the cup when it is taken.
+inline constexpr float kHoleCupRadius = kBallRadius;
+inline constexpr Vec2 kScoopCup{356.0F, 400.0F};
+inline constexpr Vec2 kScoopKick{-90.0F, 40.0F};
+inline constexpr Vec2 kHangarCup{279.0F, 349.0F};
+// The pocket's funnel, for a hole with a cup: inside the pocket a ball the
+// hole will take is pulled towards the cup by kHoleFunnelPull per second
+// squared for each pixel it is away, and its speed is let go at
+// kHoleFunnelDamping per second, like a dished floor: a ball that misses
+// the cup on the way in, or comes back off the roof, rolls to it instead of
+// out of the mouth.
+inline constexpr float kHoleFunnelPull = 150.0F;
+inline constexpr float kHoleFunnelDamping = 10.0F;
 inline constexpr std::size_t kScoopHole = 0;
 inline constexpr std::size_t kHangarHole = 1;
 inline constexpr std::size_t kRunwayHole = 2;
@@ -407,12 +445,19 @@ inline constexpr std::array<Hole, 4> kHoles{{
     // let go sideways and not thrown down: thrown down at 200 px/s it reached
     // the bat so fast that the reflex player lost one ball in eleven within
     // six seconds of it; let fall, one in twenty.
-    {{356.0F, 390.0F}, {19.0F, 30.0F}, HoleType::Scoop, {356.0F, 456.0F}, {-95.0F, 0.0F}},
-    // Hangar: lobbed from below the door line to the left inlane.
-    {{279.0F, 349.0F}, {27.0F, 23.0F}, HoleType::Hangar, {279.0F, 420.0F}, {-211.0F, -60.0F}},
+    // Taken at its cup (the hole the art draws) and kicked from the cup
+    // back out through its mouth.
+    {{356.0F, 390.0F}, {19.0F, 30.0F}, HoleType::Scoop, kScoopCup, kScoopKick, kScoopCup,
+     kHoleCupRadius},
+    // Hangar: taken at its cup between the bays; it comes up again below
+    // the door line, like a subway (the door bank may stand between the cup
+    // and the field), and is lobbed to the left inlane.
+    {{279.0F, 349.0F}, {27.0F, 23.0F}, HoleType::Hangar, {279.0F, 420.0F}, {-211.0F, -60.0F},
+     kHangarCup, kHoleCupRadius},
     // Runway and Skyway: set down at the far end of the rail, above an inlane.
-    {{192.0F, 425.0F}, {27.0F, 9.0F}, HoleType::RampLeft, {107.0F, 672.0F}, {0.0F, 80.0F}},
-    {{519.0F, 425.0F}, {27.0F, 9.0F}, HoleType::RampRight, {604.0F, 672.0F}, {0.0F, 80.0F}},
+    {{192.0F, 425.0F}, {27.0F, 9.0F}, HoleType::RampLeft, {107.0F, 672.0F}, {0.0F, 80.0F}, {}, 0.0F},
+    {{519.0F, 425.0F}, {27.0F, 9.0F}, HoleType::RampRight, {604.0F, 672.0F}, {0.0F, 80.0F}, {},
+     0.0F},
 }};
 // Ramp rails: where a ball taken by a ramp is drawn while it rides. It moves
 // along the polyline at constant speed over kRampRideSeconds and is set down
@@ -467,23 +512,30 @@ inline constexpr double kHangarHoldSeconds = 0.9;
 inline constexpr int kScoopExitJitterLeft = 15;
 inline constexpr int kScoopExitJitterRight = 15;
 inline constexpr int kScoopExitJitterDown = 20;
-// For the eye only: a ball the Briefing room or the Hangar takes is drawn
-// rolling on from where it was taken to the hole's centre and dropping in
-// (or, locked, to its bay) over kHoleSinkSeconds; one either returns is
-// drawn coming up out of the hole (or its bay) and onto its path from the
-// exit over kHoleRiseSeconds. Neither moves the ball in the game or changes
-// when anything happens: the hole takes and returns the ball when it did.
-// Where a ball is seen to drop: the Briefing room's hole as the art draws
-// it (tools/art/make_table.py, briefing()), a little below the middle of
-// the box that takes the ball; the Hangar's own centre, under its roof.
-inline constexpr Vec2 kScoopDropPoint{356.0F, 400.0F};
+// Where a ball is seen to drop: the cup (for the Briefing room, its hole as
+// the art draws it, tools/art/make_table.py, briefing()).
 [[nodiscard]] constexpr Vec2 holeDropPoint(const Hole& hole) noexcept {
-  return hole.type == HoleType::Scoop ? kScoopDropPoint : hole.center;
+  return hasCup(hole) ? hole.cup : hole.center;
 }
-inline constexpr double kHoleSinkSeconds = 0.15;
-inline constexpr double kHoleRiseSeconds = 0.15;
+// Where a ball is seen to come up when a hole with a cup returns it, and
+// where it is let go: the hole's exit.
+[[nodiscard]] constexpr Vec2 holeRisePoint(const Hole& hole) noexcept { return hole.exitPosition; }
+// The pull-in: from where it was taken onto the cup's centre, shrinking and
+// darkening, then out of sight. A locked ball is drawn rolling from the cup
+// to its bay over kLockRollSeconds instead, in view.
+inline constexpr double kHoleSinkSeconds = 0.125;
+// The rise: coming up at the exit, growing and brightening, before the
+// physics has the ball again. The last part of the hold.
+inline constexpr double kHoleRiseSeconds = 0.125;
+// A locked ball rolls from the cup to its bay over this long; let go, it
+// rolls from its bay back to the cup over the same time, dropping in as it
+// gets there, and then comes up at the exit like any other.
+inline constexpr double kLockRollSeconds = 0.15;
+static_assert(kHoleSinkSeconds >= 0.08 && kHoleSinkSeconds <= 0.15);
+static_assert(kHoleSinkSeconds + kHoleRiseSeconds <= kScoopHoldSeconds &&
+              kHoleSinkSeconds + kHoleRiseSeconds <= kHangarHoldSeconds);
 // How much smaller and darker a ball is drawn when it is all the way down.
-inline constexpr float kHoleSinkShrink = 0.45F;
+inline constexpr float kHoleSinkShrink = 0.5F;
 inline constexpr float kHoleSinkDarken = 0.7F;
 // A ball that drains this soon after the Briefing room or the Hangar
 // returned it is owed back to the player: the rules are told so.

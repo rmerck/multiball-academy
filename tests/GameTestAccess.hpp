@@ -22,6 +22,12 @@ struct pinball::GameTestAccess {
   static void placeBall(Game& game, std::size_t ball, Vec2 position, Vec2 velocity = {}) {
     game.physics_.resetBall(ball, position, velocity);
   }
+  // The same, as a hole lets a ball out: the holes near where it is put
+  // ignore it until it has moved clear.
+  static void placeLeaving(Game& game, std::size_t ball, Vec2 position, Vec2 velocity) {
+    game.physics_.resetBall(ball, position, velocity);
+    game.physics_.disarmHolesNear(ball, position);
+  }
   // Puts one more ball on the table. Returns its id, or Game::kMaxBalls.
   static std::size_t addBall(Game& game, Vec2 position, Vec2 velocity = {}) {
     return game.addBall(position, velocity);
