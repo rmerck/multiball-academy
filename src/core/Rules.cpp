@@ -500,10 +500,17 @@ void Rules::onStandup(std::size_t index, float /*speed*/) noexcept {
       ++laneSetsThisBall_;
       cue(Sound::SetComplete);
       say(display::Message("T-A-X-I COMPLETE"));
+      if constexpr (!table::kRadarOnTable) {
+        // RADAR was cut: T-A-X-I lights FORMATION, as before G2.
+        qualifyCourse(CourseId::Formation);
+      }
     }
     return;
   }
   if (index >= table::kRadarStandup) {
+    if (!table::kRadarOnTable) {
+      return;  // Cut: never on the table.
+    }
     // RADAR: all three light FORMATION.
     const std::size_t letter = index - table::kRadarStandup;
     award(points::kTaxiLetter, Feature::TurboTargets);

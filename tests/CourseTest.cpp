@@ -173,8 +173,12 @@ void qualifyStep(RulesBench& bench, CourseId id, int k) {
     case CourseId::Gunnery:
       rules.onDrone();
       break;
-    case CourseId::Formation:  // RADAR.
-      rules.onStandup(table::kRadarStandup + static_cast<std::size_t>(k % 3), 100.0F);
+    case CourseId::Formation:  // RADAR, or T-A-X-I with RADAR cut.
+      if constexpr (table::kRadarOnTable) {
+        rules.onStandup(table::kRadarStandup + static_cast<std::size_t>(k % 3), 100.0F);
+      } else {
+        rules.onStandup(static_cast<std::size_t>(k % 4), 100.0F);
+      }
       break;
     case CourseId::NightLanding:
       if constexpr (table::kBogeyOnTable) {
@@ -320,16 +324,30 @@ void testCourses() {
       rules.onDrone();
     }
     CHECK(rules.courseQualified(idx(CourseId::Gunnery)));
-    for (std::size_t i = 0; i < 4; ++i) {  // T-A-X-I scores and lights nothing.
-      rules.onStandup(i, 100.0F);
+    if constexpr (table::kRadarOnTable) {
+      for (std::size_t i = 0; i < 4; ++i) {  // T-A-X-I scores and lights nothing.
+        rules.onStandup(i, 100.0F);
+      }
+      CHECK(!rules.courseQualified(idx(CourseId::Formation)));
+      rules.onStandup(table::kRadarStandup, 100.0F);
+      rules.onStandup(table::kRadarStandup, 100.0F);  // A letter lit already counts once.
+      rules.onStandup(table::kRadarStandup + 1, 100.0F);
+      CHECK(rules.radarLit(0) && !rules.courseQualified(idx(CourseId::Formation)));
+      rules.onStandup(table::kRadarStandup + 2, 100.0F);
+      CHECK(rules.courseQualified(idx(CourseId::Formation)) && !rules.radarLit(0));
+    } else {
+      // RADAR cut: a RADAR switch does nothing; T-A-X-I lights FORMATION.
+      for (std::size_t i = 0; i < 3; ++i) {
+        rules.onStandup(table::kRadarStandup + i, 100.0F);
+      }
+      CHECK(!rules.radarLit(0) && !rules.courseQualified(idx(CourseId::Formation)));
+      for (std::size_t i = 0; i < 3; ++i) {
+        rules.onStandup(i, 100.0F);
+      }
+      CHECK(!rules.courseQualified(idx(CourseId::Formation)));
+      rules.onStandup(3, 100.0F);
+      CHECK(rules.courseQualified(idx(CourseId::Formation)));
     }
-    CHECK(!rules.courseQualified(idx(CourseId::Formation)));
-    rules.onStandup(table::kRadarStandup, 100.0F);
-    rules.onStandup(table::kRadarStandup, 100.0F);  // A letter lit already counts once.
-    rules.onStandup(table::kRadarStandup + 1, 100.0F);
-    CHECK(rules.radarLit(0) && !rules.courseQualified(idx(CourseId::Formation)));
-    rules.onStandup(table::kRadarStandup + 2, 100.0F);
-    CHECK(rules.courseQualified(idx(CourseId::Formation)) && !rules.radarLit(0));
     if constexpr (table::kBogeyOnTable) {
       rules.onBogey(0);
       rules.onBogey(1);
@@ -1040,13 +1058,15 @@ void testCourses() {
   }
   {  // Every sortie can be qualified by its own switches and won, WINGS
      // CEREMONY lit and flown, and the AIR SHOW reached, with the table as
-     // built (BOGEY cut in G2: NIGHT LANDING by the nest pair; FORMATION by
-     // RADAR). No BOGEY words are ever shown.
+     // built (BOGEY and RADAR cut: NIGHT LANDING by the nest pair, FORMATION
+     // by T-A-X-I). No BOGEY or RADAR words are ever shown.
     RulesBench bench = single();
     Rules& rules = bench.rules;
     bool bogeyWords = false;
     const auto look = [&] {
-      bogeyWords = bogeyWords || std::string_view(rules.message()).find("BOGEY") != std::string_view::npos;
+      const std::string_view said = rules.message();
+      bogeyWords = bogeyWords || (!table::kBogeyOnTable && said.find("BOGEY") != std::string_view::npos) ||
+                   (!table::kRadarOnTable && said.find("RADAR") != std::string_view::npos);
     };
     for (std::size_t course = 0; course < pinball::kCourseCount; ++course) {
       const auto id = static_cast<CourseId>(course);

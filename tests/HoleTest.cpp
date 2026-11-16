@@ -70,8 +70,9 @@ float distance(Vec2 a, Vec2 b) {
 // qualifiers (DECISIONS.md 10): re-recorded deliberately. Was
 // 0x72134c8bea581229.
 // Final G2: BOGEY cut (it failed B2 after one tuning pass): 0x4e9b753928734c86
-// (was 0x1cc96e44b0f34524 with #56).
-constexpr std::uint64_t kSoakTrajectory = 0x4e9b753928734c86ULL;
+// (was 0x1cc96e44b0f34524 with #56). Final acceptance: RADAR cut too (the
+// last touch of half the quick drains): 0xac1f89d5abf004d7.
+constexpr std::uint64_t kSoakTrajectory = 0xac1f89d5abf004d7ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {

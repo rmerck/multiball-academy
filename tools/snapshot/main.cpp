@@ -1428,7 +1428,7 @@ int run(const Request& request) {
     if (request.state == State::Check) {
       const pinball::Game fresh;
       if (game.rules().score() == fresh.rules().score() || !game.rules().ballInPlay()) {
-        std::fputs("check needs enough steps for a ball in play and a score: try 1600\n", stderr);
+        std::fputs("check needs enough steps for a ball in play and a score: try 3000\n", stderr);
         return EXIT_FAILURE;
       }
       Checker checker{surface.get(), r, *table, layout};

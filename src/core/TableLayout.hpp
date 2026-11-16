@@ -272,6 +272,13 @@ inline constexpr bool kBogeyOnTable = false;
 inline constexpr double kBogeyResetSeconds = 3.0;
 inline constexpr double kBogeyAutoResetSeconds = 30.0;
 inline constexpr std::size_t kRadarStandup = 7;  // RADAR are kStandups 7, 8, 9.
+// Final acceptance: RADAR is CUT too (DECISIONS.md 9, one fix). With BOGEY
+// gone, the dead RADAR stand-ups on the right were still the last touch of
+// about half the balls lost within 10 s (P2 E=5: 153 of 363 at FL500, 158 of
+// 289 at FL100; B2a 3.70 / B2b 11.6 percent at FL500). The ids, records and
+// lamps stay (the lamps always dark); the stand-ups are never on the table
+// and T-A-X-I lights FORMATION, as before G2.
+inline constexpr bool kRadarOnTable = false;
 inline constexpr std::array<Capsule, 10> kStandups{{
     kRimLeftFoot,
     mirrored(kRimLeftFoot),
@@ -284,6 +291,10 @@ inline constexpr std::array<Capsule, 10> kStandups{{
     mirrored(bogeyTarget(1)),
     mirrored(bogeyTarget(2)),
 }};
+// Whether stand-up i is built (the RADAR ones are cut, kRadarOnTable).
+[[nodiscard]] constexpr bool standupOnTable(std::size_t i) noexcept {
+  return kRadarOnTable || i < kRadarStandup;
+}
 // --- The captive ball (G-force test, revision 3) --------------------------------
 // A ball of its own in a short channel between the nest and the left rim,
 // where phase 1's G-force post stood. It is held to the channel's centre
@@ -1111,7 +1122,8 @@ enum class LampId : std::uint8_t {
 // A lamp whose target is cut from the table: always dark (the art's unlit
 // lens). The BOGEY lamps while kBogeyOnTable is false.
 [[nodiscard]] constexpr bool lampCut(LampId id) noexcept {
-  return !kBogeyOnTable && (id == LampId::Bogey1 || id == LampId::Bogey2 || id == LampId::Bogey3);
+  return (!kBogeyOnTable && (id == LampId::Bogey1 || id == LampId::Bogey2 || id == LampId::Bogey3)) ||
+         (!kRadarOnTable && (id == LampId::Radar1 || id == LampId::Radar2 || id == LampId::Radar3));
 }
 struct Lamp {
   LampId id;

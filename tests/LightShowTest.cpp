@@ -157,8 +157,10 @@ void testAmbientIsFarBelowLit() {
   float least = 1.0F;
   int quietWindows = 0;
   std::array<float, LightShow::kLampCount> before{};
+  bool showInWindow = false;  // A rules show (a drain's bonus count) rests the chases.
   for (int i = 0; i < 2400; ++i) {
     step(game, show, flipping(static_cast<std::uint32_t>(i)));
+    showInWindow = showInWindow || show.show() != fx::Show::None;
     for (const table::Lamp& lamp : table::kLamps) {
       if (show.lampState(lamp.id) == LampState::Off && show.show() == fx::Show::None &&
           !table::lampCut(lamp.id)) {
@@ -170,10 +172,11 @@ void testAmbientIsFarBelowLit() {
       for (std::size_t k = 0; k < before.size(); ++k) {
         moved += std::fabs(show.lampLevels()[k] - before[k]) > 0.15F ? 1 : 0;
       }
-      if (i > 0 && moved < 6) {
+      if (i > 0 && moved < 6 && !showInWindow) {
         ++quietWindows;
       }
       before = show.lampLevels();
+      showInWindow = false;
     }
   }
   CHECK(least >= fx::kUnlitFloor - 1e-6F);

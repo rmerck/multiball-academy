@@ -401,8 +401,10 @@ std::vector<SDL_Vertex> makePlayfieldMesh() {
   // frame).
   mesh.polyline(table::kBriefingSubway, 2.0F, kMarkColor, false);
   mesh.polyline(table::kLaneGate, kChainWidth, kDeadColor, false);
-  for (const table::Capsule& standup : table::kStandups) {
-    mesh.capsule(standup, kSwitchColor);
+  for (std::size_t i = 0; i < table::kStandups.size(); ++i) {
+    if (table::standupOnTable(i)) {
+      mesh.capsule(table::kStandups[i], kSwitchColor);
+    }
   }
   mesh.capsule(table::kCaptiveSwitch, kSwitchColor);
   // Concept A: the CAT SHOT's rail and the deck drain's subway; the Prop
@@ -1821,6 +1823,9 @@ void TableRenderer::drawStandupsA(SDL_Renderer* r, const Game& game) const {
   SDL_Texture* const bar = textures_.bar.get();
   setTint(bar, art::kYellow, 0.85F);
   for (std::size_t i = table::kDeckStandupA; i < table::kStandups.size(); ++i) {
+    if (!table::standupOnTable(i)) {
+      continue;  // RADAR, cut.
+    }
     const table::Capsule& shape = table::kStandups[i];
     const Vec2 run = shape.b - shape.a;
     const float length = std::sqrt(run.x * run.x + run.y * run.y);

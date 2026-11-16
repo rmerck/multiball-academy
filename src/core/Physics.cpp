@@ -462,6 +462,9 @@ void PhysicsWorld::buildStandups() {
   deadDef.material.restitution = table::kDeadPostRestitution;
   deadDef.material.userMaterialId = kDeadMaterial;
   for (std::size_t i = 0; i < table::kStandups.size(); ++i) {
+    if (!table::standupOnTable(i)) {
+      continue;  // RADAR, cut.
+    }
     const table::Capsule& c = table::kStandups[i];
     b2ShapeDef def = deadDef;
     def.userData = packElement({table::ElementKind::Standup, static_cast<std::uint8_t>(i)});
