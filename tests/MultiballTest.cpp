@@ -119,16 +119,24 @@ void testMultiball() {
       bench.door(i);
     }
     bench.step();
-    // The doors are down, but the lock also asks for the BOGEY bank
-    // (DECISIONS.md 10).
-    CHECK(!rules.lockLit() && !bench.doorsUp &&
-          bench.message() == std::string_view("CLEAR BOGEY FOR LOCK"));
-    for (std::size_t i = 0; i < 3; ++i) {
-      rules.onBogey(i);
+    if constexpr (table::kBogeyOnTable) {
+      // The doors are down, but the lock also asks for the BOGEY bank
+      // (DECISIONS.md 10).
+      CHECK(!rules.lockLit() && !bench.doorsUp &&
+            bench.message() == std::string_view("CLEAR BOGEY FOR LOCK"));
+      for (std::size_t i = 0; i < 3; ++i) {
+        rules.onBogey(i);
+      }
+      CHECK(rules.lockLit() && bench.message() == std::string_view("BOGEY CLEARED  LOCK IS LIT"));
+      CHECK(bench.hangar() == Rules::HoleResult::Lock);
+      CHECK(!rules.bogeyCleared());  // Each lock asks for it again.
+    } else {
+      // BOGEY cut (G2): the third bank lights the lock, though the lock was
+      // asked to need BOGEY, and no BOGEY words are ever shown.
+      CHECK(rules.lockLit() && !bench.doorsUp);
+      CHECK(std::string_view(bench.message()).find("BOGEY") == std::string_view::npos);
+      CHECK(bench.hangar() == Rules::HoleResult::Lock);
     }
-    CHECK(rules.lockLit() && bench.message() == std::string_view("BOGEY CLEARED  LOCK IS LIT"));
-    CHECK(bench.hangar() == Rules::HoleResult::Lock);
-    CHECK(!rules.bogeyCleared());  // Each lock asks for it again.
   }
 
   {  // 4.7 Lock, lock, start. After every lock the doors come back up and

@@ -154,6 +154,42 @@ void downToOne(RulesBench& bench) {
   bench.step();
 }
 
+
+// One switch toward this sortie's qualifier, as play reports it (no saved
+// record): with BOGEY cut, NIGHT LANDING is lit by the nest pair.
+void qualifyStep(RulesBench& bench, CourseId id, int k) {
+  Rules& rules = bench.rules;
+  switch (id) {
+    case CourseId::LoopDrill:
+      bench.circuit(k % 2 == 1);
+      break;
+    case CourseId::RampRuns:
+      if (k % 2 == 0) {
+        bench.runway();
+      } else {
+        bench.skyway();
+      }
+      break;
+    case CourseId::Gunnery:
+      rules.onDrone();
+      break;
+    case CourseId::Formation:  // RADAR.
+      rules.onStandup(table::kRadarStandup + static_cast<std::size_t>(k % 3), 100.0F);
+      break;
+    case CourseId::NightLanding:
+      if constexpr (table::kBogeyOnTable) {
+        rules.onBogey(static_cast<std::size_t>(k % 3));
+      } else {
+        rules.onTarget(static_cast<std::size_t>(k % 2));
+      }
+      break;
+    case CourseId::Dogfight:
+      rules.onCaptiveBall(tuning::kGForceHardSpeed);
+      break;
+  }
+  bench.step();
+}
+
 }  // namespace
 
 void testCourses() {
@@ -294,11 +330,25 @@ void testCourses() {
     CHECK(rules.radarLit(0) && !rules.courseQualified(idx(CourseId::Formation)));
     rules.onStandup(table::kRadarStandup + 2, 100.0F);
     CHECK(rules.courseQualified(idx(CourseId::Formation)) && !rules.radarLit(0));
-    rules.onBogey(0);
-    rules.onBogey(1);
-    CHECK(rules.bogeyMarked(1) && !rules.courseQualified(idx(CourseId::NightLanding)));
-    rules.onBogey(2);
-    CHECK(rules.courseQualified(idx(CourseId::NightLanding)) && rules.bogeyCleared());
+    if constexpr (table::kBogeyOnTable) {
+      rules.onBogey(0);
+      rules.onBogey(1);
+      CHECK(rules.bogeyMarked(1) && !rules.courseQualified(idx(CourseId::NightLanding)));
+      rules.onBogey(2);
+      CHECK(rules.courseQualified(idx(CourseId::NightLanding)) && rules.bogeyCleared());
+    } else {
+      // BOGEY cut (G2): the nest pair lights NIGHT LANDING, and a BOGEY
+      // switch, were one ever reported, does nothing.
+      rules.onBogey(0);
+      rules.onBogey(1);
+      rules.onBogey(2);
+      CHECK(!rules.bogeyMarked(0) && !rules.bogeyCleared() &&
+            !rules.courseQualified(idx(CourseId::NightLanding)));
+      rules.onTarget(0);
+      CHECK(!rules.courseQualified(idx(CourseId::NightLanding)));
+      rules.onTarget(1);
+      CHECK(rules.courseQualified(idx(CourseId::NightLanding)));
+    }
     rules.onCaptiveBall(100.0F);
     CHECK(rules.gForce() == 1 && rules.lampState(LampId::GForce1) == LampState::On &&
           rules.lampState(LampId::GForce2) == LampState::Blink);
@@ -987,5 +1037,60 @@ void testCourses() {
     pass(bench, CourseId::LoopDrill);
     CHECK(rules.altitude() == 0 && rules.coursePassed(idx(CourseId::LoopDrill)));
     rules.setProgressionEnabled(true);
+  }
+  {  // Every sortie can be qualified by its own switches and won, WINGS
+     // CEREMONY lit and flown, and the AIR SHOW reached, with the table as
+     // built (BOGEY cut in G2: NIGHT LANDING by the nest pair; FORMATION by
+     // RADAR). No BOGEY words are ever shown.
+    RulesBench bench = single();
+    Rules& rules = bench.rules;
+    bool bogeyWords = false;
+    const auto look = [&] {
+      bogeyWords = bogeyWords || std::string_view(rules.message()).find("BOGEY") != std::string_view::npos;
+    };
+    for (std::size_t course = 0; course < pinball::kCourseCount; ++course) {
+      const auto id = static_cast<CourseId>(course);
+      for (int round = 0; round < 8 && !rules.coursePassed(course); ++round) {
+        for (int k = 0; k < 64 && !rules.courseQualified(course) && !rules.coursePassed(course);
+             ++k) {
+          qualifyStep(bench, id, k);
+          look();
+        }
+        CHECK(rules.courseQualified(course) || rules.coursePassed(course));
+        bench.wait(tuning::kComboSeconds);
+        bench.scoop();
+        look();
+        if (rules.courseRunning()) {
+          finish(bench);
+          look();
+        }
+        bench.wait(tuning::kComboSeconds);
+      }
+      CHECK(rules.coursePassed(course));
+    }
+    CHECK(rules.coursesPassed() == pinball::kCourseCount && rules.rank() == 5);
+    CHECK(rules.wingsLit());
+    bench.wait(tuning::kComboSeconds);
+    bench.scoop();
+    CHECK(rules.wingsRunning());
+    bench.wait(61.0);
+    CHECK(!rules.wingsRunning() && rules.wingsCeremonies() == 1);
+    // The Air Show also asks for both multiballs played (their own tests
+    // light them; the lock asks for no BOGEY, MultiballTest) and A-C-E.
+    pinball::save::RulesRecord record = rules.record();
+    record.academyMultiballs = 1;
+    record.turboMultiballs = 1;
+    record.multiballEnabled = true;
+    rules.restore(record);
+    for (std::size_t i = 0; i < 3; ++i) {
+      rules.onStandup(table::kDeckStandupA + i, 100.0F);
+      look();
+    }
+    CHECK(rules.aceDone() && rules.graduationLit());
+    bench.wait(tuning::kComboSeconds);
+    bench.scoop();
+    look();
+    CHECK(rules.graduationRunning() && rules.multiball() == Multiball::Graduation);
+    CHECK(!bogeyWords);
   }
 }

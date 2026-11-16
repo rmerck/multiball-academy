@@ -410,6 +410,11 @@ void Rules::onTarget(std::size_t index) noexcept {
     extraCreditLit_ = true;
     say(display::Message("EXTRA CREDIT IS LIT"));
     cue(Sound::SetComplete);
+    if constexpr (!table::kBogeyOnTable) {
+      // BOGEY was cut in G2: the nest pair qualifies NIGHT LANDING again, as
+      // it did before the bank was built.
+      qualifyCourse(CourseId::NightLanding);
+    }
   }
   addTurbo(tuning::kTurboPerTarget);
 }
@@ -544,8 +549,9 @@ void Rules::onStandup(std::size_t index, float /*speed*/) noexcept {
 void Rules::onBogey(std::size_t index) noexcept {
   // The BOGEY drops: all three cleared light NIGHT LANDING and are what the
   // lock asks for beside the bay doors (DECISIONS.md 10).
-  if (dead() || index >= table::kBogeys.size() || index >= bogeyMarked_.size()) {
-    return;
+  if (!table::kBogeyOnTable || dead() || index >= table::kBogeys.size() ||
+      index >= bogeyMarked_.size()) {
+    return;  // Cut in G2: no BOGEY progress, no BOGEY words.
   }
   noteSwitch();
   award(points::kTaxiLetter, Feature::TurboTargets);

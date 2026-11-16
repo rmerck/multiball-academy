@@ -474,7 +474,8 @@ class Rules {
   void setBanksPerLock(int banks) noexcept { banksPerLock_ = std::clamp(banks, 1, tuning::kBanksPerLock); }
   // Whether the lock also needs the BOGEY bank cleared (DECISIONS.md 10; on
   // in play): off for tests of the doors and the lock themselves.
-  void setLockNeedsBogey(bool needs) noexcept { lockNeedsBogey_ = needs; }
+  // With BOGEY cut (table::kBogeyOnTable false) the lock never asks for it.
+  void setLockNeedsBogey(bool needs) noexcept { lockNeedsBogey_ = needs && table::kBogeyOnTable; }
   // The BOGEY bank has been cleared since the last lock.
   bool bogeyCleared() const noexcept { return bogeyCleared_; }
   bool bogeyMarked(std::size_t index) const noexcept {

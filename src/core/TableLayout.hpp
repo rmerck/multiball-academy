@@ -1107,6 +1107,12 @@ enum class LampId : std::uint8_t {
   CatShot,  // Below the CAT SHOT cup.
   Count,
 };
+
+// A lamp whose target is cut from the table: always dark (the art's unlit
+// lens). The BOGEY lamps while kBogeyOnTable is false.
+[[nodiscard]] constexpr bool lampCut(LampId id) noexcept {
+  return !kBogeyOnTable && (id == LampId::Bogey1 || id == LampId::Bogey2 || id == LampId::Bogey3);
+}
 struct Lamp {
   LampId id;
   Vec2 position;

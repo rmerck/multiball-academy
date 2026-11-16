@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <initializer_list>
+#include <span>
 #include <utility>
 
 #include "core/Game.hpp"
@@ -255,6 +256,16 @@ constexpr std::array<RunSpeed, 12> kRunSpeeds{{
     {72.0F, 1.0F, 1.0F},   // The deck's letters and CAT SHOT.
 }};
 static_assert(kRunSpeeds.size() == 12);
+
+// Lamps of targets cut from the table stay dark, whatever runs
+// (table::lampCut: the BOGEY drops, cut in G2).
+void darkenCutLamps(std::span<float> levels) noexcept {
+  for (std::size_t i = 0; i < levels.size() && i < table::kLamps.size(); ++i) {
+    if (table::lampCut(table::kLamps[i].id)) {
+      levels[i] = 0.0F;
+    }
+  }
+}
 
 }  // namespace
 
@@ -1708,6 +1719,7 @@ void LightShow::updateLamps(const Game& game) noexcept {
     for (std::size_t i = 0; i < kLampCount; ++i) {
       levels_[i] = clamp01(std::max(attractLevel(i), kAttractFloor));
     }
+    darkenCutLamps(levels_);
     return;
   }
 
@@ -1802,6 +1814,7 @@ void LightShow::updateLamps(const Game& game) noexcept {
                                          : std::max({hits[i], sweepLevel(i), showLevel(i)});
     levels_[i] = clamp01(std::max(base, overlay));
   }
+  darkenCutLamps(levels_);
 }
 
 float LightShow::lampLevel(table::LampId lamp) const noexcept {

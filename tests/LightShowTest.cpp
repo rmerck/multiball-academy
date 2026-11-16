@@ -160,7 +160,8 @@ void testAmbientIsFarBelowLit() {
   for (int i = 0; i < 2400; ++i) {
     step(game, show, flipping(static_cast<std::uint32_t>(i)));
     for (const table::Lamp& lamp : table::kLamps) {
-      if (show.lampState(lamp.id) == LampState::Off && show.show() == fx::Show::None) {
+      if (show.lampState(lamp.id) == LampState::Off && show.show() == fx::Show::None &&
+          !table::lampCut(lamp.id)) {
         least = std::min(least, show.lampLevel(lamp.id));
       }
     }
@@ -1121,7 +1122,8 @@ void testAltitudeLights() {
       step(game, show, flipping(static_cast<std::uint32_t>(i)));
       for (std::size_t k = 0; k < LightShow::kLampCount; ++k) {
         const LampId id = table::kLamps[k].id;
-        if (show.lampState(id) == LampState::Off && show.show() == fx::Show::None) {
+        if (show.lampState(id) == LampState::Off && show.show() == fx::Show::None &&
+            !table::lampCut(id)) {
           least = std::min(least, show.lampLevel(id));
         }
         const fx::ChaseView chase = show.chase(k);
@@ -1201,8 +1203,10 @@ void testAltitudeLights() {
     }
     CHECK(chevrons == 7);
     float floor = 1.0F;
-    for (const float level : show.lampLevels()) {
-      floor = std::min(floor, level);
+    for (std::size_t k = 0; k < LightShow::kLampCount; ++k) {
+      if (!table::lampCut(table::kLamps[k].id)) {
+        floor = std::min(floor, show.lampLevels()[k]);
+      }
     }
     CHECK(floor >= fx::kAttractFloor - 1e-6F);
   }
@@ -1250,7 +1254,9 @@ void testConceptALamps() {
   }
   bool allRun = true;
   for (std::size_t k = static_cast<std::size_t>(LampId::LadderCircuitLeft1); k < most.size(); ++k) {
-    allRun = allRun && most[k] > fx::kUnlitFloor + 0.1F;
+    // A cut target's lamp stays dark instead.
+    allRun = allRun && (table::lampCut(table::kLamps[k].id) ? most[k] == 0.0F
+                                                             : most[k] > fx::kUnlitFloor + 0.1F);
   }
   CHECK(allRun);
   CHECK(rules.lampState(LampId::Count) == LampState::Off);
