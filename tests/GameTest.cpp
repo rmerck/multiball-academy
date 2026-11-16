@@ -917,9 +917,10 @@ void testSeveralBalls() {
     CHECK(worstStill < 120 * 3);
     CHECK(game.ballSearchCount() == 0);
     CHECK(game.drainCount() >= 12);
-    // This player's full plunges lap the arch to the left inlane, so the
-    // bumpers see only what its flipping sends into the nest.
-    CHECK(game.bumperHits() > 0);
+    // (This player's full plunges lap the arch to the left inlane, so the
+    // bumpers see only what its flipping happens to send into the nest: none
+    // in this two minutes since BOGEY was cut. The single-ball soak in
+    // HoleTest holds the bumpers to more than twelve hits.)
     CHECK(holes > 10);
   }
 }

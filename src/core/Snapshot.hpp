@@ -246,7 +246,8 @@ struct TableRecord {
   float droneX = table::kDroneLeftX;
   bool droneKnocked = false;  // Format 4.
   bool pylonUp = false;       // Format 6 (concept A).
-  std::array<bool, table::kBogeys.size()> bogeyUp{true, true, true};  // Format 8.
+  std::array<bool, table::kBogeys.size()> bogeyUp{table::kBogeyOnTable, table::kBogeyOnTable,
+                                                  table::kBogeyOnTable};  // Format 8 (cut in G2).
 };
 
 // Format 5 (table revision 3): the captive ball. Its body exactly as Box2D

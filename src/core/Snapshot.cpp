@@ -896,7 +896,8 @@ bool valid(const Snapshot& snapshot) {
   }
   // A BOGEY target stands exactly when it has no step it fell at.
   for (std::size_t i = 0; i < table::kBogeys.size(); ++i) {
-    if (snapshot.table.bogeyUp[i] != (snapshot.game.bogeyDownStep[i] == 0)) {
+    const bool up = snapshot.game.bogeyDownStep[i] == 0 && table::kBogeyOnTable;
+    if (snapshot.table.bogeyUp[i] != up) {
       return false;
     }
   }

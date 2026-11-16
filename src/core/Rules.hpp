@@ -911,7 +911,7 @@ class Rules {
   std::uint64_t jackpotAdd_ = 0;
   int banks_ = 0;
   int banksPerLock_ = tuning::kBanksPerLock;
-  bool lockNeedsBogey_ = true;
+  bool lockNeedsBogey_ = table::kBogeyOnTable;  // BOGEY was cut in G2.
   std::array<bool, 3> bogeyMarked_{};
   bool bogeyCleared_ = false;
   std::array<bool, 3> radarLit_{};

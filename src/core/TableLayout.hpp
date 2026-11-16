@@ -259,6 +259,12 @@ inline constexpr std::size_t kDeckStandupA = 4;
   return {{200.0F + 10.0F * t0, 562.0F + 60.0F * t0}, {200.0F + 10.0F * t1, 562.0F + 60.0F * t1}, 5.0F};
 }
 inline constexpr std::array<Capsule, 3> kBogeys{{bogeyDrop(0), bogeyDrop(1), bogeyDrop(2)}};
+// G2: BOGEY is CUT (AGENT_RULES 4: it failed its gate after one tuning
+// pass). With it on the table P2 lost balls fast down the left side: B2a at
+// E=5 1.80 -> 4.13 percent, B2b 6.3 -> 11.2 (dead material); as rubber, 3.73
+// and 11.8. The ids, records and lamps stay; the targets are never on the
+// table and the lock does not ask for them (Rules::lockNeedsBogey).
+inline constexpr bool kBogeyOnTable = false;
 // A struck BOGEY target drops; the bank comes up again kBogeyResetSeconds
 // after the third is down, and (from the Altitude's autoReset level) any
 // target down kBogeyAutoResetSeconds rises on its own. Each rises only when

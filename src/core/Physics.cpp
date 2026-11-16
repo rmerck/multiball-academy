@@ -551,11 +551,15 @@ void PhysicsWorld::buildBogeys() {
     const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
     b2CreateCapsuleShape(bogey_[i], &def, &capsule);
     bogeyUp_[i] = true;
+    if (!table::kBogeyOnTable) {
+      b2Body_Disable(bogey_[i]);
+      bogeyUp_[i] = false;
+    }
   }
 }
 
 void PhysicsWorld::setBogey(std::size_t index, bool up) {
-  if (index >= bogeyUp_.size() || bogeyUp_[index] == up) {
+  if (index >= bogeyUp_.size() || bogeyUp_[index] == up || (up && !table::kBogeyOnTable)) {
     return;
   }
   bogeyUp_[index] = up;

@@ -256,11 +256,14 @@ void Game::startNewGame() {
       down = 1;
     }
   }
-  bogeyNewGame_ = true;
+  bogeyNewGame_ = table::kBogeyOnTable;
   serveBall();
 }
 
 void Game::driveBogeys() {
+  if (!table::kBogeyOnTable) {
+    return;  // Cut in G2: never on the table.
+  }
   // The bank comes up kBogeyResetSeconds after its third target fell; from
   // the Altitude's autoReset level a target down kBogeyAutoResetSeconds
   // rises alone. A new game raises every one. Each only when clear.
