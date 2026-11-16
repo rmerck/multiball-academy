@@ -106,6 +106,34 @@ struct ShotMap {
 [[nodiscard]] ShotMap shotSweep(int variants, bool bankDown = false);
 [[nodiscard]] char touchChar(Touch touch) noexcept;
 
+// Concept A: the Flight Deck's fan. A ball set down by the Skyway's diverter
+// (variant 0 as the layout has it; others a little apart), the right button
+// pressed for 30 steps at each step from 0 to 119: the first deck element
+// met, one character a press: A, C, E (stand-ups), K (CAT SHOT), k (deck
+// drain), '.' (nothing within 5 s), '?' anything else.
+[[nodiscard]] std::string deckFan(int variant);
+// Whether a ball can be put at p without starting inside a solid.
+[[nodiscard]] bool placeableAt(Vec2 p) noexcept;
+
+// Concept A G1 gate: make-rate of each shot from each flipper. For every
+// standard feed (inlane, ramp exit, circuit return, cradle) and every one of
+// `variants` jittered copies, a player aims at the press step that is best
+// for the shot and presses within +-error steps of it, every step equally
+// likely: the share of those presses that make the shot. Per shot and side,
+// the best feed's share averaged over the variants, and that feed.
+struct MakeRate {
+  double rate = 0.0;
+  const char* feed = "";
+};
+struct MakeRates {
+  // [touch][side]: side 0 left flipper, 1 right.
+  std::array<std::array<MakeRate, 2>, kTouchCount> shots{};
+};
+[[nodiscard]] MakeRates makeRates(int variants, int error, bool bankDown);
+// The same for the deck flipper from the diverter's set-down: A, C, E, K
+// (CAT SHOT) in that order.
+[[nodiscard]] std::array<double, 4> deckMakeRates(int variants, int error);
+
 // --- A5, A6: lanes and ramps at a speed --------------------------------------------
 struct LaneResult {
   int balls = 0;
@@ -374,7 +402,7 @@ struct GamesResult {
   std::vector<double> multiballSeconds;
   int multiballs = 0;
   int multiballsWithJackpot = 0;
-  std::array<int, 4> multiballsOfKind{};  // By Multiball.
+  std::array<int, 5> multiballsOfKind{};  // By Multiball.
   // Points from each feature, all games together.
   std::array<std::uint64_t, kFeatureCount> featureScore{};
   std::uint64_t totalScore = 0;

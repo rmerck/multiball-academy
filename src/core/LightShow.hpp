@@ -66,7 +66,7 @@ inline constexpr float kChaseTail = 0.66F;
 // brightness and running lights are not flashes, and no lamp is passed by a
 // chase more than kMaxPassesPerSecond times a second at any level (under the
 // three of WCAG 2.3.1); the limiter and reduce motion hold at every level.
-inline constexpr float kFloorRise = 0.10F;
+inline constexpr float kFloorRise = 0.16F;
 // In attract no lamp is darker than this (the patterns' own dark is under
 // it): the title's table is never dim.
 inline constexpr float kAttractFloor = 0.28F;
@@ -79,7 +79,7 @@ inline constexpr float kEnergyEaseSteps = 360.0F;
 // chasing: kPerimeterLights at a new game, twice as many at the top. A place
 // on the rim sees kPerimeterPassesPerSecond of them go by a second at every
 // level.
-inline constexpr int kPerimeterLights = 6;
+inline constexpr int kPerimeterLights = 8;
 inline constexpr float kPerimeterPassesPerSecond = 1.5F;
 // The general illumination's colour follows the Altitude: day blue, clear
 // white, dusk amber, sunset, night violet (the renderer's
@@ -109,21 +109,37 @@ enum class Colour : std::uint8_t { Cyan, Magenta, Lime, Orange, Yellow, Violet, 
 // (TableLayout.hpp), so it follows the element if the layout moves it.
 // Table is the wash over the whole playfield; Lights is the general
 // illumination itself (a dip in it).
+// Those marked "dome" fire a flasher dome (table::kFlasherDomes, FlasherId:
+// all ten of concept A's); the rest are lights without a dome.
 enum class Flasher : std::uint8_t {
-  Hangar,     // kHoles[kHangarHole]
-  Briefing,   // kHoles[kScoopHole]
-  RampLeft,   // kHoles[kRunwayHole]
-  RampRight,  // kHoles[kSkywayHole]
-  Nest,       // the middle of kBumpers
-  Academy,    // the Graduation lamp, in the middle of the course lamps
-  TopLanes,   // the middle of the roll call rollovers
-  Turbine,    // the spinner
-  Apron,      // the Shoot Again lamp
+  Hangar,      // dome FlasherId::Hangar, on the Hangar's roof
+  Briefing,    // dome FlasherId::Briefing
+  RampLeft,    // dome FlasherId::Runway, at the Runway's mouth
+  RampRight,   // dome FlasherId::Skyway
+  Nest,        // dome FlasherId::Nest, above the bumpers
+  Academy,     // the Graduation lamp, in the middle of the course lamps
+  TopLanes,    // the middle of the roll call rollovers
+  Turbine,     // dome FlasherId::Afterburner, by the lane's spinner
+  Apron,       // the Shoot Again lamp
+  SlingLeft,   // dome FlasherId::SlingLeft
+  SlingRight,  // dome FlasherId::SlingRight
+  Drone,       // the middle of the training drone's patrol
+  Captive,     // the captive ball, at rest (table::kCaptiveHome)
+  // Concept A (G6).
+  Deck,       // dome FlasherId::Deck, on the Flight Deck's left wall
+  LeftArch,   // dome FlasherId::LeftArch, on the left rim straight
+  Pylon,      // the pop-up pylon (table::kPylon)
+  PropWash,   // the Prop Wash turntable
+  AirPocket,  // the Air Pocket magnet
+  Flaps,      // the middle of the F-L-A-P-S rollovers
+  Altimeter,  // the middle of the Altitude ladder
   Table,      // the whole playfield
-  Lights,     // the general illumination dips
+  Lights,      // the general illumination dips
   Count,
 };
 [[nodiscard]] Vec2 flasherPosition(Flasher flasher) noexcept;
+// The dome a flasher fires, or FlasherId::Count for one without.
+[[nodiscard]] table::FlasherId domeOf(Flasher flasher) noexcept;
 
 // A lamp in this state at this step, 0 to 1. Blinks are square with a short
 // rise and fall, as a bulb warms and cools; with reduce motion they breathe.
@@ -139,6 +155,10 @@ enum class Show : std::uint8_t {
   Drain,           // The lights dim and flicker; the bonus counts down.
   Tilt,            // The lights flicker and go dark until the ball drains.
   GameOver,        // The lights fade down.
+  // Concept A (G6).
+  SortieStart,  // A ring of light out from the Mission scoop.
+  Climb,        // The Altitude went up: a band climbs the table, the domes
+                // fire bottom to top, the altimeter runs.
 };
 
 // A flasher burst as it is to be drawn now.
@@ -195,7 +215,7 @@ class LightShow {
   void setAttract(bool on) noexcept;
   [[nodiscard]] bool attract() const noexcept { return attract_; }
   // Which of the attract patterns is running, 0 to kAttractPatterns - 1.
-  static constexpr int kAttractPatterns = 5;
+  static constexpr int kAttractPatterns = 6;
   static constexpr std::uint64_t kAttractPatternSteps = 720;  // Six seconds each.
   [[nodiscard]] int attractPattern() const noexcept;
 
@@ -240,13 +260,30 @@ class LightShow {
   // Bumpers and slingshots, from the hits the physics reported.
   [[nodiscard]] float bumperFlash(std::size_t bumper) const noexcept;
   [[nodiscard]] float slingFlash(std::size_t sling) const noexcept;
+  // Revision 3: the drone struck, a stand-up struck (kStandups order), the
+  // The captive ball struck, or its switch closed.
+  [[nodiscard]] float droneFlash() const noexcept;
+  [[nodiscard]] float standupFlash(std::size_t standup) const noexcept;
+  [[nodiscard]] float gForceFlash() const noexcept;
   [[nodiscard]] float rolloverFlash(std::size_t rollover) const noexcept;
   [[nodiscard]] float holeFlash(std::size_t hole) const noexcept;
   [[nodiscard]] float bayFlash(std::size_t bay) const noexcept;
   [[nodiscard]] float kickbackFlash() const noexcept;
-  // The spinner's lamps: brighter the faster it spins, strobing with each
-  // turn (steady with reduce motion).
-  [[nodiscard]] float spinnerLevel() const noexcept;
+  // A spinner's light (table::kSpinners; the lane's by default): brighter
+  // the faster it spins, rippling with each turn (steady with reduce motion).
+  [[nodiscard]] float spinnerLevel(std::size_t spinner = table::kLaneSpinner) const noexcept;
+  // Concept A's devices: the pylon struck, the Air Pocket catching a ball;
+  // the Prop Wash's steady glow (0 to 1, by its spin at the level shown); the
+  // Flight Deck's glow while a ball is on it (eased, never a flash).
+  [[nodiscard]] float pylonFlash() const noexcept;
+  [[nodiscard]] float airPocketFlash() const noexcept;
+  [[nodiscard]] float propWashLevel() const noexcept { return propWash_; }
+  [[nodiscard]] float deckLevel() const noexcept { return deck_; }
+  // The shot the lights point the player to while the ball has rested for
+  // kHintSteps (a cradled ball): its arrow's index (LampId order, 0 to 6), or
+  // -1 for none. Its arrow runs its chevrons and its pips toward it.
+  static constexpr std::uint64_t kHintSteps = 360;
+  [[nodiscard]] int hint() const noexcept { return hint_; }
   // The general illumination, 0 (dark) to 1 (full).
   [[nodiscard]] float giLevel() const noexcept { return gi_; }
   // The arrow lamps' chases, in LampId order (the first seven lamps).
@@ -335,9 +372,14 @@ class LightShow {
     kGateDoors,
     kGateLanesLeft,
     kGateLanesRight,
-    kGateHole,  // Four, one a hole.
-    kGateBays = kGateHole + 4,
+    kGateHole,  // One a hole.
+    kGateBays = kGateHole + table::kHoles.size(),
     kGateKickback,
+    kGateDrone,     // The drone and its armour lamps.
+    kGateStandup,   // One a stand-up (T-A-X-I and the deck's A-C-E).
+    kGateGForce = kGateStandup + table::kStandups.size(),
+    kGateFlaps,      // The F-L-A-P-S rollovers.
+    kGatePylon,      // The pylon and the Air Pocket under it.
     kGateCount
   };
   [[nodiscard]] bool gateOpen(std::uint8_t gate) const noexcept;
@@ -347,6 +389,10 @@ class LightShow {
   void updateAltitude(const Game& game, std::uint64_t steps, bool first) noexcept;
   void updateTrails(const Game& game) noexcept;
   void sweepGroup(std::uint8_t group, std::uint32_t delay = 0) noexcept;
+  void readConceptA(const Game& game) noexcept;
+  void updateHint(const Game& game) noexcept;
+  // A shot's pips (or the hinted shot's) running toward its arrow: 0 to 1.
+  [[nodiscard]] float pipChase(std::size_t lamp) const noexcept;
   [[nodiscard]] float burstLevel(const Burst& b) const noexcept;
   [[nodiscard]] float flash(std::uint64_t hitStep, std::uint32_t length) const noexcept;
   [[nodiscard]] float attractLevel(std::size_t lamp) const noexcept;
@@ -372,6 +418,10 @@ class LightShow {
     kRunRest,
     kRunSweep,
     kRunChevrons,
+    kRunPips,       // Concept A: the shots' pip ladders,
+    kRunAltimeter,  // the altimeter's rungs not yet reached,
+    kRunFlaps,      // F-L-A-P-S,
+    kRunDeck,       // the deck's letters and CAT SHOT.
     kRunCount
   };
   std::array<double, kRunCount> runs_{};
@@ -395,12 +445,30 @@ class LightShow {
   std::array<std::uint64_t, table::kTargets.size()> targetHit_{};
   std::array<std::uint64_t, table::kBumpers.size()> bumperHit_{};
   std::array<std::uint64_t, table::kSlingshots.size()> slingHit_{};
+  std::uint64_t droneHit_ = 0;
+  std::array<std::uint64_t, table::kStandups.size()> standupHit_{};
+  std::uint64_t gForceHit_ = 0;
+  // The ladders as last seen, for their fills.
+  std::size_t wasRank_ = 0;
+  int wasCombo_ = 0;
+  int wasBonus_ = 1;
   std::array<std::uint64_t, table::kRollovers.size()> rolloverHit_{};
   std::array<std::uint64_t, table::kHoles.size()> holeHit_{};
   std::array<std::uint64_t, table::kLockBays.size()> bayHit_{};
   std::uint64_t kickbackHit_ = 0;
-  std::uint64_t spinHit_ = 0;
-  float spinEnergy_ = 0.0F;
+  std::array<std::uint64_t, table::kSpinners.size()> spinHit_{};
+  std::array<float, table::kSpinners.size()> spinEnergy_{};
+  // Concept A.
+  std::uint64_t pylonHit_ = 0;
+  std::uint64_t airPocketHit_ = 0;
+  std::uint32_t airPocketCatches_ = 0;
+  float propWash_ = 0.0F;
+  float deck_ = 0.0F;
+  int hint_ = -1;
+  std::uint64_t restSince_ = 0;  // One more than the step the table came to rest; 0 moving.
+  bool wasFlapsAll_ = false;
+  bool wasDeckLit_ = false;
+  int wasAltitude_ = 0;
 
   std::array<Burst, kMaxBursts> bursts_{};
   // One more than the step of each gate's latest flash; 0 for never.
@@ -433,6 +501,9 @@ class LightShow {
   bool wasTilted_ = false;
   bool wasGameOver_ = false;
   Multiball wasMultiball_ = Multiball::None;
+  Multiball multiballKind_ = Multiball::None;  // The multiball whose start show runs.
+  // The energy the show runs at: the level's, lifted in a multiball.
+  [[nodiscard]] float targetEnergy(const Game& game) const noexcept;
 
   std::array<TrailView, table::kMaxBalls> trails_{};
 };

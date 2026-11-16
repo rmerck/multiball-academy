@@ -52,7 +52,8 @@ table::ElementRef unpackElement(const void* data) noexcept {
   // Rollovers and holes are detected by position and are never shape tags.
   for (const table::ElementKind kind :
        {table::ElementKind::Bumper, table::ElementKind::Slingshot, table::ElementKind::Target,
-        table::ElementKind::DropTarget}) {
+        table::ElementKind::DropTarget, table::ElementKind::Drone, table::ElementKind::Standup,
+        table::ElementKind::CaptiveBall, table::ElementKind::Bogey}) {
     if (kindValue == std::to_underlying(kind)) {
       const table::ElementRef ref{kind, index};
       return table::isValid(ref) ? ref : table::ElementRef{};
@@ -78,6 +79,14 @@ bool isFinite(Vec2 v) noexcept { return std::isfinite(v.x) && std::isfinite(v.y)
 constexpr std::uint64_t kBallMaterial = 1U;
 // Marks dead posts and vanes: metal that takes the bounce out of a ball.
 constexpr std::uint64_t kDeadMaterial = 2U;
+
+// Collision categories. Everything on the table keeps Box2D's default
+// category (1) and collides with everything; the playfield balls have a
+// category of their own, so that the captive ball can collide with them and
+// with nothing else: its joint, not the channel's walls, keeps it in the
+// channel, and at rest it touches nothing.
+constexpr std::uint64_t kBallCategory = 0x2U;
+constexpr std::uint64_t kCaptiveCategory = 0x4U;
 
 // Box2D's own rule is the larger of the two values. Two balls get a value of
 // their own, and anything against a dead post gets the post's. A pure
@@ -179,6 +188,11 @@ PhysicsWorld::PhysicsWorld() {
     buildBall(slot, false);
   }
   buildDoorBank();
+  buildBogeys();
+  buildStandups();
+  buildDrone();
+  buildPylon();
+  buildCaptive();
 }
 
 PhysicsWorld::~PhysicsWorld() {
@@ -240,9 +254,11 @@ void PhysicsWorld::buildTable() {
   addOneSided(table::kInnerArch, material);
 
   const b2ShapeDef shapeDef = wallShapeDef();
+  b2ShapeDef slickDef = wallShapeDef();
+  slickDef.material.friction = 0.0F;
   for (const table::Capsule& wall : table::kAllWalls) {
     const b2Capsule capsule{toMeters(wall.a), toMeters(wall.b), toMeters(wall.radius)};
-    b2CreateCapsuleShape(table_, &shapeDef, &capsule);
+    b2CreateCapsuleShape(table_, table::isSlickWall(wall) ? &slickDef : &shapeDef, &capsule);
   }
   b2ShapeDef deadDef = wallShapeDef();
   deadDef.material.restitution = table::kDeadPostRestitution;
@@ -251,6 +267,7 @@ void PhysicsWorld::buildTable() {
     const b2Capsule capsule{toMeters(post.a), toMeters(post.b), toMeters(post.radius)};
     b2CreateCapsuleShape(table_, &deadDef, &capsule);
   }
+  addOneSided(table::kLaneGate, material);
   addOneSided(table::kSlingVaneLeft, deadDef.material);
   addOneSided(table::kSlingVaneRight, deadDef.material);
 
@@ -299,6 +316,7 @@ void PhysicsWorld::buildBall(std::size_t slot, bool enabled) {
   // Off by default in Box2D. Only one shape of a pair needs it.
   shapeDef.enableContactEvents = true;
   shapeDef.material.userMaterialId = kBallMaterial;
+  shapeDef.filter.categoryBits = kBallCategory;
   const b2Circle circle{{0.0F, 0.0F}, toMeters(table::kBallRadius)};
   ball.shape = b2CreateCircleShape(ball.body, &shapeDef, &circle);
 }
@@ -311,18 +329,17 @@ void PhysicsWorld::buildFlippers() {
   // In the flipper's own frame the pivot is the origin and the bat lies along
   // +x: a large circle at the pivot, a small one at the tip, and a tapered
   // quad joining them.
-  const float length = toMeters(table::kFlipperLength);
-  const float baseRadius = toMeters(table::kFlipperBaseRadius);
-  const float tipRadius = toMeters(table::kFlipperTipRadius);
-  const b2Circle base{{0.0F, 0.0F}, baseRadius};
-  const b2Circle tip{{length, 0.0F}, tipRadius};
-  const b2Vec2 quad[4] = {
-      {0.0F, -baseRadius}, {length, -tipRadius}, {length, tipRadius}, {0.0F, baseRadius}};
-  const b2Hull hull = b2ComputeHull(quad, 4);
-
   for (std::size_t i = 0; i < flippers_.size(); ++i) {
     const table::Flipper& layout = table::kFlippers[i];
     FlipperState& flipper = flippers_[i];
+    const float baseRadius = toMeters(layout.baseRadius);
+    const float tipRadius = toMeters(layout.tipRadius);
+    const b2Circle base{{0.0F, 0.0F}, baseRadius};
+    const float length = toMeters(layout.length);
+    const b2Circle tip{{length, 0.0F}, tipRadius};
+    const b2Vec2 quad[4] = {
+        {0.0F, -baseRadius}, {length, -tipRadius}, {length, tipRadius}, {0.0F, baseRadius}};
+    const b2Hull hull = b2ComputeHull(quad, 4);
     flipper.angle = layout.restAngle;
 
     // Kinematic: the bat follows its commanded angle exactly and is never
@@ -343,9 +360,10 @@ void PhysicsWorld::buildFlippers() {
   }
 }
 
-void PhysicsWorld::setFlippers(bool leftHeld, bool rightHeld) noexcept {
+void PhysicsWorld::setFlippers(bool leftHeld, bool rightHeld, bool deckAllowed) noexcept {
   flippers_[table::kLeftFlipperIndex].held = leftHeld;
   flippers_[table::kRightFlipperIndex].held = rightHeld;
+  flippers_[table::kDeckFlipperIndex].held = rightHeld && deckAllowed;
 }
 
 float PhysicsWorld::flipperAngle(std::size_t index) const noexcept {
@@ -424,6 +442,9 @@ void PhysicsWorld::buildDoorBank() {
   b2BodyDef bodyDef = b2DefaultBodyDef();
   bodyDef.type = b2_staticBody;
   doorBank_ = b2CreateBody(world_, &bodyDef);
+  // (G2 tried one capsule across all three doors to end the double contact
+  // at a seam; it moved B4, bay-door rebounds through the gap, from 0.6 to
+  // 5.3 percent, and was reverted: DECISIONS.md 6.)
   b2ShapeDef shapeDef = wallShapeDef();
   shapeDef.material.restitution = kRubberRestitution;
   for (std::size_t i = 0; i < table::kDropTargets.size(); ++i) {
@@ -432,6 +453,399 @@ void PhysicsWorld::buildDoorBank() {
         packElement({table::ElementKind::DropTarget, static_cast<std::uint8_t>(i)});
     const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
     b2CreateCapsuleShape(doorBank_, &shapeDef, &capsule);
+  }
+}
+
+void PhysicsWorld::buildStandups() {
+  // T-A-X-I keep the dead posts' bounce.
+  b2ShapeDef deadDef = wallShapeDef();
+  deadDef.material.restitution = table::kDeadPostRestitution;
+  deadDef.material.userMaterialId = kDeadMaterial;
+  for (std::size_t i = 0; i < table::kStandups.size(); ++i) {
+    if (!table::standupOnTable(i)) {
+      continue;  // RADAR, cut.
+    }
+    const table::Capsule& c = table::kStandups[i];
+    b2ShapeDef def = deadDef;
+    def.userData = packElement({table::ElementKind::Standup, static_cast<std::uint8_t>(i)});
+    const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
+    b2CreateCapsuleShape(table_, &def, &capsule);
+  }
+}
+
+void PhysicsWorld::buildDrone() {
+  // A kinematic hexagon, a corner down the table, moved by its target
+  // transform each step like the flippers.
+  b2BodyDef bodyDef = b2DefaultBodyDef();
+  bodyDef.type = b2_kinematicBody;
+  bodyDef.position = b2ToPos(toMeters(dronePosition_));
+  bodyDef.enableSleep = false;
+  drone_ = b2CreateBody(world_, &bodyDef);
+  b2ShapeDef shapeDef = wallShapeDef();
+  shapeDef.material.restitution = kRubberRestitution;
+  shapeDef.userData = packElement({table::ElementKind::Drone, 0});
+  // Corners at 90 + 60k degrees, written out (cos 30 = 0.8660254).
+  const float r = toMeters(table::kDroneRadius);
+  const float c = r * 0.8660254F;
+  const b2Vec2 corners[6] = {{0.0F, r},  {c, r * 0.5F},  {c, -r * 0.5F},
+                             {0.0F, -r}, {-c, -r * 0.5F}, {-c, r * 0.5F}};
+  const b2Hull hull = b2ComputeHull(corners, 6);
+  if (hull.count == 6) {
+    const b2Polygon hexagon = b2MakePolygon(&hull, 0.0F);
+    b2CreatePolygonShape(drone_, &shapeDef, &hexagon);
+  }
+}
+
+bool PhysicsWorld::droneSpotClear(Vec2 at) const {
+  const float reach = table::kDroneRadius + table::kBallRadius + 4.0F;
+  for (std::size_t slot = 0; slot < balls_.size(); ++slot) {
+    if (!balls_[slot].active || balls_[slot].held) {
+      continue;
+    }
+    const Vec2 p = ballPosition(slot);
+    const float dx = p.x - at.x;
+    const float dy = p.y - at.y;
+    if (dx * dx + dy * dy < reach * reach) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void PhysicsWorld::buildPylon() {
+  // A static body of its own, so that disabling it makes it flush.
+  b2BodyDef bodyDef = b2DefaultBodyDef();
+  bodyDef.type = b2_staticBody;
+  bodyDef.isEnabled = false;
+  pylon_ = b2CreateBody(world_, &bodyDef);
+  b2ShapeDef shapeDef = wallShapeDef();
+  shapeDef.material.restitution = table::kDeadPostRestitution;
+  shapeDef.material.userMaterialId = kDeadMaterial;
+  shapeDef.userData = packElement({table::ElementKind::Pylon, 0});
+  const b2Circle circle{toMeters(table::kPylon.center), toMeters(table::kPylon.radius)};
+  b2CreateCircleShape(pylon_, &shapeDef, &circle);
+  pylonUp_ = false;
+}
+
+void PhysicsWorld::setPylon(bool up) {
+  if (up == pylonUp_) {
+    return;
+  }
+  pylonUp_ = up;
+  if (up) {
+    b2Body_Enable(pylon_);
+  } else {
+    b2Body_Disable(pylon_);
+  }
+}
+
+void PhysicsWorld::buildBogeys() {
+  // Each target its own static body, so that it drops (is disabled) alone.
+  b2ShapeDef deadDef = wallShapeDef();
+  deadDef.material.restitution = table::kDeadPostRestitution;
+  deadDef.material.userMaterialId = kDeadMaterial;
+  for (std::size_t i = 0; i < table::kBogeys.size(); ++i) {
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    bodyDef.type = b2_staticBody;
+    bogey_[i] = b2CreateBody(world_, &bodyDef);
+    b2ShapeDef def = deadDef;
+    def.userData = packElement({table::ElementKind::Bogey, static_cast<std::uint8_t>(i)});
+    const table::Capsule& c = table::kBogeys[i];
+    const b2Capsule capsule{toMeters(c.a), toMeters(c.b), toMeters(c.radius)};
+    b2CreateCapsuleShape(bogey_[i], &def, &capsule);
+    bogeyUp_[i] = true;
+    if (!table::kBogeyOnTable) {
+      b2Body_Disable(bogey_[i]);
+      bogeyUp_[i] = false;
+    }
+  }
+}
+
+void PhysicsWorld::setBogey(std::size_t index, bool up) {
+  if (index >= bogeyUp_.size() || bogeyUp_[index] == up || (up && !table::kBogeyOnTable)) {
+    return;
+  }
+  bogeyUp_[index] = up;
+  if (up) {
+    b2Body_Enable(bogey_[index]);
+  } else {
+    b2Body_Disable(bogey_[index]);
+  }
+}
+
+bool PhysicsWorld::bogeySpotClear(std::size_t index) const {
+  if (index >= table::kBogeys.size()) {
+    return false;
+  }
+  const table::Capsule& c = table::kBogeys[index];
+  const float reach = c.radius + table::kBallRadius + 2.0F;
+  for (std::size_t slot = 0; slot < balls_.size(); ++slot) {
+    if (!balls_[slot].active || balls_[slot].held) {
+      continue;
+    }
+    const Vec2 p = ballPosition(slot);
+    const Vec2 ab = c.b - c.a;
+    const float lengthSquared = ab.x * ab.x + ab.y * ab.y;
+    const float t = std::clamp(((p.x - c.a.x) * ab.x + (p.y - c.a.y) * ab.y) / lengthSquared, 0.0F, 1.0F);
+    const Vec2 d = p - (c.a + ab * t);
+    if (d.x * d.x + d.y * d.y < reach * reach) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool PhysicsWorld::pylonSpotClear() const {
+  const float reach = table::kPylon.radius + table::kBallRadius + 2.0F;
+  for (std::size_t slot = 0; slot < balls_.size(); ++slot) {
+    if (!balls_[slot].active || balls_[slot].held) {
+      continue;
+    }
+    const Vec2 d = ballPosition(slot) - table::kPylon.center;
+    if (d.x * d.x + d.y * d.y < reach * reach) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void PhysicsWorld::driveDevices(float seconds, bool endOfStep) {
+  // The Prop Wash drags a ball on it towards the disc's surface speed, by at
+  // most the grip times the time (friction); the Air Pocket holds balls in
+  // its reach while it pulls and kicks them away when it lets go.
+  const bool still = propWashSpin_ == 0.0F;
+  if (still && airPocket_ == AirPocket::Off) {
+    return;
+  }
+  for (std::size_t slot = 0; slot < balls_.size(); ++slot) {
+    BallSlot& ball = balls_[slot];
+    if (!ball.active || ball.held) {
+      continue;
+    }
+    const Vec2 p = ballPosition(slot);
+    Vec2 v = ballVelocity(slot);
+    bool changed = false;
+    if (!still) {
+      const Vec2 r = p - table::kPropWash.center;
+      const float rr = table::kPropWash.radius;
+      if (r.x * r.x + r.y * r.y < rr * rr) {
+        // Clockwise on screen (y down): surface velocity = spin x (-r.y, r.x).
+        const Vec2 surface{-propWashSpin_ * r.y, propWashSpin_ * r.x};
+        const Vec2 slip = surface - v;
+        const float slipSpeed = std::sqrt(slip.x * slip.x + slip.y * slip.y);
+        const float most = table::kPropWashGrip * seconds;
+        if (slipSpeed > 1.0e-3F) {
+          const float scale = slipSpeed <= most ? 1.0F : most / slipSpeed;
+          v = v + slip * scale;
+          changed = true;
+        }
+      }
+    }
+    if (airPocket_ != AirPocket::Off) {
+      const Vec2 r = table::kAirPocketCenter - p;
+      const float reach = table::kAirPocketRadius;
+      if (r.x * r.x + r.y * r.y < reach * reach) {
+        if (airPocket_ == AirPocket::Pull && v.y > table::kAirPocketRisingLimit) {
+          v = r * table::kAirPocketPull;
+          changed = true;
+        } else if (airPocket_ == AirPocket::Release && endOfStep) {
+          v = airPocketKick_;
+          ++airPocketCatches_;
+          changed = true;
+        }
+      }
+    }
+    if (changed && isFinite(v)) {
+      b2Body_SetLinearVelocity(ball.body, toMeters(v));
+    }
+  }
+}
+
+void PhysicsWorld::knockDroneDown(std::uint32_t steps) noexcept {
+  droneDownSteps_ = steps;
+  droneClock_ = 0;
+  // Up again when the time is out (and its place is clear), not at the end
+  // of the patrol cycle after it.
+  droneKnocked_ = true;
+  if (droneUp_) {
+    droneUp_ = false;
+    b2Body_Disable(drone_);
+  }
+}
+
+void PhysicsWorld::driveDrone(float stepSeconds) {
+  const auto steps = [stepSeconds](double seconds) {
+    return static_cast<std::uint32_t>(seconds / static_cast<double>(stepSeconds) + 0.5);
+  };
+  const std::uint32_t patrol = steps(table::kDronePatrolSeconds);
+  const std::uint32_t cycle = patrol + steps(table::kDroneDiveSeconds);
+  const Vec2 start{table::kDroneLeftX, table::kDroneY};
+  if (droneDownSteps_ > 0) {
+    --droneDownSteps_;
+    return;
+  }
+  if (!droneUp_) {
+    // Down: rise at the start of the next patrol, or at once after being
+    // knocked down, if the spot is clear.
+    if (!droneKnocked_ && droneClock_ + 1U < cycle) {
+      ++droneClock_;
+      return;
+    }
+    if (!droneSpotClear(start)) {
+      return;
+    }
+    droneClock_ = 0;
+    dronePosition_ = start;
+    b2Body_SetTransform(drone_, b2ToPos(toMeters(start)), b2Rot{1.0F, 0.0F});
+    b2Body_SetLinearVelocity(drone_, {0.0F, 0.0F});
+    b2Body_Enable(drone_);
+    droneUp_ = true;
+    droneKnocked_ = false;
+    return;
+  }
+  ++droneClock_;
+  if (droneClock_ >= patrol) {
+    droneUp_ = false;
+    b2Body_SetLinearVelocity(drone_, {0.0F, 0.0F});
+    b2Body_Disable(drone_);
+    return;
+  }
+  // Out and back, eased at both ends (smoothstep).
+  const float t = static_cast<float>(droneClock_) / static_cast<float>(patrol);
+  const float u = t < 0.5F ? t * 2.0F : 2.0F - t * 2.0F;
+  const float eased = u * u * (3.0F - 2.0F * u);
+  dronePosition_ = {table::kDroneLeftX + (table::kDroneRightX - table::kDroneLeftX) * eased,
+                    table::kDroneY};
+  const b2WorldTransform target{b2ToPos(toMeters(dronePosition_)), b2Rot{1.0F, 0.0F}};
+  b2Body_SetTargetTransform(drone_, target, stepSeconds, true);
+}
+
+// --- The captive ball -------------------------------------------------------------
+namespace {
+
+// The channel's direction as a rotation: the joint's x axis runs up the
+// channel. (0.8, 0.6) is exact, so no trigonometry is needed.
+b2Rot captiveAxisRotation() noexcept {
+  return b2NormalizeRot(b2Rot{table::kCaptiveAxis.x, table::kCaptiveAxis.y});
+}
+
+}  // namespace
+
+void PhysicsWorld::buildCaptive() {
+  // The joint's anchor: a static body with no shapes, so that making the
+  // joint (which removes contacts between the bodies it joins) never
+  // touches a contact of the table's.
+  b2BodyDef anchorDef = b2DefaultBodyDef();
+  anchorDef.type = b2_staticBody;
+  captiveAnchor_ = b2CreateBody(world_, &anchorDef);
+
+  // A dynamic ball of steel like the others, not a bullet: the playfield
+  // balls are bullets and sweep against it, so neither passes through the
+  // other. Its joint holds its rotation; it is never asleep.
+  b2BodyDef bodyDef = b2DefaultBodyDef();
+  bodyDef.type = b2_dynamicBody;
+  bodyDef.position = b2ToPos(toMeters(table::kCaptiveHome));
+  bodyDef.enableSleep = false;
+  captive_ = b2CreateBody(world_, &bodyDef);
+
+  b2ShapeDef shapeDef = b2DefaultShapeDef();
+  shapeDef.density = kBallDensity;
+  shapeDef.material.friction = kBallFriction;
+  shapeDef.material.restitution = kBallRestitution;
+  shapeDef.material.userMaterialId = kBallMaterial;
+  shapeDef.enableContactEvents = true;
+  shapeDef.filter.categoryBits = kCaptiveCategory;
+  shapeDef.filter.maskBits = kBallCategory;
+  shapeDef.userData = packElement({table::ElementKind::CaptiveBall, table::kCaptiveBallStruck});
+  const b2Circle circle{{0.0F, 0.0F}, toMeters(table::kCaptiveBallRadius)};
+  b2CreateCircleShape(captive_, &shapeDef, &circle);
+  renewCaptiveJoint();
+}
+
+void PhysicsWorld::renewCaptiveJoint() {
+  // Box2D keeps the impulses a joint applied in one step to start the next
+  // with (warm starting), and gives no way to read or set them. A saved
+  // game could therefore not carry the joint exactly. So the joint is made
+  // afresh at the start of every step, in play and after a restore alike:
+  // its state is then the captive body's state alone, which the save does
+  // carry. (Within the step the four slices warm-start each other.) The
+  // joint's id is freed and taken again, so it is the same every step.
+  if (b2Joint_IsValid(captiveJoint_)) {
+    b2DestroyJoint(captiveJoint_);
+  }
+  const b2Rot axis = captiveAxisRotation();
+  b2PrismaticJointDef def = b2DefaultPrismaticJointDef();
+  def.base.bodyIdA = captiveAnchor_;
+  def.base.bodyIdB = captive_;
+  def.base.localFrameA = b2Transform{toMeters(table::kCaptiveHome), axis};
+  def.base.localFrameB = b2Transform{{0.0F, 0.0F}, axis};
+  def.base.collideConnected = false;
+  def.enableLimit = true;
+  def.lowerTranslation = 0.0F;
+  def.upperTranslation = toMeters(table::kCaptiveTravel);
+  def.enableSpring = true;
+  def.hertz = table::kCaptiveSpringHertz;
+  def.dampingRatio = 0.0F;
+  def.targetTranslation = 0.0F;
+  captiveJoint_ = b2CreatePrismaticJoint(world_, &def);
+}
+
+void PhysicsWorld::putCaptiveHome() {
+  b2Body_SetTransform(captive_, b2ToPos(toMeters(table::kCaptiveHome)), b2Rot{1.0F, 0.0F});
+  b2Body_SetLinearVelocity(captive_, {0.0F, 0.0F});
+  b2Body_SetAngularVelocity(captive_, 0.0F);
+  captiveSwitchClosed_ = false;
+  captivePeakSpeed_ = 0.0F;
+}
+
+Vec2 PhysicsWorld::captivePosition() const {
+  const b2Pos p = b2Body_GetPosition(captive_);
+  return {toPixels(static_cast<float>(p.x)), toPixels(static_cast<float>(p.y))};
+}
+
+Vec2 PhysicsWorld::captiveVelocity() const {
+  const b2Vec2 v = b2Body_GetLinearVelocity(captive_);
+  return {toPixels(v.x), toPixels(v.y)};
+}
+
+float PhysicsWorld::captiveTranslation() const {
+  return table::captiveTranslationAt(captivePosition());
+}
+
+void PhysicsWorld::checkCaptive() {
+  // Held to the playfield balls' speed cap, like them.
+  const b2Vec2 v = b2Body_GetLinearVelocity(captive_);
+  if (v.x * v.x + v.y * v.y > kMaxBallSpeed * kMaxBallSpeed) {
+    const float speed = lengthOf(v.x, v.y);
+    const float scale = std::isfinite(speed) ? kMaxBallSpeed / speed : 0.0F;
+    b2Body_SetLinearVelocity(captive_, {v.x * scale, v.y * scale});
+  }
+  const Vec2 p = captivePosition();
+  const float along = table::captiveTranslationAt(p);
+  const float aside = table::captiveOffsetAt(p);
+  // Written so that NaN fails it. Never seen in play: the tests count it.
+  const bool inChannel = std::fabs(aside) <= table::kCaptiveSlack &&
+                         along >= -table::kCaptiveSlack &&
+                         along <= table::kCaptiveTravel + table::kCaptiveSlack &&
+                         isFinite(captiveVelocity());
+  if (!inChannel) {
+    ++captiveResets_;
+    putCaptiveHome();
+    return;
+  }
+  if (along <= table::kCaptiveSwitchRearm) {
+    // At the bottom of its stroke: the switch is open and the next stroke's
+    // speed starts from nothing.
+    captiveSwitchClosed_ = false;
+    captivePeakSpeed_ = 0.0F;
+    return;
+  }
+  const Vec2 velocity = captiveVelocity();
+  captivePeakSpeed_ = std::max(captivePeakSpeed_, lengthOf(velocity.x, velocity.y));
+  if (!captiveSwitchClosed_ && along >= table::kCaptiveSwitchAt) {
+    captiveSwitchClosed_ = true;
+    pushEvent(PhysicsEvent::Type::Hit, {table::ElementKind::CaptiveBall, table::kCaptiveBallSwitch},
+              captivePeakSpeed_, captiveStriker_);
   }
 }
 
@@ -561,7 +975,7 @@ void PhysicsWorld::collectEvents() {
     const std::size_t slot = ballIsA ? slotA : slotB;
     const b2BodyId body = balls_[slot].body;
     const b2ShapeId other = ballIsA ? touch.shapeIdB : touch.shapeIdA;
-    const table::ElementRef element = unpackElement(b2Shape_GetUserData(other));
+    table::ElementRef element = unpackElement(b2Shape_GetUserData(other));
     if (element.kind == table::ElementKind::None) {
       continue;
     }
@@ -573,6 +987,24 @@ void PhysicsWorld::collectEvents() {
       // a touch up to two pixels early, which would kick a ball that was
       // only passing close by.
       continue;
+    }
+    if (element.kind == table::ElementKind::Standup && element.index < 2) {
+      // T and A are the rim feet: a stand-up face towards the field only. A
+      // ball coming down the circuit lane behind them brushes the foot
+      // without closing the switch.
+      const table::Capsule& foot = table::kStandups[element.index];
+      const Vec2 p = ballPosition(slot);
+      const float cross = (foot.b.x - foot.a.x) * (p.y - foot.a.y) - (foot.b.y - foot.a.y) * (p.x - foot.a.x);
+      // The field is to the right of the left foot (a below b: cross < 0)
+      // and to the left of the right foot.
+      const bool fieldSide = element.index == 0 ? cross < 0.0F : cross > 0.0F;
+      if (!fieldSide) {
+        continue;
+      }
+    }
+    if (element.kind == table::ElementKind::CaptiveBall) {
+      // The switch, when the captive ball reaches it, is this ball's.
+      captiveStriker_ = static_cast<std::uint8_t>(slot);
     }
     if (element.kind == table::ElementKind::Slingshot) {
       // A touch on a passive edge of the slingshot is not an event.
@@ -683,6 +1115,9 @@ void PhysicsWorld::checkZones(std::size_t slot) {
     ball.onRollover[i] = inside;
   }
 
+  // Put somewhere by hand since the last check: the holes take it as it is.
+  const bool placed = ball.placed;
+  ball.placed = false;
   for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
     const table::Hole& hole = table::kHoles[i];
     const float distance = distanceTo(hole.center);
@@ -691,6 +1126,26 @@ void PhysicsWorld::checkZones(std::size_t slot) {
       continue;
     }
     if (table::hasCup(hole)) {
+      // The Briefing room (the Mission scoop) judges a ball as it comes into
+      // its pocket: one that came in the wrong way is neither funnelled nor
+      // taken while it stays there (it rises to the roof and falls back
+      // out); one put there by hand is taken.
+      if (hole.type == table::HoleType::Subway) {
+        const bool inPocket = std::fabs(p.x - hole.center.x) < hole.halfSize.x &&
+                              std::fabs(p.y - hole.center.y) < hole.halfSize.y;
+        if (!inPocket) {
+          ball.inBox[i] = false;
+          ball.boxWelcome[i] = false;
+          continue;
+        }
+        if (!ball.inBox[i] || placed) {
+          ball.inBox[i] = true;
+          ball.boxWelcome[i] = placed || (v.y < 0.0F && v.x >= -v.y * table::kScoopMinRightward);
+        }
+        if (!ball.boxWelcome[i]) {
+          continue;
+        }
+      }
       // Taken at the cup, wherever the ball's path since the last check
       // came nearest the cup's centre, if that is within the cup's radius
       // (so that a fast ball cannot step over it), and held there.
@@ -771,6 +1226,10 @@ void PhysicsWorld::guideIntoCups(float seconds) {
     const Vec2 p = ballPosition(slot);
     for (std::size_t i = 0; i < table::kHoles.size(); ++i) {
       const table::Hole& hole = table::kHoles[i];
+      // A ball the Briefing room turned away is not drawn to its cup.
+      if (hole.type == table::HoleType::Subway && ball.inBox[i] && !ball.boxWelcome[i]) {
+        continue;
+      }
       if (!table::hasCup(hole) || !ball.holeArmed[i] ||
           !(std::fabs(p.x - hole.center.x) < hole.halfSize.x &&
             std::fabs(p.y - hole.center.y) < hole.halfSize.y)) {
@@ -811,6 +1270,8 @@ void PhysicsWorld::step(float stepSeconds) {
   if (!(stepSeconds >= kMinStepSeconds && stepSeconds <= kMaxStepSeconds)) {
     return;
   }
+  driveDrone(stepSeconds);
+  renewCaptiveJoint();
   const float slice = stepSeconds / static_cast<float>(kSlicesPerStep);
   for (int i = 0; i < kSlicesPerStep; ++i) {
     // One part, the whole slice, unless two balls are about to meet fast.
@@ -819,6 +1280,8 @@ void PhysicsWorld::step(float stepSeconds) {
     for (int j = 0; j < parts; ++j) {
       driveFlippers(part);
       drivePlunger(part);
+      // The Air Pocket's kick is given once, at the start of its step.
+      driveDevices(part, i == 0 && j == 0);
       guideIntoCups(part);
       b2World_Step(world_, part, kSubSteps);
       if (skipTouches_) {
@@ -836,6 +1299,7 @@ void PhysicsWorld::step(float stepSeconds) {
         clampBallSpeed(slot);
         checkZones(slot);
       }
+      checkCaptive();
     }
   }
 }
@@ -951,6 +1415,8 @@ void PhysicsWorld::clearLatches(std::size_t slot) noexcept {
   ball.touchingBumper.fill(false);
   ball.onRollover.fill(false);
   ball.holeArmed.fill(true);
+  ball.inBox.fill(false);
+  ball.boxWelcome.fill(false);
 }
 
 bool PhysicsWorld::activateBall(std::size_t slot, Vec2 position, Vec2 velocity) {
@@ -992,6 +1458,7 @@ void PhysicsWorld::resetBall(std::size_t slot, Vec2 position, Vec2 velocity) {
   }
   // A ball moved by hand has crossed nothing on the way.
   ball.sensorFromKnown = false;
+  ball.placed = true;
   b2Body_SetTransform(ball.body, b2ToPos(toMeters(position)), b2MakeRot(0.0F));
   b2Body_SetLinearVelocity(ball.body, toMeters(velocity));
   clampBallSpeed(slot);

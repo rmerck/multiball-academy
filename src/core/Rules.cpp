@@ -24,8 +24,18 @@ constexpr Feature courseFeature(std::size_t course) noexcept {
 constexpr std::array<display::Message, 4> kComboMessages{"COMBO 2X", "COMBO 3X", "COMBO 4X",
                                                          "COMBO 5X"};
 constexpr std::array<display::Message, 6> kExamMessages{
-    "FINAL EXAM  1 TO GO", "FINAL EXAM  2 TO GO", "FINAL EXAM  3 TO GO",
-    "FINAL EXAM  4 TO GO", "FINAL EXAM  5 TO GO", "FINAL EXAM  6 TO GO"};
+    "FORMATION PASS  1 TO GO", "FORMATION PASS  2 TO GO", "FORMATION PASS  3 TO GO",
+    "FORMATION PASS  4 TO GO", "FORMATION PASS  5 TO GO", "FORMATION PASS  6 TO GO"};
+constexpr std::array<display::Message, kCourseCount> kPassedMessages{
+    "LOOP DRILL COMPLETE", "RAMP RUNS COMPLETE", "GUNNERY COMPLETE",
+    "FORMATION COMPLETE", "NIGHT LANDING COMPLETE", "DOGFIGHT WON"};
+constexpr std::array<display::Message, kCourseCount> kStartMessages{
+    "LOOP DRILL  SHOOT THE LOOPS", "RAMP RUNS  SHOOT LIT RAMP", "GUNNERY  HIT THE BANDIT",
+    "FORMATION  SHOOT LIT ARROW", "NIGHT LANDING  RUNWAY", "DOGFIGHT  2 BALLS"};
+constexpr std::array<display::Message, kCourseCount> kLitMessages{
+    "LOOP DRILL IS LIT", "RAMP RUNS IS LIT",     "GUNNERY IS LIT",
+    "FORMATION IS LIT",  "NIGHT LANDING IS LIT", "DOGFIGHT IS LIT"};
+constexpr std::array<display::Message, 3> kAceMessages{"A-C-E  A", "A-C-E  A-C", "A-C-E COMPLETE"};
 constexpr std::array<display::NumberLabel, 5> kBonusTotalLabels{
     display::NumberLabel("BONUS 1X", 2), display::NumberLabel("BONUS 2X", 2),
     display::NumberLabel("BONUS 3X", 2), display::NumberLabel("BONUS 4X", 2),
@@ -33,11 +43,11 @@ constexpr std::array<display::NumberLabel, 5> kBonusTotalLabels{
 static_assert(kBonusTotalLabels.size() == Rules::kMaxBonusMultiplier);
 
 constexpr std::array<std::string_view, kFeatureCount> kFeatureNames{
-    "slingshots",    "bumpers",      "spinner",     "turbo targets", "roll call",
-    "return lanes",  "ramps",        "circuits",    "bay doors",     "hangar",
-    "briefing room", "skill shot",   "combos",      "course 101",    "course 103",
-    "course 201",    "course 202",   "course 301",  "course 302",    "jackpots",
-    "super jackpot", "turbo bonus",  "extra credit", "extra ball",   "graduation",
+    "slingshots",    "jets",          "spinners+bandit", "targets",       "r-a-d lanes",
+    "return lanes",  "ramps",         "loops",           "bay doors",     "hangar+deck",
+    "mission scoop", "skill shot",    "combos",          "loop drill",    "ramp runs",
+    "gunnery",       "formation",     "night landing",   "dogfight",      "jackpots",
+    "super jackpot", "scramble bonus", "extra credit",   "extra ball",    "wings+air show",
     "bonus"};
 static_assert(std::to_underlying(Feature::Bonus) + 1 == kFeatureCount);
 
@@ -127,10 +137,19 @@ void Rules::clearModes() noexcept {
   hangarHolding_ = 0;
   doorsOpen_ = false;
   kickbackArmSteps_ = 0;
+  dogfightMultiball_ = false;
+  wingsSteps_ = 0;
+  finaleBanditDown_ = false;
+  jackpotAdd_ = 0;
+  catBall_ = 0xFF;
+  lastLoop_ = kNoShot;
+  banks_ = 0;
 }
 
 void Rules::startGame() noexcept {
   score_ = 0;
+  deckLit_ = false;
+  flapsLit_.fill(false);
   featureScore_.fill(0);
   ball_ = 1;
   gameOver_ = false;
@@ -175,6 +194,23 @@ void Rules::startGame() noexcept {
   graduations_ = 0;
   altitude_.reset();
   bonusTally_ = {};
+  taxiLit_.fill(false);
+  radarLit_.fill(false);
+  bogeyMarked_.fill(false);
+  bogeyCleared_ = false;
+  aceLit_.fill(false);
+  aceDone_ = false;
+  aceSets_ = 0;
+  gForce_ = 0;
+  deckRamps_ = 0;
+  droneHits_ = 0;
+  flapsSteps_ = 0;
+  missionRepeatSteps_ = 0;
+  qualify_.fill(0);
+  ready_.fill(false);
+  courseTried_.fill(false);
+  wingsDone_ = false;
+  wingsCeremonies_ = 0;
   waitingCount_ = 0;
   beginBall();
   say(display::Message("LAUNCH THE BALL"));
@@ -213,6 +249,14 @@ void Rules::setTable(const TableStatus& status) noexcept {
   // The bays are the truth about the locks.
   releasesPending_ = std::min(releasesPending_, status_.locked);
   locksHeld_ = status_.locked - releasesPending_;
+}
+
+void Rules::addLiveBall() noexcept {
+  // Never more balls than the table has: a ball counted live here may also
+  // still be counted queued until the next setTable() says otherwise.
+  if (status_.live + status_.queued + status_.locked < static_cast<int>(table::kMaxBalls)) {
+    ++status_.live;
+  }
 }
 
 int Rules::ballsInGame() const noexcept {
@@ -336,10 +380,10 @@ void Rules::onBumper(std::size_t index) noexcept {
   }
   noteSwitch();
   award(points::kBumper, Feature::Bumpers);
-  if (course_ == std::to_underlying(CourseId::BumperBasics)) {
-    courseStep(CourseId::BumperBasics);
-  } else if (!courseRunning() && !graduationRunning() && !allCoursesPassed()) {
-    // Choosing: each hit moves the offer to the next course not yet passed.
+  if (!courseRunning() && !graduationRunning() && !allCoursesPassed() &&
+      std::ranges::none_of(ready_, [](bool ready) { return ready; })) {
+    // Choosing: each jet moves the Mission's offer to the next sortie not
+    // yet passed (a qualified sortie holds the offer).
     courseBlink_ = nextUnpassed(courseBlink_ + 1);
   }
   addTurbo(tuning::kTurboPerBumper);
@@ -366,8 +410,210 @@ void Rules::onTarget(std::size_t index) noexcept {
     extraCreditLit_ = true;
     say(display::Message("EXTRA CREDIT IS LIT"));
     cue(Sound::SetComplete);
+    if constexpr (!table::kBogeyOnTable) {
+      // BOGEY was cut in G2: the nest pair qualifies NIGHT LANDING again, as
+      // it did before the bank was built.
+      qualifyCourse(CourseId::NightLanding);
+    }
   }
   addTurbo(tuning::kTurboPerTarget);
+}
+
+int Rules::droneArmour() const noexcept {
+  if (gradStage_ == GradStage::Commencement) {
+    return tuning::kFinaleArmour;
+  }
+  return tuning::kDroneArmourBase + altitude_.knobs().extraHits;
+}
+
+bool Rules::onDrone() noexcept {
+  if (dead()) {
+    return false;
+  }
+  noteSwitch();
+  award(points::kDroneHit, Feature::Spinner);
+  addTurbo(tuning::kTurboPerDroneHit);
+  if (wingsRunning()) {
+    // Every hit is a lit shot, and the armour stands again at once.
+    droneHits_ = 0;
+    award(points::kWingsShot, Feature::Graduation);
+    say(display::Message("WINGS  BANDIT HIT 2X"));
+    cue(Sound::Jackpot);
+    return false;
+  }
+  if (gradStage_ == GradStage::Commencement && finaleBanditDown_) {
+    return false;  // Down already: the Hangar is what counts now.
+  }
+  if (course_ == std::to_underlying(CourseId::Gunnery)) {
+    courseSteps_ += stepsFor(kGunneryHitSeconds);
+    courseStep(CourseId::Gunnery);
+  } else if (course_ == std::to_underlying(CourseId::Dogfight) && !courseSecondPart_) {
+    courseSecondPart_ = true;
+    say(display::Message("DOGFIGHT JACKPOT IS LIT"));
+    cue(Sound::Lit);
+  } else if (!courseRunning()) {
+    qualifyCourse(CourseId::Gunnery);
+  }
+  if (++droneHits_ < droneArmour()) {
+    return false;
+  }
+  droneHits_ = 0;
+  banditDown();
+  return true;
+}
+
+void Rules::banditDown() noexcept {
+  award(points::kBanditDown, Feature::Spinner);
+  if (gradStage_ == GradStage::Commencement) {
+    finaleBanditDown_ = true;
+    say(display::Message("BANDIT DOWN  SHOOT HANGAR"));
+    cue(Sound::Lit);
+    return;
+  }
+  say(display::Message("BANDIT DOWN"));
+  if (course_ == std::to_underlying(CourseId::Gunnery)) {
+    courseSecondPart_ = true;  // The pass pays double.
+  }
+  if (academyMultiball_ && !superLit_) {
+    superLit_ = true;
+    jackpotsTowardSuper_ = 0;
+    sayThen(display::Message("SUPER JACKPOT IS LIT"));
+    cue(Sound::Lit);
+  }
+}
+
+void Rules::onStandup(std::size_t index, float /*speed*/) noexcept {
+  if (dead() || index >= table::kStandups.size()) {
+    return;
+  }
+  noteSwitch();
+  if (index < table::kTaxiStandups) {
+    // T-A-X-I: dead stand-ups round the field.
+    award(points::kTaxiLetter, Feature::TurboTargets);
+    if (index >= taxiLit_.size() || taxiLit_[index]) {
+      return;
+    }
+    taxiLit_[index] = true;
+    if (std::ranges::all_of(taxiLit_, [](bool lit) { return lit; })) {
+      taxiLit_.fill(false);
+      award(points::kTaxiComplete, Feature::TurboTargets);
+      ++laneSetsThisBall_;
+      cue(Sound::SetComplete);
+      say(display::Message("T-A-X-I COMPLETE"));
+      if constexpr (!table::kRadarOnTable) {
+        // RADAR was cut: T-A-X-I lights FORMATION, as before G2.
+        qualifyCourse(CourseId::Formation);
+      }
+    }
+    return;
+  }
+  if (index >= table::kRadarStandup) {
+    if (!table::kRadarOnTable) {
+      return;  // Cut: never on the table.
+    }
+    // RADAR: all three light FORMATION.
+    const std::size_t letter = index - table::kRadarStandup;
+    award(points::kTaxiLetter, Feature::TurboTargets);
+    if (letter >= radarLit_.size() || radarLit_[letter]) {
+      return;
+    }
+    radarLit_[letter] = true;
+    if (std::ranges::all_of(radarLit_, [](bool lit) { return lit; })) {
+      radarLit_.fill(false);
+      award(points::kTaxiComplete, Feature::TurboTargets);
+      ++laneSetsThisBall_;
+      cue(Sound::SetComplete);
+      say(display::Message("RADAR COMPLETE"));
+      qualifyCourse(CourseId::Formation);
+    }
+    return;
+  }
+  // The Flight Deck's A-C-E.
+  const std::size_t letter = index - table::kDeckStandupA;
+  award(points::kAceLetter, Feature::TurboTargets);
+  if (letter >= aceLit_.size() || aceLit_[letter]) {
+    return;
+  }
+  aceLit_[letter] = true;
+  const auto lit = static_cast<std::size_t>(std::ranges::count(aceLit_, true));
+  if (lit < aceLit_.size()) {
+    say(kAceMessages[lit - 1]);
+    return;
+  }
+  aceLit_.fill(false);
+  award(points::kAceComplete + points::kAceComplete / 2 * static_cast<std::uint64_t>(std::min(aceSets_, 8)),
+        Feature::TurboTargets);
+  ++aceSets_;
+  ++laneSetsThisBall_;
+  say(kAceMessages.back());
+  cue(Sound::SetComplete);
+  if (!aceDone_) {
+    aceDone_ = true;
+    checkAirShow();
+  }
+}
+
+void Rules::onBogey(std::size_t index) noexcept {
+  // The BOGEY drops: all three cleared light NIGHT LANDING and are what the
+  // lock asks for beside the bay doors (DECISIONS.md 10).
+  if (!table::kBogeyOnTable || dead() || index >= table::kBogeys.size() ||
+      index >= bogeyMarked_.size()) {
+    return;  // Cut in G2: no BOGEY progress, no BOGEY words.
+  }
+  noteSwitch();
+  award(points::kTaxiLetter, Feature::TurboTargets);
+  bogeyMarked_[index] = true;
+  if (!std::ranges::all_of(bogeyMarked_, [](bool marked) { return marked; })) {
+    return;
+  }
+  bogeyMarked_.fill(false);
+  award(points::kTaxiComplete, Feature::TurboTargets);
+  ++laneSetsThisBall_;
+  cue(Sound::SetComplete);
+  const bool wasCleared = bogeyCleared_;
+  bogeyCleared_ = true;
+  say(lockLit() && !wasCleared ? display::Message("BOGEY CLEARED  LOCK IS LIT")
+                               : display::Message("BOGEY CLEARED"));
+  qualifyCourse(CourseId::NightLanding);
+}
+
+void Rules::onPylon() noexcept {
+  if (dead()) {
+    return;
+  }
+  noteSwitch();
+  award(points::kPylon, Feature::Slingshots);
+  if (courseRunning()) {
+    // A sortie's clock gets a little more.
+    courseSteps_ += stepsFor(3.0);
+    say(display::Message("PYLON  +3 SECONDS"));
+  } else if (multiballRunning() && !graduationRunning()) {
+    jackpotAdd_ = std::min<std::uint64_t>(jackpotAdd_ + points::kPylonJackpotAdd, 250'000);
+    say(display::numbered("JACKPOT VALUE", jackpotValue()));
+  }
+}
+
+void Rules::onCaptiveBall(float speed) noexcept {
+  // The G-meter: a hit on the captive ball's switch adds 1G, a hard one 2G.
+  // 3G lights DOGFIGHT; 5G pays and starts the meter again.
+  if (dead()) {
+    return;
+  }
+  noteSwitch();
+  const int add = speed >= tuning::kGForceHardSpeed ? 2 : 1;
+  const int before = gForce_;
+  gForce_ = std::min(gForce_ + add, tuning::kGForceTop);
+  award(points::kGForce * static_cast<std::uint64_t>(gForce_), Feature::TurboTargets);
+  if (!courseRunning() && before < tuning::kGForceForDogfight &&
+      gForce_ >= tuning::kGForceForDogfight) {
+    qualifyCourse(CourseId::Dogfight);
+  }
+  if (gForce_ >= tuning::kGForceTop) {
+    gForce_ = 0;
+    award(points::kGForceTop, Feature::TurboTargets);
+    say(display::Message("5G  PULL UP"));
+    cue(Sound::SetComplete);
+  }
 }
 
 void Rules::markAllDoors() noexcept { doorMarked_.fill(true); }
@@ -388,22 +634,33 @@ void Rules::onDropTarget(std::size_t index) noexcept {
   }
   award(points::kBayDoor, Feature::BayDoors);
   doorMarked_[door] = true;
-  const bool safety = course_ == std::to_underlying(CourseId::HangarSafety) && !courseSecondPart_;
-  if (safety) {
-    award(kCourses[course_].shotAward, courseFeature(course_));
-    ++courseProgress_;
-  }
   if (!std::ranges::all_of(doorMarked_, [](bool marked) { return marked; })) {
     return;
   }
-  // All three: the bank drops as one.
+  // All three: a bank toward the lock.
   award(points::kBayDoorsOpen, Feature::BayDoors);
-  doorsOpen_ = true;
   firstBank_ = false;
-  if (safety) {
-    courseSecondPart_ = true;
-  }
   cue(Sound::SetComplete);
+  addBank();
+}
+
+void Rules::addBank() noexcept {
+  // While a multiball runs, or with one ball at a time, the bank opens the
+  // Hangar for a shot (a super jackpot, a plain Hangar shot) as it always
+  // has; otherwise kBanksPerLock of them light the lock.
+  if (++banks_ < banksPerLock_ && multiballEnabled_ && !multiballRunning()) {
+    doorMarked_.fill(false);
+    static constexpr std::array<display::Message, 3> kMore{
+        "BAY DOORS  1 MORE FOR LOCK", "BAY DOORS  2 MORE FOR LOCK", "BAY DOORS  3 MORE FOR LOCK"};
+    say(kMore[static_cast<std::size_t>(std::clamp(banksPerLock_ - banks_, 1, 3) - 1)]);
+    return;
+  }
+  banks_ = 0;
+  doorsOpen_ = true;
+  if (lockNeedsBogey_ && !bogeyCleared_ && multiballEnabled_ && !multiballRunning()) {
+    say(display::Message("CLEAR BOGEY FOR LOCK"));
+    return;
+  }
   say(lockLit() ? display::Message("LOCK IS LIT") : display::Message("BAY DOORS OPEN"));
 }
 
@@ -415,6 +672,36 @@ void Rules::onRollover(std::size_t index, std::size_t ball) noexcept {
   const bool skill = skillOffered_;
   noteSwitch();
   const auto ballNumber = static_cast<std::uint64_t>(ball_);
+  if (rollover.group == table::RolloverGroup::Flaps) {
+    // Stub (G5: completing F-L-A-P-S lights the Mission scoop and +1 bonus X).
+    const std::size_t letter =
+        std::to_underlying(rollover.id) - std::to_underlying(table::RolloverId::FlapF);
+    if (letter < flapsLit_.size()) {
+      award(points::kFlapsLetter, Feature::ReturnLanes);
+      flapsLit_[letter] = true;
+      // At FL300 and above the letters time out.
+      const progression::Knobs& knobs = altitude_.knobs();
+      flapsSteps_ = knobs.guardsUp ? stepsFor(tuning::kFlapsLetterSeconds * knobs.timerScale) : 0;
+      if (std::ranges::all_of(flapsLit_, [](bool lit) { return lit; })) {
+        flapsLit_.fill(false);
+        flapsSteps_ = 0;
+        award(points::kFlapsComplete, Feature::ReturnLanes);
+        addBonusMultiplier();
+        ++laneSetsThisBall_;
+        cue(Sound::SetComplete);
+        if (!courseRunning() && !courseLit_ && !graduationRunning() && !wingsRunning() &&
+            !allCoursesPassed()) {
+          // The pre-flight checklist relights the Mission.
+          courseLit_ = true;
+          rampsNeeded_ = 0;
+          say(display::Message("FLAPS SET  MISSION LIT"));
+        } else {
+          say(display::Message("FLAPS SET  BONUS X"));
+        }
+      }
+    }
+    return;
+  }
   if (rollover.group == table::RolloverGroup::TopLane) {
     const std::size_t lane = std::to_underlying(rollover.id);
     if (lane >= rollCallLit_.size()) {
@@ -449,7 +736,7 @@ void Rules::onRollover(std::size_t index, std::size_t ball) noexcept {
         overdriveSteps_ = stepsFor(tuning::kOverdriveSeconds);
         say(display::Message("OVERDRIVE 3X"));
       } else {
-        say(display::Message("ROLL CALL COMPLETE"));
+        say(display::Message("R-A-D COMPLETE"));
         lightOverdrive();
       }
     }
@@ -504,9 +791,6 @@ void Rules::onSpin() noexcept {
   }
   noteSwitch();
   award(points::kSpin, Feature::Spinner);
-  if (course_ == std::to_underlying(CourseId::TurbineTheory)) {
-    courseStep(CourseId::TurbineTheory);
-  }
   addTurbo(tuning::kTurboPerSpin);
 }
 
@@ -565,6 +849,9 @@ void Rules::onSensor(std::size_t index, int direction, float speed, std::size_t 
 
 void Rules::circuitMade(Shot shot) noexcept {
   award(points::kCircuit, Feature::Circuits);
+  if (!courseRunning()) {
+    qualifyCourse(CourseId::LoopDrill);
+  }
   majorShot(shot);
   flowShot(shot);
 }
@@ -577,29 +864,39 @@ void Rules::rampMade(Shot shot) noexcept {
     say(display::Message("SUPER SKILL SHOT"));
     cue(Sound::SkillShot);
   }
-  // Ramps relight the Briefing room once a course is over, and Graduation
-  // Day after one that was not finished.
+  if (!courseRunning()) {
+    qualifyCourse(CourseId::RampRuns);
+  }
+  // Ramps relight the Mission once a sortie is over, and the Air Show
+  // after one that was not finished.
   if (!graduationRunning()) {
     if (gradRampsNeeded_ > 0) {
       if (--gradRampsNeeded_ == 0) {
         gradLit_ = true;
-        say(display::Message("GRADUATION DAY IS LIT"));
+        say(display::Message("AIR SHOW IS LIT"));
         cue(Sound::Lit);
       } else {
-        say(display::Message("RAMPS FOR BRIEFING"));
+        say(display::Message("RAMPS FOR AIR SHOW"));
       }
     } else if (rampsNeeded_ > 0 && !courseRunning()) {
       if (--rampsNeeded_ == 0) {
         courseLit_ = true;
-        say(display::Message("BRIEFING IS LIT"));
+        say(display::Message("MISSION IS LIT"));
         cue(Sound::Lit);
       } else {
-        say(display::Message("RAMPS FOR BRIEFING"));
+        say(display::Message("RAMPS FOR MISSION"));
       }
     }
   }
   majorShot(shot);
   flowShot(shot);
+  // Every kRampsForDeck ramps light the Flight Deck's diverter (a Skyway
+  // the diverter took does not count).
+  if (!deckLit_ && ++deckRamps_ >= tuning::kRampsForDeck && !dead()) {
+    deckRamps_ = 0;
+    deckLit_ = true;
+    sayAlso(display::Message("FLIGHT DECK IS LIT"));
+  }
 }
 
 Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
@@ -610,6 +907,14 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
   if (ball < circuits_.size()) {
     circuits_[ball].steps = 0;
   }
+  // A ball that came by the CAT SHOT's ride: the Hangar locks it.
+  bool cat = false;
+  if (table::kHoles[index].type == table::HoleType::Hangar && catBall_ != 0xFF) {
+    cat = ball == catBall_;
+    if (cat) {
+      catBall_ = 0xFF;
+    }
+  }
   if (dead()) {
     return HoleResult::Eject;
   }
@@ -619,17 +924,50 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
     case RampLeft:
       rampMade(Shot::Runway);
       break;
-    case RampRight:
+    case RampRight: {
+      // The diverter, as lit before this shot (Game reads deckLit() before
+      // it tells the rules): the ball goes to the Flight Deck and the lamp
+      // goes out.
+      const bool toDeck = deckLit();
+      if (toDeck && deckLit_) {
+        deckLit_ = false;
+        deckRamps_ = -1;  // This Skyway does not count toward the next.
+      }
       rampMade(Shot::Skyway);
+      if (toDeck) {
+        sayAlso(display::Message("FLIGHT DECK"));
+      }
       break;
-    case Scoop: {
+    }
+    case DeckRamp:
+      break;  // Never taken from the field: Game diverts a Skyway to it.
+    case CatShot:
+      // The ride ends in the Hangar, which Game tells as a Hangar capture of
+      // its own: that ball is locked (CAT SHOT spots a lock).
+      award(points::kCatShot, Feature::Hangar);
+      say(display::Message("CAT SHOT"));
+      catBall_ = static_cast<std::uint8_t>(std::min<std::size_t>(ball, 0xFE));
+      addTurbo(tuning::kTurboPerCatShot);
+      if (multiballEnabled_ && !multiballRunning() && !doorsOpen_) {
+        addBank();  // It counts as a bank; lit, its own ball locks.
+      }
+      break;
+    case DeckDrain:
+      award(points::kDeckDrain, Feature::Hangar);
+      break;
+    case Subway: {
       if (graduationRunning()) {
+        majorShot(Shot::Briefing);
+        break;
+      }
+      if (wingsRunning()) {
         majorShot(Shot::Briefing);
         break;
       }
       // Collected in this order; the first is what the display says first.
       bool collected = false;
-      if (graduationLit() || briefingLit() || extraBallsLit_ > 0 || extraCreditLit_) {
+      if (graduationLit() || wingsLit() || briefingLit() || extraBallsLit_ > 0 ||
+          extraCreditLit_) {
         // What is collected is said at once, one thing after another.
         message_ = {};
         messageSteps_ = 0;
@@ -637,6 +975,9 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
       }
       if (graduationLit()) {
         startGraduation();
+        collected = true;
+      } else if (wingsLit()) {
+        startWings();
         collected = true;
       } else if (briefingLit()) {
         startCourse();
@@ -650,9 +991,15 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
         collectExtraCredit();
         collected = true;
       }
-      // The safest shot on the table does not pay for being looped.
-      award(collected || !briefingVisited_ ? points::kBriefingRoom : points::kBriefingRepeat,
-            Feature::Briefing);
+      // The safest shot on the table does not pay for being looped: again
+      // within kMissionRepeatSeconds of one that paid, a quarter.
+      std::uint64_t value =
+          collected || !briefingVisited_ ? points::kBriefingRoom : points::kBriefingRepeat;
+      if (!collected && briefingVisited_ && missionRepeatSteps_ > 0) {
+        value /= 4;
+      }
+      award(value, Feature::Briefing);
+      missionRepeatSteps_ = stepsFor(tuning::kMissionRepeatSeconds);
       briefingVisited_ = true;
       if (!graduationRunning()) {
         majorShot(Shot::Briefing);
@@ -662,6 +1009,19 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
     case Hangar: {
       if (graduationRunning()) {
         ++hangarHolding_;
+        majorShot(Shot::Hangar);
+        break;
+      }
+      if (dogfightJackpotLit()) {
+        // DOGFIGHT: the drone hit lit it; the Hangar pays and the next hit
+        // lights it again.
+        ++hangarHolding_;
+        courseSecondPart_ = false;
+        award(points::kDogfightJackpot, Feature::Jackpots);
+        ++jackpotsCollected_;
+        sayAlso(display::Message("DOGFIGHT JACKPOT"));
+        cue(Sound::Jackpot);
+        courseStep(CourseId::Dogfight);
         majorShot(Shot::Hangar);
         break;
       }
@@ -679,12 +1039,21 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
         break;
       }
       award(points::kHangar, Feature::Hangar);
-      if (lockLit()) {
+      // CAT SHOT spots a lock: its ball is locked whatever the doors say
+      // (it came in behind them), while a lock could be lit at all.
+      const bool catLock =
+          cat && doorsOpen_ && (bogeyCleared_ || !lockNeedsBogey_) && multiballEnabled_ &&
+          !multiballRunning() && !superLit_;
+      if (catLock && locksHeld_ < kLocksNeeded) {
+        return HoleResult::Lock;
+      }
+      if (lockLit() || catLock) {
         if (locksHeld_ < kLocksNeeded) {
           // Game says so (onBallLocked) once the ball is in its bay.
           return HoleResult::Lock;
         }
         // The third ball in: all three go.
+        bogeyCleared_ = false;
         ++hangarHolding_;
         academyMultiball_ = true;
         turboMultiball_ = false;
@@ -695,11 +1064,9 @@ Rules::HoleResult Rules::onHole(std::size_t index, std::size_t ball) noexcept {
         jackpotIndex_ = 0;
         jackpotsTowardSuper_ = 0;
         graceSteps_ = stepsFor(tuning::kAcademyGraceSeconds);
-        sayAlso(display::Message("ACADEMY MULTIBALL"));
+        sayAlso(display::Message("SQUADRON MULTIBALL"));
         cue(Sound::MultiballStart);
-        if (academyMultiballs_ == 2) {
-          lightExtraBall();
-        }
+        checkAirShow();
         return HoleResult::StartMultiball;
       }
       ++hangarHolding_;
@@ -731,18 +1098,22 @@ void Rules::onBallLocked(std::size_t bay, bool served) noexcept {
   }
   locksHeld_ = std::min(locksHeld_ + 1, kLocksNeeded);
   status_.locked = std::min(status_.locked + 1, kLocksNeeded);
+  bogeyCleared_ = false;  // Each lock asks for the BOGEY bank again.
   status_.live = std::max(status_.live - 1, 0);
+  // Free balls are live balls (setTable keeps it so; this must too).
+  status_.free = std::min(status_.free, status_.live);
   // After what the shot that locked it said (a course step, say).
   sayAlso(locksHeld_ == 1 ? display::Message("BALL 1 LOCKED")
                           : display::Message("BALL 2 LOCKED"));
   cue(Sound::BallLocked);
-  if (academyMultiballs_ > 0 || locksHeld_ > tuning::kFirstMultiballOpenLocks) {
+  if (academyMultiballs_ > 0 || locksHeld_ > tuning::kFirstMultiballOpenLocks ||
+      altitude_.knobs().guardsUp) {
     // Only the first multiball of a game keeps the Hangar open between locks.
     doorsOpen_ = false;
   }
   if (served) {
     // The player has a new ball to launch, with its own saver.
-    ++status_.live;
+    addLiveBall();
     saverArmable_ = true;
     saverSteps_ = 0;
     offerSkillShot();
@@ -767,7 +1138,7 @@ void Rules::onLockReleased(std::size_t bay) noexcept {
     locksHeld_ = std::max(locksHeld_ - 1, 0);
   }
   status_.locked = std::max(status_.locked - 1, 0);
-  ++status_.live;
+  addLiveBall();
 }
 
 void Rules::onDoorBank(bool up) noexcept {
@@ -790,12 +1161,16 @@ bool Rules::doorsWantedDown() const noexcept {
     case GradStage::None:
       break;
   }
-  return doorsOpen_ || superLit_;
+  return doorsOpen_ || superLit_ || dogfightJackpotLit();
+}
+
+bool Rules::dogfightJackpotLit() const noexcept {
+  return course_ == std::to_underlying(CourseId::Dogfight) && courseSecondPart_ && !dead();
 }
 
 bool Rules::lockLit() const noexcept {
-  return doorsOpen_ && multiballEnabled_ && !dead() && !multiballRunning() && !superLit_ &&
-         course_ != std::to_underlying(CourseId::HangarSafety);
+  return doorsOpen_ && (bogeyCleared_ || !lockNeedsBogey_) && multiballEnabled_ && !dead() &&
+         !multiballRunning() && !superLit_ && !dogfightJackpotLit();
 }
 
 // --- Turbo meter, overdrive, awards at the Briefing room -----------------------
@@ -827,7 +1202,7 @@ void Rules::turboFull() noexcept {
 
 void Rules::turboBallRefused() noexcept {
   award(points::kTurboBonus, Feature::TurboBonus);
-  say(display::Message("TURBO BONUS"));
+  say(display::Message("SCRAMBLE BONUS"));
 }
 
 void Rules::turboBallServed() noexcept {
@@ -840,8 +1215,9 @@ void Rules::turboBallServed() noexcept {
     jackpotIndex_ = 0;
   }
   graceSteps_ = std::max(graceSteps_, stepsFor(tuning::kTurboGraceSeconds));
-  say(display::Message("TURBO MULTIBALL"));
+  say(display::Message("SCRAMBLE MULTIBALL"));
   cue(Sound::MultiballStart);
+  checkAirShow();
 }
 
 void Rules::lightOverdrive() noexcept {
@@ -926,7 +1302,7 @@ void Rules::collectExtraCredit() noexcept {
     case Credit::Turbo:
       // What a full meter says comes first.
       addTurbo(tuning::kTurboExtraCredit);
-      sayThen(display::Message("EXTRA CREDIT  TURBO BOOST"));
+      sayThen(display::Message("EXTRA CREDIT  SCRAMBLE BOOST"));
       break;
     case Credit::Overdrive:
       sayThen(display::Message("EXTRA CREDIT  OVERDRIVE LIT"));
@@ -944,6 +1320,7 @@ void Rules::majorShot(Shot shot) noexcept {
   const std::size_t made = std::to_underlying(shot);
   switch (gradStage_) {
     case GradStage::Exam: {
+      // FORMATION PASS: every main shot once.
       if (examMade_[made]) {
         return;
       }
@@ -953,19 +1330,23 @@ void Rules::majorShot(Shot shot) noexcept {
       const int left = examShotsLeft();
       if (left == 0) {
         gradStage_ = GradStage::Commencement;
-        say(display::Message("SHOOT THE HANGAR"));
+        finaleBanditDown_ = false;
+        droneHits_ = 0;
+        say(display::Message("FINALE  KNOCK DOWN BANDIT"));
       } else {
         say(kExamMessages[static_cast<std::size_t>(left - 1)]);
       }
       return;
     }
     case GradStage::Commencement:
-      if (shot == Shot::Hangar) {
+      // FINALE: the Bandit down, then the Hangar.
+      if (shot == Shot::Hangar && finaleBanditDown_) {
         award(points::kCommencement, Feature::Graduation, false);
         rank_ = kTopRank;
         commencementThisTime_ = true;
         gradStage_ = GradStage::VictoryLaps;
-        say(display::Message("CHANCELLOR"));
+        say(display::Message("AIR SHOW SUPER JACKPOT"));
+        sayThen(display::Message("CHANCELLOR"));
         cue(Sound::SuperJackpot);
       }
       return;
@@ -975,6 +1356,12 @@ void Rules::majorShot(Shot shot) noexcept {
     case GradStage::None:
       break;
   }
+  if (wingsRunning()) {
+    award(points::kWingsShot, Feature::Graduation);
+    say(display::Message("WINGS  2X SHOT"));
+    cue(Sound::Jackpot);
+    return;
+  }
 
   if (jackpotLit(shot)) {
     jackpot();
@@ -983,34 +1370,52 @@ void Rules::majorShot(Shot shot) noexcept {
     return;
   }
   switch (static_cast<CourseId>(course_)) {
-    case CourseId::RunwayDrills:
-      if (isRamp(shot)) {
-        courseStep(CourseId::RunwayDrills);
+    case CourseId::RampRuns:
+      // The lit ramp, then the other one.
+      if (shot == navShot_) {
+        courseStep(CourseId::RampRuns);
+        navShot_ = navShot_ == Shot::Runway ? Shot::Skyway : Shot::Runway;
       }
       break;
-    case CourseId::CircuitTraining:
+    case CourseId::LoopDrill:
       if (isCircuit(shot)) {
-        courseStep(CourseId::CircuitTraining);
+        loopMade(shot);
       }
       break;
-    case CourseId::HangarSafety:
-      if (shot == Shot::Hangar && courseSecondPart_) {
-        // The bank shuts behind the ball.
-        doorsOpen_ = false;
+    case CourseId::NightLanding:
+      if (!courseSecondPart_ && shot == Shot::Runway) {
+        // The approach: now the landing, for what the hurry-up has left.
+        award(kCourses[course_].shotAward, courseFeature(course_));
+        ++courseProgress_;
+        courseSecondPart_ = true;
+        say(display::Message("ON APPROACH  SHOOT SKYWAY"));
+      } else if (courseSecondPart_ && shot == Shot::Skyway) {
+        ++courseProgress_;
         passCourse();
       }
       break;
-    case CourseId::Navigation:
+    case CourseId::Formation:
       if (shot == navShot_) {
-        courseStep(CourseId::Navigation);
-        if (course_ == std::to_underlying(CourseId::Navigation)) {
+        courseStep(CourseId::Formation);
+        if (course_ == std::to_underlying(CourseId::Formation)) {
           hopNavigation();
         }
       }
       break;
-    case CourseId::BumperBasics:
-    case CourseId::TurbineTheory:
+    case CourseId::Gunnery:
+    case CourseId::Dogfight:
       break;
+  }
+}
+
+void Rules::loopMade(Shot shot) noexcept {
+  // LOOP DRILL: a loop on the other side from the last pays double.
+  const std::uint8_t side = std::to_underlying(shot);
+  const std::uint64_t value = kCourses[course_].shotAward;
+  award(lastLoop_ != kNoShot && lastLoop_ != side ? 2 * value : value, courseFeature(course_));
+  lastLoop_ = side;
+  if (++courseProgress_ >= kCourses[course_].goal) {
+    passCourse();
   }
 }
 
@@ -1065,11 +1470,12 @@ bool Rules::multiballJackpotLit() const noexcept {
 }
 
 std::uint64_t Rules::jackpotValue() const noexcept {
-  return points::kJackpot[std::min(jackpotIndex_, points::kJackpot.size() - 1)];
+  return points::kJackpot[std::min(jackpotIndex_, points::kJackpot.size() - 1)] + jackpotAdd_;
 }
 
 void Rules::jackpot() noexcept {
   award(jackpotValue(), Feature::Jackpots);
+  jackpotAdd_ = 0;
   jackpotIndex_ = std::min(jackpotIndex_ + 1, points::kJackpot.size());
   ++jackpotsCollected_;
   say(display::Message("JACKPOT"));
@@ -1091,7 +1497,10 @@ Multiball Rules::multiball() const noexcept {
   if (academyMultiball_) {
     return Multiball::Academy;
   }
-  return turboMultiball_ ? Multiball::Turbo : Multiball::None;
+  if (turboMultiball_) {
+    return Multiball::Turbo;
+  }
+  return dogfightMultiball_ ? Multiball::Dogfight : Multiball::None;
 }
 
 void Rules::endMultiball(bool announce) noexcept {
@@ -1105,8 +1514,10 @@ void Rules::endMultiball(bool announce) noexcept {
   }
   turboMultiball_ = false;
   academyMultiball_ = false;
+  dogfightMultiball_ = false;
   superLit_ = false;
   jackpotIndex_ = 0;
+  jackpotAdd_ = 0;
   jackpotsTowardSuper_ = 0;
   graceSteps_ = 0;
   if (announce) {
@@ -1115,7 +1526,39 @@ void Rules::endMultiball(bool announce) noexcept {
 }
 
 bool Rules::graduationLit() const noexcept {
-  return gradLit_ && multiballEnabled_ && !graduationRunning() && !gameOver_;
+  return gradLit_ && multiballEnabled_ && !graduationRunning() && !wingsRunning() && !gameOver_;
+}
+
+bool Rules::airShowReady() const noexcept {
+  return allCoursesPassed() && academyMultiballs_ > 0 && turboMultiballs_ > 0 && aceDone_;
+}
+
+void Rules::checkAirShow() noexcept {
+  if (gradLit_ || graduationRunning() || gradRampsNeeded_ > 0 || !airShowReady()) {
+    return;
+  }
+  gradLit_ = true;
+  sayThen(display::Message("AIR SHOW IS LIT"));
+  cue(Sound::Lit);
+}
+
+bool Rules::wingsLit() const noexcept {
+  return !wingsDone_ && !wingsRunning() && !courseRunning() && !graduationRunning() &&
+         !gameOver_ && std::ranges::all_of(courseTried_, [](bool tried) { return tried; });
+}
+
+void Rules::startWings() noexcept {
+  wingsDone_ = true;
+  ++wingsCeremonies_;
+  wingsSteps_ = courseStepsFor(kWingsSeconds);
+  droneHits_ = 0;
+  sayThen(display::Message("WINGS CEREMONY"));
+  cue(Sound::CourseStart);
+}
+
+void Rules::endWings() noexcept {
+  wingsSteps_ = 0;
+  say(display::Message("WINGS CEREMONY OVER"));
 }
 
 int Rules::examShotsLeft() const noexcept {
@@ -1127,9 +1570,15 @@ void Rules::startGraduation() noexcept {
   gradRampsNeeded_ = 0;
   gradStage_ = examShotsLeft() == 0 ? GradStage::Commencement : GradStage::Exam;
   commencementThisTime_ = false;
-  // It takes over from any other multiball.
+  // It takes over from any other multiball, sortie or ceremony.
   turboMultiball_ = false;
   academyMultiball_ = false;
+  dogfightMultiball_ = false;
+  wingsSteps_ = 0;
+  finaleBanditDown_ = false;
+  if (courseRunning()) {
+    courseOver();
+  }
   superLit_ = false;
   doorsOpen_ = false;
   // Every ball there is: the locked ones are let go, the rest are launched.
@@ -1140,7 +1589,8 @@ void Rules::startGraduation() noexcept {
   }
   ballRequests_ += std::max(static_cast<int>(table::kMaxBalls) - ballsInGame(), 0);
   graceSteps_ = stepsFor(tuning::kGraduationGraceSeconds);
-  say(display::Message("GRADUATION DAY"));
+  say(display::Message("AIR SHOW"));
+  sayThen(display::Message("FORMATION PASS"));
   cue(Sound::MultiballStart);
 }
 
@@ -1150,17 +1600,23 @@ void Rules::endGraduation() noexcept {
   jackpotIndex_ = 0;
   jackpotsTowardSuper_ = 0;
   doorsOpen_ = false;
+  finaleBanditDown_ = false;
   if (commencementThisTime_) {
-    // Done: every course can be taken again, for twice the award.
+    // Done: every sortie can be flown again, for twice the award, and the
+    // ceremony earned again.
     commencementThisTime_ = false;
     ++graduations_;
     coursePassed_.fill(false);
+    courseTried_.fill(false);
+    ready_.fill(false);
+    qualify_.fill(0);
+    wingsDone_ = false;
     examMade_.fill(false);
     courseBlink_ = 0;
     courseLit_ = true;
     rampsNeeded_ = 0;
     coursesEnded_ = 0;
-    say(display::Message("COURSES REOPENED"));
+    say(display::Message("SORTIES REOPENED"));
     climb(progression::kTopLevel);
     return;
   }
@@ -1190,7 +1646,8 @@ std::size_t Rules::nextUnpassed(std::size_t from) const noexcept {
 }
 
 bool Rules::briefingLit() const noexcept {
-  return courseLit_ && !courseRunning() && !graduationRunning() && !allCoursesPassed() &&
+  return (courseLit_ || std::ranges::any_of(ready_, [](bool ready) { return ready; })) &&
+         !courseRunning() && !graduationRunning() && !wingsRunning() && !allCoursesPassed() &&
          !gameOver_;
 }
 
@@ -1201,25 +1658,88 @@ int Rules::rampsForBriefing() const noexcept {
   return courseRunning() || courseLit_ ? 0 : rampsNeeded_;
 }
 
+int Rules::qualifyNeeded(std::size_t index) const noexcept {
+  const int base = kCourses[index].qualify;
+  return coursesStarted_ >= tuning::kSortiesBeforeHarder ? 2 * base : base;
+}
+
+int Rules::qualifyRemaining(std::size_t index) const noexcept {
+  if (index >= kCourseCount || ready_[index] || coursePassed_[index]) {
+    return 0;
+  }
+  return std::max(qualifyNeeded(index) - qualify_[index], 0);
+}
+
+void Rules::qualifyCourse(CourseId id, int amount) noexcept {
+  const std::size_t index = std::to_underlying(id);
+  if (dead() || coursePassed_[index] || ready_[index] || course_ == index ||
+      graduationRunning()) {
+    return;
+  }
+  qualify_[index] = std::min(qualify_[index] + amount, 255);
+  if (qualify_[index] < qualifyNeeded(index)) {
+    return;
+  }
+  qualify_[index] = 0;
+  ready_[index] = true;
+  if (!courseRunning()) {
+    courseBlink_ = index;
+  }
+  sayAlso(kLitMessages[index]);
+  cue(Sound::Lit);
+}
+
+std::uint32_t Rules::courseStepsFor(double seconds) const noexcept {
+  return stepsFor(seconds * altitude_.knobs().timerScale);
+}
+
 void Rules::startCourse() noexcept {
-  course_ = nextUnpassed(courseBlink_);
+  // A qualified sortie first (the one offered, else the next), else the one
+  // the Mission offers.
+  std::size_t pick = kNoCourse;
+  for (std::size_t n = 0; n < kCourseCount && pick == kNoCourse; ++n) {
+    const std::size_t index = (courseBlink_ + n) % kCourseCount;
+    if (ready_[index] && !coursePassed_[index]) {
+      pick = index;
+    }
+  }
+  course_ = pick != kNoCourse ? pick : nextUnpassed(courseBlink_);
+  ready_[course_] = false;
+  qualify_[course_] = 0;
+  courseTried_[course_] = true;
   courseBlink_ = course_;
   courseLit_ = false;
   ++coursesStarted_;
-  courseSteps_ = stepsFor(kCourses[course_].seconds);
+  courseSteps_ = courseStepsFor(kCourses[course_].seconds);
   courseElapsedSteps_ = 0;
   courseProgress_ = 0;
   courseSecondPart_ = false;
-  if (course_ == std::to_underlying(CourseId::HangarSafety)) {
-    // The doors are raised for it, whatever state they were in.
-    doorsOpen_ = false;
-    doorMarked_.fill(false);
+  lastLoop_ = kNoShot;
+  switch (static_cast<CourseId>(course_)) {
+    case CourseId::Formation:
+      navShot_ = Shot::CircuitLeft;
+      navSteps_ = stepsFor(kNavigationHopSeconds);
+      break;
+    case CourseId::RampRuns:
+      navShot_ = Shot::Runway;
+      break;
+    case CourseId::Dogfight:
+      // A second ball, if the table has room for one.
+      if (multiballEnabled_ && ballsInGame() < static_cast<int>(table::kMaxBalls)) {
+        ++ballRequests_;
+        if (!multiballRunning()) {
+          jackpotIndex_ = 0;
+        }
+        dogfightMultiball_ = true;
+        graceSteps_ = std::max(graceSteps_, stepsFor(tuning::kTurboGraceSeconds));
+      }
+      break;
+    case CourseId::LoopDrill:
+    case CourseId::Gunnery:
+    case CourseId::NightLanding:
+      break;
   }
-  if (course_ == std::to_underlying(CourseId::Navigation)) {
-    navShot_ = Shot::CircuitLeft;
-    navSteps_ = stepsFor(kNavigationHopSeconds);
-  }
-  sayThen(display::Message("CLASS IN SESSION"));
+  sayThen(kStartMessages[course_]);
   cue(Sound::CourseStart);
 }
 
@@ -1235,7 +1755,7 @@ void Rules::courseStep(CourseId id) noexcept {
 }
 
 std::uint64_t Rules::hurryUpValue() const noexcept {
-  if (course_ != std::to_underlying(CourseId::TurbineTheory)) {
+  if (course_ != std::to_underlying(CourseId::NightLanding)) {
     return 0;
   }
   const std::uint64_t floor = kCourses[course_].passAward;
@@ -1258,37 +1778,40 @@ void Rules::climb(int levels) noexcept {
 
 void Rules::passCourse() noexcept {
   const std::size_t index = course_;
-  std::uint64_t value = index == std::to_underlying(CourseId::TurbineTheory)
+  std::uint64_t value = index == std::to_underlying(CourseId::NightLanding)
                             ? hurryUpValue()
                             : kCourses[index].passAward;
   if (graduations_ > 0) {
     value *= 2;  // Second time round.
   }
+  if (index == std::to_underlying(CourseId::Gunnery) && courseSecondPart_) {
+    value *= 2;  // BANDIT DOWN during it.
+  }
   award(value, courseFeature(index), false);
   coursePassed_[index] = true;
   ++coursePasses_;
   cue(Sound::CoursePassed);
+  say(kPassedMessages[index]);
   if (allCoursesPassed()) {
-    gradLit_ = true;
-    say(display::Message("ALL COURSES PASSED"));
-    sayThen(display::Message("GRADUATION DAY IS LIT"));
+    sayThen(display::Message("ALL SORTIES FLOWN"));
+    if (graduations_ == 0) {
+      rank_ = kTopRank - 1;
+    }
   } else if (graduations_ == 0) {
     rank_ = std::min(static_cast<std::size_t>(coursesPassed()), kTopRank - 1);
-    say(display::Message("COURSE PASSED  RANK UP"));
+    sayThen(display::Message("RANK UP"));
     cue(Sound::RankUp);
-  } else {
-    // The top rank is held already.
-    say(display::Message("COURSE PASSED"));
   }
   climb(1);
   if (coursePasses_ == 3) {
     lightExtraBall();
   }
   courseOver();
+  checkAirShow();
 }
 
 void Rules::failCourse() noexcept {
-  say(display::Message("COURSE FAILED"));
+  say(display::Message("SORTIE OVER"));
   cue(Sound::CourseFailed);
   courseOver();
 }
@@ -1300,6 +1823,7 @@ void Rules::courseOver() noexcept {
   courseProgress_ = 0;
   courseSecondPart_ = false;
   navSteps_ = 0;
+  lastLoop_ = kNoShot;
   ++coursesEnded_;
   courseLit_ = false;
   rampsNeeded_ = allCoursesPassed()
@@ -1328,7 +1852,10 @@ void Rules::hopNavigation() noexcept {
 
 std::string_view Rules::courseName() const noexcept {
   if (graduationRunning()) {
-    return kGraduationName;
+    return gradStage_ == GradStage::Exam ? kGraduationName : kFinaleName;
+  }
+  if (wingsRunning()) {
+    return kWingsName;
   }
   return courseRunning() ? kCourses[course_].name : std::string_view{};
 }
@@ -1338,16 +1865,40 @@ std::string_view Rules::goalText() const noexcept {
     case GradStage::Exam:
       return kGoalExam;
     case GradStage::Commencement:
-      return kGoalCommencement;
+      return finaleBanditDown_ ? kGoalCommencement : kGoalFinaleBandit;
     case GradStage::VictoryLaps:
       return kGoalExam;
     case GradStage::None:
       break;
   }
-  if (courseRunning()) {
-    return courseSecondPart_ ? kGoalEnterHangar : kCourses[course_].goalLine;
+  if (wingsRunning()) {
+    return kGoalWings;
   }
-  return briefingLit() || graduationLit() ? kGoalBriefingLit : kGoalBriefingUnlit;
+  if (courseRunning()) {
+    if (course_ == std::to_underlying(CourseId::NightLanding) && courseSecondPart_) {
+      return kGoalLanding;
+    }
+    if (dogfightJackpotLit()) {
+      return kGoalDogfightJackpot;
+    }
+    return kCourses[course_].goalLine;
+  }
+  if (briefingLit() || graduationLit() || wingsLit()) {
+    return kGoalBriefingLit;
+  }
+  if (allCoursesPassed() && !gradLit_ && gradRampsNeeded_ == 0) {
+    // What the Air Show still asks for.
+    if (academyMultiballs_ == 0) {
+      return kGoalNeedSquadron;
+    }
+    if (turboMultiballs_ == 0) {
+      return kGoalNeedScramble;
+    }
+    if (!aceDone_) {
+      return kGoalNeedAce;
+    }
+  }
+  return kGoalBriefingUnlit;
 }
 
 int Rules::goalRemaining() const noexcept {
@@ -1357,13 +1908,15 @@ int Rules::goalRemaining() const noexcept {
   if (!courseRunning() || graduationRunning()) {
     return 0;
   }
-  return courseSecondPart_ ? 1 : std::max(kCourses[course_].goal - courseProgress_, 0);
+  return std::max(kCourses[course_].goal - courseProgress_, 0);
 }
 
 // --- Drains, nudges, time ------------------------------------------------------
 
 bool Rules::onBallLost(const DrainInfo& info) noexcept {
   status_.live = std::max(status_.live - 1, 0);
+  // The lost ball was free: never more free balls than live ones.
+  status_.free = std::clamp(status_.free - 1, 0, status_.live);
   if (dead()) {
     return false;
   }
@@ -1386,7 +1939,8 @@ void Rules::onBallInPlay() noexcept {
     // Once for each ball the player is given: a ball the saver returns
     // has what is left of its time.
     saverArmable_ = false;
-    saverSteps_ = std::max(saverSteps_, stepsFor(kBallSaveSeconds));
+    saverSteps_ =
+        std::max(saverSteps_, stepsFor(kBallSaveSeconds * altitude_.knobs().ballSaveScale));
   }
 }
 
@@ -1561,9 +2115,22 @@ void Rules::tick(bool allBallsHeld) noexcept {
       if (saverSteps_ > 0) {
         --saverSteps_;
       }
-      if (courseRunning()) {
+      if (wingsSteps_ > 0 && --wingsSteps_ == 0) {
+        endWings();
+      }
+      if (flapsSteps_ > 0 && --flapsSteps_ == 0) {
+        // The checklist timed out: start it again.
+        flapsLit_.fill(false);
+      }
+      if (missionRepeatSteps_ > 0) {
+        --missionRepeatSteps_;
+      }
+      // A sortie's clock stands still through a multiball, except the
+      // DOGFIGHT's own.
+      const bool frozen = multiballRunning() && course_ != std::to_underlying(CourseId::Dogfight);
+      if (courseRunning() && !frozen) {
         ++courseElapsedSteps_;
-        if (course_ == std::to_underlying(CourseId::Navigation)) {
+        if (course_ == std::to_underlying(CourseId::Formation)) {
           // A lit shot that cannot be made any more moves on at once.
           if (!navigable(navShot_) || (navSteps_ > 0 && --navSteps_ == 0)) {
             hopNavigation();
@@ -1643,8 +2210,9 @@ LampState Rules::doorLampState(std::size_t door) const noexcept {
   if (doorMarked_[door]) {
     return LampState::On;
   }
-  const bool asked = course_ == std::to_underlying(CourseId::HangarSafety) && !courseSecondPart_;
-  return asked ? LampState::Blink : LampState::Off;
+  // The doors still to hit blink while they stand between a lit lock's
+  // worth of shots and nothing else is lit there.
+  return LampState::Off;
 }
 
 LampState Rules::lampState(table::LampId lamp) const noexcept {
@@ -1658,40 +2226,55 @@ LampState Rules::lampState(table::LampId lamp) const noexcept {
       case GradStage::Exam:
         return examMade_[index] ? LampState::Off : LampState::Blink;
       case GradStage::Commencement:
-        return shot == Shot::Hangar ? LampState::FastBlink : LampState::Off;
+        // The Bandit first (the Afterburner lane under it), then the Hangar.
+        return shot == (finaleBanditDown_ ? Shot::Hangar : Shot::Turbine) ? LampState::FastBlink
+                                                                          : LampState::Off;
       case GradStage::VictoryLaps:
         return LampState::On;
       case GradStage::None:
         break;
+    }
+    if (wingsRunning()) {
+      return LampState::FastBlink;
     }
     if (jackpotLit(shot)) {
       return LampState::Blink;
     }
     if (courseRunning()) {
       switch (static_cast<CourseId>(course_)) {
-        case CourseId::BumperBasics:
-        case CourseId::TurbineTheory:
+        case CourseId::Gunnery:
           if (shot == Shot::Turbine) {
             return LampState::Blink;
           }
           break;
-        case CourseId::RunwayDrills:
-          if (isRamp(shot)) {
-            return LampState::Blink;
-          }
-          break;
-        case CourseId::CircuitTraining:
-          if (isCircuit(shot)) {
-            return LampState::Blink;
-          }
-          break;
-        case CourseId::HangarSafety:
-          if (shot == Shot::Hangar) {
-            return LampState::Blink;
-          }
-          break;
-        case CourseId::Navigation:
+        case CourseId::RampRuns:
           if (shot == navShot_) {
+            return LampState::Blink;
+          }
+          break;
+        case CourseId::LoopDrill:
+          if (isCircuit(shot)) {
+            // The other side from the last loop pays double: it blinks fast.
+            return lastLoop_ != kNoShot && lastLoop_ != std::to_underlying(shot)
+                       ? LampState::FastBlink
+                       : LampState::Blink;
+          }
+          break;
+        case CourseId::NightLanding:
+          if (shot == (courseSecondPart_ ? Shot::Skyway : Shot::Runway)) {
+            return LampState::FastBlink;
+          }
+          break;
+        case CourseId::Formation:
+          if (shot == navShot_) {
+            return LampState::Blink;
+          }
+          break;
+        case CourseId::Dogfight:
+          if (shot == Shot::Hangar && courseSecondPart_) {
+            return LampState::FastBlink;
+          }
+          if (shot == Shot::Turbine && !courseSecondPart_) {
             return LampState::Blink;
           }
           break;
@@ -1704,7 +2287,7 @@ LampState Rules::lampState(table::LampId lamp) const noexcept {
         }
         return lockLit() ? LampState::Blink : LampState::Off;
       case Shot::Briefing:
-        if (graduationLit()) {
+        if (graduationLit() || wingsLit()) {
           return LampState::FastBlink;
         }
         if (briefingLit()) {
@@ -1732,6 +2315,9 @@ LampState Rules::lampState(table::LampId lamp) const noexcept {
     }
     if (course_ == index) {
       return LampState::FastBlink;
+    }
+    if (ready_[index]) {
+      return LampState::Blink;
     }
     return briefingLit() && courseBlink_ == index ? LampState::Blink : LampState::Off;
   };
@@ -1764,10 +2350,10 @@ LampState Rules::lampState(table::LampId lamp) const noexcept {
       return courseLamp(static_cast<std::size_t>(std::to_underlying(lamp) -
                                                  std::to_underlying(Course1)));
     case Graduation:
-      if (graduationRunning()) {
+      if (graduationRunning() || wingsRunning()) {
         return LampState::FastBlink;
       }
-      if (graduationLit()) {
+      if (graduationLit() || wingsLit()) {
         return LampState::Blink;
       }
       return lit(graduations_ > 0);
@@ -1819,7 +2405,208 @@ LampState Rules::lampState(table::LampId lamp) const noexcept {
     case WingG:
       return lit(wingLit_[static_cast<std::size_t>(std::to_underlying(lamp) -
                                                    std::to_underlying(WingW))]);
+    // Revision 3's ladders (TABLE_REV3.md 3.10). Stubs from what the rules
+    // keep today; the rules (phase 3) refine them.
+    case DroneArmour1:
+    case DroneArmour2:
+    case DroneArmour3:
+    case DroneArmour4:
+    case DroneArmour5: {
+      // One lamp a hit taken, the next to win blinking (the fifth stands for
+      // any beyond); all five blink fast once the finale's Bandit is down.
+      if (finaleHangarLit()) {
+        return LampState::FastBlink;
+      }
+      const int k = std::to_underlying(lamp) - std::to_underlying(DroneArmour1);
+      const int hits = std::min(droneHits_, 4);
+      if (k < hits) {
+        return LampState::On;
+      }
+      return k == hits && droneHits_ > 0 ? LampState::Blink : LampState::Off;
+    }
+    case GForce1:
+    case GForce2:
+    case GForce3:
+    case GForce4:
+    case GForce5:
+      {
+        const int g = std::to_underlying(lamp) - std::to_underlying(GForce1) + 1;
+        if (g <= gForce_) {
+          return LampState::On;
+        }
+        // The next G blinks once the meter has started.
+        return g == gForce_ + 1 && gForce_ > 0 ? LampState::Blink : LampState::Off;
+      }
+    case TaxiT:
+    case TaxiA:
+    case TaxiX:
+    case TaxiI:
+      return lit(taxiLit_[static_cast<std::size_t>(std::to_underlying(lamp) -
+                                                   std::to_underlying(TaxiT))]);
+    case Rank1:
+    case Rank2:
+    case Rank3:
+    case Rank4:
+    case Rank5:
+    case Rank6:
+    case Rank7: {
+      // Every rank won, held; none at the first.
+      const auto k = static_cast<std::size_t>(std::to_underlying(lamp) - std::to_underlying(Rank1));
+      return lit(k < rank_);
+    }
+    case Combo2X:
+    case Combo3X:
+    case Combo4X:
+    case Combo5X: {
+      // The chain's level, the next link blinking while it runs.
+      const int level = comboLevel();
+      const int x = std::to_underlying(lamp) - std::to_underlying(Combo2X) + 2;
+      if (x <= level) {
+        return LampState::On;
+      }
+      return level > 0 && x == level + 1 ? LampState::Blink : LampState::Off;
+    }
+    case Bonus2X:
+    case Bonus3X:
+    case Bonus4X:
+    case Bonus5X: {
+      const int x = std::to_underlying(lamp) - std::to_underlying(Bonus2X) + 2;
+      return lit(x <= bonusMultiplier_);
+    }
+    // Concept A (G6): a first pass from the public queries alone, for the
+    // rules (G5) to replace.
+    case LadderCircuitLeft1:
+    case LadderCircuitLeft2:
+    case LadderCircuitLeft3:
+    case LadderRunway1:
+    case LadderRunway2:
+    case LadderRunway3:
+    case LadderHangar1:
+    case LadderHangar2:
+    case LadderHangar3:
+    case LadderBriefing1:
+    case LadderBriefing2:
+    case LadderBriefing3:
+    case LadderTurbine1:
+    case LadderTurbine2:
+    case LadderTurbine3:
+    case LadderSkyway1:
+    case LadderSkyway2:
+    case LadderSkyway3:
+    case LadderCircuitRight1:
+    case LadderCircuitRight2:
+    case LadderCircuitRight3:
+    case AltitudeFL100:
+    case AltitudeFL200:
+    case AltitudeFL300:
+    case AltitudeFL400:
+    case AltitudeFL500:
+    case FlapsF:
+    case FlapsL:
+    case FlapsA:
+    case FlapsP:
+    case FlapsS:
+    case Bogey1:
+    case Bogey2:
+    case Bogey3:
+    case Radar1:
+    case Radar2:
+    case Radar3:
+    case SafetyPost:
+    case Multiball:
+    case DeckLit:
+    case DeckA:
+    case DeckC:
+    case DeckE:
+    case CatShot:
+      return conceptLampState(*this, lamp);
     case Count:
+      break;
+  }
+  return LampState::Off;
+}
+
+LampState conceptLampState(const Rules& rules, table::LampId lamp) noexcept {
+  using enum table::LampId;
+  if (rules.gameOver()) {
+    return LampState::Off;
+  }
+  const auto lit = [](bool on) { return on ? LampState::On : LampState::Off; };
+  const auto index = [lamp](table::LampId first) {
+    return static_cast<std::size_t>(std::to_underlying(lamp) - std::to_underlying(first));
+  };
+  if (table::isPipLamp(lamp)) {
+    // A shot's ladder: while its arrow blinks, every pip blinks with it (the
+    // light show runs them up toward the arrow); otherwise the pips count
+    // the shot's progress toward its next award, the first nearest the arrow.
+    const std::size_t pips = index(LadderCircuitLeft1);
+    const std::size_t arrow = pips / table::kShotLadderPips;
+    const std::size_t k = pips % table::kShotLadderPips;
+    const LampState arrowState = rules.lampState(static_cast<table::LampId>(arrow));
+    if (arrowState == LampState::Blink || arrowState == LampState::FastBlink) {
+      return arrowState;
+    }
+    std::size_t progress = 0;
+    switch (static_cast<Shot>(arrow)) {
+      case Shot::CircuitLeft:  // The R-A-D lanes it feeds.
+        for (std::size_t lane = 0; lane < 3; ++lane) {
+          progress += rules.rollCallLit(lane) ? 1U : 0U;
+        }
+        break;
+      case Shot::CircuitRight:  // W-I-N-G.
+        for (std::size_t letter = 0; letter < 4; ++letter) {
+          progress += rules.wingLit(letter) ? 1U : 0U;
+        }
+        break;
+      case Shot::Runway:
+      case Shot::Skyway:  // Ramps made toward relighting the Mission.
+        progress = rules.rampsForBriefing() > 0
+                       ? static_cast<std::size_t>(
+                             std::max(0, tuning::kRampsForBriefingLater - rules.rampsForBriefing()))
+                       : 3U;
+        break;
+      case Shot::Hangar:  // The bay doors marked.
+        for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
+          progress += rules.doorMarked(door) ? 1U : 0U;
+        }
+        break;
+      case Shot::Turbine:  // The turbo meter, in thirds.
+        progress = rules.turboGoal() > 0 ? static_cast<std::size_t>(3 * rules.turboMeter() /
+                                                                    rules.turboGoal())
+                                         : 0U;
+        break;
+      case Shot::Briefing: {  // F-L-A-P-S lights the Mission.
+        std::size_t letters = 0;
+        for (std::size_t letter = 0; letter < 5; ++letter) {
+          letters += rules.flapLit(letter) ? 1U : 0U;
+        }
+        progress = letters * 3 / 5;
+        break;
+      }
+    }
+    return lit(k < progress);
+  }
+  if (lamp >= AltitudeFL100 && lamp <= AltitudeFL500) {
+    // The altimeter: every level reached.
+    return lit(static_cast<int>(index(AltitudeFL100)) <= rules.altitude());
+  }
+  if (lamp >= FlapsF && lamp <= FlapsS) {
+    return lit(rules.flapLit(index(FlapsF)));
+  }
+  switch (lamp) {
+    case Multiball:
+      if (rules.multiball() != pinball::Multiball::None) {
+        return LampState::On;
+      }
+      return rules.lockLit() ? LampState::Blink : lit(rules.locksHeld() > 0);
+    case DeckLit:
+      return rules.deckLit() ? LampState::Blink : LampState::Off;
+    case CatShot:
+      // CAT SHOT rides to the lock.
+      return rules.lockLit() ? LampState::Blink : LampState::Off;
+    default:
+      // BOGEY, RADAR and the Safety Post wait for G2's targets; the deck's
+      // A-C-E letters for the rules (G5). Unlit, the light show runs them.
       break;
   }
   return LampState::Off;

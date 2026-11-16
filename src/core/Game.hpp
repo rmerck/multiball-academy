@@ -39,8 +39,35 @@ struct BallView {
   // further down it is. position stays where the game has the ball.
   Vec2 drawOffset{};
   float sink = 0.0F;
+  // Held by the Briefing room's subway (table::HoleType::Subway), out of
+  // sight (visible is false once it has sunk): it is shown as a glow under
+  // the playfield at glowAt, along table::kBriefingSubway, as bright as glow
+  // (0 none, 1 full). It builds while the ball waits in the room, moves
+  // along the subway during the ride and waits under the set-down while
+  // the exit is blocked.
+  bool underground = false;
+  Vec2 glowAt{};
+  float glow = 0.0F;
 
   [[nodiscard]] constexpr Vec2 drawnAt() const noexcept { return position + drawOffset; }
+};
+
+// What the renderer needs to draw the training drone (table::kDroneY).
+struct DroneView {
+  // Where to draw it: on its patrol, or where it went down, plus its recoil.
+  Vec2 position;
+  // From 0 (up on the table) to 1 (sunk out of sight): drawn smaller and
+  // darker the further down it is. Not drawn at all at 1.
+  float sink = 0.0F;
+  // How far into its recoil after a hit, 0 to 1 and back to 0 (the recoil
+  // is already in position): for a flash.
+  float recoil = 0.0F;
+  // Solid on the table (balls bounce off it), however far it is drawn up.
+  bool up = true;
+  // Knocked down by the rules (DRONE DOWN) and not up again yet.
+  bool knocked = false;
+  // While knocked: the share of the down time still to run, 1 to 0.
+  float downLeft = 0.0F;
 };
 
 // Something the table did during a step, beside what the balls touched
@@ -52,10 +79,23 @@ struct GameEvent {
     BallLocked,        // index: the bay.
     LockReleased,      // index: the bay it left.
     HoleEject,         // index: the hole. Every ball a hole returns, locked or not.
-    Spin,              // The spinner turned once.
+    Spin,              // A spinner turned once. index: the spinner (table::kSpinners).
     KickbackFired,     // The kickback took the ball.
     KickbackReturned,  // And set it down again.
     EjectSave,         // A ball drained within the short save after an eject.
+    // Revision 3. The drone: hit (index: the armour lamps lit after the hit,
+    // 1 to table::kDroneArmour - 1, or kDroneArmour for the hit that knocks
+    // it down; a hit on a dead table changes nothing and gives the count as
+    // it was), knocked down by the rules (DRONE DOWN; with the hit that did
+    // it), gone down at the end of its patrol, and up again (index 1 after a
+    // knock-down, 0 after a dive).
+    DroneHit,
+    DroneDown,
+    DroneDive,
+    DroneRise,
+    // A ball the Briefing room holds has begun its ride under the playfield
+    // (index: the hole). It comes up with the hole's HoleEject.
+    SubwayRide,
   };
   Type type = Type::Spin;
   std::uint8_t ball = 0;
@@ -205,16 +245,44 @@ class Game {
   // hole. Read from the game's own saved state, so it needs no saving.
   [[nodiscard]] float holeExitOpening(std::size_t hole) const noexcept;
 
-  // --- Spinner -------------------------------------------------------------
-  // Turns counted so far, and turns a passing ball has earned that are
-  // still to be counted (one every table::kSpinPayoutSteps steps).
+  // --- Spinners ------------------------------------------------------------
+  // Three (table::kSpinners), each with its own turns and its own blade.
+  // Turns counted so far, and turns passing balls have earned that are still
+  // to be counted (one every table::kSpinPayoutSteps steps on each spinner):
+  // for one spinner, or for all of them.
+  static constexpr std::size_t kSpinners = table::kSpinners.size();
   [[nodiscard]] std::uint32_t spinCount() const noexcept { return spinCount_; }
-  [[nodiscard]] int spinsOwed() const noexcept { return spinsOwed_; }
-  // Where the spinner's blade is in its turn, 0 to 1 (not including 1). It
-  // makes half a turn for each spin counted: 0 and 0.5 are flat, at rest.
-  [[nodiscard]] float spinnerPhase() const noexcept {
-    return static_cast<float>(spinnerTicks_) / static_cast<float>(2 * table::kSpinPayoutSteps);
+  [[nodiscard]] std::uint32_t spinCount(std::size_t spinner) const noexcept {
+    return spinner < kSpinners ? spinner_[spinner].count : 0;
   }
+  [[nodiscard]] int spinsOwed() const noexcept;
+  [[nodiscard]] int spinsOwed(std::size_t spinner) const noexcept {
+    return spinner < kSpinners ? spinner_[spinner].owed : 0;
+  }
+  // Where a spinner's blade is in its turn, 0 to 1 (not including 1). It
+  // makes half a turn for each spin counted: 0 and 0.5 are flat, at rest.
+  // Without an index, the Afterburner lane's.
+  [[nodiscard]] float spinnerPhase(std::size_t spinner = table::kLaneSpinner) const noexcept {
+    return spinner < kSpinners ? static_cast<float>(spinner_[spinner].ticks) /
+                                     static_cast<float>(2 * table::kSpinPayoutSteps)
+                               : 0.0F;
+  }
+
+  // --- The training drone (revision 3) --------------------------------------
+  [[nodiscard]] DroneView drone() const noexcept;
+  [[nodiscard]] std::uint32_t droneHitCount() const noexcept { return droneHitCount_; }
+
+  // --- The captive ball (revision 3) -----------------------------------------
+  // Where it is (its centre, in playfield units), how far up its channel
+  // (0 at rest, table::kCaptiveTravel at the stop), and whether its switch
+  // is closed. It is not one of the balls: balls() never lists it.
+  [[nodiscard]] Vec2 captivePosition() const { return physics_.captivePosition(); }
+  [[nodiscard]] float captiveTranslation() const { return physics_.captiveTranslation(); }
+  [[nodiscard]] bool captiveSwitchClosed() const noexcept {
+    return physics_.captiveSwitchClosed();
+  }
+  // Times its switch has closed in this game.
+  [[nodiscard]] std::uint32_t captiveSwitchCount() const noexcept { return captiveSwitchCount_; }
 
   // --- Kickback ------------------------------------------------------------
   // Armed: the next ball into the left outlane's pocket is taken and carried
@@ -251,6 +319,25 @@ class Game {
 
   // Score, lights, balls and messages.
   [[nodiscard]] const Rules& rules() const noexcept { return rules_; }
+  // Concept A measuring knobs: the Altitude pinned at a level (its floor,
+  // with climbing off: each level's table measured on its own), and the
+  // stub policies (Rules::setDeckPolicy, setPylonPolicy).
+  void setAltitude(int level) noexcept {
+    rules_.setAltitudeFloor(level);
+    rules_.setProgressionEnabled(false);
+  }
+  void setDeckPolicy(int policy) noexcept { rules_.setDeckPolicy(policy); }
+  void setPylonPolicy(int policy) noexcept { rules_.setPylonPolicy(policy); }
+  [[nodiscard]] bool pylonUp() const noexcept { return physics_.pylonUp(); }
+  // Concept A G2: a BOGEY drop target standing.
+  [[nodiscard]] bool bogeyUp(std::size_t index) const noexcept { return physics_.bogeyUp(index); }
+  [[nodiscard]] std::uint32_t airPocketCatches() const noexcept {
+    return physics_.airPocketCatches();
+  }
+  // The Air Pocket is pulling (drawing), and the Prop Wash's angle (drawing,
+  // radians; from the step count).
+  [[nodiscard]] bool airPocketOn() const noexcept { return airPocketOn_; }
+  [[nodiscard]] float propWashAngle() const noexcept;
   [[nodiscard]] bool gameOver() const noexcept { return rules_.gameOver(); }
   // 1 just after a slingshot fired, fading to 0.
   [[nodiscard]] float slingshotFlash(std::size_t index) const noexcept {
@@ -380,8 +467,15 @@ class Game {
   // A ball has just been taken by a hole or the kickback: the rules hear of
   // it and the Hangar's answer is carried out.
   void tellRulesOfCapture(std::size_t slot);
-  void updateSpinner();
-  void addSpins(float speedAcross, int direction) noexcept;
+  void tellRulesOfHole(std::size_t slot, std::size_t hole);
+  void driveDevices(bool playable);
+  [[nodiscard]] bool deckFlipperAllowed();
+  void updateSpinners();
+  void addSpins(std::size_t spinner, float speedAcross, int direction) noexcept;
+  // The drone: a hit by the ball in a slot (for its recoil and events), and
+  // its going down and coming up, noted once the step's events are dealt with.
+  void onDroneHit(std::size_t slot);
+  void updateDrone();
   // How the ball in a slot is leaving.
   [[nodiscard]] Rules::DrainInfo drainInfo(std::size_t slot) const noexcept;
   void note(GameEvent::Type type, std::size_t ball, std::size_t index = 0) noexcept;
@@ -402,6 +496,7 @@ class Game {
   [[nodiscard]] float progressSince(std::uint64_t mark, double seconds) const noexcept;
 
   PhysicsWorld physics_;
+  std::uint32_t captiveSwitchCount_ = 0;
   Rules rules_{kStepSeconds};
   std::uint64_t stepCount_ = 0;
   std::uint32_t drainCount_ = 0;
@@ -411,12 +506,15 @@ class Game {
   std::array<float, table::kSlingshots.size()> slingshotFlash_{};
   std::array<std::uint32_t, table::kRollovers.size()> rolloverCounts_{};
   std::array<std::uint32_t, table::kHoles.size()> holeCounts_{};
+  bool airPocketOn_ = false;  // Drawing only; set from the step count each step.
   // What the game keeps for each ball slot, beside the physics state.
   struct BallState {
     // What is holding the ball (a hole or the kickback), and for how many
     // steps its hold has run so far.
     table::ElementRef holder{};
     std::uint32_t heldSteps = 0;
+    // Concept A: steps this ball has spent on the Flight Deck in one visit.
+    std::uint32_t deckSteps = 0;
     bool wasHeld = false;
     // The order in which held balls were taken: lower came first.
     std::uint64_t arrival = 0;
@@ -464,13 +562,33 @@ class Game {
   std::uint32_t lockCount_ = 0;
   std::uint32_t lockReleaseCount_ = 0;
   std::uint32_t kickbackCount_ = 0;
-  // Spinner: turns owed, steps until the next may be counted, turns counted,
-  // the way it turns (+1 or -1) and where the blade is, in twelfths of a turn.
-  int spinsOwed_ = 0;
-  int spinCooldown_ = 0;
+  // Each spinner: turns owed, steps until the next may be counted, turns
+  // counted, the way it turns (+1 or -1) and where the blade is, in twelfths
+  // of a turn. And the turns of all of them.
+  struct SpinnerState {
+    int owed = 0;
+    int cooldown = 0;
+    std::uint32_t count = 0;
+    int direction = 1;
+    std::uint32_t ticks = 0;
+  };
+  std::array<SpinnerState, kSpinners> spinner_{};
   std::uint32_t spinCount_ = 0;
-  int spinDirection_ = 1;
-  std::uint32_t spinnerTicks_ = 0;
+  // The drone, for the eye and the events: up as last seen, one more than
+  // the step it last went down or came up (0: never), one more than the step
+  // it was last hit (0: never) and the way the hit threw it back (unit).
+  bool droneWasUp_ = true;
+  bool droneWasKnocked_ = false;
+  std::uint64_t droneMoveStep_ = 0;
+  std::uint64_t droneHitStep_ = 0;
+  std::uint64_t lastFlipStep_ = 0;  // One more than the latest flipper press's step; 0 none.
+  // One more than the step each BOGEY target fell; 0 while it stands. And a
+  // new game's reset still to finish.
+  std::array<std::uint64_t, table::kBogeys.size()> bogeyDownStep_{};
+  bool bogeyNewGame_ = false;
+  void driveBogeys();
+  Vec2 droneRecoilDirection_{0.0F, -1.0F};
+  std::uint32_t droneHitCount_ = 0;
   static constexpr std::size_t kMaxGameEvents = 24;
   std::array<GameEvent, kMaxGameEvents> gameEvents_{};
   std::size_t gameEventCount_ = 0;

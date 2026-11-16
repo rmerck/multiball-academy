@@ -75,6 +75,14 @@ class TableEffects {
     SDL_Texture* ring = nullptr;   // Additive (ring.png).
     SDL_Texture* gi = nullptr;     // Additive (gi.png): the general illumination's light map.
     SDL_Texture* pool = nullptr;   // Blended (pool.png): the dark pool round a ball.
+    SDL_Texture* dome = nullptr;   // Blended (flasher_dome.png): a flasher dome, lit.
+    // Table A: the domes' sheet (table_a/flasher_domes.png, its "_on"
+    // cells in FlasherId order), drawn in place of dome when set.
+    SDL_Texture* domeSheet = nullptr;
+    // Table A: gi is a greyscale light map (table_a/gi.png), drawn in the
+    // Altitude's GI colour at art::kAGiStrength; otherwise it carries its
+    // own colours.
+    bool giGrey = false;
   };
 
   void setTextures(Textures textures) noexcept { textures_ = textures; }

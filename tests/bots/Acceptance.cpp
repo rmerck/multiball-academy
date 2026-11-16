@@ -29,7 +29,8 @@ bool isSafeFirstTouch(Touch touch) noexcept {
 }
 
 bool isPassedThrough(Touch touch) noexcept {
-  return touch == Touch::CircuitLeft || touch == Touch::CircuitRight || touch == Touch::Turbine;
+  return touch == Touch::CircuitLeft || touch == Touch::CircuitRight || touch == Touch::Turbine ||
+         touch == Touch::Flaps;
 }
 
 float speedOf(Vec2 v) noexcept { return std::sqrt(v.x * v.x + v.y * v.y); }
@@ -116,6 +117,15 @@ bool clearOfSolids(Vec2 p) noexcept {
       inside = inside && side * inner > 0.0F;
     }
     if (inside) {
+      return false;
+    }
+  }
+  // A flipper at rest: a ball cannot start inside a bat (pushed out of one,
+  // it can be left where no ball could go; concept A's deck bat).
+  for (const table::Flipper& flipper : table::kFlippers) {
+    const Vec2 tip = flipper.pivot + Vec2{std::cos(flipper.restAngle), std::sin(flipper.restAngle)} *
+                                         flipper.length;
+    if (reachOf(p, flipper.pivot, tip).distance < flipper.baseRadius + kClear) {
       return false;
     }
   }
@@ -445,6 +455,8 @@ Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bo
   std::uint64_t touchesAtHit = 0;
   std::uint64_t topsAtHit = 0;
   std::uint64_t doneAtHit = 0;
+  int standupStep = 0;
+  constexpr int kBrushSteps = kStepsPerSecond / 2;
   for (int i = 0; i < kStepsPerSecond * 7; ++i) {
     if (dry && harness.nearFlipper(harness.position(0), flipper, 1.0F)) {
       if (result.contactFirst < 0) {
@@ -458,15 +470,28 @@ Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bo
     const bool isCircuit = result.shot == Touch::CircuitLeft || result.shot == Touch::CircuitRight;
     if (i >= pressStep && !dry && !decided) {
       for (const TouchEvent& event : std::span(harness.events).subspan(eventsBefore)) {
-        if (event.touch == Touch::InlaneLeft || event.touch == Touch::InlaneRight) {
+        if (event.touch == Touch::InlaneLeft || event.touch == Touch::InlaneRight ||
+            event.touch == Touch::Flaps) {
           continue;
         }
         result.shot = event.touch;
         decided = true;
+        standupStep = i;
         touchesAtHit = harness.flipperTouches;
         topsAtHit = harness.circuitTop[0] + harness.circuitTop[1];
         doneAtHit = harness.circuitDone[0] + harness.circuitDone[1];
         break;
+      }
+    } else if (decided && result.shot == Touch::Standup && i - standupStep <= kBrushSteps) {
+      // A dead T-A-X-I stand-up brushed at a hole's mouth (the Mission
+      // scoop's rail end, I) on the way in: with holes that take the ball at
+      // their cup, the hole may take it a moment later. That is the hole's
+      // shot made, as it was when the hole took the ball at its mouth.
+      for (const TouchEvent& event : std::span(harness.events).subspan(eventsBefore)) {
+        if (event.touch == Touch::Briefing || event.touch == Touch::Hangar) {
+          result.shot = event.touch;
+          break;
+        }
       }
     } else if (decided && isCircuit) {
       result.reachedArch =
@@ -492,9 +517,125 @@ Attempt attempt(const Feed& feed, bool rightSide, int variant, int pressStep, bo
 }  // namespace
 
 char touchChar(Touch touch) noexcept {
-  static constexpr char kChars[] = ".OLwDHSPWRQbs^ijxyc*";
+  static constexpr char kChars[] = ".OLwDHSPWRQbs^ijxyc*dTGeKkYfgr";
   const auto index = static_cast<std::size_t>(touch);
   return index < sizeof(kChars) - 1 ? kChars[index] : '?';
+}
+
+bool placeableAt(Vec2 p) noexcept { return clearOfSolids(p); }
+
+std::string deckFan(int variant) {
+  std::string fan;
+  const float dx = static_cast<float>((variant * 3) % 7 - (variant == 0 ? 0 : 3)) * 1.5F;
+  const float dv = static_cast<float>((variant * 5) % 9 - (variant == 0 ? 0 : 4)) * 8.0F;
+  for (int press = 0; press < 120; ++press) {
+    TableHarness harness;
+    harness.put(0, {table::kDeckSetDown.x + dx, table::kDeckSetDown.y},
+                {table::kDeckSetDownVelocity.x, table::kDeckSetDownVelocity.y + dv}, true);
+    harness.events.clear();
+    char got = 0;
+    for (int i = 0; i < kStepsPerSecond * 5 && got == 0; ++i) {
+      harness.right = i >= press && i < press + ScriptedBot::kPressSteps;
+      const auto standups = harness.standupHits;
+      const std::size_t before = harness.events.size();
+      harness.advance();
+      for (std::size_t s = table::kDeckStandupA; s < table::kRadarStandup; ++s) {
+        if (harness.standupHits[s] > standups[s] && i >= press) {
+          got = "ACE"[s - table::kDeckStandupA];
+        }
+      }
+      if (got != 0) {
+        break;
+      }
+      for (const TouchEvent& e : std::span(harness.events).subspan(before)) {
+        if (e.touch == Touch::CatShot) {
+          got = 'K';
+        } else if (e.touch == Touch::DeckDrain) {
+          got = 'k';
+        } else if (e.touch != Touch::DeckTarget && i >= press) {
+          got = '?';
+        }
+        if (got != 0) {
+          break;
+        }
+      }
+    }
+    fan.push_back(got == 0 ? '.' : got);
+  }
+  return fan;
+}
+
+namespace {
+// Best share of presses within +-error of one step that give `want`.
+double bestAimed(const std::string& line, char want, int error) {
+  const int n = static_cast<int>(line.size());
+  const int width = 2 * error + 1;
+  int best = 0;
+  for (int aim = 0; aim < n; ++aim) {
+    int made = 0;
+    for (int k = aim - error; k <= aim + error; ++k) {
+      made += (k >= 0 && k < n && line[static_cast<std::size_t>(k)] == want) ? 1 : 0;
+    }
+    best = std::max(best, made);
+  }
+  return static_cast<double>(best) / width;
+}
+}  // namespace
+
+MakeRates makeRates(int variants, int error, bool bankDown) {
+  constexpr std::array<std::size_t, 4> kPlayerFeeds{0, 1, 2, 3};
+  // lines[side][feed][variant]
+  std::array<std::array<std::vector<std::string>, kPlayerFeeds.size()>, 2> lines;
+  for (int variant = 0; variant < std::max(variants, 1); ++variant) {
+    for (int side = 0; side < 2; ++side) {
+      for (std::size_t fi = 0; fi < kPlayerFeeds.size(); ++fi) {
+        const Feed& feed = kFeeds[kPlayerFeeds[fi]];
+        const Attempt dry = attempt(feed, side == 1, variant, -1, bankDown);
+        std::string line;
+        if (dry.contactFirst >= 0) {
+          const int first = std::max(0, dry.contactFirst - 2);
+          const int last = std::min(dry.contactLast, dry.contactFirst + 140) + 2;
+          for (int k = first; k <= last; ++k) {
+            const Attempt made = attempt(feed, side == 1, variant, k, bankDown);
+            Touch shot = made.shot;
+            if ((shot == Touch::CircuitLeft || shot == Touch::CircuitRight) && !made.reachedArch) {
+              shot = Touch::None;
+            }
+            line.push_back(touchChar(shot));
+          }
+        }
+        lines[static_cast<std::size_t>(side)][fi].push_back(line);
+      }
+    }
+  }
+  MakeRates rates;
+  for (std::size_t t = 1; t < kTouchCount; ++t) {
+    const char want = touchChar(static_cast<Touch>(t));
+    for (std::size_t side = 0; side < 2; ++side) {
+      for (std::size_t fi = 0; fi < kPlayerFeeds.size(); ++fi) {
+        double sum = 0.0;
+        for (const std::string& line : lines[side][fi]) {
+          sum += bestAimed(line, want, error);
+        }
+        const double mean = sum / static_cast<double>(lines[side][fi].size());
+        if (mean > rates.shots[t][side].rate) {
+          rates.shots[t][side] = {mean, kFeeds[kPlayerFeeds[fi]].name};
+        }
+      }
+    }
+  }
+  return rates;
+}
+
+std::array<double, 4> deckMakeRates(int variants, int error) {
+  std::array<double, 4> rates{};
+  for (int variant = 0; variant < std::max(variants, 1); ++variant) {
+    const std::string fan = deckFan(variant);
+    for (std::size_t i = 0; i < rates.size(); ++i) {
+      rates[i] += bestAimed(fan, "ACEK"[i], error) / std::max(variants, 1);
+    }
+  }
+  return rates;
 }
 
 ShotMap shotSweep(int variants, bool bankDown) {
@@ -705,7 +846,10 @@ LockBurstResult lockBursts(int bursts) {
     Game& game = harness.game();
     harness.kickbackOff = true;
     harness.advance();
-    // Open the Hangar with the lock lit, as three door hits do.
+    // Open the Hangar with the lock lit, as three door hits do (one bank
+    // lighting the lock here).
+    GameTestAccess::rules(game).setBanksPerLock(1);
+    GameTestAccess::rules(game).setLockNeedsBogey(false);
     for (std::size_t door = 0; door < table::kDropTargets.size(); ++door) {
       GameTestAccess::rules(game).onDropTarget(door);
     }
@@ -834,8 +978,9 @@ ScoopPairResult scoopPairs(int pairs) {
     harness.kickbackOff = true;
     harness.advance();
     const float dx = (static_cast<float>(j % 5) - 2.0F) * 3.0F;
-    harness.put(0, {scoop.center.x + dx, 440.0F},
-                {0.0F, -700.0F - static_cast<float>(j % 4) * 300.0F}, true);
+    // Revision 3: the room takes a ball coming in up and to the right.
+    const float speed = 700.0F + static_cast<float>(j % 4) * 300.0F;
+    harness.put(0, {scoop.center.x - 12.0F + dx * 0.5F, 445.0F}, {0.3F * speed, -speed}, true);
     // The second follows the first by anything from nothing to past the
     // moment the first comes out.
     const int gap = (j * 7) % (hold + 30);
@@ -846,7 +991,7 @@ ScoopPairResult scoopPairs(int pairs) {
     int overlapRun = 0;
     for (int i = 0; i < kStepsPerSecond * 10; ++i) {
       if (i == gap) {
-        second = harness.add({scoop.center.x - dx, 470.0F}, {0.0F, -900.0F});
+        second = harness.add({scoop.center.x - 16.0F - dx * 0.5F, 470.0F}, {270.0F, -900.0F});
       }
       const std::size_t eventsBefore = harness.events.size();
       harness.advance();

@@ -87,6 +87,26 @@ struct Player {
   }
 };
 
+// Every spinner's blade and count.
+bool spinnersSame(const Game& a, const Game& b) {
+  for (std::size_t i = 0; i < Game::kSpinners; ++i) {
+    if (a.spinnerPhase(i) != b.spinnerPhase(i) || a.spinCount(i) != b.spinCount(i) ||
+        a.spinsOwed(i) != b.spinsOwed(i)) {
+      return false;
+    }
+  }
+  return a.spinCount() == b.spinCount();
+}
+
+// The drone as drawn.
+bool droneSame(const Game& a, const Game& b) {
+  const pinball::DroneView da = a.drone();
+  const pinball::DroneView db = b.drone();
+  return da.position.x == db.position.x && da.position.y == db.position.y && da.sink == db.sink &&
+         da.recoil == db.recoil && da.up == db.up && da.knocked == db.knocked &&
+         da.downLeft == db.downLeft && a.droneHitCount() == b.droneHitCount();
+}
+
 // What a player sees and what the rules hold, for comparing two games.
 bool sameOnTable(const Game& a, const Game& b) {
   const pinball::BallViews ballsA = a.balls();
@@ -100,7 +120,9 @@ bool sameOnTable(const Game& a, const Game& b) {
     if (x.id != y.id || x.position.x != y.position.x || x.position.y != y.position.y ||
         x.visible != y.visible || x.raised != y.raised || x.locked != y.locked ||
         x.scale != y.scale || x.drawOffset.x != y.drawOffset.x ||
-        x.drawOffset.y != y.drawOffset.y || x.sink != y.sink) {
+        x.drawOffset.y != y.drawOffset.y || x.sink != y.sink ||
+        x.underground != y.underground || x.glowAt.x != y.glowAt.x ||
+        x.glowAt.y != y.glowAt.y || x.glow != y.glow) {
       return false;
     }
   }
@@ -134,10 +156,17 @@ bool sameOnTable(const Game& a, const Game& b) {
       return false;
     }
   }
+  const pinball::Vec2 captiveA = a.captivePosition();
+  const pinball::Vec2 captiveB = b.captivePosition();
+  if (captiveA.x != captiveB.x || captiveA.y != captiveB.y ||
+      a.captiveSwitchClosed() != b.captiveSwitchClosed() ||
+      a.captiveSwitchCount() != b.captiveSwitchCount()) {
+    return false;
+  }
   return a.doorBankUp() == b.doorBankUp() && a.kickbackArmed() == b.kickbackArmed() &&
          a.lockedBalls() == b.lockedBalls() && a.queuedBalls() == b.queuedBalls() &&
          a.plungerPull() == b.plungerPull() && a.stepCount() == b.stepCount() &&
-         a.spinnerPhase() == b.spinnerPhase() && a.inProgress() == b.inProgress();
+         spinnersSame(a, b) && droneSame(a, b) && a.inProgress() == b.inProgress();
 }
 
 // Inputs for a stretch of play that are the same for two games.
@@ -161,6 +190,14 @@ struct Coverage {
   int tilted = 0;
   int waiting = 0;  // A ball on the plunger.
   int queued = 0;
+  int captive = 0;  // The captive ball up its channel.
+  // Revision 3: a ball riding the subway, the drone down (diving or knocked
+  // down), knocked down, recoiling, a spinner turning.
+  int subway = 0;
+  int droneDown = 0;
+  int droneKnocked = 0;
+  int droneRecoil = 0;
+  int spinning = 0;
 };
 
 // Takes the game down and puts it back in a new Game: the file reads back
@@ -187,9 +224,16 @@ void roundTrip(const Game& game, Coverage& seen, bool restore) {
   seen.tilted += game.rules().tilted() ? 1 : 0;
   seen.waiting += game.ballAwaitingLaunch() ? 1 : 0;
   seen.queued += game.queuedBalls() > 0 ? 1 : 0;
+  seen.captive += game.captiveTranslation() > 1.0F ? 1 : 0;
   for (const pinball::BallView& ball : game.balls()) {
     seen.held += !ball.visible || ball.raised ? 1 : 0;
+    seen.subway += ball.underground ? 1 : 0;
   }
+  const pinball::DroneView drone = game.drone();
+  seen.droneDown += drone.up ? 0 : 1;
+  seen.droneKnocked += drone.knocked ? 1 : 0;
+  seen.droneRecoil += drone.recoil > 0.0F ? 1 : 0;
+  seen.spinning += game.spinsOwed() > 0 ? 1 : 0;
   if (!restore || !read) {
     return;
   }
@@ -299,12 +343,84 @@ void testEveryStateSaves() {
     CHECK(other.harness.game().requestBall());
     CHECK(other.harness.game().requestBall());
     roundTrip(other.harness.game(), seen, true);
+    // The captive ball on its way up and back, its switch closing and
+    // opening: struck from below at three strengths, saved every few steps.
+    for (const float speed : {600.0F, 1200.0F, 2500.0F}) {
+      Player third(33);
+      for (int i = 0; i < 120 * 20 && !third.harness.game().rules().ballInPlay(); ++i) {
+        third.step();
+      }
+      Game& captive = third.harness.game();
+      const pinball::Vec2 up{-0.3F, -0.954F};
+      pinball::GameTestAccess::placeBall(captive, 0, table::kCaptiveHome - up * 70.0F,
+                                         up * speed);
+      const InputState idle;
+      for (int i = 0; i < 60; ++i) {
+        captive.step(idle);
+        if (i % 3 == 0) {
+          roundTrip(captive, seen, true);
+        }
+      }
+    }
+  }
+  // Revision 3's moving parts, each caught where the bot seldom leaves it:
+  // a ball under the playfield on its way from the Briefing room, the drone
+  // knocked down, the drone thrown back by a hit, all three spinners turning.
+  {
+    Player player(41);
+    for (int i = 0; i < 120 * 20 && !player.harness.game().inProgress(); ++i) {
+      player.step();
+    }
+    Game& game = player.harness.game();
+    pinball::GameTestAccess::placeBall(game, 0, {table::kHoles[table::kScoopHole].center.x - 12.0F, 445.0F},
+                                       {270.0F, -900.0F});
+    bool rode = false;
+    for (int i = 0; i < 120 && !rode; ++i) {
+      game.step(InputState{});
+      for (const pinball::BallView& ball : game.balls()) {
+        rode = rode || (ball.underground && ball.glow >= 1.0F);
+      }
+    }
+    CHECK(rode);
+    roundTrip(game, seen, true);
+    // Up through the gate into the drone, until it is down.
+    for (int hit = 0; hit < 40 && !game.drone().knocked; ++hit) {
+      pinball::GameTestAccess::placeBall(game, 0, {game.drone().position.x, 350.0F},
+                                         {0.0F, -900.0F});
+      for (int i = 0; i < 30; ++i) {
+        game.step(InputState{});
+        if (game.drone().recoil > 0.0F && !game.drone().knocked) {
+          roundTrip(game, seen, true);
+          break;
+        }
+      }
+      pinball::GameTestAccess::placeBall(game, 0, {300.0F, 560.0F}, {0.0F, 0.0F});
+      for (int i = 0; i < 30; ++i) {
+        game.step(InputState{});
+      }
+    }
+    CHECK(game.drone().knocked);
+    roundTrip(game, seen, true);
+    for (const table::Spinner& spinner : table::kSpinners) {
+      const pinball::Vec2 middle = (spinner.a + spinner.b) * 0.5F;
+      pinball::GameTestAccess::placeBall(game, 0, {middle.x, middle.y + 12.0F}, {0.0F, -1500.0F});
+      game.step(InputState{});
+      game.step(InputState{});
+    }
+    pinball::GameTestAccess::placeBall(game, 0, {300.0F, 560.0F}, {0.0F, 0.0F});
+    game.step(InputState{});
+    CHECK(game.spinsOwed(table::kLaneSpinner) > 0 &&
+          game.spinsOwed(table::kCircuitSpinnerLeft) > 0 &&
+          game.spinsOwed(table::kCircuitSpinnerRight) > 0);
+    roundTrip(game, seen, true);
   }
   std::fprintf(stderr,
                "saved games: %d saved, %d restored; multiball %d, locked %d, held %d, "
-               "course %d, tilted %d, on the plunger %d, queued %d\n",
+               "course %d, tilted %d, on the plunger %d, queued %d, captive ball up %d; subway %d, "
+               "drone down %d, knocked down %d, recoiling %d, spinning %d\n",
                seen.saves, seen.restored, seen.multiball, seen.locked, seen.held, seen.course,
-               seen.tilted, seen.waiting, seen.queued);
+               seen.tilted, seen.waiting, seen.queued, seen.captive, seen.subway, seen.droneDown,
+               seen.droneKnocked, seen.droneRecoil, seen.spinning);
   CHECK(seen.saves > 500);
   CHECK(seen.restored > 50);
   CHECK(seen.multiball > 0);
@@ -314,12 +430,22 @@ void testEveryStateSaves() {
   CHECK(seen.waiting > 0);
   CHECK(seen.tilted > 0);
   CHECK(seen.queued > 0);
+  CHECK(seen.captive > 10);
+  CHECK(seen.subway > 0);
+  CHECK(seen.droneDown > 0);
+  CHECK(seen.droneKnocked > 0);
+  CHECK(seen.droneRecoil > 0);
+  CHECK(seen.spinning > 0);
 }
 
 // The same save put on two new tables gives two games that never part: a
 // restore is as deterministic as the game itself.
-void testRestoreIsDeterministic() {
+// Concept A: also at FL500 (altitude 4), where the Air Pocket pulses and the
+// Prop Wash turns: both run on the step count and the altitude, which the
+// save carries.
+void testRestoreIsDeterministic(int altitude) {
   Player player(8);
+  player.harness.game().setAltitude(altitude);
   for (int i = 0; i < 120 * 120; ++i) {
     player.step();
   }
@@ -343,8 +469,23 @@ void testRestoreIsDeterministic() {
 
 
 // The records with what Box2D alone decides left out: where the balls are,
-// how they move, and the flippers and plunger (which the balls can push).
+// how they move, the flippers and plunger (which the balls can push), and
+// the way the drone recoils (from where the ball struck it), and the
+// captive ball's body.
 save::Snapshot withoutBodies(save::Snapshot s) {
+  // The drone's recoil points from the ball that struck it to the drone
+  // (Game::onDroneHit): where the ball was, so Box2D's too.
+  s.game.droneRecoilDirection = {0.0F, -1.0F};
+  // The captive ball's body, and its stroke's top speed, are Box2D's too.
+  const save::CaptiveRecord atRest;
+  s.captive.x = atRest.x;
+  s.captive.y = atRest.y;
+  s.captive.vx = atRest.vx;
+  s.captive.vy = atRest.vy;
+  s.captive.rotationCos = atRest.rotationCos;
+  s.captive.rotationSin = atRest.rotationSin;
+  s.captive.spin = atRest.spin;
+  s.captive.peakSpeed = atRest.peakSpeed;
   for (save::BallRecord& ball : s.balls) {
     ball.x = 0.0;
     ball.y = 0.0;
@@ -355,6 +496,8 @@ save::Snapshot withoutBodies(save::Snapshot s) {
     ball.spin = 0.0F;
     ball.sensorFrom = {};
     ball.searchAnchor = {};
+    // The ball search's count of steps without moving follows the body too.
+    ball.stillSteps = 0;
     ball.takenAt = {};
   }
   return s;
@@ -369,11 +512,12 @@ save::Snapshot withoutBodies(save::Snapshot s) {
 // one field differs, which shows that nothing the game depends on is left
 // out of the save; and the worlds must keep together for two seconds at
 // least.
-void testContinuesAsTheOriginal() {
+void testContinuesAsTheOriginal(int altitude) {
   int compared = 0;
   int shortest = 1 << 30;
   for (std::uint64_t seed = 1; seed <= 8 && compared < 4; ++seed) {
     Player player(seed + 40U);
+    player.harness.game().setAltitude(altitude);
     for (int i = 0; i < 120 * 400 && compared < 4; ++i) {
       player.step();
       Game& game = player.harness.game();
@@ -388,6 +532,8 @@ void testContinuesAsTheOriginal() {
         continue;
       }
       Game again;
+      // The bench's knob (the Altitude pinned) is not the game's state.
+      again.setAltitude(altitude);
       CHECK(again.restore(game.snapshot()));
       CHECK(sameOnTable(game, again));
       int together = 0;
@@ -416,10 +562,66 @@ void testContinuesAsTheOriginal() {
       player.waited = 0;
     }
   }
-  std::fprintf(stderr, "saved games: restored games kept with their originals for %d steps "
-                       "at least\n", shortest);
+  std::fprintf(stderr, "saved games (altitude %d): restored games kept with their originals "
+                       "for %d steps at least\n", altitude, shortest);
   CHECK(compared >= 4);
   CHECK(shortest >= 240);
+}
+
+// The captive ball saved mid-stroke, the ball that struck it gone from it
+// (and then kept out of its way): the restored game's captive ball goes up
+// and back exactly as the original's, step for step, and its switch closes
+// at the same step (its joint is the body's state alone:
+// PhysicsWorld::renewCaptiveJoint).
+void testCaptiveMidStroke() {
+  int compared = 0;
+  for (const float speed : {700.0F, 1500.0F, 3000.0F}) {
+    Game game;
+    const InputState idle;
+    game.step(idle);
+    const pinball::Vec2 up{-0.3F, -0.954F};
+    pinball::GameTestAccess::placeBall(game, 0, table::kCaptiveHome - up * 70.0F, up * speed);
+    pinball::GameTestAccess::putInPlay(game, 0);
+    // Until it is on its way up and the ball has left it.
+    int i = 0;
+    for (; i < 120; ++i) {
+      game.step(idle);
+      const pinball::Vec2 ball = pinball::GameTestAccess::position(game, 0);
+      const pinball::Vec2 d = ball - game.captivePosition();
+      if (game.captiveTranslation() > 2.0F && game.captiveTranslation() < table::kCaptiveSwitchAt &&
+          std::sqrt(d.x * d.x + d.y * d.y) > 30.0F) {
+        break;
+      }
+    }
+    CHECK(i < 120);
+    const save::Snapshot snapshot = game.snapshot();
+    CHECK(snapshot.captive.peakSpeed > 0.0F);
+    Game again;
+    CHECK(again.restore(snapshot));
+    CHECK(sameOnTable(game, again));
+    bool same = true;
+    bool returned = false;
+    for (int k = 0; k < 60 && same; ++k) {
+      // The ball that struck it kept out of the way in both, the same way,
+      // so that only the captive ball's own state can tell them apart.
+      for (Game* g : {&game, &again}) {
+        pinball::GameTestAccess::placeBall(*g, 0, {300.0F, 560.0F});
+      }
+      game.step(idle);
+      again.step(idle);
+      same = game.captivePosition().x == again.captivePosition().x &&
+             game.captivePosition().y == again.captivePosition().y &&
+             game.captiveSwitchClosed() == again.captiveSwitchClosed() &&
+             game.captiveSwitchCount() == again.captiveSwitchCount() &&
+             game.rules().score() == again.rules().score();
+      returned = returned || game.captiveTranslation() < 0.5F;
+    }
+    CHECK(same);
+    CHECK(returned);
+    CHECK(game.captiveSwitchCount() == 1);
+    ++compared;
+  }
+  CHECK(compared == 3);
 }
 
 // A save taken while balls fly is put back where they were, moving as they
@@ -590,11 +792,87 @@ void testRejectsBadFields() {
   refused("a hold of a day", [](S& s) { s.balls[0].heldSteps = 120U * 86400U; });
   refused("a door command past Raise", [](S& s) { s.rules.doorCommand = 3; });
   refused("a game random of 0", [](S& s) { s.game.random = 0; });
-  refused("too many spins owed", [](S& s) { s.game.spinsOwed = table::kMaxSpinsOwed + 1; });
-  refused("a spinner direction of 2", [](S& s) { s.game.spinDirection = 2; });
+  refused("too many spins owed", [](S& s) { s.game.spinsOwed[2] = table::kMaxSpinsOwed + 1; });
+  refused("a spinner direction of 2", [](S& s) { s.game.spinDirection[1] = 2; });
+  refused("a spinner direction of 0", [](S& s) { s.game.spinDirection[0] = 0; });
+  refused("a circuit spinner turned down the table", [](S& s) {
+    s.game.spinDirection[table::kCircuitSpinnerLeft] = -1;
+  });
+  refused("spin counts that do not add up", [](S& s) {
+    s.game.spinCounts[table::kCircuitSpinnerRight] += 1;
+  });
+  refused("a spin total past the counts", [](S& s) { s.game.spinCount += 1; });
+  refused("a recoil of half a unit", [](S& s) { s.game.droneRecoilDirection = {0.0F, -0.5F}; });
+  refused("a blade past its turn", [](S& s) {
+    s.game.spinnerTicks[0] = 2U * static_cast<std::uint32_t>(table::kSpinPayoutSteps);
+  });
+  // The drone: knocked down but standing, its down time running while not
+  // knocked down, the game's view of it not the physics', a hit in the future,
+  // a recoil that is not a direction.
+  refused("a knocked-down drone standing", [](S& s) {
+    s.table.droneKnocked = true;
+    s.table.droneUp = true;
+    s.game.droneWasKnocked = true;
+  });
+  refused("a drone down without a knock-down", [](S& s) {
+    s.table.droneUp = false;
+    s.game.droneWasUp = false;
+    s.table.droneDownSteps = 100;
+  });
+  refused("the drone seen up while down", [](S& s) {
+    s.table.droneUp = false;
+    s.game.droneWasUp = true;
+  });
+  refused("a drone hit in the future", [](S& s) { s.game.droneHitStep = s.game.stepCount + 5; });
+  refused("a drone moved in the future", [](S& s) { s.game.droneMoveStep = s.game.stepCount + 5; });
+  refused("a recoil of 3", [](S& s) { s.game.droneRecoilDirection = {3.0F, 0.0F}; });
+  refused("a drone off its patrol", [](S& s) { s.table.droneX = table::kDroneRightX + 1.0F; });
   refused("a future release", [](S& s) { s.game.lastReleaseStep[0] = s.game.stepCount + 5; });
   refused("four balls queued", [](S& s) { s.game.queuedBalls = 4; });
   refused("a flipper past its stop", [](S& s) { s.table.flipperAngles[0] = 3.0F; });
+  // The captive ball (format 5): in its channel, its switch where it is.
+  const auto captiveAt = [](S& s, float along, float aside) {
+    const pinball::Vec2 p = table::captivePosition(along) + table::kCaptiveNormal * aside;
+    s.captive.x = static_cast<double>(p.x / save::kPixelsPerMeter);
+    s.captive.y = static_cast<double>(p.y / save::kPixelsPerMeter);
+  };
+  refused("a captive ball out of its channel", [&](S& s) { captiveAt(s, 10.0F, 6.0F); });
+  refused("a captive ball past its stop", [&](S& s) { captiveAt(s, 40.0F, 0.0F); });
+  refused("a captive ball below its mouth", [&](S& s) { captiveAt(s, -10.0F, 0.0F); });
+  refused("a captive ball at NaN", [](S& s) { s.captive.x = std::nan(""); });
+  refused("a captive ball faster than the cap", [](S& s) { s.captive.vy = 100.0F; });
+  refused("a captive ball's rotation that is not one", [](S& s) {
+    s.captive.rotationCos = 0.5F;
+    s.captive.rotationSin = 0.5F;
+  });
+  refused("a captive ball at its switch with the switch open", [&](S& s) {
+    captiveAt(s, table::kCaptiveSwitchAt + 1.0F, 0.0F);
+    s.captive.switchClosed = false;
+    s.captive.peakSpeed = 500.0F;
+  });
+  refused("a captive ball at rest with its switch closed", [&](S& s) {
+    captiveAt(s, 0.0F, 0.0F);
+    s.captive.switchClosed = true;
+  });
+  refused("a captive ball at rest with a stroke's speed", [&](S& s) {
+    captiveAt(s, 0.0F, 0.0F);
+    s.captive.switchClosed = false;
+    s.captive.peakSpeed = 300.0F;
+  });
+  refused("a captive ball struck by ball 4", [](S& s) { s.captive.striker = 3; });
+  {
+    // And the same up its channel, switch closed and stroke under way, is good.
+    save::Snapshot up = good;
+    captiveAt(up, table::kCaptiveSwitchAt + 1.0F, 0.5F);
+    up.captive.switchClosed = true;
+    up.captive.peakSpeed = 900.0F;
+    up.captive.striker = 2;
+    CHECK(save::valid(up));
+    Game other;
+    CHECK(other.restore(up));
+    CHECK(other.captiveSwitchClosed());
+    CHECK(std::fabs(other.captiveTranslation() - (table::kCaptiveSwitchAt + 1.0F)) < 0.01F);
+  }
   refused("a plunger drawn too far", [](S& s) { s.table.plungerPull = 100.0F; });
   refused("no ball at all", [](S& s) {
     for (save::BallRecord& ball : s.balls) {
@@ -736,9 +1014,12 @@ void testSaveGame() {
   testRejectsDamage();
   testRejectsBadFields();
   testInFlight();
-  testContinuesAsTheOriginal();
+  testCaptiveMidStroke();
+  testContinuesAsTheOriginal(0);
+  testContinuesAsTheOriginal(4);
   testEveryStateSaves();
-  testRestoreIsDeterministic();
+  testRestoreIsDeterministic(0);
+  testRestoreIsDeterministic(4);
   testAltitude();
   testFast();
 }

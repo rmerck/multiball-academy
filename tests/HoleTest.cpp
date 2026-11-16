@@ -48,7 +48,31 @@ float distance(Vec2 a, Vec2 b) {
 // (-ffp-contract=off, as Box2D is), the physics uses only exactly rounded
 // arithmetic, and the table's curves are point tables written out in
 // TableLayout.hpp, not computed with the C library.
-constexpr std::uint64_t kSoakTrajectory = 0x1cb50251cc53d2f3ULL;
+// (Table revision 3, integrated (table/rev3-int): re-recorded once for the
+// captive ball (2a) and the drone's rise after its 20 s (2b); see those
+// branches. Concept A G0/G1 (table/a-geometry): re-recorded for the new upper
+// right (the Flight Deck, its flipper, stand-ups and holes, F-L-A-P-S), as
+// 0xdd2e8503b7c67182. Then merged with main's hole cups (#50, main's value
+// 0x1cb50251cc53d2f3) and Altitude (#49): re-recorded deliberately for the
+// capture at the cup and the pocket funnels of the Mission scoop, Hangar,
+// CAT SHOT and deck drain, the deck's set-down moved clear of the raised
+// deck bat (532, 236), and the shelf under the resting deck bat. Two runs on
+// x86-64 give the same value; arm64 is checked by the macOS CI job. The soak
+// plays at FL100, where the Air Pocket and the Prop Wash are idle.
+// G2: re-recorded for the frictionless Hangar roof, deck stand-up A
+// lowered, the deck set-down (507, 228) moving right,
+// the BOGEY drops and the RADAR stand-ups (0xa1fa4e7df9970e85), then merged
+// with concept A's rules (G5, feat/a-rules, recorded there as
+// 0x09482ffd3c224202 for the new rules the script reaches): re-recorded on
+// the merge (0x9671ef8fc1d10394); then the one-shape door bank was
+// reverted (it moved B4): 0x72134c8bea581229. Was 0x4213a29dab26e639.)
+// Then the lock asking for the BOGEY bank and RADAR/BOGEY as the sortie
+// qualifiers (DECISIONS.md 10): re-recorded deliberately. Was
+// 0x72134c8bea581229.
+// Final G2: BOGEY cut (it failed B2 after one tuning pass): 0x4e9b753928734c86
+// (was 0x1cc96e44b0f34524 with #56). Final acceptance: RADAR cut too (the
+// last touch of half the quick drains): 0xac1f89d5abf004d7.
+constexpr std::uint64_t kSoakTrajectory = 0xac1f89d5abf004d7ULL;
 
 void mixInto(std::uint64_t& hash, std::uint64_t value) noexcept {
   for (unsigned byte = 0; byte < 8U; ++byte) {
@@ -77,7 +101,7 @@ void testHoles() {
   {  // Layout: every exit is inside the table, below the box that took the
      // ball or at the far end of a rail, and no hole returns the ball
      // straight into another hole's box.
-    CHECK(table::kHoles[table::kScoopHole].type == table::HoleType::Scoop);
+    CHECK(table::kHoles[table::kScoopHole].type == table::HoleType::Subway);
     CHECK(table::kHoles[table::kHangarHole].type == table::HoleType::Hangar);
     CHECK(table::kHoles[table::kRunwayHole].type == table::HoleType::RampLeft);
     CHECK(table::kHoles[table::kSkywayHole].type == table::HoleType::RampRight);
@@ -85,6 +109,12 @@ void testHoles() {
       CHECK(hole.exitPosition.x > table::kWallLeft + table::kBallRadius);
       CHECK(hole.exitPosition.x < table::kLaneWallX - table::kBallRadius);
       CHECK(hole.exitPosition.y > 60.0F && hole.exitPosition.y < table::kHeight);
+      // The Skyway's diverted ride (concept A) is never taken from the
+      // field: its box has no size.
+      if (hole.type == table::HoleType::DeckRamp) {
+        CHECK(hole.halfSize.x == 0.0F && hole.halfSize.y == 0.0F);
+        continue;
+      }
       CHECK(hole.halfSize.x > 0.0F && hole.halfSize.y >= 9.0F);
       // A hole ignores the ball it has just returned until it is clear, so
       // the exit must be where that works: within the rearm distance of its
@@ -122,7 +152,11 @@ void testHoles() {
     const table::Hole& hole = table::kHoles[i];
     for (const float speed : {40.0F, 900.0F, 2600.0F}) {
       PhysicsWorld world;
-      world.resetBall({hole.center.x, hole.center.y + hole.halfSize.y - 2.0F}, {0.0F, -speed});
+      // (Into the Mission scoop up and to the right, as it takes a ball.)
+      const float across = hole.type == table::HoleType::Subway ? 0.3F * speed : 0.0F;
+      world.resetBall({hole.center.x - (hole.type == table::HoleType::Subway ? 6.0F : 0.0F),
+                       hole.center.y + hole.halfSize.y - 2.0F},
+                      {across, -speed});
       const table::ElementRef captured = stepUntil(world, PhysicsEvent::Type::Capture, 20);
       CHECK(captured.kind == table::ElementKind::Hole);
       CHECK(captured.index == i);
@@ -151,18 +185,17 @@ void testHoles() {
     }
   }
 
-  {  // The Briefing room is reached from below, straight up the middle, at
-     // any speed that gets there; its exit is below its flares.
+  {  // The Briefing room (revision 3) is reached from below along its
+     // slanted channel, up and to the right, at any speed that gets there;
+     // its subway sets the ball down far below its mouth.
     const table::Hole& scoop = table::kHoles[table::kScoopHole];
-    for (const float speed : {500.0F, 1200.0F, 2400.0F}) {
+    for (const float speed : {900.0F, 1500.0F, 2400.0F}) {
       PhysicsWorld world;
-      world.resetBall({scoop.center.x, 520.0F}, {0.0F, -speed});
+      world.resetBall({410.0F, 520.0F}, {0.28F * speed, -0.96F * speed});
       const table::ElementRef captured = stepUntil(world, PhysicsEvent::Type::Capture, 60);
       CHECK(captured.kind == table::ElementKind::Hole && captured.index == table::kScoopHole);
     }
-    // It kicks the ball out of its own cup, down through its mouth.
-    CHECK(scoop.exitPosition.x == scoop.cup.x && scoop.exitPosition.y == scoop.cup.y);
-    CHECK(scoop.exitVelocity.y > 0.0F);
+    CHECK(scoop.exitPosition.y > table::kBriefingLeft.a.y + table::kBallRadius);
   }
 
   // A ramp takes only a ball moving up the table fast enough, anywhere
@@ -222,6 +255,9 @@ void testHoles() {
         }
       }
     }
+    if (enters != 1) {
+      std::printf("rollover %zu entered %zu times\n", i, enters);
+    }
     CHECK(enters == 1);
   }
 
@@ -275,7 +311,7 @@ void testHoles() {
   {  // The game's hold times and counters.
     const double holdSteps = table::kScoopHoldSeconds / Game::kStepSeconds;
     CHECK(holdSteps > 30.0 && holdSteps < 600.0);
-    CHECK(Game::holdSeconds(table::HoleType::Scoop) == table::kScoopHoldSeconds);
+    CHECK(Game::holdSeconds(table::HoleType::Subway) == table::kScoopHoldSeconds);
     CHECK(Game::holdSeconds(table::HoleType::Hangar) == table::kHangarHoldSeconds);
     CHECK(Game::holdSeconds(table::HoleType::RampLeft) == table::kRampRideSeconds);
     CHECK(Game::holdSeconds(table::HoleType::RampRight) == table::kRampRideSeconds);
@@ -305,6 +341,11 @@ void testHoles() {
   // each time.
   for (std::size_t h = 0; h < table::kHoles.size(); ++h) {
     const table::Hole& hole = table::kHoles[h];
+    // The Flight Deck's set-down is on the deck, above its own flipper
+    // (concept A: GameTest's deck block checks it).
+    if (hole.type == table::HoleType::DeckRamp) {
+      continue;
+    }
     for (int j = 0; j < 12; ++j) {
       PhysicsWorld world;
       const float dx = (static_cast<float>(j % 4) - 1.5F) * 0.3F;

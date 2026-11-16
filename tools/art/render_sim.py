@@ -17,7 +17,9 @@ FX = False
 A = os.path.join(ROOT, "assets")
 LAMP_NAMES = [n for n, _ in P.LAMPS]
 LAMP_COL = dict(P.LAMPS)
-LAMPS = {LAMP_NAMES[l["id"]]: (tuple(l["c"]), l["kind"]) for l in L["lamps"]}
+LAMPS = {LAMP_NAMES[l["id"]]: (tuple(l["c"]), l["kind"]) for l in L["lamps"] if l["kind"] != "planned"}
+PLANNED = {n: (col, shape, pos) for n, col, shape, pos in P.PLANNED_LAMPS}
+DRONE_AT = ((L["drone"]["leftX"] + L["drone"]["rightX"]) / 2, L["drone"]["y"])   # where review frames show it
 _cache = {}
 
 
@@ -97,6 +99,25 @@ class Sim:
                 self.over(tint(load("sprites/insert_round.png"), col, P.lit_level(col)), x, y, dia * P.INSERT_ROUND_PER_DIAMETER)
                 self.glow(x, y, dia * P.GLOW_RADIUS_ROUND, col, P.GLOW_STRENGTH_LAMP)
 
+    def planned(self, name):
+        """A revision 3 insert (palette.PLANNED_LAMPS) lit, as the renderer will draw it once it has a LampId."""
+        col, shape, (x, y) = PLANNED[name]
+        if shape == "hex":
+            sprite, size, glow_r = "sprites/insert_hex.png", 16.0 * P.HEX_DIAMETER / 11.0, P.HEX_DIAMETER * P.GLOW_RADIUS_ROUND
+        elif shape == "chevron":
+            sprite, size, glow_r = "sprites/insert_chevron.png", P.CHEVRON_SIZE[0] + 6.0, P.CHEVRON_SIZE[0] * 0.8
+        elif shape == "pip":
+            sprite, size, glow_r = "sprites/insert_round.png", P.PIP_DIAMETER * P.INSERT_ROUND_PER_DIAMETER, P.PIP_DIAMETER * P.GLOW_RADIUS_ROUND
+        else:
+            sprite, size, glow_r = "sprites/insert_round.png", P.LADDER_DIAMETER * P.INSERT_ROUND_PER_DIAMETER, P.LADDER_DIAMETER * P.GLOW_RADIUS_ROUND
+        if FX:
+            neon = P.NEON[col]
+            self.over(tint(load(sprite), neon, P.neon_level(neon)), x, y, size)
+            self.neon(x, y, glow_r, neon)
+        else:
+            self.over(tint(load(sprite), col, P.lit_level(col)), x, y, size)
+            self.glow(x, y, glow_r, col, P.GLOW_STRENGTH_LAMP)
+
     def neon(self, x, y, glow_radius, neon):
         """A lit lamp's light with the light show, as drawLitLamps draws it at full level."""
         self.add(x, y, glow_radius * 3.4, neon, 0.55 * P.GLOW_STRENGTH_NEON)
@@ -105,11 +126,32 @@ class Sim:
         self.add(x, y, glow_radius * 1.5, neon, 0.45, sprite="sprites/flare.png")
 
     def furniture(self, lit=(), flash=(), doors_up=True, marked=(), targets_lit=(0, 1), spinner_frame=0,
-                  plunger_pull=0.0, flippers=(False, False), kickback=True):
+                  plunger_pull=0.0, flippers=(False, False), kickback=True, drone="drone"):
         """Everything but the balls. lit: lamp names (or 'all'); flash: bumper indices; marked: door indices."""
-        names = LAMP_NAMES if lit == "all" else lit
+        names = (LAMP_NAMES + list(PLANNED)) if lit == "all" else lit
         for n in names:
-            self.lamp(n)
+            if n in PLANNED:
+                self.planned(n)
+            else:
+                self.lamp(n)
+        # Revision 3: flasher domes (lit with everything else), stand-up faces, circuit spinners, the drone.
+        for name, col, (x, y) in P.FLASHER_DOMES:
+            on = lit == "all" or ("dome:" + name) in lit
+            self.over(tint(load("sprites/flasher_dome.png"), P.NEON[col] if on and FX else col, 1.0 if on else P.UNLIT_LEVEL + 0.1), x, y, P.FLASHER_DOME_UNITS)
+            if on:
+                self.add(x, y, 14.0, P.NEON[col] if FX else col, 0.45)
+        for u in L["standups"]:
+            a, b = u["shape"]["a"], u["shape"]["b"]
+            on = lit == "all" or ("Taxi" + u["letter"]) in lit
+            w, h = P.STANDUP_SPRITE_UNITS
+            sp = tint(load("sprites/standup_%s.png" % u["letter"].lower()), P.YELLOW, P.lit_level(P.YELLOW) if on else P.UNLIT_LEVEL + 0.15)
+            self.over(sp, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, w, h, angle=math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) - 90.0)
+        for i in (0, 1):
+            a, b = L["sensors"][i]["a"], L["sensors"][i]["b"]
+            sp = load("sprites/spinner_circuit_%d.png" % spinner_frame)
+            self.over(sp, (a[0] + b[0]) / 2, a[1], sp.width / 4.0, sp.height / 4.0)
+        if drone:
+            self.over(load("sprites/%s.png" % drone), DRONE_AT[0], DRONE_AT[1], P.DRONE_SPRITE_UNITS)
         for i, t in enumerate(L["targets"]):
             a, b = t["shape"]["a"], t["shape"]["b"]
             ln = math.hypot(b[0] - a[0], b[1] - a[1])

@@ -14,8 +14,8 @@ namespace {
 Vec2 restingTip(std::size_t flipper) noexcept {
   const float side = flipper == table::kLeftFlipperIndex ? 1.0F : -1.0F;
   const Vec2 pivot = table::kFlippers[flipper].pivot;
-  return {pivot.x + side * table::kFlipperLength * 0.8660254F,
-          pivot.y + table::kFlipperLength * 0.5F};
+  const float length = table::kFlippers[flipper].length;
+  return {pivot.x + side * length * 0.8660254F, pivot.y + length * 0.5F};
 }
 
 // True if a ball is over the resting bat, within reach of a flip.
@@ -49,6 +49,7 @@ InputState AttractPilot::next(const Game& game) noexcept {
     sides_ = {};
     plunge_ = 0;
     lanePause_ = 0;
+    playSteps_ = 0;
     // A press of new game, one step long, once the pause is over.
     if (overSteps_ < kRestartSteps) {
       ++overSteps_;
@@ -60,6 +61,8 @@ InputState AttractPilot::next(const Game& game) noexcept {
   }
   overSteps_ = 0;
   newGame_ = false;
+  const bool flipping = playSteps_ < kDemoSteps;
+  playSteps_ = flipping ? playSteps_ + 1 : playSteps_;
 
   for (std::size_t i = 0; i < sides_.size(); ++i) {
     Side& side = sides_[i];
@@ -72,7 +75,7 @@ InputState AttractPilot::next(const Game& game) noexcept {
       }
     } else if (side.rest > 0) {
       --side.rest;
-    } else if (ballOverBat(game, i)) {
+    } else if (flipping && ballOverBat(game, i)) {
       side.hold = kHoldSteps;
       press = true;
     }

@@ -29,7 +29,16 @@
 
 namespace pinball::save {
 
-inline constexpr std::uint16_t kFormatVersion = 3;
+// 3: table revision 3's drone. 4: per-spinner state, the drone's knock-down
+// and its look (recoil, sinking). 5: the captive ball (table revision 3
+// integrated: the captive and motion branches each called their own record
+// format 4; neither shipped, so one version, 5, holds both).
+// 7: main's format 3 (the Altitude in the rules' state, hole cups) merged
+// with concept A's 6.
+// 8: the BOGEY drop targets. 9: concept A's rules (G5): sorties, multiballs,
+// Wings Ceremony, Air Show.
+// 10: the lock's BOGEY bank and RADAR letters (DECISIONS.md 10).
+inline constexpr std::uint16_t kFormatVersion = 10;
 
 // The longest a build id may be ("2.0.0+123456789" is 15).
 inline constexpr std::size_t kMaxBuildIdLength = 32;
@@ -90,6 +99,10 @@ struct RulesRecord {
   bool doorsDown = false;
   std::uint8_t doorCommand = 0;
   std::uint32_t doorRaiseSteps = 0;
+  std::int32_t droneHits = 0;  // Format 3.
+  // Format 6 (concept A): the deck diverter, F-L-A-P-S.
+  bool deckLit = false;
+  std::array<bool, 5> flapsLit{};
   std::int32_t hangarHolding = 0;
   std::int32_t locksHeld = 0;
   std::array<bool, Rules::kLocksNeeded> bayFull{};
@@ -145,6 +158,31 @@ struct RulesRecord {
   std::int32_t bonusMultiplier = 1;
   BonusTally bonusTally{};
 
+  // Format 8 (concept A rules, G5).
+  std::array<bool, 4> taxiLit{};
+  std::array<bool, 3> aceLit{};
+  bool aceDone = false;
+  std::int32_t aceSets = 0;
+  std::int32_t gForce = 0;
+  std::int32_t deckRamps = 0;
+  std::uint8_t catBall = 0xFF;
+  std::uint32_t flapsSteps = 0;
+  std::uint32_t missionRepeatSteps = 0;
+  std::array<std::int32_t, kCourseCount> qualify{};
+  std::array<bool, kCourseCount> ready{};
+  std::array<bool, kCourseCount> courseTried{};
+  std::uint8_t lastLoop = 0xFF;
+  bool dogfightMultiball = false;
+  std::uint32_t wingsSteps = 0;
+  bool wingsDone = false;
+  std::int32_t wingsCeremonies = 0;
+  bool finaleBanditDown = false;
+  std::uint64_t jackpotAdd = 0;
+  std::int32_t banks = 0;
+  std::array<bool, 3> radarLit{};
+  std::array<bool, 3> bogeyMarked{};
+  bool bogeyCleared = false;
+
   std::uint64_t random = 0xD1B54A32D192ED03ULL;
 };
 
@@ -169,9 +207,14 @@ struct BallRecord {
   std::array<bool, table::kBumpers.size()> touchingBumper{};
   std::array<bool, table::kRollovers.size()> onRollover{};
   std::array<bool, table::kHoles.size()> holeArmed{};
+  // Format 7: in a hole's pocket at the last check, and (the Mission scoop)
+  // whether it came in the way the hole takes a ball.
+  std::array<bool, table::kHoles.size()> inBox{};
+  std::array<bool, table::kHoles.size()> boxWelcome{};
   // Game.
   table::ElementRef holder{};
   std::uint32_t heldSteps = 0;
+  std::uint32_t deckSteps = 0;  // Format 6 (concept A): steps on the Flight Deck.
   bool wasHeld = false;
   std::uint64_t arrival = 0;
   std::uint8_t lockBay = 0;  // One more than the bay; 0 if not locked.
@@ -196,6 +239,36 @@ struct TableRecord {
   float plungerReleaseSpeed = 0.0F;
   bool doorBankUp = true;
   bool kickbackArmed = false;
+  // Format 3 (table revision 3): the drone.
+  bool droneUp = true;
+  std::uint32_t droneClock = 0;
+  std::uint32_t droneDownSteps = 0;
+  float droneX = table::kDroneLeftX;
+  bool droneKnocked = false;  // Format 4.
+  bool pylonUp = false;       // Format 6 (concept A).
+  std::array<bool, table::kBogeys.size()> bogeyUp{table::kBogeyOnTable, table::kBogeyOnTable,
+                                                  table::kBogeyOnTable};  // Format 8 (cut in G2).
+};
+
+// Format 5 (table revision 3): the captive ball. Its body exactly as Box2D
+// has it (metres, metres per second, a rotation as cosine and sine, radians
+// per second), its switch, the slot of the ball that struck it last (the
+// ball the switch is reported for) and the stroke's fastest speed so far. Its joint is made afresh at the start of
+// every step from the body alone (PhysicsWorld::renewCaptiveJoint), so the
+// body is the joint's whole state: its translation and its speed along the
+// channel follow from these, and valid() checks the ball is in its channel
+// and that the switch agrees with where it is.
+struct CaptiveRecord {
+  double x = static_cast<double>(table::kCaptiveHome.x / 100.0F);
+  double y = static_cast<double>(table::kCaptiveHome.y / 100.0F);
+  float vx = 0.0F;
+  float vy = 0.0F;
+  float rotationCos = 1.0F;
+  float rotationSin = 0.0F;
+  float spin = 0.0F;
+  bool switchClosed = false;
+  std::uint8_t striker = 0;
+  float peakSpeed = 0.0F;  // Pixels per second, this stroke's fastest so far.
 };
 
 struct GameRecord {
@@ -212,16 +285,33 @@ struct GameRecord {
   std::uint32_t lockCount = 0;
   std::uint32_t lockReleaseCount = 0;
   std::uint32_t kickbackCount = 0;
-  std::int32_t spinsOwed = 0;
-  std::int32_t spinCooldown = 0;
+  // Format 4: one of each per spinner (table::kSpinners), and the total.
+  std::array<std::int32_t, table::kSpinners.size()> spinsOwed{};
+  std::array<std::int32_t, table::kSpinners.size()> spinCooldown{};
+  std::array<std::uint32_t, table::kSpinners.size()> spinCounts{};
+  std::array<std::int32_t, table::kSpinners.size()> spinDirection{1, 1, 1};
+  std::array<std::uint32_t, table::kSpinners.size()> spinnerTicks{};
   std::uint32_t spinCount = 0;
-  std::int32_t spinDirection = 1;
-  std::uint32_t spinnerTicks = 0;
+  // Format 4: the drone as drawn (Game::drone()) and its events.
+  bool droneWasUp = true;
+  bool droneWasKnocked = false;
+  std::uint64_t droneMoveStep = 0;
+  std::uint64_t droneHitStep = 0;
+  // One more than the step of the latest flipper press; 0 if none (the Air
+  // Pocket rests after one).
+  std::uint64_t lastFlipStep = 0;
+  // Format 8 (concept A G2): one more than the step each BOGEY target fell
+  // (0: standing), and a new game's reset still to finish.
+  std::array<std::uint64_t, table::kBogeys.size()> bogeyDownStep{};
+  bool bogeyNewGame = false;
+  Vec2 droneRecoilDirection{0.0F, -1.0F};
+  std::uint32_t droneHitCount = 0;
   std::uint64_t random = 0x9E3779B97F4A7C15ULL;
   std::uint8_t queuedBalls = 0;
   std::uint64_t lastAutoServeStep = 0;
   std::uint32_t autoLaunchCount = 0;
   std::uint32_t autoRelaunchCount = 0;
+  std::uint32_t captiveSwitchCount = 0;  // Format 5.
 };
 
 struct Snapshot {
@@ -229,6 +319,9 @@ struct Snapshot {
   GameRecord game;
   TableRecord table;
   std::array<BallRecord, table::kMaxBalls> balls{};
+  CaptiveRecord captive;  // Format 5.
+  // The subway ride (table revision 3, 2c) needs no record of its own: a
+  // ball riding it is a held ball (BallRecord holder and heldSteps).
 };
 
 // --- The file ------------------------------------------------------------------------

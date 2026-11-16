@@ -49,6 +49,11 @@ struct Knobs {
   // The light show: 0 at a new game, 1 at the top. How bright the table's
   // steady light is and how many lights run at once (core/LightShow).
   float lightEnergy = 0.0F;
+  // Concept A's insert-field devices (table::kAirPocketCenter,
+  // table::kPropWash): the Air Pocket's period in seconds (0: off; shorter
+  // is more often) and the Prop Wash's spin in radians per second (0: still).
+  double airPocketPeriod = 0.0;
+  float propWashSpin = 0.0F;
 };
 
 inline constexpr std::array<Knobs, kLevels> kKnobs{{
@@ -59,7 +64,9 @@ inline constexpr std::array<Knobs, kLevels> kKnobs{{
      .extraHits = 0,
      .guardsUp = false,
      .autoReset = false,
-     .lightEnergy = 0.00F},
+     .lightEnergy = 0.00F,
+     .airPocketPeriod = 0.0,
+     .propWashSpin = 0.0F},
     // FL200: devices a little faster; banks reset.
     {.deviceSpeed = 1.15F,
      .timerScale = 0.95,
@@ -67,7 +74,9 @@ inline constexpr std::array<Knobs, kLevels> kKnobs{{
      .extraHits = 1,
      .guardsUp = false,
      .autoReset = true,
-     .lightEnergy = 0.25F},
+     .lightEnergy = 0.25F,
+     .airPocketPeriod = 0.0,
+     .propWashSpin = 4.5F},
     // FL300: the guards come up.
     {.deviceSpeed = 1.30F,
      .timerScale = 0.90,
@@ -75,7 +84,9 @@ inline constexpr std::array<Knobs, kLevels> kKnobs{{
      .extraHits = 1,
      .guardsUp = true,
      .autoReset = true,
-     .lightEnergy = 0.50F},
+     .lightEnergy = 0.50F,
+     .airPocketPeriod = 9.0,
+     .propWashSpin = 4.5F},
     // FL400.
     {.deviceSpeed = 1.45F,
      .timerScale = 0.85,
@@ -83,7 +94,9 @@ inline constexpr std::array<Knobs, kLevels> kKnobs{{
      .extraHits = 2,
      .guardsUp = true,
      .autoReset = true,
-     .lightEnergy = 0.75F},
+     .lightEnergy = 0.75F,
+     .airPocketPeriod = 5.0,
+     .propWashSpin = 9.0F},
     // FL500: night flying.
     {.deviceSpeed = 1.60F,
      .timerScale = 0.80,
@@ -91,7 +104,9 @@ inline constexpr std::array<Knobs, kLevels> kKnobs{{
      .extraHits = 3,
      .guardsUp = true,
      .autoReset = true,
-     .lightEnergy = 1.00F},
+     .lightEnergy = 1.00F,
+     .airPocketPeriod = 3.0,
+     .propWashSpin = 9.0F},
 }};
 
 [[nodiscard]] constexpr const Knobs& knobs(int level) noexcept {
@@ -103,7 +118,8 @@ inline constexpr std::array<Knobs, kLevels> kKnobs{{
 [[nodiscard]] constexpr bool knobsClimb() noexcept {
   const Knobs& base = kKnobs[0];
   if (base.deviceSpeed != 1.0F || base.timerScale != 1.0 || base.ballSaveScale != 1.0 ||
-      base.extraHits != 0 || base.guardsUp || base.autoReset || base.lightEnergy != 0.0F) {
+      base.extraHits != 0 || base.guardsUp || base.autoReset || base.lightEnergy != 0.0F ||
+      base.airPocketPeriod != 0.0 || base.propWashSpin != 0.0F) {
     return false;
   }
   for (std::size_t i = 1; i < kKnobs.size(); ++i) {
@@ -112,7 +128,9 @@ inline constexpr std::array<Knobs, kLevels> kKnobs{{
     if (b.deviceSpeed < a.deviceSpeed || b.timerScale > a.timerScale ||
         b.ballSaveScale > a.ballSaveScale || b.extraHits < a.extraHits ||
         (a.guardsUp && !b.guardsUp) || (a.autoReset && !b.autoReset) ||
-        b.lightEnergy < a.lightEnergy || b.timerScale <= 0.0 || b.ballSaveScale <= 0.0) {
+        b.lightEnergy < a.lightEnergy || b.timerScale <= 0.0 || b.ballSaveScale <= 0.0 ||
+        b.propWashSpin < a.propWashSpin || b.airPocketPeriod < 0.0 ||
+        (a.airPocketPeriod > 0.0 && (b.airPocketPeriod == 0.0 || b.airPocketPeriod > a.airPocketPeriod))) {
       return false;
     }
   }

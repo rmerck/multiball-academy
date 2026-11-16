@@ -34,7 +34,9 @@ foreach(preset IN ITEMS desktop phone phone-pro phone-short phone-max duo-outer 
                         pad-portrait pad-portrait-11 pad-split pad-landscape pad-landscape-11
                         352x602 700x602)
   string(REGEX REPLACE "[^a-z0-9]" "_" name "${preset}")
-  pinball_layout_render(check_${name} 1200 check --layout ${preset})
+  # Enough steps for a ball in play and a score (G2: at 1200 the scripted
+  # player's first ball has just drained).
+  pinball_layout_render(check_${name} 3000 check --layout ${preset})
 endforeach()
 
 # Every state on one Stack and one Classic touch layout; the pages only the

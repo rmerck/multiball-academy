@@ -283,7 +283,7 @@ void sectionShots(bool quick) {
   for (const Touch touch :
        {Touch::CircuitLeft, Touch::Runway, Touch::Door, Touch::Hangar, Touch::Briefing,
         Touch::Turbine, Touch::Skyway, Touch::CircuitRight, Touch::Bumper, Touch::Slingshot,
-        Touch::TargetLeft, Touch::TargetRight, Touch::RollCall}) {
+        Touch::TargetLeft, Touch::TargetRight, Touch::RollCall, Touch::Bogey, Touch::Radar}) {
     const ShotWindow& window = shots.shots[static_cast<std::size_t>(touch)];
     if (window.firstHits == 0) {
       continue;
@@ -361,19 +361,26 @@ void sectionLanes(bool quick) {
 
 void sectionExits(bool quick) {
   const int n = quick ? 40 : 200;
-  static constexpr std::array<const char*, 4> kNames{"Briefing room", "Hangar", "Runway rail",
-                                                     "Skyway rail"};
+  static constexpr std::array<const char*, table::kHoles.size()> kNames{
+      "Briefing room", "Hangar", "Runway rail", "Skyway rail", "deck ride", "CAT SHOT",
+      "deck drain"};
   bool met = true;
   std::string measured;
-  std::array<ExitResult, 4> exits{};
+  std::array<ExitResult, table::kHoles.size()> exits{};
   for (std::size_t hole = 0; hole < table::kHoles.size(); ++hole) {
+    // Concept A: the deck ride sets the ball down on the Flight Deck, and
+    // the CAT SHOT's ride ends in the Hangar (whose exit is measured).
+    const table::HoleType type = table::kHoles[hole].type;
+    if (type == table::HoleType::DeckRamp || type == table::HoleType::CatShot) {
+      continue;
+    }
     exits[hole] = exitOf(hole, n);
     std::printf("# exit of the %s: %s\n", kNames[hole], firsts(exits[hole].first).c_str());
     met = met && exits[hole].safe * 100 >= exits[hole].releases * 98;
     measured += text("%s%d", measured.empty() ? "" : "/", exits[hole].safe);
   }
   row(Kind::Hard, met, "B5", "releases from each exit that reach a flipper or inlane first",
-      "98 percent each", measured + text(" of %d (Briefing, Hangar, Runway, Skyway)", n));
+      "98 percent each", measured + text(" of %d (Briefing, Hangar, Runway, Skyway, deck drain)", n));
   // A4: the rails cross the ball over to the other flipper's inlane.
   const int runway = exits[table::kRunwayHole].first[static_cast<std::size_t>(Touch::InlaneLeft)];
   const int skyway = exits[table::kSkywayHole].first[static_cast<std::size_t>(Touch::InlaneRight)];

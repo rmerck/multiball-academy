@@ -40,6 +40,16 @@ enum class Touch : std::uint8_t {
   OutlaneRight,
   DrainCentre,  // Left between the flippers.
   Flipper,      // Only as a first touch: see firstTouch().
+  Drone,        // Revision 3: the training drone.
+  Standup,      // Revision 3: T-A-X-I.
+  GForce,       // Revision 3: the captive ball struck.
+  DeckTarget,   // Concept A: a Flight Deck stand-up (A-C-E).
+  CatShot,      // Concept A: taken by the CAT SHOT hole.
+  DeckDrain,    // Concept A: taken by the deck drain.
+  Pylon,        // Concept A: the pop-up pylon.
+  Flaps,        // Concept A: an F-L-A-P-S rollover (flush; passed through).
+  Bogey,        // Concept A G2: a BOGEY drop target.
+  Radar,        // Concept A G2: a RADAR stand-up.
   Count,
 };
 inline constexpr std::size_t kTouchCount = static_cast<std::size_t>(Touch::Count);
@@ -100,7 +110,11 @@ class TableHarness {
   std::array<std::uint64_t, table::kDropTargets.size()> doorHits{};
   std::array<std::uint64_t, table::kRollovers.size()> rolloverHits{};
   std::array<std::uint64_t, table::kHoles.size()> holeHits{};
+  std::array<std::uint64_t, table::kBogeys.size()> bogeyHits{};
+  std::uint32_t deckRidesSeen_ = 0;
   std::array<std::uint64_t, table::kSlingshots.size()> slingHits{};
+  // T-A-X-I, then the captive ball's switch.
+  std::array<std::uint64_t, table::kStandups.size() + 1> standupHits{};
   // Circuits, left then right: mouth crossed going up; top of the arch
   // crossed the same way round; far inlane reached.
   std::array<std::uint64_t, 2> circuitEntered{};

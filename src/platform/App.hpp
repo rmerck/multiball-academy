@@ -61,6 +61,10 @@ struct AppOptions {
   // A staged game's score is not the player's: the score file is left alone
   // as for a timed run. Only debug builds read it from the command line.
   std::optional<Scene> scene;
+  // Concept A: the Altitude pinned at a level, 0 (FL100) to 4 (FL500), for
+  // screenshots of each level's look (Game::setAltitude). Read, as scene is,
+  // only by builds that stage scenes.
+  std::optional<int> altitude;
   // Whether a touch that starts in a bottom corner of the window is left to
   // the system, which resizes the window from there (inSystemCorner). By
   // default where the system does that: on a tablet.

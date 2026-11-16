@@ -225,6 +225,9 @@ void testAcceptance() {
      // a flipper or an inlane first. Never a slingshot, an outlane or the
      // drain.
     for (std::size_t hole = 0; hole < table::kHoles.size(); ++hole) {
+      if (table::kHoles[hole].type == table::HoleType::DeckRamp) {
+        continue;  // Set down on the Flight Deck, over its own flipper.
+      }
       const ExitResult exit = exitOf(hole, 10);
       CHECK(exit.releases == 10);
       CHECK(exit.safe == 10);
@@ -310,7 +313,7 @@ void testAcceptance() {
     StressOptions options;
     options.balls = 3;
     options.bot = BotKind::Reflex;
-    options.steps = 12000;  // Long enough for balls to be locked and to drain.
+    options.steps = 30000;  // Long enough for balls to be locked and to drain (revision 3: 12,000 steps of three balls could pass without a drain).
     options.seed = 9;
     const StressResult a = stress(options);
     const StressResult b = stress(options);

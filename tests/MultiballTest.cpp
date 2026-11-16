@@ -98,9 +98,49 @@ void testMultiball() {
     CHECK(!bench.doorsUp && rules.lockLit());
   }
 
-  {  // 4.7 Lock, lock, start. For the first multiball of a game the Hangar
-     // stays open after the first lock; after the second the doors come
-     // back up and must be opened again for the ball that starts it.
+  {  // In play the lock is lit by tuning::kBanksPerLock banks: a bank short
+     // of it clears the marks and says how many are left; a CAT SHOT counts
+     // as a bank and its ball locks once that lights it.
+    RulesBench bench = unsaved();
+    Rules& rules = bench.rules;
+    rules.setBanksPerLock(tuning::kBanksPerLock);
+    rules.setLockNeedsBogey(true);
+    static_assert(tuning::kBanksPerLock == 3);
+    for (std::size_t i = 0; i < 3; ++i) {
+      bench.door(i);
+    }
+    CHECK(!rules.lockLit() && !rules.doorMarked(0));
+    CHECK(bench.message() == std::string_view("BAY DOORS  2 MORE FOR LOCK"));
+    rules.onHole(table::kCatHole);
+    bench.step();
+    CHECK(!rules.lockLit() && bench.doorsUp);
+    CHECK(bench.hangar() == Rules::HoleResult::Eject);  // One short: no lock.
+    for (std::size_t i = 0; i < 3; ++i) {
+      bench.door(i);
+    }
+    bench.step();
+    if constexpr (table::kBogeyOnTable) {
+      // The doors are down, but the lock also asks for the BOGEY bank
+      // (DECISIONS.md 10).
+      CHECK(!rules.lockLit() && !bench.doorsUp &&
+            bench.message() == std::string_view("CLEAR BOGEY FOR LOCK"));
+      for (std::size_t i = 0; i < 3; ++i) {
+        rules.onBogey(i);
+      }
+      CHECK(rules.lockLit() && bench.message() == std::string_view("BOGEY CLEARED  LOCK IS LIT"));
+      CHECK(bench.hangar() == Rules::HoleResult::Lock);
+      CHECK(!rules.bogeyCleared());  // Each lock asks for it again.
+    } else {
+      // BOGEY cut (G2): the third bank lights the lock, though the lock was
+      // asked to need BOGEY, and no BOGEY words are ever shown.
+      CHECK(rules.lockLit() && !bench.doorsUp);
+      CHECK(std::string_view(bench.message()).find("BOGEY") == std::string_view::npos);
+      CHECK(bench.hangar() == Rules::HoleResult::Lock);
+    }
+  }
+
+  {  // 4.7 Lock, lock, start. After every lock the doors come back up and
+     // must be opened again (tuning::kFirstMultiballOpenLocks is 0).
     RulesBench bench = unsaved();
     const Rules& rules = bench.rules;
     bench.doors();
@@ -115,13 +155,15 @@ void testMultiball() {
     CHECK(rules.skillShotOffered() && rules.ballSaveActive() && rules.ball() == 1);
     CHECK(rules.multiball() == Multiball::None && rules.ballsLive() == 1);
     bench.step(240);
-    CHECK(!bench.doorsUp && rules.lockLit());
+    CHECK(bench.doorsUp && !rules.lockLit());
+    bench.doors();
+    CHECK(rules.lockLit());
     CHECK(bench.hangar() == Rules::HoleResult::Lock);
     CHECK(rules.locksHeld() == 2 && bench.message() == std::string_view("BALL 2 LOCKED"));
     CHECK(rules.lampState(LampId::Lock2) == LampState::On);
     CHECK(bench.total() == 3);
     bench.step(240);
-    static_assert(tuning::kFirstMultiballOpenLocks == 1);
+    static_assert(tuning::kFirstMultiballOpenLocks == 0);
     CHECK(bench.doorsUp && !rules.lockLit() && rules.multiball() == Multiball::None);
     CHECK(!rules.doorMarked(0) && rules.locksHeld() == 2);
     bench.doors();
@@ -129,7 +171,7 @@ void testMultiball() {
     before = bench.score();
     CHECK(bench.hangar() == Rules::HoleResult::StartMultiball);
     CHECK(bench.score() - before == points::kHangar);
-    CHECK(bench.message() == std::string_view("ACADEMY MULTIBALL"));
+    CHECK(bench.message() == std::string_view("SQUADRON MULTIBALL"));
     CHECK(rules.multiball() == Multiball::Academy && rules.academyMultiballs() == 1);
     CHECK(bench.balls.live == 3 && bench.balls.locked == 0 && rules.locksHeld() == 0);
     CHECK(rules.ballsLive() == 3 && bench.launched == 0);
@@ -304,7 +346,8 @@ void testMultiball() {
     bench.doors();
     CHECK(rules.lockLit() && !rules.extraBallLit());
     CHECK(bench.hangar() == Rules::HoleResult::StartMultiball);
-    CHECK(rules.academyMultiballs() == 2 && rules.extraBallLit());
+    // (The second no longer lights the extra ball: G5 tuning, one a game.)
+    CHECK(rules.academyMultiballs() == 2 && !rules.extraBallLit());
     // The ladder starts again with each multiball.
     CHECK(rules.jackpotValue() == 50'000);
   }
@@ -322,13 +365,14 @@ void testMultiball() {
     CHECK(bench.drain() == Rules::DrainResult::NextBall);
     CHECK(rules.bonusTally().locks == points::kBonusLock);
     CHECK(bench.score() - before == rules.bonusTally().total);
-    CHECK(rules.locksHeld() == 1 && rules.lockLit() && bench.balls.locked == 1);
+    CHECK(rules.locksHeld() == 1 && !rules.lockLit() && bench.balls.locked == 1);
     CHECK(bench.drainForGood() == Rules::DrainResult::NextBall);
     CHECK(rules.ball() == 3);
     // The last ball is locked: the player still has a ball, and it is
     // still ball three.
     bench.rules.onSlingshot(0);
     bench.wait(Rules::kBallSaveSeconds);
+    bench.doors();
     CHECK(bench.hangar() == Rules::HoleResult::Lock);
     CHECK(rules.locksHeld() == 2 && rules.ball() == 3 && !rules.gameOver());
     CHECK(bench.balls.live == 1 && rules.ballSaveActive());
@@ -370,7 +414,7 @@ void testMultiball() {
     CHECK(bench.launched == 1 && bench.balls.live == 2 && rules.ballsLive() == 2);
     CHECK(rules.multiball() == Multiball::None);
     bench.step();
-    CHECK(bench.message() == std::string_view("TURBO MULTIBALL"));
+    CHECK(bench.message() == std::string_view("SCRAMBLE MULTIBALL"));
     CHECK(rules.multiball() == Multiball::Turbo && rules.turboMultiballs() == 1);
     CHECK(rules.ballsLive() == 2);
     CHECK(rules.lampState(LampId::TurboCharge) == LampState::On);
@@ -412,12 +456,14 @@ void testMultiball() {
     const Rules& rules = bench.rules;
     bench.doors();
     bench.hangar();
+    bench.step(240);
+    bench.doors();
     bench.hangar();
     bench.step();
     CHECK(bench.total() == 3 && rules.locksHeld() == 2);
     std::uint64_t before = bench.score();
     fillTurbo(bench);
-    CHECK(bench.message() == std::string_view("TURBO BONUS"));
+    CHECK(bench.message() == std::string_view("SCRAMBLE BONUS"));
     CHECK(rules.multiball() == Multiball::None && bench.launched == 0 && bench.refused == 1);
     CHECK(rules.scoreFrom(Feature::TurboBonus) == points::kTurboBonus);
     CHECK(bench.score() - before ==
@@ -436,18 +482,21 @@ void testMultiball() {
     CHECK(!one.rules.lockLit());
     CHECK(one.hangar() == Rules::HoleResult::Eject);
     CHECK(one.rules.locksHeld() == 1 && one.balls.locked == 1);
-    // The open Hangar is still open when the multiball is over.
+    // The Hangar shut behind the lock; when the multiball is over a bank
+    // lights it again.
     one.wait(tuning::kTurboGraceSeconds);
     one.lose();
-    one.step();
-    CHECK(one.rules.multiball() == Multiball::None && !one.doorsUp && one.rules.lockLit());
+    one.step(240);
+    CHECK(one.rules.multiball() == Multiball::None && one.doorsUp && !one.rules.lockLit());
+    one.doors();
+    CHECK(one.rules.lockLit());
     // A full meter again with one locked and one in play: a new multiball.
     fillTurbo(one);
     CHECK(one.rules.multiball() == Multiball::Turbo && one.total() == 3);
     // And again with three there already: refused, and the bonus.
     fillTurbo(one);
     CHECK(one.total() == 3 && one.refused == 1 && one.launched == 2);
-    CHECK(one.message() == std::string_view("TURBO BONUS"));
+    CHECK(one.message() == std::string_view("SCRAMBLE BONUS"));
     CHECK(one.rules.scoreFrom(Feature::TurboBonus) == points::kTurboBonus);
 
     // Two fills before the table has answered the first cannot make four:
@@ -481,25 +530,24 @@ void testMultiball() {
     CHECK(academy.launched == 1 && academy.refused == 1);
   }
 
-  {  // Stacking: a course runs through a multiball and its shots count for
-     // both; a multiball may start during a course.
+  {  // Stacking: a sortie runs through a multiball and its shots count for
+     // both; a multiball may start during a sortie; the sortie's clock
+     // stands still through it.
     RulesBench bench = unsaved();
     const Rules& rules = bench.rules;
-    bench.bumper();  // The offer moves to RUNWAY DRILLS.
+    bench.bumper();  // The offer moves to RAMP RUNS.
     bench.scoop();
-    CHECK(rules.course() == std::to_underlying(pinball::CourseId::RunwayDrills));
+    CHECK(rules.course() == std::to_underlying(pinball::CourseId::RampRuns));
     fillTurbo(bench);
     bench.step();
     CHECK(rules.multiball() == Multiball::Turbo && rules.courseRunning());
     const std::uint64_t before = bench.score();
     bench.runway();
     CHECK(bench.score() - before == points::kRamp + 50'000 + 20'000);
+    bench.skyway();
     bench.runway();
-    bench.runway();
-    bench.runway();
+    bench.skyway();
     CHECK(rules.coursePassed(1) && rules.multiball() == Multiball::Turbo && rules.rank() == 1);
-    // The course clock runs on in a multiball, and is not stopped by one
-    // ball in a hold while another is free.
     bench.runway();
     bench.runway();  // Relit.
     bench.scoop();
@@ -507,7 +555,7 @@ void testMultiball() {
     const double left = rules.courseSecondsLeft();
     bench.balls.free = 1;
     bench.wait(5.0);
-    CHECK(rules.courseSecondsLeft() < left - 4.9);
+    CHECK(rules.courseSecondsLeft() == left);
   }
 
   {  // Multiball ended by a tilt: no ball comes back, the last drain ends
@@ -531,7 +579,7 @@ void testMultiball() {
     CHECK(rules.multiball() == Multiball::None && !rules.tilted() && rules.ball() == 2);
     CHECK(bench.score() == before && rules.locksHeld() == 1 && bench.balls.locked == 1);
     CHECK(bench.message() == std::string_view("NEXT BALL"));
-    CHECK(rules.lockLit());
+    CHECK(!rules.lockLit());  // The Hangar shut behind the lock.
   }
 
   {  // Two balls drain in the same step with no grace: the first is lost,

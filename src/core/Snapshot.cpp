@@ -238,6 +238,9 @@ void visit(V& v, RulesRecord& r) {
   v.flag(r.doorsDown);
   v.integer(r.doorCommand, std::uint8_t{0}, std::to_underlying(Rules::DoorCommand::Raise));
   v.integer(r.doorRaiseSteps, 0U, kMaxTimerSteps);
+  v.integer(r.droneHits, 0, tuning::kFinaleArmour - 1);
+  v.flag(r.deckLit);
+  visit(v, r.flapsLit);
   v.integer(r.hangarHolding, 0, kMaxBalls);
   v.integer(r.locksHeld, 0, Rules::kLocksNeeded);
   visit(v, r.bayFull);
@@ -302,6 +305,32 @@ void visit(V& v, RulesRecord& r) {
   v.integer(r.bonusTally.multiplier, 1, Rules::kMaxBonusMultiplier);
   v.integer(r.bonusTally.total, std::uint64_t{0}, kMaxScore);
 
+  visit(v, r.taxiLit);
+  visit(v, r.aceLit);
+  v.flag(r.aceDone);
+  v.integer(r.aceSets, 0, kMaxCounter);
+  v.integer(r.gForce, 0, tuning::kGForceTop - 1);
+  v.integer(r.deckRamps, -1, tuning::kRampsForDeck);
+  v.integer(r.catBall, std::uint8_t{0}, std::uint8_t{0xFF});
+  v.integer(r.flapsSteps, 0U, kMaxTimerSteps);
+  v.integer(r.missionRepeatSteps, 0U, kMaxTimerSteps);
+  for (std::int32_t& count : r.qualify) {
+    v.integer(count, 0, 255);
+  }
+  visit(v, r.ready);
+  visit(v, r.courseTried);
+  v.integer(r.lastLoop, std::uint8_t{0}, std::uint8_t{0xFF});
+  v.flag(r.dogfightMultiball);
+  v.integer(r.wingsSteps, 0U, kMaxTimerSteps);
+  v.flag(r.wingsDone);
+  v.integer(r.wingsCeremonies, 0, kMaxCounter);
+  v.flag(r.finaleBanditDown);
+  v.integer(r.jackpotAdd, std::uint64_t{0}, std::uint64_t{250'000});
+  v.integer(r.banks, 0, tuning::kBanksPerLock - 1);
+  visit(v, r.radarLit);
+  visit(v, r.bogeyMarked);
+  v.flag(r.bogeyCleared);
+
   // xorshift never leaves 0, and never reaches it.
   v.integer(r.random, std::uint64_t{1}, std::numeric_limits<std::uint64_t>::max());
 }
@@ -327,16 +356,33 @@ void visit(V& v, GameRecord& g) {
   v.integer(g.lockCount, 0U, kAnyU32);
   v.integer(g.lockReleaseCount, 0U, kAnyU32);
   v.integer(g.kickbackCount, 0U, kAnyU32);
-  v.integer(g.spinsOwed, 0, table::kMaxSpinsOwed);
-  v.integer(g.spinCooldown, 0, table::kSpinPayoutSteps);
+  for (std::size_t i = 0; i < table::kSpinners.size(); ++i) {
+    v.integer(g.spinsOwed[i], 0, table::kMaxSpinsOwed);
+    v.integer(g.spinCooldown[i], 0, table::kSpinPayoutSteps);
+    v.integer(g.spinCounts[i], 0U, kAnyU32);
+    v.integer(g.spinDirection[i], -1, 1);
+    v.integer(g.spinnerTicks[i], 0U,
+              2U * static_cast<std::uint32_t>(table::kSpinPayoutSteps) - 1U);
+  }
   v.integer(g.spinCount, 0U, kAnyU32);
-  v.integer(g.spinDirection, -1, 1);
-  v.integer(g.spinnerTicks, 0U, 2U * static_cast<std::uint32_t>(table::kSpinPayoutSteps) - 1U);
+  v.flag(g.droneWasUp);
+  v.flag(g.droneWasKnocked);
+  v.integer(g.droneMoveStep, std::uint64_t{0}, kMaxStepCount + 1U);
+  v.integer(g.droneHitStep, std::uint64_t{0}, kMaxStepCount + 1U);
+  v.integer(g.lastFlipStep, std::uint64_t{0}, kMaxStepCount + 1U);
+  for (std::uint64_t& down : g.bogeyDownStep) {
+    v.integer(down, std::uint64_t{0}, kMaxStepCount + 1U);
+  }
+  v.flag(g.bogeyNewGame);
+  // A unit vector (or near enough).
+  visit(v, g.droneRecoilDirection, -1.001F, 1.001F);
+  v.integer(g.droneHitCount, 0U, kAnyU32);
   v.integer(g.random, std::uint64_t{1}, std::numeric_limits<std::uint64_t>::max());
   v.integer(g.queuedBalls, std::uint8_t{0}, static_cast<std::uint8_t>(table::kMaxBalls));
   v.integer(g.lastAutoServeStep, std::uint64_t{0}, kMaxStepCount + 1U);
   v.integer(g.autoLaunchCount, 0U, kAnyU32);
   v.integer(g.autoRelaunchCount, 0U, kAnyU32);
+  v.integer(g.captiveSwitchCount, 0U, kAnyU32);
 }
 
 template <class V>
@@ -349,7 +395,14 @@ void visit(V& v, TableRecord& t) {
   v.real(t.plungerPull, 0.0F, table::kPlungerTravel);
   v.real(t.plungerReleaseSpeed, 0.0F, kMaxPlungerSpeedPixels * 1.01F);
   v.flag(t.doorBankUp);
+  v.flag(t.pylonUp);
+  visit(v, t.bogeyUp);
   v.flag(t.kickbackArmed);
+  v.flag(t.droneUp);
+  v.integer(t.droneClock, 0U, 120U * 3600U);
+  v.integer(t.droneDownSteps, 0U, 120U * 3600U);
+  v.real(t.droneX, table::kDroneLeftX, table::kDroneRightX);
+  v.flag(t.droneKnocked);
 }
 
 template <class V>
@@ -372,8 +425,11 @@ void visit(V& v, BallRecord& b) {
   visit(v, b.touchingBumper);
   visit(v, b.onRollover);
   visit(v, b.holeArmed);
+  visit(v, b.inBox);
+  visit(v, b.boxWelcome);
   v.element(b.holder);
   v.integer(b.heldSteps, 0U, kMaxHeldSteps);
+  v.integer(b.deckSteps, 0U, kAnyU32);
   v.flag(b.wasHeld);
   v.integer(b.arrival, std::uint64_t{0}, kMaxStepCount);
   v.integer(b.lockBay, std::uint8_t{0}, static_cast<std::uint8_t>(table::kLockBays.size()));
@@ -392,6 +448,24 @@ void visit(V& v, BallRecord& b) {
 }
 
 template <class V>
+void visit(V& v, CaptiveRecord& c) {
+  // (Where it is along and across its channel is checked in
+  // captiveConsistent.)
+  v.real(c.x, static_cast<double>(kMinX / kPixelsPerMeter),
+         static_cast<double>(kMaxX / kPixelsPerMeter));
+  v.real(c.y, static_cast<double>(kMinY / kPixelsPerMeter),
+         static_cast<double>(kMaxY / kPixelsPerMeter));
+  v.real(c.vx, -kMaxSpeed / kPixelsPerMeter, kMaxSpeed / kPixelsPerMeter);
+  v.real(c.vy, -kMaxSpeed / kPixelsPerMeter, kMaxSpeed / kPixelsPerMeter);
+  v.real(c.rotationCos, -1.001F, 1.001F);
+  v.real(c.rotationSin, -1.001F, 1.001F);
+  v.real(c.spin, -kMaxSpin, kMaxSpin);
+  v.flag(c.switchClosed);
+  v.integer(c.striker, std::uint8_t{0}, static_cast<std::uint8_t>(table::kMaxBalls - 1));
+  v.real(c.peakSpeed, 0.0F, kMaxSpeed);
+}
+
+template <class V>
 void visit(V& v, Snapshot& s) {
   visit(v, s.rules);
   visit(v, s.game);
@@ -399,6 +473,7 @@ void visit(V& v, Snapshot& s) {
   for (BallRecord& ball : s.balls) {
     visit(v, ball);
   }
+  visit(v, s.captive);
 }
 
 // --- What the ranges cannot say -------------------------------------------------------
@@ -457,6 +532,32 @@ bool ballConsistent(const BallRecord& b, const GameRecord& g) {
   return true;
 }
 
+// The captive ball in its channel, as the physics leaves it after every
+// slice (PhysicsWorld::checkCaptive): on the centre line and between its
+// ends, give or take the joint's slack; a unit rotation; and the switch
+// closed if it is at the switch, open if it is back at the rearm point.
+bool captiveConsistent(const CaptiveRecord& c) {
+  const Vec2 p{static_cast<float>(c.x) * kPixelsPerMeter,
+               static_cast<float>(c.y) * kPixelsPerMeter};
+  const float along = table::captiveTranslationAt(p);
+  const float aside = table::captiveOffsetAt(p);
+  if (!(std::fabs(aside) <= table::kCaptiveSlack && along >= -table::kCaptiveSlack &&
+        along <= table::kCaptiveTravel + table::kCaptiveSlack)) {
+    return false;
+  }
+  const float length = c.rotationCos * c.rotationCos + c.rotationSin * c.rotationSin;
+  if (!(length > 0.998F && length < 1.002F)) {
+    return false;
+  }
+  if (along >= table::kCaptiveSwitchAt && !c.switchClosed) {
+    return false;
+  }
+  if (along <= table::kCaptiveSwitchRearm && (c.switchClosed || c.peakSpeed != 0.0F)) {
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 std::string currentBuildId() {
@@ -499,6 +600,24 @@ Sha256Digest layoutFingerprint() noexcept {
   for (const table::Capsule& c : table::kDeadPosts) {
     addCapsule(c);
   }
+  for (const table::Capsule& c : table::kStandups) {
+    addCapsule(c);
+  }
+  addPoint(table::kCaptiveHome);
+  addPoint(table::kCaptiveAxis);
+  add(table::kCaptiveBallRadius);
+  add(table::kCaptiveTravel);
+  add(table::kCaptiveSwitchAt);
+  add(table::kCaptiveSwitchRearm);
+  add(table::kCaptiveSpringHertz);
+  add(table::kCaptiveSlack);
+  for (const Vec2 p : table::kLaneGate) {
+    addPoint(p);
+  }
+  add(table::kDroneRadius);
+  add(table::kDroneY);
+  add(table::kDroneLeftX);
+  add(table::kDroneRightX);
   for (const table::Triangle& t : table::kSlingshots) {
     for (const Vec2 p : t.points) {
       addPoint(p);
@@ -510,9 +629,22 @@ Sha256Digest layoutFingerprint() noexcept {
     add(f.restAngle);
     add(f.activeAngle);
   }
-  add(table::kFlipperLength);
+  for (const table::Flipper& f : table::kFlippers) {
+    add(f.length);
+  }
   add(table::kFlipperBaseRadius);
   add(table::kFlipperTipRadius);
+  for (const table::Flipper& f : table::kFlippers) {
+    add(f.baseRadius);
+    add(f.tipRadius);
+  }
+  // Concept A's devices.
+  addPoint(table::kPylon.center);
+  add(table::kPylon.radius);
+  addPoint(table::kPropWash.center);
+  add(table::kPropWash.radius);
+  addPoint(table::kAirPocketCenter);
+  add(table::kAirPocketRadius);
   for (const table::Bumper& b : table::kBumpers) {
     addPoint(b.shape.center);
     add(b.shape.radius);
@@ -688,7 +820,9 @@ bool valid(const Snapshot& snapshot) {
     return false;
   }
   if (rules.turboMeter > rules.turboGoal ||
-      (rules.comboShot >= kShotCount && rules.comboShot != 0xFF)) {
+      (rules.comboShot >= kShotCount && rules.comboShot != 0xFF) ||
+      (rules.lastLoop >= kShotCount && rules.lastLoop != 0xFF) ||
+      (rules.catBall >= kMaxBalls && rules.catBall != 0xFF)) {
     return false;
   }
   if (rules.bonusTally.total > kMaxScore) {
@@ -700,7 +834,41 @@ bool valid(const Snapshot& snapshot) {
       return false;
     }
   }
-  if (game.lastAutoServeStep > game.stepCount + 1U || game.arrivals > game.stepCount + 1U) {
+  if (game.lastAutoServeStep > game.stepCount + 1U || game.arrivals > game.stepCount + 1U ||
+      game.droneMoveStep > game.stepCount + 1U || game.droneHitStep > game.stepCount + 1U ||
+      game.lastFlipStep > game.stepCount + 1U ||
+      std::ranges::any_of(game.bogeyDownStep,
+                          [&game](std::uint64_t s) { return s > game.stepCount + 1U; })) {
+    return false;
+  }
+  // The spinners: the total is the sum of each one's count (both only ever
+  // grow, a step at a time, together), each turns one way or the other, and
+  // one that pays only going up the table (a circuit's) has only turned up.
+  std::uint32_t spins = 0;
+  for (std::size_t i = 0; i < table::kSpinners.size(); ++i) {
+    spins += game.spinCounts[i];
+    if (game.spinDirection[i] == 0 ||
+        (!table::kSpinners[i].bothWays && game.spinDirection[i] != 1)) {
+      return false;
+    }
+  }
+  if (spins != game.spinCount) {
+    return false;
+  }
+  // The drone's recoil is along a unit vector (Game::onDroneHit).
+  {
+    const Vec2 d = game.droneRecoilDirection;
+    const float length = d.x * d.x + d.y * d.y;
+    if (!(length > 0.998F && length < 1.002F)) {
+      return false;
+    }
+  }
+  // The drone: down while knocked down or its time is running; the game's
+  // view of it is what the physics has.
+  const TableRecord& onTable = snapshot.table;
+  if ((onTable.droneKnocked && onTable.droneUp) ||
+      (onTable.droneDownSteps > 0 && !onTable.droneKnocked) ||
+      game.droneWasUp != onTable.droneUp || game.droneWasKnocked != onTable.droneKnocked) {
     return false;
   }
   // At least one ball on the table, and never more than three with the
@@ -726,7 +894,14 @@ bool valid(const Snapshot& snapshot) {
   if (active == 0 || active + game.queuedBalls > table::kMaxBalls) {
     return false;
   }
-  return true;
+  // A BOGEY target stands exactly when it has no step it fell at.
+  for (std::size_t i = 0; i < table::kBogeys.size(); ++i) {
+    const bool up = snapshot.game.bogeyDownStep[i] == 0 && table::kBogeyOnTable;
+    if (snapshot.table.bogeyUp[i] != up) {
+      return false;
+    }
+  }
+  return captiveConsistent(snapshot.captive);
 }
 
 bool operator==(const Snapshot& a, const Snapshot& b) {

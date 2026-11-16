@@ -81,6 +81,32 @@ save::RulesRecord Rules::record() const noexcept {
   r.doorsDown = doorsDown_;
   r.doorCommand = std::to_underlying(doorCommand_);
   r.doorRaiseSteps = doorRaiseSteps_;
+  r.droneHits = droneHits_;
+  r.deckLit = deckLit_;
+  r.flapsLit = flapsLit_;
+  r.taxiLit = taxiLit_;
+  r.aceLit = aceLit_;
+  r.aceDone = aceDone_;
+  r.aceSets = aceSets_;
+  r.gForce = gForce_;
+  r.deckRamps = deckRamps_;
+  r.catBall = catBall_;
+  r.flapsSteps = flapsSteps_;
+  r.missionRepeatSteps = missionRepeatSteps_;
+  r.qualify = qualify_;
+  r.ready = ready_;
+  r.courseTried = courseTried_;
+  r.lastLoop = lastLoop_;
+  r.dogfightMultiball = dogfightMultiball_;
+  r.wingsSteps = wingsSteps_;
+  r.wingsDone = wingsDone_;
+  r.wingsCeremonies = wingsCeremonies_;
+  r.finaleBanditDown = finaleBanditDown_;
+  r.jackpotAdd = jackpotAdd_;
+  r.banks = banks_;
+  r.radarLit = radarLit_;
+  r.bogeyMarked = bogeyMarked_;
+  r.bogeyCleared = bogeyCleared_;
   r.hangarHolding = hangarHolding_;
   r.locksHeld = locksHeld_;
   r.bayFull = bayFull_;
@@ -195,6 +221,32 @@ void Rules::restore(const save::RulesRecord& r) noexcept {
                      ? static_cast<DoorCommand>(r.doorCommand)
                      : DoorCommand::None;
   doorRaiseSteps_ = r.doorRaiseSteps;
+  droneHits_ = r.droneHits;
+  deckLit_ = r.deckLit;
+  flapsLit_ = r.flapsLit;
+  taxiLit_ = r.taxiLit;
+  aceLit_ = r.aceLit;
+  aceDone_ = r.aceDone;
+  aceSets_ = r.aceSets;
+  gForce_ = r.gForce;
+  deckRamps_ = r.deckRamps;
+  catBall_ = r.catBall;
+  flapsSteps_ = r.flapsSteps;
+  missionRepeatSteps_ = r.missionRepeatSteps;
+  qualify_ = r.qualify;
+  ready_ = r.ready;
+  courseTried_ = r.courseTried;
+  lastLoop_ = r.lastLoop;
+  dogfightMultiball_ = r.dogfightMultiball;
+  wingsSteps_ = r.wingsSteps;
+  wingsDone_ = r.wingsDone;
+  wingsCeremonies_ = r.wingsCeremonies;
+  finaleBanditDown_ = r.finaleBanditDown;
+  jackpotAdd_ = r.jackpotAdd;
+  banks_ = r.banks;
+  radarLit_ = r.radarLit;
+  bogeyMarked_ = r.bogeyMarked;
+  bogeyCleared_ = r.bogeyCleared;
   hangarHolding_ = r.hangarHolding;
   locksHeld_ = r.locksHeld;
   bayFull_ = r.bayFull;
@@ -290,10 +342,14 @@ void PhysicsWorld::saveBall(std::size_t slot, save::BallRecord& r) const {
   r.held = ball.held;
   r.heldBy = ball.held ? ball.heldBy : table::ElementRef{};
   r.sensorFromKnown = ball.sensorFromKnown;
-  r.sensorFrom = ball.sensorFrom;
+  // Unknown, it is never read: saved as nothing, so that two games alike in
+  // everything they will do save alike.
+  r.sensorFrom = ball.sensorFromKnown ? ball.sensorFrom : Vec2{};
   r.touchingBumper = ball.touchingBumper;
   r.onRollover = ball.onRollover;
   r.holeArmed = ball.holeArmed;
+  r.inBox = ball.inBox;
+  r.boxWelcome = ball.boxWelcome;
 }
 
 void PhysicsWorld::saveTable(save::TableRecord& r) const {
@@ -303,7 +359,49 @@ void PhysicsWorld::saveTable(save::TableRecord& r) const {
   r.plungerPull = plungerPull_;
   r.plungerReleaseSpeed = plungerReleaseSpeed_;
   r.doorBankUp = doorBankUp_;
+  r.pylonUp = pylonUp_;
+  r.bogeyUp = bogeyUp_;
   r.kickbackArmed = kickbackArmed_;
+  r.droneUp = droneUp_;
+  r.droneClock = droneClock_;
+  r.droneDownSteps = droneDownSteps_;
+  r.droneX = dronePosition_.x;
+  r.droneKnocked = droneKnocked_;
+}
+
+void PhysicsWorld::saveCaptive(save::CaptiveRecord& r) const {
+  const b2Pos p = b2Body_GetPosition(captive_);
+  r.x = static_cast<double>(p.x);
+  r.y = static_cast<double>(p.y);
+  const b2Vec2 v = b2Body_GetLinearVelocity(captive_);
+  r.vx = v.x;
+  r.vy = v.y;
+  const b2Rot q = b2Body_GetRotation(captive_);
+  r.rotationCos = q.c;
+  r.rotationSin = q.s;
+  r.spin = b2Body_GetAngularVelocity(captive_);
+  r.switchClosed = captiveSwitchClosed_;
+  r.striker = captiveStriker_;
+  r.peakSpeed = captivePeakSpeed_;
+}
+
+void PhysicsWorld::restoreCaptive(const save::CaptiveRecord& r) {
+  // The body alone: the joint is made afresh from it at the start of the
+  // next step, in this world as in the one that was saved.
+  b2Pos position{};
+  position.x = static_cast<decltype(position.x)>(r.x);
+  position.y = static_cast<decltype(position.y)>(r.y);
+  b2Rot rotation{r.rotationCos, r.rotationSin};
+  if (!b2IsNormalizedRot(rotation)) {
+    rotation = b2NormalizeRot(rotation);
+  }
+  b2Body_SetTransform(captive_, position, rotation);
+  b2Body_SetLinearVelocity(captive_, {r.vx, r.vy});
+  b2Body_SetAngularVelocity(captive_, r.spin);
+  b2Body_SetAwake(captive_, true);
+  captiveSwitchClosed_ = r.switchClosed;
+  captiveStriker_ = r.striker < table::kMaxBalls ? r.striker : 0;
+  captivePeakSpeed_ = r.peakSpeed;
 }
 
 void PhysicsWorld::restoreBalls(std::span<const save::BallRecord> records) {
@@ -337,6 +435,8 @@ void PhysicsWorld::restoreBalls(std::span<const save::BallRecord> records) {
     ball.touchingBumper = r.touchingBumper;
     ball.onRollover = r.onRollover;
     ball.holeArmed = r.holeArmed;
+    ball.inBox = r.inBox;
+    ball.boxWelcome = r.boxWelcome;
     if (r.held) {
       // As holdBall leaves it: still, and out of every collision.
       ball.held = true;
@@ -368,7 +468,25 @@ void PhysicsWorld::restoreTable(const save::TableRecord& r) {
   b2Body_SetTransform(plunger_, b2ToPos(toMeters(top)), b2MakeRot(0.0F));
   b2Body_SetLinearVelocity(plunger_, {0.0F, 0.0F});
   setDoorBank(r.doorBankUp);
+  setPylon(r.pylonUp);
+  for (std::size_t i = 0; i < r.bogeyUp.size(); ++i) {
+    setBogey(i, r.bogeyUp[i]);
+  }
   kickbackArmed_ = r.kickbackArmed;
+  droneClock_ = r.droneClock;
+  droneDownSteps_ = r.droneDownSteps;
+  droneKnocked_ = r.droneKnocked;
+  dronePosition_ = {r.droneX, table::kDroneY};
+  b2Body_SetTransform(drone_, b2ToPos(toMeters(dronePosition_)), b2Rot{1.0F, 0.0F});
+  b2Body_SetLinearVelocity(drone_, {0.0F, 0.0F});
+  if (r.droneUp != droneUp_) {
+    droneUp_ = r.droneUp;
+    if (droneUp_) {
+      b2Body_Enable(drone_);
+    } else {
+      b2Body_Disable(drone_);
+    }
+  }
 }
 
 // --- Game ----------------------------------------------------------------------------
@@ -391,18 +509,32 @@ save::Snapshot Game::snapshot() const {
   g.lockCount = lockCount_;
   g.lockReleaseCount = lockReleaseCount_;
   g.kickbackCount = kickbackCount_;
-  g.spinsOwed = spinsOwed_;
-  g.spinCooldown = spinCooldown_;
+  for (std::size_t i = 0; i < kSpinners; ++i) {
+    g.spinsOwed[i] = spinner_[i].owed;
+    g.spinCooldown[i] = spinner_[i].cooldown;
+    g.spinCounts[i] = spinner_[i].count;
+    g.spinDirection[i] = spinner_[i].direction;
+    g.spinnerTicks[i] = spinner_[i].ticks;
+  }
   g.spinCount = spinCount_;
-  g.spinDirection = spinDirection_;
-  g.spinnerTicks = spinnerTicks_;
+  g.droneWasUp = droneWasUp_;
+  g.droneWasKnocked = droneWasKnocked_;
+  g.droneMoveStep = droneMoveStep_;
+  g.droneHitStep = droneHitStep_;
+  g.lastFlipStep = lastFlipStep_;
+  g.bogeyDownStep = bogeyDownStep_;
+  g.bogeyNewGame = bogeyNewGame_;
+  g.droneRecoilDirection = droneRecoilDirection_;
+  g.droneHitCount = droneHitCount_;
   g.random = random_;
   g.queuedBalls = static_cast<std::uint8_t>(queuedBalls_);
   g.lastAutoServeStep = lastAutoServeStep_;
   g.autoLaunchCount = autoLaunchCount_;
   g.autoRelaunchCount = autoRelaunchCount_;
+  g.captiveSwitchCount = captiveSwitchCount_;
 
   physics_.saveTable(s.table);
+  physics_.saveCaptive(s.captive);
 
   for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
     save::BallRecord& r = s.balls[slot];
@@ -413,6 +545,7 @@ save::Snapshot Game::snapshot() const {
     const BallState& ball = balls_[slot];
     r.holder = ball.holder;
     r.heldSteps = ball.heldSteps;
+    r.deckSteps = ball.deckSteps;
     r.wasHeld = ball.wasHeld;
     r.arrival = ball.arrival;
     r.lockBay = ball.lockBay;
@@ -452,18 +585,32 @@ bool Game::restore(const save::Snapshot& s) {
   lockCount_ = g.lockCount;
   lockReleaseCount_ = g.lockReleaseCount;
   kickbackCount_ = g.kickbackCount;
-  spinsOwed_ = g.spinsOwed;
-  spinCooldown_ = g.spinCooldown;
+  for (std::size_t i = 0; i < kSpinners; ++i) {
+    spinner_[i].owed = g.spinsOwed[i];
+    spinner_[i].cooldown = g.spinCooldown[i];
+    spinner_[i].count = g.spinCounts[i];
+    spinner_[i].direction = g.spinDirection[i] < 0 ? -1 : 1;
+    spinner_[i].ticks = g.spinnerTicks[i];
+  }
   spinCount_ = g.spinCount;
-  spinDirection_ = g.spinDirection < 0 ? -1 : 1;
-  spinnerTicks_ = g.spinnerTicks;
+  droneWasUp_ = g.droneWasUp;
+  droneWasKnocked_ = g.droneWasKnocked;
+  droneMoveStep_ = g.droneMoveStep;
+  droneHitStep_ = g.droneHitStep;
+  lastFlipStep_ = g.lastFlipStep;
+  bogeyDownStep_ = g.bogeyDownStep;
+  bogeyNewGame_ = g.bogeyNewGame;
+  droneRecoilDirection_ = g.droneRecoilDirection;
+  droneHitCount_ = g.droneHitCount;
   random_ = g.random;
   queuedBalls_ = g.queuedBalls;
   lastAutoServeStep_ = g.lastAutoServeStep;
   autoLaunchCount_ = g.autoLaunchCount;
   autoRelaunchCount_ = g.autoRelaunchCount;
+  captiveSwitchCount_ = g.captiveSwitchCount;
 
   physics_.restoreTable(s.table);
+  physics_.restoreCaptive(s.captive);
   physics_.restoreBalls(s.balls);
 
   for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
@@ -475,6 +622,7 @@ bool Game::restore(const save::Snapshot& s) {
     }
     ball.holder = r.holder;
     ball.heldSteps = r.heldSteps;
+    ball.deckSteps = r.deckSteps;
     ball.wasHeld = r.wasHeld;
     ball.arrival = r.arrival;
     ball.lockBay = r.lockBay;

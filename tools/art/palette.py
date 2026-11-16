@@ -39,12 +39,81 @@ LAMPS = [
     ("RollCall3", CREAM), ("WingW", AQUA), ("WingI", AQUA), ("WingN", AQUA), ("WingG", AQUA),
 ]
 # Where each shot arrow points (playfield units): the renderer rotates insert_arrow.png from the lamp to this.
+# Revision 3: the Briefing arrow points up its channel (which leans right), the Turbine arrow straight up the
+# Afterburner lane.
 LAMP_AIM = {"ArrowCircuitLeft": (118.0, 440.0), "ArrowRunway": (192.0, 425.0), "ArrowHangar": (279.0, 392.0),
-            "ArrowBriefing": (356.0, 428.0), "ArrowTurbine": (432.0, 415.0), "ArrowSkyway": (519.0, 425.0),
+            "ArrowBriefing": (441.0, 400.0), "ArrowTurbine": (356.0, 415.0), "ArrowSkyway": (519.0, 425.0),
             "ArrowCircuitRight": (593.0, 440.0)}
 INSERT_ARROW_UNITS = 36.0     # drawn size of insert_arrow.png (the arrow itself is 28 long with its bezel)
 INSERT_ARROW_BRIEFING = 1.2   # the Briefing arrow is the largest on the table
 INSERT_ROUND_PER_DIAMETER = 24.0 / 22.0   # insert_round.png is drawn this many times the lamp's diameter
+# ---- revision 3: the new inserts and the flasher domes (TABLE_REV3.md 3.10) ----------------------------------
+# TableLayout.hpp does not have these lamps yet (task 2e grows LampId and adds FlasherId): until it does, these
+# positions are the art's proposal and the one place they are written. They are baked into the background
+# unlit and exported to ArtPalette.hpp (kPlannedLamps, kFlasherDomes) so the code can take exactly these
+# positions, or move them and run make_all.py again. Each was placed clear of every solid of the rev3 layout.
+# Shapes: "round" (insert_round.png), "pip" (insert_round.png at PIP_DIAMETER), "hex" (insert_hex.png), "chevron"
+# (insert_chevron.png, points up).
+BLUE_NEON = "#3CC8FF"
+LADDER_DIAMETER = 12.0        # the small round inserts of the ladders (course lamps are 22, status 20)
+HEX_DIAMETER = 11.0           # drone armour, corner to corner
+CHEVRON_SIZE = (18.0, 9.0)    # rank chevrons, width and height
+PLANNED_LAMPS = (
+    # Drone armour, 1 (bottom) to 5: up the middle of the Afterburner lane, between the spinner and the gate.
+    [("DroneArmour%d" % (i + 1), BLUE, "hex", (356.0, 386.0 - 12.5 * i)) for i in range(5)] +
+    # G-meter 1G (bottom) to 5G: beside the G-force post, between the Runway's rail and the Hangar; it warms
+    # from green to pink as the G rises.
+    [("GForce%d" % (i + 1), c, "round", (212.0, 370.0 - 14.0 * i)) for i, c in enumerate((GREEN, GREEN, YELLOW, ORANGE, PINK))] +
+    # T-A-X-I: one lamp on the field side of each stand-up.
+    [("TaxiT", YELLOW, "round", (176.0, 462.0)), ("TaxiA", YELLOW, "round", (535.0, 462.0)),
+     ("TaxiX", YELLOW, "round", (221.0, 392.0)), ("TaxiI", YELLOW, "round", (487.0, 450.0))] +
+    # Rank ladder, 1 (bottom) to 7: concept A moves it out of the centre (the pylon, F-L-A-P-S and the Air
+    # Pocket are there) to x 500 (G2: the Altitude ladder moved to x 175, clear of the BOGEY drops).
+    [("Rank%d" % (i + 1), ORCHID, "chevron", (500.0, 662.0 - 12.0 * i)) for i in range(7)] +
+    # Combo 2X..5X left of centre and bonus multiplier 2X..5X mirrored on the right, rising toward the middle;
+    # concept A: 16 lower, clear of the F and S rollovers.
+    [("Combo%dX" % (i + 2), AQUA, "round", (262.0 + 16.0 * i, 664.0 - 6.0 * i)) for i in range(4)] +
+    [("Bonus%dX" % (i + 2), PINK, "round", (449.0 - 16.0 * i, 664.0 - 6.0 * i)) for i in range(4)] +
+    # Concept A (G6): the art's proposed lamps (table_a lamp_plan.json, adopted at G1). Three progress pips below
+    # each shot arrow in the shot's colour (the Afterburner's moved by G1 to clear TurboCharge), the altimeter's
+    # rungs FL100 (bottom) to FL500 in the Altitude's colours, a lamp under each F-L-A-P-S rollover, BOGEY and
+    # RADAR, the Safety Post, Multiball, DECK lit, then the Flight Deck's A-C-E letters and CAT SHOT.
+    [("Ladder%s%d" % (name, k + 1), col, "pip", pos) for name, col, pips in (
+        ("CircuitLeft", AQUA, [(118.0, 535.0), (118.0, 548.0), (118.0, 561.0)]),
+        ("Runway", ORCHID, [(209.9, 492.2), (213.3, 504.8), (216.6, 517.3)]),
+        ("Hangar", ORANGE, [(283.4, 463.0), (284.2, 475.9), (285.1, 488.9)]),
+        ("Briefing", YELLOW, [(429.0, 490.8), (427.3, 503.7), (425.6, 516.6)]),
+        ("Turbine", GREEN, [(356.0, 476.0), (356.0, 486.0), (356.0, 496.0)]),
+        ("Skyway", PINK, [(501.1, 492.2), (497.7, 504.8), (494.4, 517.3)]),
+        ("CircuitRight", AQUA, [(593.0, 535.0), (593.0, 548.0), (593.0, 561.0)]),
+    ) for k, pos in enumerate(pips)] +
+    [("AltitudeFL%d00" % (i + 1), c, "chevron", (175.0, 676.0 - 18.0 * i))
+     for i, c in enumerate((BLUE, CREAM, YELLOW, ORANGE, ORCHID))] +
+    [("Flaps%s" % l, CREAM, "round", pos) for l, pos in zip("FLAPS", ((291.0, 626.0), (323.0, 618.0), (355.5, 616.0),
+                                                                      (388.0, 618.0), (420.0, 626.0)))] +
+    [("Bogey%d" % (i + 1), ORANGE, "round", (226.0 + 4.0 * i, 575.0 + 20.0 * i)) for i in range(3)] +
+    [("Radar%d" % (i + 1), AQUA, "round", (523.0 - 2.0 * i, 505.0 + 20.0 * i)) for i in range(3)] +
+    [("SafetyPost", GREEN, "round", (355.5, 904.0)), ("Multiball", YELLOW, "round", (312.0, 530.0)),
+     ("DeckLit", PINK, "round", (520.0, 575.0)), ("DeckA", PINK, "pip", (493.0, 236.0)),
+     ("DeckC", PINK, "pip", (514.7, 213.6)), ("DeckE", PINK, "pip", (532.9, 242.1)),
+     ("CatShot", ORANGE, "pip", (497.0, 220.0))]
+)
+PIP_DIAMETER = 8.0            # concept A's progress pips and the deck's letters (round inserts, smaller)
+# Flasher domes: each stands on a solid (a wall end, the Hangar's roof, a slingshot's plastic), never where a
+# ball can roll. The base is baked into the background with the dome unlit; the game draws flasher_dome.png
+# tinted, and its flare over it, when it fires. Revision 3 has no upper flipper, so no Tower dome or arrow.
+FLASHER_DOME_UNITS = 16.0     # drawn size of flasher_dome.png
+FLASHER_DOMES = [
+    ("Hangar", ORANGE, (279.0, 296.0)), ("Briefing", YELLOW, (473.0, 357.0)), ("Afterburner", GREEN, (391.0, 360.0)),
+    ("Runway", ORCHID, (145.0, 392.0)), ("Skyway", PINK, (566.0, 392.0)), ("Nest", CREAM, (324.0, 168.0)),
+    ("SlingLeft", AQUA, (150.0, 692.0)), ("SlingRight", AQUA, (561.0, 692.0)),
+    # Concept A (G1): the Flight Deck's, on the top of its left wall; the left arch's, on the left rim straight.
+    ("Deck", PINK, (476.0, 165.0)), ("LeftArch", AQUA, (145.0, 300.0)),
+]
+DRONE_SPRITE_UNITS = 44.0     # drone*.png cover this; the hexagon is 2 * the drone's radius corner to corner
+CAPTIVE_BALL_SPRITE_UNITS = 30.0   # captive_ball.png; the ball is 22 of it (TABLE_REV3 3.5: radius 11)
+STANDUP_SPRITE_UNITS = (14.0, 30.0)   # standup_*.png, drawn upright, rotated by the stand-up's angle minus 90
+
 # Buttons take ink captions, so every face is light enough for 3:1 against INK, pressed (level 0.8) too:
 # ORCHID, not VIOLET, for the nudge and menu keys; a light grey-violet for a key that is off or leads nowhere.
 TINT = {"flipper": PINK, "bumper": ORANGE, "bumper_flash": YELLOW, "turbo_target": GREEN, "door": CH_MID,
@@ -78,7 +147,7 @@ LUM_LIT_LENS = 0.42   # a lit lens is tinted no lighter than this, whatever its 
 # more saturated, so lit against unlit is obvious. Neon lenses may be lighter than LUM_LIT_LENS but never reach
 # the ball's LUM_BALL_MIN.
 NEON = {AQUA: "#1EEBFF", ORCHID: "#C45CFF", ORANGE: "#FF8A00", YELLOW: "#FFEA28", GREEN: "#9DFF1E", PINK: "#FF2EC8",
-        CREAM: "#FFF2B0"}
+        CREAM: "#FFF2B0", BLUE: BLUE_NEON}
 # WCAG 2.3.1's red flash counts a colour as saturated red when R / (R + G + B), on channels linearised as for
 # relative luminance, is 0.8 or more. Linearised, ORANGE's neon (#FF8A00) is 0.797, just under; PINK's (#FF2EC8)
 # 0.62; the GI's amber walls (#FF9A3C) 0.73. The slingshots' GI was #FF7A1E (0.83, saturated red) and is nudged
@@ -135,3 +204,28 @@ def mix_teal(row):
     r, g, b = rgb("#27D6CC")
     k = max(0.35, 1.0 - 0.12 * row)
     return "#%02x%02x%02x" % (int(r * k), int(g * k), int(b * k))
+
+# ---- Table A (concept A, Flight Academy): board/ios/art-A/STYLE.md section 2 ------------------------------
+# The colours of the Table A masters (tools/art/table_a/blender/toys.py HEX, which Blender's Python reads on its
+# own; tools/art/table_a/check.py fails if the two disagree). F_* are floor-dark paints for anything flush under
+# ball paths (LUM_DECK_MAX); bright paint is only for raised toys and lit lamps.
+TABLE_A = {
+    "CORAL": "#FF5A4E", "SLATE": "#2A3048",
+    "F_DECK": "#161B3C", "F_PAINT_W": "#3E4670", "F_PAINT_Y": "#5A4A1E", "F_BLADE": "#191F46",
+    "F_BAND": "#6A5418", "F_TIP": "#B04428", "F_RING1": "#123E46", "F_RING2": "#1E365E", "F_RING3": "#302458",
+    "F_STENCIL": "#262C52", "F_EDGE": "#38427C", "F_RINGBG": "#10163A",
+}
+# The Altitude GI ladder's names in toys.py (FL100..FL500), the same colours as ALTITUDE_GI.
+TABLE_A_GI_NAMES = ["DAY", "CLEAR", "DUSK", "SUNSET", "NIGHTV"]
+# How the game draws Table A (src/platform/TableRenderer.cpp, from assets/table_a, 2 px per unit).
+TABLE_A_UNLIT_FLOOR = 0.34    # an insert the rules leave dark keeps its baked unlit lens; the light show's floor
+TABLE_A_DECK_FLOOD = (0.16, 0.30)   # additive GI-coloured light over the Flight Deck's plate: closed / open
+TABLE_A_APPROACH = 0.95       # strongest approach light (the "rabbit" running up the runway), times the GI level
+TABLE_A_RETICLE = 0.85        # the drone's lock-on reticle (ring.png alpha, steady, slow turn)
+TABLE_A_ALT_PLATE = (149.0, 584.0)   # top-left of the altimeter plate (units); its pointer frames go over it
+# The plate is drawn mirrored left to right (tape and pointer on the right): its sockets then sit 26 units from
+# its left edge, on the AltitudeFL lamps at x 175 (kLamps, G2), and the plate stays clear of the left inlane
+# guide at x 144-150. make_floor.py checks the sockets against the lamps; ship.py mirrors the shipped cells.
+TABLE_A_ALT_PLATE_MIRROR = True
+TABLE_A_GI_STRENGTH = (0.40, 0.52)   # table_a/gi.png in the Altitude GI colour, additive: FL100 / FL500
+TABLE_A_BALL_THROUGH = 0.80   # a ball under a ramp shows through its plastic: drawn again over it at this alpha

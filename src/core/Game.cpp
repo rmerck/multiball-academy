@@ -51,6 +51,29 @@ float riseShare(std::uint32_t steps) noexcept {
   return easeOut(std::min(static_cast<float>(steps) / static_cast<float>(kRiseSteps), 1.0F));
 }
 
+// The point a share of the way along a polyline, by length.
+template <std::size_t N>
+Vec2 alongPolyline(const std::array<Vec2, N>& points, float share) noexcept {
+  float length = 0.0F;
+  for (std::size_t i = 1; i < N; ++i) {
+    length += lengthOf(points[i] - points[i - 1]);
+  }
+  float left = std::clamp(share, 0.0F, 1.0F) * length;
+  for (std::size_t i = 1; i < N; ++i) {
+    const Vec2 run = points[i] - points[i - 1];
+    const float runLength = lengthOf(run);
+    if (left < runLength && runLength > 0.0F) {
+      return points[i - 1] + run * (left / runLength);
+    }
+    left -= runLength;
+  }
+  return points[N - 1];
+}
+
+// The Briefing room's subway, in steps: the wait in the room, then the ride.
+const std::uint32_t kSubwayWaitSteps = stepsIn(table::kScoopHoldSeconds - table::kSubwayRideSeconds);
+const std::uint32_t kSubwayRideSteps = stepsIn(table::kSubwayRideSeconds);
+
 }  // namespace
 
 Game::Game() {
@@ -222,10 +245,54 @@ void Game::startNewGame() {
     ball.stillSteps = 0;
   }
   shake_ = {};
-  // The bays are emptied and the spinner stops where it is.
+  // The bays are emptied and the spinners stop where they are.
   clearLocks();
-  spinsOwed_ = 0;
+  for (SpinnerState& spinner : spinner_) {
+    spinner.owed = 0;
+  }
+  // A new game: the BOGEY bank comes up as soon as it is clear.
+  for (std::uint64_t& down : bogeyDownStep_) {
+    if (down != 0) {
+      down = 1;
+    }
+  }
+  bogeyNewGame_ = table::kBogeyOnTable;
   serveBall();
+}
+
+void Game::driveBogeys() {
+  if (!table::kBogeyOnTable) {
+    return;  // Cut in G2: never on the table.
+  }
+  // The bank comes up kBogeyResetSeconds after its third target fell; from
+  // the Altitude's autoReset level a target down kBogeyAutoResetSeconds
+  // rises alone. A new game raises every one. Each only when clear.
+  const std::uint64_t now = stepCount_ + 1;
+  bool allDown = true;
+  std::uint64_t lastDown = 0;
+  for (const std::uint64_t down : bogeyDownStep_) {
+    allDown = allDown && down != 0;
+    lastDown = std::max(lastDown, down);
+  }
+  const bool bankDue = allDown && now - lastDown >= stepsIn(table::kBogeyResetSeconds);
+  const bool autoReset = rules_.altitudeKnobs().autoReset;
+  bool anyDown = false;
+  for (std::size_t i = 0; i < bogeyDownStep_.size(); ++i) {
+    std::uint64_t& down = bogeyDownStep_[i];
+    if (down == 0) {
+      continue;
+    }
+    const bool due = bogeyNewGame_ || bankDue ||
+                     (autoReset && now - down >= stepsIn(table::kBogeyAutoResetSeconds));
+    if (due && physics_.bogeySpotClear(i)) {
+      physics_.setBogey(i, true);
+      down = 0;
+    }
+    anyDown = anyDown || down != 0;
+  }
+  if (!anyDown) {
+    bogeyNewGame_ = false;
+  }
 }
 
 void Game::handleNudges(const InputState& input) {
@@ -483,6 +550,12 @@ void Game::step(const InputState& input) {
                    (input.rightFlipper && !previousInput_.rightFlipper))) {
     sounds_ |= soundBit(Sound::Flipper);
   }
+  // The Air Pocket rests after any press of a flipper button (all three
+  // flippers share the two buttons).
+  if (playable && ((input.leftFlipper && !previousInput_.leftFlipper) ||
+                   (input.rightFlipper && !previousInput_.rightFlipper))) {
+    lastFlipStep_ = stepCount_ + 1;
+  }
   // The flipper buttons also move the lit lanes.
   if (input.leftFlipper && !previousInput_.leftFlipper) {
     rules_.onFlipper(false);
@@ -495,12 +568,15 @@ void Game::step(const InputState& input) {
     sounds_ |= soundBit(Sound::Launch);
   }
 
-  physics_.setFlippers(playable && input.leftFlipper, playable && input.rightFlipper);
+  physics_.setFlippers(playable && input.leftFlipper, playable && input.rightFlipper,
+                       deckFlipperAllowed());
+  driveDevices(playable);
   physics_.setPlunger(playable && input.plunger);
   physics_.step(static_cast<float>(kStepSeconds));
 
   rules_.setTable(tableStatus());
   handleEvents();
+  updateDrone();
   // Balls are always dealt with in slot order, so a step has one outcome.
   // Every ball taken during the step is noted before any held ball is
   // returned, so that the order in which a hole returns its balls does not
@@ -520,7 +596,7 @@ void Game::step(const InputState& input) {
       updateBallSearch(slot, playable && input.leftFlipper, playable && input.rightFlipper);
     }
   }
-  updateSpinner();
+  updateSpinners();
   rules_.tick(allBallsHeld());
   applyRules();
 
@@ -613,6 +689,41 @@ void Game::handleEvents() {
         hitSounds |= soundBit(Sound::Target);
         rules_.onDropTarget(index);
         break;
+      case Drone:
+        // A hit reported after the drone went down in this same step is
+        // not one.
+        if (physics_.droneUp()) {
+          hitSounds |= soundBit(Sound::Target);
+          onDroneHit(event.ball);
+        }
+        break;
+      case Standup:
+        hitSounds |= soundBit(Sound::Target);
+        rules_.onStandup(index, event.speed);
+        break;
+      case Bogey:
+        // A BOGEY target drops when struck (a hit reported after it went
+        // down in this same step is not one).
+        if (physics_.bogeyUp(index)) {
+          hitSounds |= soundBit(Sound::Target);
+          physics_.setBogey(index, false);
+          bogeyDownStep_[index] = stepCount_ + 1;
+          rules_.onBogey(index);
+        }
+        break;
+      case Pylon:
+        if (physics_.pylonUp()) {
+          hitSounds |= soundBit(Sound::Target);
+          rules_.onPylon();
+        }
+        break;
+      case CaptiveBall:
+        hitSounds |= soundBit(Sound::Target);
+        if (index == table::kCaptiveBallSwitch) {
+          ++captiveSwitchCount_;
+          rules_.onCaptiveBall(event.speed);
+        }
+        break;
       case Rollover:
         ++rolloverCounts_[index];
         hitSounds |= soundBit(Sound::Rollover);
@@ -625,8 +736,11 @@ void Game::handleEvents() {
         break;
       case Sensor:
         rules_.onSensor(index, event.direction, event.speed, event.ball);
-        if (index == table::kSpinnerSensor) {
-          addSpins(event.speed, event.direction);
+        // Revision 3: the circuit mouths have spinners too.
+        if (const std::size_t spinner = table::spinnerOnSensor(index);
+            spinner < kSpinners &&
+            (table::kSpinners[spinner].bothWays || event.direction > 0)) {
+          addSpins(spinner, event.speed, event.direction);
         }
         break;
       case None:
@@ -759,12 +873,26 @@ void Game::tellRulesOfCapture(std::size_t slot) {
   if (by.kind != table::ElementKind::Hole || by.index >= table::kHoles.size()) {
     return;
   }
-  ++holeCounts_[by.index];
   if (live) {
     sounds_ |= soundBit(Sound::HoleIn);
   }
-  const Rules::HoleResult result = rules_.onHole(by.index, slot);
-  if (table::kHoles[by.index].type != table::HoleType::Hangar) {
+  tellRulesOfHole(slot, by.index);
+}
+
+void Game::tellRulesOfHole(std::size_t slot, std::size_t hole) {
+  ++holeCounts_[hole];
+  // Concept A: the Skyway's diverter, as lit before this Skyway was made.
+  const bool toDeck = table::kHoles[hole].type == table::HoleType::RampRight && rules_.deckLit();
+  const Rules::HoleResult result = rules_.onHole(hole, slot);
+  if (toDeck) {
+    const table::ElementRef deck{table::ElementKind::Hole,
+                                 static_cast<std::uint8_t>(table::kDeckRampHole)};
+    balls_[slot].holder = deck;
+    physics_.setHeldBy(slot, deck);
+    ++holeCounts_[table::kDeckRampHole];
+    return;
+  }
+  if (table::kHoles[hole].type != table::HoleType::Hangar) {
     return;  // Only the Hangar can do anything but return the ball.
   }
   if (result == Rules::HoleResult::Lock) {
@@ -804,6 +932,24 @@ void Game::updateHeldBall(std::size_t slot) {
 
   const std::size_t index = ball.holder.index;
   const table::Hole& hole = table::kHoles[index];
+  if (hole.type == table::HoleType::CatShot) {
+    // Concept A: the CAT SHOT rides over the nest; at the end of the ride
+    // the Hangar takes the ball as if it had been shot in, and locks or
+    // returns it.
+    ++ball.heldSteps;
+    if (static_cast<double>(ball.heldSteps) * kStepSeconds >= table::kCatRideSeconds) {
+      const table::ElementRef hangar{table::ElementKind::Hole,
+                                     static_cast<std::uint8_t>(table::kHangarHole)};
+      ball.holder = hangar;
+      physics_.setHeldBy(slot, hangar);
+      ball.heldSteps = 0;
+      ball.arrival = ++arrivals_;
+      ball.takenAt = table::kHoles[table::kHangarHole].center;
+      ball.takenStep = stepCount_ + 1;
+      tellRulesOfHole(slot, table::kHangarHole);
+    }
+    return;
+  }
   if (table::isRamp(hole.type)) {
     // Each ball rides the rail on its own clock.
     ++ball.heldSteps;
@@ -853,11 +999,17 @@ void Game::updateHeldBall(std::size_t slot) {
   }
   if (ball.heldSteps < hold) {
     ++ball.heldSteps;
+    if (!locked && hole.type == table::HoleType::Subway && ball.heldSteps == kSubwayWaitSteps) {
+      note(GameEvent::Type::SubwayRide, slot, index);
+    }
   }
   if (ball.heldSteps < hold || !exitIsClear(slot, index, spacing)) {
     return;
   }
-  const Vec2 velocity = hangar ? nextHangarExitVelocity() : nextScoopExitVelocity();
+  const Vec2 velocity = hangar ? nextHangarExitVelocity()
+                               : (hole.type == table::HoleType::DeckDrain
+                                      ? jittered(hole.exitVelocity)
+                                      : nextScoopExitVelocity());
   // Under the physics again where it was drawn coming up.
   returnBall(slot, index, table::holeRisePoint(hole), velocity);
   ball.ejectStep = stepCount_ + 1;
@@ -924,6 +1076,16 @@ void Game::applyRules() {
     rules_.onDoorBank(true);
   }
   physics_.setKickbackArmed(rules_.kickbackLit());
+  driveBogeys();
+  // Concept A: the pylon rises when the rules want it and nothing is over
+  // it; it goes flush at once when they do not.
+  if (rules_.pylonWanted()) {
+    if (!physics_.pylonUp() && physics_.pylonSpotClear()) {
+      physics_.setPylon(true);
+    }
+  } else if (physics_.pylonUp()) {
+    physics_.setPylon(false);
+  }
   // Locked balls the rules let go without a ball entering the Hangar, and
   // balls they want launched. A request past the three-ball limit is
   // refused, never kept.
@@ -980,28 +1142,172 @@ bool Game::ballAwaitingLaunch() const noexcept {
   return false;
 }
 
-void Game::addSpins(float speedAcross, int direction) noexcept {
-  spinsOwed_ = std::min(spinsOwed_ + table::spinsFor(speedAcross), table::kMaxSpinsOwed);
-  spinDirection_ = direction < 0 ? -1 : 1;
+int Game::spinsOwed() const noexcept {
+  int owed = 0;
+  for (const SpinnerState& spinner : spinner_) {
+    owed += spinner.owed;
+  }
+  return owed;
 }
 
-void Game::updateSpinner() {
+void Game::addSpins(std::size_t spinner, float speedAcross, int direction) noexcept {
+  SpinnerState& s = spinner_[spinner];
+  s.owed = std::min(s.owed + table::spinsFor(speedAcross), table::kMaxSpinsOwed);
+  s.direction = direction < 0 ? -1 : 1;
+}
+
+void Game::updateSpinners() {
   constexpr std::uint32_t kTurn = 2U * static_cast<std::uint32_t>(table::kSpinPayoutSteps);
-  if (spinCooldown_ > 0) {
-    // Half a turn for each spin, a step at a time, either way round.
-    --spinCooldown_;
-    spinnerTicks_ = (spinnerTicks_ + (spinDirection_ > 0 ? 1U : kTurn - 1U)) % kTurn;
-  }
-  if (spinsOwed_ > 0 && spinCooldown_ == 0) {
-    --spinsOwed_;
-    spinCooldown_ = table::kSpinPayoutSteps;
-    ++spinCount_;
-    if (!rules_.gameOver() && !rules_.tilted()) {
-      sounds_ |= soundBit(Sound::Spinner);
+  // Each on its own, in the order of table::kSpinners.
+  for (std::size_t i = 0; i < kSpinners; ++i) {
+    SpinnerState& s = spinner_[i];
+    if (s.cooldown > 0) {
+      // Half a turn for each spin, a step at a time, either way round.
+      --s.cooldown;
+      s.ticks = (s.ticks + (s.direction > 0 ? 1U : kTurn - 1U)) % kTurn;
     }
-    note(GameEvent::Type::Spin, 0);
-    rules_.onSpin();
+    if (s.owed > 0 && s.cooldown == 0) {
+      --s.owed;
+      s.cooldown = table::kSpinPayoutSteps;
+      ++s.count;
+      ++spinCount_;
+      if (!rules_.gameOver() && !rules_.tilted()) {
+        sounds_ |= soundBit(Sound::Spinner);
+      }
+      note(GameEvent::Type::Spin, 0, i);
+      rules_.onSpin();
+    }
   }
+}
+
+void Game::onDroneHit(std::size_t slot) {
+  // Thrown back away from the ball: along the line from it to the drone's
+  // centre (straight up the table if they somehow coincide).
+  if (slot < kMaxBalls && physics_.ballActive(slot)) {
+    const Vec2 d = physics_.dronePosition() - physics_.ballPosition(slot);
+    const float length = lengthOf(d);
+    droneRecoilDirection_ = length > 0.5F ? d * (1.0F / length) : Vec2{0.0F, -1.0F};
+  }
+  droneHitStep_ = stepCount_ + 1;
+  ++droneHitCount_;
+  const bool down = rules_.onDrone();
+  note(GameEvent::Type::DroneHit, slot,
+       static_cast<std::size_t>(down ? table::kDroneArmour : rules_.droneHits()));
+  if (down) {
+    physics_.knockDroneDown(static_cast<std::uint32_t>(table::kDroneDownSeconds / kStepSeconds));
+    note(GameEvent::Type::DroneDown, slot);
+  }
+}
+
+void Game::updateDrone() {
+  const bool up = physics_.droneUp();
+  const bool knocked = physics_.droneKnocked();
+  if (up != droneWasUp_) {
+    droneMoveStep_ = stepCount_ + 1;
+    if (up) {
+      note(GameEvent::Type::DroneRise, 0, droneWasKnocked_ ? 1U : 0U);
+    } else if (!knocked) {
+      // Knocked down, it has had its DroneDown with the hit that did it.
+      note(GameEvent::Type::DroneDive, 0);
+    }
+  }
+  droneWasUp_ = up;
+  droneWasKnocked_ = knocked;
+}
+
+namespace {
+// The Air Pocket's kicks: up the table at 25 to 65 degrees above level, to
+// either side (written out: no library trigonometry in the physics' path).
+constexpr std::array<Vec2, 5> kKickDirections{{
+    {0.906308F, -0.422618F},
+    {0.819152F, -0.573576F},
+    {0.707107F, -0.707107F},
+    {0.573576F, -0.819152F},
+    {0.422618F, -0.906308F},
+}};
+}  // namespace
+
+bool Game::deckFlipperAllowed() {
+  // The Flight Deck's visit cap (CONCEPT.md risk 1): a ball may stay on the
+  // deck for kDeckVisitSeconds; past that the deck's bat stays down whatever
+  // the button does, until the ball has left (by the drain, or the CAT
+  // SHOT). A held button can never stall the deck.
+  bool allowed = true;
+  const std::uint32_t cap = stepsIn(table::kDeckVisitSeconds);
+  for (std::size_t slot = 0; slot < kMaxBalls; ++slot) {
+    BallState& ball = balls_[slot];
+    if (!physics_.ballActive(slot) || physics_.ballHeld(slot) ||
+        !table::onDeck(physics_.ballPosition(slot))) {
+      ball.deckSteps = 0;
+      continue;
+    }
+    ball.deckSteps = std::min(ball.deckSteps + 1U, cap + 1U);
+    allowed = allowed && ball.deckSteps <= cap;
+  }
+  return allowed;
+}
+
+void Game::driveDevices(bool playable) {
+  using AirPocket = PhysicsWorld::AirPocket;
+  const progression::Knobs& knobs = rules_.altitudeKnobs();
+  AirPocket mode = AirPocket::Off;
+  Vec2 kick{};
+  const double period = knobs.airPocketPeriod;
+  // Never while a drain would be saved (the saver, a multiball's grace), and
+  // never within kAirPocketFlipQuietSeconds of a flipper press.
+  const bool flipQuiet = lastFlipStep_ != 0 &&
+                         stepCount_ + 1 - lastFlipStep_ < stepsIn(table::kAirPocketFlipQuietSeconds);
+  if (period > 0.0 && playable && !rules_.ballSaveActive() && !flipQuiet) {
+    const std::uint64_t periodSteps = stepsIn(period);
+    const std::uint64_t onSteps = stepsIn(table::kAirPocketOnSeconds);
+    const std::uint64_t now = stepCount_ + 1;
+    const std::uint64_t phase = now % periodSteps;
+    if (phase < onSteps) {
+      mode = AirPocket::Pull;
+    } else if (phase == onSteps) {
+      mode = AirPocket::Release;
+      // Side and angle from the pulse's number: the same every run.
+      std::uint64_t h = now / periodSteps + 0x9E3779B97F4A7C15ULL;
+      h = (h ^ (h >> 30U)) * 0xBF58476D1CE4E5B9ULL;
+      h = (h ^ (h >> 27U)) * 0x94D049BB133111EBULL;
+      h ^= h >> 31U;
+      const Vec2 d = kKickDirections[(h >> 1U) % kKickDirections.size()];
+      kick = Vec2{(h & 1U) != 0U ? d.x : -d.x, d.y} * table::kAirPocketKickSpeed;
+    }
+  }
+  airPocketOn_ = mode == AirPocket::Pull;
+  physics_.setDevices(mode, kick, knobs.propWashSpin);
+}
+
+float Game::propWashAngle() const noexcept {
+  const float spin = rules_.altitudeKnobs().propWashSpin;
+  const double turns = static_cast<double>(spin) * static_cast<double>(stepCount_) * kStepSeconds /
+                       (2.0 * static_cast<double>(table::kPi));
+  return static_cast<float>((turns - static_cast<double>(static_cast<std::int64_t>(turns))) * 2.0 *
+                            static_cast<double>(table::kPi));
+}
+
+DroneView Game::drone() const noexcept {
+  DroneView view;
+  view.position = physics_.dronePosition();
+  view.up = physics_.droneUp();
+  view.knocked = physics_.droneKnocked();
+  if (view.knocked) {
+    view.downLeft = std::clamp(static_cast<float>(physics_.droneDownSteps()) /
+                                   static_cast<float>(stepsIn(table::kDroneDownSeconds)),
+                               0.0F, 1.0F);
+  }
+  // Sinking out of sight, or coming up; at rest either way when its last
+  // move is long past (or it has never moved).
+  view.sink = view.up ? 1.0F - easeOut(progressSince(droneMoveStep_, table::kDroneRiseSeconds))
+                      : easeOut(progressSince(droneMoveStep_, table::kDroneSinkSeconds));
+  // Out over the first half of the recoil and back over the second.
+  const float u = progressSince(droneHitStep_, table::kDroneRecoilSeconds);
+  if (u < 1.0F && view.up) {
+    view.recoil = 4.0F * u * (1.0F - u);
+    view.position = view.position + droneRecoilDirection_ * (table::kDroneRecoil * view.recoil);
+  }
+  return view;
 }
 
 void Game::updateBallSearch(std::size_t slot, bool leftRaised, bool rightRaised) {
@@ -1077,7 +1383,9 @@ float Game::holeExitOpening(std::size_t hole) const noexcept {
   }
   const table::Hole& h = table::kHoles[hole];
   const Vec2 rise = table::holeRisePoint(h);
-  if (!table::hasCup(h) || (rise.x == h.cup.x && rise.y == h.cup.y)) {
+  // (The CAT SHOT has no exit of its own: its ride ends in the Hangar.)
+  if (!table::hasCup(h) || h.type == table::HoleType::CatShot ||
+      (rise.x == h.cup.x && rise.y == h.cup.y)) {
     return 0.0F;
   }
   // It opens and closes over as long as a ball takes to come up.
@@ -1168,9 +1476,10 @@ BallView Game::ballView(std::size_t slot) const {
     view.sink = 1.0F - riseShare(state.heldSteps - kLockRollSteps);
     return view;
   }
+  const bool cat = hole.type == table::HoleType::CatShot;
   if (table::hasCup(hole)) {
     const std::uint32_t hold = holdSteps(hole.type);
-    if (state.heldSteps + kRiseSteps > hold) {
+    if (!cat && state.heldSteps + kRiseSteps > hold) {
       // The rise: coming up at the exit at the end of its hold, where the
       // physics will have it again.
       view.position = table::holeRisePoint(hole);
@@ -1184,29 +1493,63 @@ BallView Game::ballView(std::size_t slot) const {
       view.sink = smooth(in);
       return view;
     }
-    // Down: out of sight until it comes up again.
-    view.visible = false;
-    return view;
+    if (!cat) {
+      // Down: out of sight until it comes up again.
+      view.visible = false;
+      if (hole.type == table::HoleType::Subway || hole.type == table::HoleType::DeckDrain) {
+        // Under the playfield: a glow building under the cup while the ball
+        // waits its turn and its time there, then running along the subway
+        // to the exit, fast at first and slowing to it, by the time the
+        // ball starts to come up there.
+        view.underground = true;
+        const bool deck = hole.type == table::HoleType::DeckDrain;
+        const std::uint32_t wait = deck ? stepsIn(table::kDeckDrainWaitSeconds) : kSubwayWaitSteps;
+        const std::uint32_t rideEnd = hold > kRiseSteps ? hold - kRiseSteps : hold;
+        if (state.heldSteps < wait) {
+          view.glowAt = deck ? table::kDeckSubway.front() : table::kBriefingSubway.front();
+          view.glow = static_cast<float>(state.heldSteps) / static_cast<float>(wait);
+        } else {
+          const float ride = rideEnd > wait ? static_cast<float>(state.heldSteps - wait) /
+                                                  static_cast<float>(rideEnd - wait)
+                                            : 1.0F;
+          const float share = easeOut(std::min(ride, 1.0F));
+          view.glowAt = deck ? alongPolyline(table::kDeckSubway, share)
+                             : alongPolyline(table::kBriefingSubway, share);
+          view.glow = 1.0F;
+        }
+      }
+      return view;
+    }
+    // The CAT SHOT: after its pull-in, it rides its rail over the field
+    // into the Hangar, in view.
   }
   // On a ramp the ball stays in sight, riding the rail over the table to the
   // exit at a steady speed. The ride starts from where the ball was taken,
   // which can be anywhere across the ramp's mouth, and joins the rail at its
   // second point.
-  const std::array<Vec2, 9>& rail = table::rampRail(hole.type);
+  const std::array<Vec2, 9>& rail = cat ? table::kCatRail : table::rampRail(hole.type);
+  const double rideSeconds = cat ? table::kCatRideSeconds : table::kRampRideSeconds;
   const auto point = [&rail, &state](std::size_t i) { return i == 0 ? state.takenAt : rail[i]; };
   float length = 0.0F;
   for (std::size_t i = 1; i < rail.size(); ++i) {
     length += lengthOf(point(i) - point(i - 1));
   }
-  const float t = std::clamp(static_cast<float>(static_cast<double>(state.heldSteps) *
-                                                kStepSeconds / table::kRampRideSeconds),
-                             0.0F, 1.0F);
+  const double rideFrom = cat ? table::kHoleSinkSeconds : 0.0;
+  const float t = std::clamp(
+      static_cast<float>((static_cast<double>(state.heldSteps) * kStepSeconds - rideFrom) /
+                         (rideSeconds - rideFrom)),
+      0.0F, 1.0F);
   view.raised = true;
   // Larger while it rides; a ball kept waiting at the end for the exit to
   // clear is drawn there full size.
   view.scale = t < 1.0F ? kRailScale : 1.0F;
   view.position = rail.back();
-  float left = t * length;
+  // Shaped (revision 3): fast up the ramp, slowest over the top, fast down
+  // the return: the share of the rail covered is t/2 + 2(t - 1/2)^3 + 1/4,
+  // whose rate runs 2, 1/2, 2 times the mean.
+  const float c = t - 0.5F;
+  const float covered = 0.5F * t + 2.0F * c * c * c + 0.25F;
+  float left = covered * length;
   for (std::size_t i = 1; i < rail.size(); ++i) {
     const Vec2 run = point(i) - point(i - 1);
     const float runLength = lengthOf(run);
@@ -1223,7 +1566,14 @@ BallView Game::ballView(std::size_t slot, float alpha) const {
   const BallView now = ballView(slot);
   const BallView& before = balls_[slot].previous;
   const float t = blendFactor(alpha);
-  // A hidden ball has no place to draw from or to.
+  // A hidden ball has no place to draw from or to; its glow under the
+  // playfield, if it has one, moves smoothly too.
+  if (t < 1.0F && now.underground && before.underground) {
+    BallView view = now;
+    view.glowAt = before.glowAt + (now.glowAt - before.glowAt) * t;
+    view.glow = before.glow + (now.glow - before.glow) * t;
+    return view;
+  }
   if (t >= 1.0F || !now.visible || !before.visible) {
     return now;
   }

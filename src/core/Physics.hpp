@@ -15,6 +15,7 @@ namespace pinball {
 
 namespace save {
 struct BallRecord;
+struct CaptiveRecord;
 struct TableRecord;
 }  // namespace save
 
@@ -102,8 +103,12 @@ class PhysicsWorld {
   static constexpr float kFlipperDownSpeed = 12.0F;
 
   // Sets which flipper buttons are held. Applied on the next step.
-  void setFlippers(bool leftHeld, bool rightHeld) noexcept;
-  // Current angle of a flipper in radians. Index 0 is left, 1 is right.
+  // The right button drives the right flipper and the Flight Deck's
+  // flipper; deckAllowed false holds the deck flipper down whatever the
+  // button does (Game: no cradle on the deck).
+  void setFlippers(bool leftHeld, bool rightHeld, bool deckAllowed = true) noexcept;
+  // Current angle of a flipper in radians. Index 0 is left, 1 is right, 2
+  // the upper flipper (driven with the right one).
   [[nodiscard]] float flipperAngle(std::size_t index) const noexcept;
 
   // Plunger. While held it draws back over kPlungerChargeSeconds; on release
@@ -191,13 +196,74 @@ class PhysicsWorld {
   // down, they are not there at all. The caller keeps the bank from coming
   // up onto a ball (Game waits for table::kDoorMouthCenter's box to clear).
   void setDoorBank(bool up);
+  // Concept A, Rev A.2 devices (TableLayout.hpp). The pylon: up is solid,
+  // down is flush. pylonSpotClear: no free ball over it (it never rises
+  // onto a ball).
+  void setPylon(bool up);
+  [[nodiscard]] bool pylonUp() const noexcept { return pylonUp_; }
+  [[nodiscard]] bool pylonSpotClear() const;
+  // Concept A G2: the BOGEY drop targets, each up or down on its own; one
+  // rises only when no free ball is over it (bogeySpotClear).
+  void setBogey(std::size_t index, bool up);
+  [[nodiscard]] bool bogeyUp(std::size_t index) const noexcept {
+    return index < bogeyUp_.size() && bogeyUp_[index];
+  }
+  [[nodiscard]] bool bogeySpotClear(std::size_t index) const;
+  // The Air Pocket for the next step: Off, Pull (draw and hold free balls
+  // in its reach that are not rising fast), or Release (each ball in its
+  // reach is given kick, in px/s). The Prop Wash's spin in radians per
+  // second (0: still). Game sets both every step from the step count and
+  // the altitude; neither keeps state of its own.
+  enum class AirPocket : std::uint8_t { Off, Pull, Release };
+  void setDevices(AirPocket airPocket, Vec2 kick, float propWashSpin) noexcept {
+    airPocket_ = airPocket;
+    airPocketKick_ = kick;
+    propWashSpin_ = propWashSpin;
+  }
+  [[nodiscard]] std::uint32_t airPocketCatches() const noexcept { return airPocketCatches_; }
   [[nodiscard]] bool doorBankUp() const noexcept { return doorBankUp_; }
+
+  // The training drone (table::kDroneY): patrols, dives, rises again when
+  // its place is clear of balls; knocked down by the rules for a time.
+  [[nodiscard]] bool droneUp() const noexcept { return droneUp_; }
+  // Where it is on its patrol (or where it went down).
+  [[nodiscard]] Vec2 dronePosition() const noexcept { return dronePosition_; }
+  // Knocked down by the rules, and not up again yet: out for steps, then up
+  // as soon as its place is clear (not at the end of its patrol cycle).
+  void knockDroneDown(std::uint32_t steps) noexcept;
+  [[nodiscard]] bool droneKnocked() const noexcept { return droneKnocked_; }
+  // Steps of a knock-down still to run (0 once it may rise).
+  [[nodiscard]] std::uint32_t droneDownSteps() const noexcept { return droneDownSteps_; }
+
+  // The captive ball (table::kCaptiveHome): a body of its own, not one of
+  // the slots, held to its channel by a prismatic joint. Struck by a ball it
+  // reports a Hit for {CaptiveBall, kCaptiveBallStruck}; when it reaches
+  // table::kCaptiveSwitchAt it reports a Hit for {CaptiveBall,
+  // kCaptiveBallSwitch}, once, for the ball that struck it last, with the
+  // fastest it moved on the way up, and not again until it has come back to
+  // table::kCaptiveSwitchRearm.
+  [[nodiscard]] Vec2 captivePosition() const;
+  [[nodiscard]] Vec2 captiveVelocity() const;
+  // How far up the channel it is, in pixels: 0 at rest, kCaptiveTravel at
+  // the stop.
+  [[nodiscard]] float captiveTranslation() const;
+  [[nodiscard]] bool captiveSwitchClosed() const noexcept { return captiveSwitchClosed_; }
+  // Times the captive ball was found out of its channel or not finite and
+  // put back at rest (none, in a sound world; the tests watch it). Not saved.
+  [[nodiscard]] std::uint32_t captiveResets() const noexcept { return captiveResets_; }
 
   // The kickback in the left outlane. While it is armed, the first ball
   // whose centre is inside table::kKickbackZone is taken (a Capture event
   // for the kickback; the ball is held until releaseBall()) and the kickback
   // disarms itself. Two balls arriving in the same slice: the lower slot is
   // taken, the other falls through.
+  // A held ball's holder changes (concept A: the Skyway diverted to the
+  // Flight Deck; the CAT SHOT's ride ending in the Hangar).
+  void setHeldBy(std::size_t ball, table::ElementRef by) noexcept {
+    if (ballHeld(ball)) {
+      balls_[ball].heldBy = by;
+    }
+  }
   void setKickbackArmed(bool armed) noexcept { kickbackArmed_ = armed; }
   [[nodiscard]] bool kickbackArmed() const noexcept { return kickbackArmed_; }
   // Returns a held ball to play at position with velocity. The hole it was
@@ -227,6 +293,8 @@ class PhysicsWorld {
   // doors and kickback; the Game fields of the records are left alone.
   void saveBall(std::size_t ball, save::BallRecord& record) const;
   void saveTable(save::TableRecord& record) const;
+  // The captive ball: body, switch and the ball that struck it last.
+  void saveCaptive(save::CaptiveRecord& record) const;
   // Puts them back exactly: place, velocity, angle and spin, hold and
   // latches. Every slot is first taken off the table. Box2D keeps contacts
   // of its own that cannot be put back, so the touches already under way
@@ -234,6 +302,7 @@ class PhysicsWorld {
   // touches are therefore not reported (nor do they kick).
   void restoreBalls(std::span<const save::BallRecord> records);
   void restoreTable(const save::TableRecord& record);
+  void restoreCaptive(const save::CaptiveRecord& record);
   // A restore is waiting for its first slice.
   [[nodiscard]] bool restorePending() const noexcept { return skipTouches_; }
 
@@ -255,6 +324,19 @@ class PhysicsWorld {
   void kickFromBumper(std::size_t slot, const table::Bumper& bumper);
   void buildTargets();
   void buildDoorBank();
+  void buildBogeys();
+  void buildStandups();
+  void buildDrone();
+  void buildPylon();
+  void driveDevices(float seconds, bool endOfStep);
+  void buildCaptive();
+  // A new joint every step (see Physics.cpp), then the captive ball's
+  // checks after every slice.
+  void renewCaptiveJoint();
+  void checkCaptive();
+  void putCaptiveHome();
+  void driveDrone(float stepSeconds);
+  [[nodiscard]] bool droneSpotClear(Vec2 at) const;
   void checkSensors(std::size_t slot, Vec2 position, Vec2 velocity);
   // Takes a free ball off the table for whatever element it is.
   void holdBall(std::size_t slot, table::ElementRef by, float speed);
@@ -283,7 +365,7 @@ class PhysicsWorld {
 
   b2WorldId world_{};
   b2BodyId table_{};
-  std::array<FlipperState, 2> flippers_{};
+  std::array<FlipperState, table::kFlippers.size()> flippers_{};
 
   b2BodyId plunger_{};
   float plungerPull_ = 0.0F;          // Pixels drawn back.
@@ -310,6 +392,12 @@ class PhysicsWorld {
     // Holes that will take the ball. A hole disarms when it returns it, and
     // rearms once the ball is table::kHoleRearmDistance away.
     std::array<bool, table::kHoles.size()> holeArmed{};
+    // Inside a hole's box at the last check, and put somewhere by hand since
+    // (a placed ball is taken by the hole it is put in, however it moves).
+    std::array<bool, table::kHoles.size()> inBox{};
+    // The Briefing room: whether the ball came into its pocket the right way.
+    std::array<bool, table::kHoles.size()> boxWelcome{};
+    bool placed = false;
   };
   std::array<BallSlot, table::kMaxBalls> balls_{};
 
@@ -319,6 +407,33 @@ class PhysicsWorld {
   // return to the table as one.
   b2BodyId doorBank_{};
   bool doorBankUp_ = true;
+  std::array<b2BodyId, table::kBogeys.size()> bogey_{};
+  std::array<bool, table::kBogeys.size()> bogeyUp_{};
+  // The drone. The clock counts steps through one patrol and dive.
+  b2BodyId drone_{};
+  bool droneUp_ = true;
+  std::uint32_t droneClock_ = 0;
+  std::uint32_t droneDownSteps_ = 0;
+  bool droneKnocked_ = false;
+  Vec2 dronePosition_{table::kDroneLeftX, table::kDroneY};
+  // The captive ball, the shapeless static body its joint is anchored to,
+  // and the joint (made afresh each step).
+  b2BodyId captive_{};
+  b2BodyId captiveAnchor_{};
+  b2JointId captiveJoint_{};
+  bool captiveSwitchClosed_ = false;
+  std::uint8_t captiveStriker_ = 0;  // Slot of the ball that struck it last.
+  // Its fastest since it last stood at the rearm point: how hard the stroke
+  // that closes the switch was struck.
+  float captivePeakSpeed_ = 0.0F;
+  std::uint32_t captiveResets_ = 0;
+  b2BodyId pylon_{};
+  bool pylonUp_ = false;
+  AirPocket airPocket_ = AirPocket::Off;
+  Vec2 airPocketKick_{};
+  float propWashSpin_ = 0.0F;
+  std::uint32_t airPocketCatches_ = 0;  // For measuring only; not saved.
+  bool deckAllowed_ = true;
   bool kickbackArmed_ = false;
   // The next slice's touches are the restored world finding contacts that
   // were already there (restoreBalls).

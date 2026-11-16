@@ -7,6 +7,7 @@
 #include "Suites.hpp"
 #include "core/Courses.hpp"
 #include "core/Rules.hpp"
+#include "core/Snapshot.hpp"
 #include "core/TableLayout.hpp"
 
 // The table's rules, an event at a time: one group for each rule of the
@@ -201,7 +202,7 @@ void testRules() {
     CHECK(bench.score() - before == 3 * points::kRollCallLane + points::kRollCallComplete);
     CHECK(!bench.rules.rollCallLit(0) && !bench.rules.rollCallLit(1) && !bench.rules.rollCallLit(2));
     CHECK(bench.rules.overdriveLit() && bench.rules.overdrive() == 1);
-    CHECK(bench.message() == std::string_view("ROLL CALL COMPLETE"));
+    CHECK(bench.message() == std::string_view("R-A-D COMPLETE"));
     bench.wait(1.0);
     CHECK(bench.message() == std::string_view("OVERDRIVE IS LIT"));
     CHECK(bench.rules.lampState(LampId::ArrowTurbine) == LampState::Blink);
@@ -362,7 +363,7 @@ void testRules() {
         if (said.starts_with("EXTRA CREDIT")) {
           const std::string_view what[] = {"EXTRA CREDIT 25,000",        "EXTRA CREDIT 50,000",
                                            "EXTRA CREDIT  KICKBACK LIT", "EXTRA CREDIT  BONUS X",
-                                           "EXTRA CREDIT  BALL SAVER",   "EXTRA CREDIT  TURBO BOOST",
+                                           "EXTRA CREDIT  BALL SAVER",   "EXTRA CREDIT  SCRAMBLE BOOST",
                                            "EXTRA CREDIT  OVERDRIVE LIT"};
           for (int k = 0; k < 7; ++k) {
             seen[k] += said == what[k] ? 1 : 0;
@@ -416,6 +417,33 @@ void testRules() {
     CHECK(given >= 290);
   }
 
+  {  // The rules never count more than the table's three balls: a lock that
+     // serves a new ball, or a release, while another ball is still counted
+     // as queued (found by a saved game that valid() refused, revision 3).
+    const auto counted = [](const Rules& rules) {
+      const pinball::save::RulesRecord r = rules.record();
+      return r.statusLive + r.statusQueued + r.statusLocked;
+    };
+    RulesBench bench = started();
+    bench.rules.setTable({.live = 1, .free = 1, .queued = 1, .locked = 1});
+    bench.rules.onBallLocked(1, true);
+    CHECK(counted(bench.rules) <= static_cast<int>(table::kMaxBalls));
+    bench.rules.setTable({.live = 2, .free = 2, .queued = 0, .locked = 1});
+    bench.rules.onLockReleased(0);
+    CHECK(counted(bench.rules) <= static_cast<int>(table::kMaxBalls));
+    bench.rules.setTable({.live = 1, .free = 1, .queued = 1, .locked = 1});
+    bench.rules.onLockReleased(0);
+    CHECK(counted(bench.rules) == 3);
+    // A lock takes a live ball: never more free balls than live ones.
+    bench.rules.setTable({.live = 2, .free = 2, .queued = 0, .locked = 0});
+    bench.rules.onBallLocked(0, false);
+    CHECK(bench.rules.record().statusFree <= bench.rules.record().statusLive);
+    // And a drain takes a free ball.
+    bench.rules.setTable({.live = 2, .free = 2, .queued = 0, .locked = 0});
+    bench.drain();
+    CHECK(bench.rules.record().statusFree <= bench.rules.record().statusLive);
+  }
+
   {  // 4.3 Briefing room: 5,000 the first time on a ball and when something
      // is collected, 1,000 for a repeat with nothing lit.
     RulesBench bench = started();
@@ -423,8 +451,8 @@ void testRules() {
     bench.scoop();  // Starts the first course.
     CHECK(bench.score() - before == points::kBriefingRoom && bench.rules.courseRunning());
     before = bench.score();
-    bench.scoop();
-    CHECK(bench.score() - before == points::kBriefingRepeat);
+    bench.scoop();  // Again within 20 s: a quarter.
+    CHECK(bench.score() - before == points::kBriefingRepeat / 4);
     bench.rules.onTarget(0);
     bench.rules.onTarget(1);
     before = bench.score();
@@ -588,7 +616,7 @@ void testRules() {
     bench.wait(60.0);
     CHECK(rules.ballSaveActive());
     bench.balls.free = 1;
-    bench.wait(7.5);
+    bench.wait(2.5);
     CHECK(rules.ballSaveActive());
     CHECK(rules.lampState(LampId::ShootAgain) == LampState::FastBlink);
     bench.wait(3.0);

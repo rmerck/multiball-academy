@@ -55,3 +55,9 @@ if(PINBALL_ACCEPTANCE_TESTS)
     set_tests_properties(acceptance_${section_id} PROPERTIES LABELS acceptance TIMEOUT 14400)
   endforeach()
 endif()
+
+# Table review instrument (local only).
+add_executable(table_stats tests/TableStats.cpp tests/bots/TableHarness.cpp tests/bots/Acceptance.cpp)
+target_include_directories(table_stats PRIVATE tests)
+target_link_libraries(table_stats PRIVATE pinball_core)
+set_target_properties(table_stats PROPERTIES EXCLUDE_FROM_ALL TRUE)

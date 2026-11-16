@@ -58,12 +58,12 @@ static_assert(kGameOverDesktop.starts_with(Rules::kGameOverMessage.text()) &&
 static_assert(display::fits(kGameOverDesktop, display::kMaxMessageLength) &&
               display::fits(kGameOverTouch, display::kMaxMessageLength));
 
-// Fixed lines of the course window, each held to the width it is drawn in.
-constexpr std::string_view kNoCourse = "NO COURSE";
+// Fixed lines of the sortie window, each held to the width it is drawn in.
+constexpr std::string_view kNoCourse = "NO SORTIE";
 static_assert(display::fits(kNoCourse, display::kMaxMissionNameLength));
 
 // The review tool's fullest course window: every line at its limit.
-constexpr std::string_view kPreviewCourse = "COURSE NAME AT THE EDGE";
+constexpr std::string_view kPreviewCourse = "SORTIE NAME AT THE EDGE";
 constexpr std::string_view kPreviewGoal = "GOAL LINE AT ITS FULL SIZE";
 static_assert(kPreviewCourse.size() == display::kMaxMissionNameLength &&
               kPreviewGoal.size() == display::kMaxGoalTextLength);
@@ -155,7 +155,7 @@ struct CourseLine {
   int made = 0;
   // Whole seconds left on its clock; negative for none.
   int seconds = -1;
-  // TURBINE THEORY: what passing pays now; else 0.
+  // NIGHT LANDING: what landing pays now; else 0.
   std::uint64_t hurryUp = 0;
 };
 
@@ -184,21 +184,28 @@ CourseLine courseLine(const Rules& rules, const HudPreview* preview) noexcept {
     }
     return line;
   }
+  if (rules.wingsRunning()) {
+    line.running = true;
+    line.name = rules.courseName();
+    line.seconds = static_cast<int>(std::ceil(rules.wingsSecondsLeft()));
+    return line;
+  }
   if (rules.courseRunning()) {
     line.running = true;
     line.name = rules.courseName();
     const Course& course = kCourses[std::min(rules.course(), kCourseCount - 1)];
-    // HANGAR SAFETY's second part is one shot: the Hangar.
-    line.total = line.goal == kGoalEnterHangar ? 1 : course.goal;
+    line.total = course.goal;
     line.made = std::clamp(line.total - rules.goalRemaining(), 0, line.total);
     line.seconds = static_cast<int>(std::ceil(rules.courseSecondsLeft()));
     line.hurryUp = rules.hurryUpValue();
     return line;
   }
-  // Nothing running: the course the Briefing room would start, or Graduation
-  // Day, and what lights it.
+  // Nothing running: the sortie the Mission would start, or the Air Show or
+  // Wings Ceremony, and what lights it.
   if (rules.graduationLit()) {
     line.name = kGraduationName;
+  } else if (rules.wingsLit()) {
+    line.name = kWingsName;
   } else if (rules.coursesPassed() < static_cast<int>(kCourseCount)) {
     line.name = kCourses[std::min(rules.courseOffered(), kCourseCount - 1)].name;
   } else {
@@ -593,7 +600,7 @@ void drawPanel(SDL_Renderer* r, const HudArt& art, const screen::Layout& layout,
     const float row2 = meter.y + meter.h - 10.0F - kRowHeight;
     drawText(r, "LOCK", left, row1, kSmall, s.lockLit ? kOrange : kDim);
     drawLockIcons(r, c, left + 72.0F, row1 - 2.0F, 16.0F, 22.0F, 6.0F, 10.0F);
-    drawText(r, "TURBO", left, row2, kSmall, kDim);
+    drawText(r, "BOOST", left, row2, kSmall, kDim);
     drawTurbo(r, c, left + 92.0F, row2 + 1.0F, 120.0F, kRowHeight - 2.0F);
     const bool lit = s.multiball && (s.jackpotLit || s.superLit);
     drawText(r, s.superLit ? "SUPER JACKPOT" : "JACKPOT", right, row1, kSmall,

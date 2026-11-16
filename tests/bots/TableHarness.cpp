@@ -1,5 +1,7 @@
 #include "bots/TableHarness.hpp"
 
+#include <cstdio>
+#include <cstdlib>
 #include <box2d/math_functions.h>
 
 #include <algorithm>
@@ -28,7 +30,9 @@ const char* touchName(Touch touch) noexcept {
       "none",          "left circuit", "Runway",        "left target",  "bay door",
       "Hangar",        "Briefing",     "Turbine",       "right target", "Skyway",
       "right circuit", "bumper",       "slingshot",     "roll call",    "left inlane",
-      "right inlane",  "left outlane", "right outlane", "centre drain", "flipper"};
+      "right inlane",  "left outlane", "right outlane", "centre drain", "flipper",     "drone",         "TAXI",
+      "G-force",       "deck target",  "CAT SHOT",      "deck drain",   "pylon",
+      "FLAPS",         "BOGEY",        "RADAR"};
   const auto index = static_cast<std::size_t>(touch);
   return index < kNames.size() ? kNames[index] : "?";
 }
@@ -39,6 +43,21 @@ TableHarness::TableHarness() {
   balls_[0].anchor = table::kBallStart;
   // The bench counts every ball that leaves the table: see setSaver().
   setSaver(false);
+  // Concept A's measuring knobs, for a whole run: PINBALL_ALTITUDE 0 to 4
+  // (FL100 to FL500, pinned), PINBALL_DECK and PINBALL_PYLON (0 rules, 1
+  // always, 2 never). Unset: the Altitude as the rules climb it, and the
+  // stub rules.
+  const auto knob = [](const char* name) {
+    const char* value = std::getenv(name);
+    return value == nullptr ? 0 : std::atoi(value);
+  };
+  // The Altitude is pinned only when asked; unset, the game climbs as the
+  // rules take it.
+  if (std::getenv("PINBALL_ALTITUDE") != nullptr) {
+    game_.setAltitude(knob("PINBALL_ALTITUDE"));
+  }
+  game_.setDeckPolicy(knob("PINBALL_DECK"));
+  game_.setPylonPolicy(knob("PINBALL_PYLON"));
 }
 
 Vec2 TableHarness::position(std::size_t slot) const { return Seam::position(game_, slot); }
@@ -96,10 +115,10 @@ bool TableHarness::nearFlipper(Vec2 p, std::size_t i, float slack) const {
   const FlipperView flipper = game_.flipper(i);
   // Box2D's own cosine and sine: the same on every platform.
   const b2CosSin turn = b2ComputeCosSin(flipper.angle);
-  const Vec2 tip{flipper.pivot.x + table::kFlipperLength * turn.cosine,
-                 flipper.pivot.y + table::kFlipperLength * turn.sine};
+  const float length = table::kFlippers[i].length;
+  const Vec2 tip{flipper.pivot.x + length * turn.cosine, flipper.pivot.y + length * turn.sine};
   const SegmentReach reach = reachOf(p, flipper.pivot, tip);
-  const float u = std::clamp(reach.along / table::kFlipperLength, 0.0F, 1.0F);
+  const float u = std::clamp(reach.along / length, 0.0F, 1.0F);
   const float batRadius =
       table::kFlipperBaseRadius + (table::kFlipperTipRadius - table::kFlipperBaseRadius) * u;
   return reach.distance < table::kBallRadius + batRadius + slack;
@@ -165,8 +184,30 @@ Touch TableHarness::advance() {
   input.nudgeUp = nudge == 3;
   nudge = 0;
   restart = false;
+  const std::uint32_t searchesBefore = game_.ballSearchCount();
   game_.step(input);
   ++step_;
+  if (const char* from = std::getenv("PINBALL_TRACE_FROM"); from != nullptr && step_ >= std::strtoull(from, nullptr, 10) && step_ % 10 == 0) {
+    const BallView v = game_.ball();
+    std::fprintf(stderr, "trace %llu p=(%.2f,%.2f) v=(%.1f,%.1f) held=%d visible=%d\n",
+                 static_cast<unsigned long long>(step_), static_cast<double>(position(0).x),
+                 static_cast<double>(position(0).y), static_cast<double>(velocity(0).x),
+                 static_cast<double>(velocity(0).y), held(0) ? 1 : 0, v.visible ? 1 : 0);
+  }
+  if (game_.ballSearchCount() != searchesBefore && std::getenv("PINBALL_LOG_SEARCH") != nullptr) {
+    for (std::size_t s = 0; s < table::kMaxBalls; ++s) {
+      std::fprintf(stderr, "ball search at step %llu: ball %zu at (%.1f, %.1f)\n",
+                   static_cast<unsigned long long>(step_), s, static_cast<double>(position(s).x),
+                   static_cast<double>(position(s).y));
+    }
+  }
+  // Concept A: a Skyway diverted to the Flight Deck is a capture of its own
+  // in the game's counts (no physics event: the Skyway's box took the ball).
+  const std::uint32_t deckRides = game_.holeCount(table::kDeckRampHole);
+  if (deckRides > deckRidesSeen_) {
+    holeHits[table::kDeckRampHole] += deckRides - deckRidesSeen_;
+  }
+  deckRidesSeen_ = deckRides;
 
   for (const PhysicsEvent& event : game_.events()) {
     const std::size_t i = event.element.index;
@@ -208,19 +249,25 @@ Touch TableHarness::advance() {
             ++circuitDone[0];
             state.circuitLeft = false;
           }
+        } else if (rollover.group == table::RolloverGroup::Flaps) {
+          touch = Touch::Flaps;
         } else if (rollover.group == table::RolloverGroup::Outlane) {
           touch = leftSide ? Touch::OutlaneLeft : Touch::OutlaneRight;
           balls_[ball].outlaneStep = step_ + 1;
           balls_[ball].outlane = touch;
         }
-        log(touch, event.speed, ball);
+        // F-L-A-P-S are flush: they never turn a ball, so they are never a
+        // first touch (counted in rolloverHits only).
+        if (touch != Touch::Flaps) {
+          log(touch, event.speed, ball);
+        }
         break;
       }
       case Hole: {
         ++holeHits[i];
         Touch touch = Touch::Briefing;
         switch (table::kHoles[i].type) {
-          case table::HoleType::Scoop:
+          case table::HoleType::Subway:
             break;
           case table::HoleType::Hangar:
             touch = Touch::Hangar;
@@ -229,7 +276,14 @@ Touch TableHarness::advance() {
             touch = Touch::Runway;
             break;
           case table::HoleType::RampRight:
+          case table::HoleType::DeckRamp:
             touch = Touch::Skyway;
+            break;
+          case table::HoleType::CatShot:
+            touch = Touch::CatShot;
+            break;
+          case table::HoleType::DeckDrain:
+            touch = Touch::DeckDrain;
             break;
         }
         if (table::kHoles[i].type == table::HoleType::Hangar) {
@@ -273,6 +327,32 @@ Touch TableHarness::advance() {
       case Kickback:
         ++kickbacks;
         break;
+      case Drone:
+        log(Touch::Drone, event.speed, ball);
+        break;
+      case Standup:
+        ++standupHits[i];
+        log(i >= table::kRadarStandup     ? Touch::Radar
+            : i >= table::kTaxiStandups ? Touch::DeckTarget
+                                        : Touch::Standup,
+            event.speed, ball);
+        break;
+      case Pylon:
+        log(Touch::Pylon, event.speed, ball);
+        break;
+      case Bogey:
+        ++bogeyHits[i];
+        log(Touch::Bogey, event.speed, ball);
+        break;
+      case CaptiveBall:
+        // Struck: a G-force touch, as the post's hits were. The switch
+        // closing is counted in standupHits' last place.
+        if (i == table::kCaptiveBallSwitch) {
+          ++standupHits[table::kStandups.size()];
+        } else {
+          log(Touch::GForce, event.speed, ball);
+        }
+        break;
       case None:
         break;
     }
@@ -307,6 +387,11 @@ Touch TableHarness::advance() {
         break;
       case HoleEject:
       case KickbackFired:
+      case DroneHit:
+      case DroneDown:
+      case DroneDive:
+      case DroneRise:
+      case SubwayRide:
         break;
     }
   }
@@ -399,7 +484,7 @@ void TableHarness::watchBall(std::size_t slot) {
       state.circuitRight = false;
       state.flipperStep = step_ + 1;
     }
-    const bool raised = f == table::kLeftFlipperIndex ? left : right;
+    const bool raised = f == table::kLeftFlipperIndex ? left : right;  // Right drives the upper too.
     cradled = cradled || (raised && nearFlipper(p, f, 6.0F));
   }
   if (inPlay) {

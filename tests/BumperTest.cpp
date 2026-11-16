@@ -37,15 +37,20 @@ void testBumpers() {
     }
   }
 
-  // A ball sent into each bumper from its left is kicked back out, heading
+  // A ball sent into each bumper from its left (or above) is kicked back out, heading
   // away from the bumper, and that bumper reports exactly one hit for the
   // whole touch, however long the ball takes to leave.
   for (std::size_t i = 0; i < table::kBumpers.size(); ++i) {
     const table::Circle& c = table::kBumpers[i].shape;
     PhysicsWorld world;
-    const Vec2 start{c.center.x - c.radius - table::kBallRadius - 30.0F, c.center.y + 6.0F};
+    // Concept A: the right bumper has the centre one to its left, so it is
+    // struck from above (down the right roll call lane) instead.
+    const bool fromAbove = i == 1;
+    const float reach = c.radius + table::kBallRadius + 30.0F;
+    const Vec2 start = fromAbove ? Vec2{c.center.x - 6.0F, c.center.y - reach}
+                                 : Vec2{c.center.x - reach, c.center.y + 6.0F};
     // Fast enough that gravity does not carry it under the bumper first.
-    world.resetBall(start, {600.0F, 0.0F});
+    world.resetBall(start, fromAbove ? Vec2{0.0F, 600.0F} : Vec2{600.0F, 0.0F});
     std::size_t hitsOnThis = 0;
     bool measured = false;
     float speedAfter = 0.0F;
@@ -77,7 +82,7 @@ void testBumpers() {
 
   {  // A near miss is not a hit: a ball passing a pixel and a half clear of
      // a bumper is neither kicked nor reported.
-    const table::Circle& c = table::kBumpers[1].shape;
+    const table::Circle& c = table::kBumpers[0].shape;
     PhysicsWorld world;
     const float x = c.center.x + c.radius + table::kBallRadius + 1.5F;
     world.resetBall({x, c.center.y - 40.0F}, {0.0F, 300.0F});

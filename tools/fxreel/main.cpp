@@ -23,6 +23,31 @@
 //                     Academy, Briefing) one every 8 steps (each place 3.75
 //                     times a second), the nest struck
 //                     every 20
+//          rev3storm  revision 3's worst case: the storm (multiball, a jackpot
+//                     every 30 steps, the nest every 20), with a second ball
+//                     shot into the drone every 24 steps (knocked down every
+//                     fifth hit), a third at the stand-ups and the G-force
+//                     post in turn every 24 and into the Briefing room's
+//                     subway every 240, and the eight flasher domes fired in
+//                     turn every 10. (Five hits a second at each: far more
+//                     than a ball can make, and over the hit gates; more
+//                     would measure the ball jumping, not the lights.)
+//          astorm     concept A's worst case (G6): the rev3storm (multiball, a
+//                     jackpot every 30 steps, the nest every 20, the drone
+//                     every 24), the third ball in turn at the deck's A-C-E,
+//                     the F-L-A-P-S rollovers, the pylon (held up) and the
+//                     captive ball every 24, a sortie start every 240 and an
+//                     Altitude climb every 360 (their shows forced), and all
+//                     ten flasher domes fired in turn every 10
+//          sortie     a ball in play; the Mission lit and a sortie started
+//          climb      a ball in play; the Altitude raised by one at step 20
+//          deck       DECK lit, a ball up the Skyway onto the Flight Deck, the
+//                     deck flipper working its A-C-E and CAT SHOT
+//          flaps      a ball rolled across the five F-L-A-P-S rollovers
+//          dronedown  balls shot up the lane into the drone until it falls
+//          hint       a ball cradled on the right flipper (the lights point at
+//                     the shot after three seconds)
+//          wizard     Graduation Day staged (the finale)
 // options  --plain           draw without the light show (the look before it)
 //          --reduce-motion   the light show with reduce motion on
 //          --altitude N      the light show held at Altitude level N (0, FL100,
@@ -141,8 +166,18 @@ class Script {
     if (s == "multiball") {
       return pinball::stageScene(game, pinball::Scene::Hangar);
     }
-    if (s == "jackpot" || s == "storm" || s == "domes" || s == "mix") {
+    if (s == "jackpot" || s == "storm" || s == "domes" || s == "mix" || s == "rev3storm") {
       return pinball::stageScene(game, pinball::Scene::Multiball);
+    }
+    if (s == "astorm") {
+      game.setPylonPolicy(1);
+      return pinball::stageScene(game, pinball::Scene::Multiball);
+    }
+    if (s == "wizard") {
+      return pinball::stageScene(game, pinball::Scene::Graduation);
+    }
+    if (s == "deck") {
+      game.setDeckPolicy(1);
     }
     if (s == "drain") {
       // No ball saver: the ball is lost and the next one served.
@@ -152,7 +187,9 @@ class Script {
       // Holes pass the ball through: no lock, no multiball.
       Seam::rules(game).setMultiballEnabled(false);
     }
-    if (s == "hits" || s == "drain" || s == "tilt" || s == "scoop" || s == "hangar") {
+    if (s == "hits" || s == "drain" || s == "tilt" || s == "scoop" || s == "hangar" ||
+        s == "sortie" || s == "climb" || s == "deck" || s == "flaps" || s == "dronedown" ||
+        s == "hint") {
       // A ball in play first.
       for (std::uint32_t i = 0; i < 400 && !game.rules().ballInPlay(); ++i) {
         game.step(flipping(i));
@@ -195,6 +232,8 @@ class Script {
   bool jackpotWanted = false;
   bool domeWanted = false;
   bool mixDomeWanted = false;
+  bool sortieWanted = false;
+  bool climbWanted = false;
 
   InputState before(Game& game, std::uint32_t t) {
     const std::string& s = options_.scene;
@@ -245,6 +284,160 @@ class Script {
         jackpotWanted = true;
       }
       return InputState{};
+    }
+    if (s == "rev3storm") {
+      // The served ball works the nest, as in the storm; the other two
+      // work revision 3's toys.
+      std::array<std::size_t, 2> others{Game::kMaxBalls, Game::kMaxBalls};
+      std::size_t found = 0;
+      for (std::size_t b = 0; b < Game::kMaxBalls && found < others.size(); ++b) {
+        if (b != slot && Seam::live(game, b) && !Seam::held(game, b)) {
+          others[found++] = b;
+        }
+      }
+      if (t % 20 == 0) {
+        Seam::placeBall(game, slot, {262.0F, 165.0F}, {20.0F, 700.0F});
+      }
+      if (t % 30 == 0 && !jackpot(game, slot)) {
+        jackpotWanted = true;
+      }
+      const pinball::DroneView drone = game.drone();
+      if (t % 24 == 0 && others[0] < Game::kMaxBalls && drone.up && drone.sink == 0.0F) {
+        // Up the lane into the drone from below.
+        Seam::placeBall(game, others[0], {drone.position.x, 350.0F}, {0.0F, -900.0F});
+      }
+      if (t % 24 == 12 && others[1] < Game::kMaxBalls) {
+        if (t % 240 == 132) {
+          // Into the Briefing room, as it takes a ball: up and to the right.
+          const table::Hole& room = table::kHoles[table::kScoopHole];
+          Seam::placeBall(game, others[1], {room.center.x - 12.0F, 445.0F}, {270.0F, -900.0F});
+        } else {
+          // At a stand-up's face, hard, from the side the field is on; the
+          // captive ball fifth, struck up its channel.
+          const std::size_t k = (t / 24) % (table::kStandups.size() + 1);
+          if (k == table::kStandups.size()) {
+            const Vec2 up{-0.3F, -0.954F};
+            Seam::placeBall(game, others[1], table::kCaptiveHome - up * 40.0F, up * 1500.0F);
+          } else {
+            const table::Capsule& c = table::kStandups[k];
+            const Vec2 mid = (c.a + c.b) * 0.5F;
+            const Vec2 d = c.b - c.a;
+            Vec2 n{-d.y, d.x};
+            const float len = std::sqrt(n.x * n.x + n.y * n.y);
+            n = len > 0.0F ? Vec2{n.x / len, n.y / len} : Vec2{0.0F, 1.0F};
+            if ((table::kFieldCenterX - mid.x) * n.x + (600.0F - mid.y) * n.y < 0.0F) {
+              n = Vec2{-n.x, -n.y};
+            }
+            const float off = c.radius + table::kBallRadius + 14.0F;
+            Seam::placeBall(game, others[1], mid + n * off, n * -900.0F);
+          }
+        }
+      }
+      if (t % 10 == 0) {
+        domeWanted = true;  // The caller fires the next of the eight domes.
+      }
+      return InputState{};
+    }
+    if (s == "astorm") {
+      // As the rev3storm, with concept A's toys for the third ball.
+      std::array<std::size_t, 2> others{Game::kMaxBalls, Game::kMaxBalls};
+      std::size_t found = 0;
+      for (std::size_t b = 0; b < Game::kMaxBalls && found < others.size(); ++b) {
+        if (b != slot && Seam::live(game, b) && !Seam::held(game, b)) {
+          others[found++] = b;
+        }
+      }
+      if (t % 20 == 0) {
+        Seam::placeBall(game, slot, {262.0F, 165.0F}, {20.0F, 700.0F});
+      }
+      if (t % 30 == 0 && !jackpot(game, slot)) {
+        jackpotWanted = true;
+      }
+      const pinball::DroneView drone = game.drone();
+      if (t % 24 == 0 && others[0] < Game::kMaxBalls && drone.up && drone.sink == 0.0F) {
+        Seam::placeBall(game, others[0], {drone.position.x, 350.0F}, {0.0F, -900.0F});
+      }
+      if (t % 24 == 12 && others[1] < Game::kMaxBalls) {
+        switch ((t / 24) % 5) {
+          case 0: {  // A deck stand-up, from the deck's middle.
+            const std::size_t k = table::kDeckStandupA + (t / 120) % 3;
+            const table::Capsule& c = table::kStandups[k];
+            const Vec2 mid = (c.a + c.b) * 0.5F;
+            const Vec2 d = mid - table::kDeckCenter;
+            const float len = std::sqrt(d.x * d.x + d.y * d.y);
+            const Vec2 n = len > 0.0F ? Vec2{d.x / len, d.y / len} : Vec2{0.0F, -1.0F};
+            Seam::placeBall(game, others[1], mid - n * 24.0F, n * 700.0F);
+            break;
+          }
+          case 1:  // Across F-L-A-P-S, left to right.
+            Seam::placeBall(game, others[1], {270.0F, 621.0F}, {900.0F, 0.0F});
+            break;
+          case 2:  // Into the pylon from below.
+            Seam::placeBall(game, others[1], {table::kPylon.center.x, 600.0F}, {0.0F, -900.0F});
+            break;
+          case 3: {  // The captive ball, up its channel.
+            const Vec2 up{-0.3F, -0.954F};
+            Seam::placeBall(game, others[1], table::kCaptiveHome - up * 40.0F, up * 1500.0F);
+            break;
+          }
+          default:  // Over the Air Pocket.
+            Seam::placeBall(game, others[1], {table::kAirPocketCenter.x, 690.0F}, {0.0F, -300.0F});
+            break;
+        }
+      }
+      if (t % 10 == 0) {
+        domeWanted = true;  // The caller fires the next of the ten domes.
+      }
+      if (t % 240 == 100) {
+        sortieWanted = true;
+      }
+      if (t % 360 == 200) {
+        climbWanted = true;
+      }
+      return InputState{};
+    }
+    if (s == "sortie" && t == 20) {
+      pinball::Rules& rules = Seam::rules(game);
+      if (!rules.briefingLit()) {
+        sortieWanted = true;  // Not lit: the caller starts the show itself.
+      } else {
+        rules.onHole(table::kScoopHole, slot);
+        rules.onEject(table::kScoopHole);
+      }
+    }
+    if (s == "climb" && t == 20) {
+      Seam::rules(game).setAltitudeFloor(game.rules().altitude() + 1);
+    }
+    if (s == "deck" && t == 10) {
+      // Up the Skyway's mouth: the diverter sends it on to the deck.
+      Seam::placeBall(game, slot, {519.0F, 470.0F}, {0.0F, -900.0F});
+      Seam::putInPlay(game, slot);
+    }
+    if (s == "deck" && t > 160) {
+      InputState input;
+      input.rightFlipper = (t / 40) % 2 == 0;  // The deck flipper, in time.
+      return input;
+    }
+    if (s == "flaps" && (t == 10 || t == 110)) {
+      Seam::placeBall(game, slot, {270.0F, 621.0F}, {900.0F, 0.0F});
+    }
+    if (s == "dronedown" && t % 30 == 10) {
+      const pinball::DroneView drone = game.drone();
+      if (drone.up && drone.sink == 0.0F) {
+        Seam::placeBall(game, slot, {drone.position.x, 350.0F}, {0.0F, -900.0F});
+      }
+    }
+    if (s == "hint") {
+      // Onto the right flipper, held up: the ball comes to rest in its cradle.
+      if (t == 10) {
+        Seam::placeBall(game, slot, {500.0F, 800.0F}, {0.0F, 0.0F});
+      }
+      InputState input;
+      input.rightFlipper = t >= 10;
+      return input;
+    }
+    if (s == "wizard") {
+      return flipping(t);
     }
     if (s == "domes") {
       if (t % 20 == 0) {
@@ -454,6 +647,35 @@ int run(const Options& o) {
     for (std::uint32_t frameIndex = 0; t < steps; ++t) {
       const bool heldBefore = game.ballHeld();
       game.step(script.before(game, t));
+      if (script.domeWanted && o.scene == "astorm") {
+        script.domeWanted = false;
+        // All ten domes, in FlasherId order.
+        constexpr std::array<pinball::fx::Flasher, 10> kDomes{
+            pinball::fx::Flasher::Hangar,    pinball::fx::Flasher::Briefing,
+            pinball::fx::Flasher::Turbine,   pinball::fx::Flasher::RampLeft,
+            pinball::fx::Flasher::RampRight, pinball::fx::Flasher::Nest,
+            pinball::fx::Flasher::SlingLeft, pinball::fx::Flasher::SlingRight,
+            pinball::fx::Flasher::Deck,      pinball::fx::Flasher::LeftArch};
+        show.burst(kDomes[(t / 10) % kDomes.size()], pinball::fx::Colour::Yellow, 0.8F, 70.0F, 30);
+      }
+      if (script.sortieWanted) {
+        script.sortieWanted = false;
+        show.startShow(pinball::fx::Show::SortieStart, table::kScoopCup);
+      }
+      if (script.climbWanted) {
+        script.climbWanted = false;
+        show.startShow(pinball::fx::Show::Climb);
+      }
+      if (script.domeWanted && o.scene == "rev3storm") {
+        script.domeWanted = false;
+        // Every flasher that has a dome, in FlasherId order.
+        constexpr std::array<pinball::fx::Flasher, 8> kDomes{
+            pinball::fx::Flasher::Hangar,    pinball::fx::Flasher::Briefing,
+            pinball::fx::Flasher::Turbine,   pinball::fx::Flasher::RampLeft,
+            pinball::fx::Flasher::RampRight, pinball::fx::Flasher::Nest,
+            pinball::fx::Flasher::SlingLeft, pinball::fx::Flasher::SlingRight};
+        show.burst(kDomes[(t / 10) % kDomes.size()], pinball::fx::Colour::Yellow, 0.8F, 70.0F, 30);
+      }
       if ((o.scene == "scoop" || o.scene == "hangar") && game.ballHeld() != heldBefore) {
         // Which frames to look at: the step the hole took the ball, and the
         // step it let it go.
@@ -548,7 +770,7 @@ int run(const Options& o) {
                   pct(meter->worstWindow(0)), pct(meter->worstWindow(1)), pct(meter->worstWindow(2)),
                   pct(meter->worst()), pct(meter->worstRedWindow(0)), pct(meter->worstRedWindow(1)),
                   pct(meter->worstRedWindow(2)), pct(meter->worstRed()), meter->frames());
-      if (o.wcag > 0.0F && meter->worstRedWindow(0) > o.wcag) {
+      if (o.wcag > 0.0F && (meter->worstRedWindow(0) > o.wcag || meter->worstRedWindow(2) > o.wcag)) {
         std::fprintf(stderr, "red flash over the limit of %.2f%%\n", static_cast<double>(o.wcag) * 100.0);
         status = EXIT_FAILURE;
       }
@@ -569,7 +791,9 @@ int run(const Options& o) {
         std::printf("worst frame %d, window at %d, %d\n", meter->worstFrame(),
                     meter->worstAt().first * kMeterScale, meter->worstAt().second * kMeterScale);
       }
-      if (o.wcag > 0.0F && meter->worstWindow(0) > o.wcag) {
+      // The iPad's field (the nearest screen, the largest share) and the
+      // iPhone's: both under the limit.
+      if (o.wcag > 0.0F && (meter->worstWindow(0) > o.wcag || meter->worstWindow(2) > o.wcag)) {
         std::fprintf(stderr, "over the limit of %.2f%%\n", static_cast<double>(o.wcag) * 100.0);
         status = EXIT_FAILURE;
       }
@@ -587,7 +811,7 @@ int run(const Options& o) {
 int main(int argc, char* argv[]) {
   Options options;
   if (!parse(argc, argv, options)) {
-    std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt|storm|domes|mix> <out_prefix>"
+    std::fputs("usage: pinball_fxreel <play|hits|multiball|jackpot|drain|attract|tilt|storm|domes|mix|rev3storm|astorm|sortie|climb|deck|flaps|dronedown|hint|wizard> <out_prefix>"
                " [--plain] [--reduce-motion] [--altitude 0-4] [--every N] [--frames N] [--skip N] [--time] [--gpu]\n",
                stderr);
     return EXIT_FAILURE;

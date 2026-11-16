@@ -3,11 +3,13 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "Check.hpp"
 #include "GameTestAccess.hpp"
 #include "Suites.hpp"
+#include "core/Courses.hpp"
 #include "core/Game.hpp"
 #include "core/Input.hpp"
 #include "core/Physics.hpp"
@@ -38,6 +40,20 @@ InputState flipping(std::uint32_t step) noexcept {
   input.leftFlipper = (step / 29U) % 2U == 0U;
   input.rightFlipper = (step / 41U) % 2U == 0U;
   return input;
+}
+
+// A shot's pip while its arrow blinks or is hinted at: the light show runs
+// it (pipChase), whatever the rules say.
+bool pipDriven(const LightShow& show, LampId id) {
+  if (!table::isPipLamp(id)) {
+    return false;
+  }
+  const std::size_t arrow =
+      (static_cast<std::size_t>(id) - static_cast<std::size_t>(LampId::LadderCircuitLeft1)) /
+      table::kShotLadderPips;
+  const LampState state = show.lampState(static_cast<LampId>(arrow));
+  return state == LampState::Blink || state == LampState::FastBlink ||
+         show.hint() == static_cast<int>(arrow);
 }
 
 void step(Game& game, LightShow& show, const InputState& input = {}) {
@@ -113,7 +129,7 @@ void testLampsFollowRules() {
       // Lit by nothing but a flash, a sweep or the quiet table's glimmer.
       agree = agree && level >= 0.0F && level <= 1.0F;
     }
-    if (lamp.id != LampId::Lock1 && lamp.id != LampId::Lock2) {
+    if (lamp.id != LampId::Lock1 && lamp.id != LampId::Lock2 && !pipDriven(show, lamp.id)) {
       agree = agree && state == game.rules().lampState(lamp.id);
     }
   }
@@ -131,7 +147,8 @@ void testAmbientIsFarBelowLit() {
   for (int i = 0; i < 1200; ++i) {
     step(game, show);
     for (const table::Lamp& lamp : table::kLamps) {
-      if (show.lampState(lamp.id) == LampState::Off && show.show() == fx::Show::None) {
+      if (show.lampState(lamp.id) == LampState::Off && show.show() == fx::Show::None &&
+          !pipDriven(show, lamp.id)) {
         most = std::max(most, show.lampLevel(lamp.id));
       }
     }
@@ -140,10 +157,13 @@ void testAmbientIsFarBelowLit() {
   float least = 1.0F;
   int quietWindows = 0;
   std::array<float, LightShow::kLampCount> before{};
+  bool showInWindow = false;  // A rules show (a drain's bonus count) rests the chases.
   for (int i = 0; i < 2400; ++i) {
     step(game, show, flipping(static_cast<std::uint32_t>(i)));
+    showInWindow = showInWindow || show.show() != fx::Show::None;
     for (const table::Lamp& lamp : table::kLamps) {
-      if (show.lampState(lamp.id) == LampState::Off && show.show() == fx::Show::None) {
+      if (show.lampState(lamp.id) == LampState::Off && show.show() == fx::Show::None &&
+          !table::lampCut(lamp.id)) {
         least = std::min(least, show.lampLevel(lamp.id));
       }
     }
@@ -152,10 +172,11 @@ void testAmbientIsFarBelowLit() {
       for (std::size_t k = 0; k < before.size(); ++k) {
         moved += std::fabs(show.lampLevels()[k] - before[k]) > 0.15F ? 1 : 0;
       }
-      if (i > 0 && moved < 6) {
+      if (i > 0 && moved < 6 && !showInWindow) {
         ++quietWindows;
       }
       before = show.lampLevels();
+      showInWindow = false;
     }
   }
   CHECK(least >= fx::kUnlitFloor - 1e-6F);
@@ -186,7 +207,8 @@ void testSameGameSameLights() {
     step(a, sa, flipping(i));
     step(b, sb, flipping(i));
     same = same && sa.lampLevels() == sb.lampLevels() && sa.giLevel() == sb.giLevel() &&
-           sa.spinnerLevel() == sb.spinnerLevel() && sa.burstsStarted() == sb.burstsStarted();
+           sa.spinnerLevel(0) == sb.spinnerLevel(0) &&
+           sa.spinnerLevel(2) == sb.spinnerLevel(2) && sa.burstsStarted() == sb.burstsStarted();
   }
   CHECK(same);
 }
@@ -503,7 +525,8 @@ void testAttract() {
   std::array<bool, LightShow::kAttractPatterns> seen{};
   int samples = 0;
   int varied = 0;
-  for (std::uint32_t i = 0; i < LightShow::kAttractPatternSteps * 5; ++i) {
+  for (std::uint32_t i = 0; i < LightShow::kAttractPatternSteps * LightShow::kAttractPatterns;
+       ++i) {
     step(game, show, flipping(i));
     seen[static_cast<std::size_t>(show.attractPattern())] = true;
     if (i % 97 == 50) {
@@ -520,7 +543,8 @@ void testAttract() {
   Game again;
   LightShow other;
   other.setAttract(true);
-  for (std::uint32_t i = 0; i < LightShow::kAttractPatternSteps * 5; ++i) {
+  for (std::uint32_t i = 0; i < LightShow::kAttractPatternSteps * LightShow::kAttractPatterns;
+       ++i) {
     step(again, other, flipping(i));
   }
   CHECK(other.lampLevels() == show.lampLevels());
@@ -890,6 +914,186 @@ void testRollCallSharesTheNestGate() {
   CHECK(later);
 }
 
+// --- Revision 3 -------------------------------------------------------------------
+
+void testRev3LampStubs() {
+  // The ladders follow what the rules keep: one armour lamp a drone hit,
+  // the next blinking; dark after DRONE DOWN. The rank, combo and bonus
+  // ladders start dark; the G-meter and T-A-X-I wait for the rules (phase 3).
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  pinball::Rules& rules = Seam::rules(game);
+  const auto state = [&rules](LampId id) { return rules.lampState(id); };
+  CHECK(state(LampId::DroneArmour1) == LampState::Off);
+  CHECK(!rules.onDrone() && !rules.onDrone());
+  CHECK(state(LampId::DroneArmour1) == LampState::On);
+  CHECK(state(LampId::DroneArmour2) == LampState::On);
+  CHECK(state(LampId::DroneArmour3) == LampState::Blink);
+  CHECK(state(LampId::DroneArmour4) == LampState::Off);
+  CHECK(state(LampId::DroneArmour5) == LampState::Off);
+  step(game, show);
+  CHECK(show.lampState(LampId::DroneArmour2) == LampState::On);
+  CHECK(rules.onDrone());  // BANDIT DOWN: three at FL100.
+  bool dark = true;
+  for (int k = 0; k < 5; ++k) {
+    dark = dark && state(static_cast<LampId>(std::to_underlying(LampId::DroneArmour1) + k)) ==
+                       LampState::Off;
+  }
+  CHECK(dark);
+  bool laddersDark = true;
+  for (std::size_t i = 0; i < table::kLamps.size(); ++i) {
+    const LampId id = table::kLamps[i].id;
+    // Concept A's altimeter shows FL100 from the start, and the pips of the
+    // Mission (lit at a new game) run with its arrow.
+    if (id >= LampId::GForce1 && id != LampId::AltitudeFL100 && !table::isPipLamp(id)) {
+      laddersDark = laddersDark && state(id) == LampState::Off;
+    }
+  }
+  CHECK(laddersDark);  // A new game: first rank, no combo, bonus 1X.
+  CHECK(table::taxiLamp(0) == LampId::TaxiT && table::taxiLamp(3) == LampId::TaxiI);
+  CHECK(pinball::kRankCount <= 7);  // One chevron a rank.
+}
+
+void testDomesWhereTheyStand() {
+  // Every dome a flasher fires is a FlasherId, drawn where the art bakes it.
+  std::array<int, static_cast<std::size_t>(table::FlasherId::Count)> fired{};
+  for (std::uint8_t f = 0; f < static_cast<std::uint8_t>(fx::Flasher::Count); ++f) {
+    const auto flasher = static_cast<fx::Flasher>(f);
+    const table::FlasherId dome = fx::domeOf(flasher);
+    if (dome == table::FlasherId::Count) {
+      continue;
+    }
+    ++fired[static_cast<std::size_t>(dome)];
+    const Vec2 at = fx::flasherPosition(flasher);
+    CHECK(at.x == table::kFlasherDomes[static_cast<std::size_t>(dome)].x &&
+          at.y == table::kFlasherDomes[static_cast<std::size_t>(dome)].y);
+  }
+  // Each dome has exactly one flasher.
+  CHECK(std::ranges::all_of(fired, [](int n) { return n == 1; }));
+  CHECK(fx::domeOf(fx::Flasher::Table) == table::FlasherId::Count);
+  CHECK(fx::domeOf(fx::Flasher::Drone) == table::FlasherId::Count);
+}
+
+constexpr Vec2 kParked{300.0F, 560.0F};
+
+// Shoots the ball into the drone from below, the show watching; true if
+// it was hit.
+bool hitDrone(Game& game, LightShow& show) {
+  for (int i = 0; i < 4000 && !(game.drone().up && game.drone().sink == 0.0F &&
+                                 std::fabs(game.drone().position.x - 356.0F) < 12.0F);
+       ++i) {
+    Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+    step(game, show);
+  }
+  Seam::placeBall(game, 0, {game.drone().position.x, 350.0F}, {0.0F, -900.0F});
+  Seam::putInPlay(game, 0);
+  for (int i = 0; i < 30; ++i) {
+    const int before = game.rules().droneHits();
+    const std::uint32_t hits = game.droneHitCount();
+    step(game, show);
+    if (game.droneHitCount() != hits || game.rules().droneHits() != before) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void testDroneHitsLightTheArmour() {
+  // A hit: the drone's flash, through its gate, and the armour lamp it won
+  // flashes. The fifth hit knocks it down: the armour runs up its ladder
+  // and the lane's dome fires.
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  CHECK(hitDrone(game, show));
+  CHECK(show.droneFlash() == 1.0F);
+  CHECK(show.lampLevel(LampId::DroneArmour1) > 0.9F);
+  for (int i = 0; i < 40; ++i) {
+    Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+    step(game, show);
+  }
+  CHECK(show.droneFlash() < 1.0F);
+  CHECK(show.lampState(LampId::DroneArmour1) == LampState::On);
+  CHECK(show.lampState(LampId::DroneArmour2) == LampState::Blink);
+  int hits = 1;
+  bool domeFired = false;
+  bool armourSwept = false;
+  for (int k = 0; k < 8 && hits < 5; ++k) {
+    if (hitDrone(game, show)) {
+      ++hits;
+    }
+    for (int i = 0; i < 60; ++i) {
+      Seam::placeBall(game, 0, kParked, {0.0F, 0.0F});
+      step(game, show);
+      const fx::BurstViews bursts = show.bursts();
+      for (const fx::BurstView& b : bursts.span()) {
+        domeFired = domeFired || fx::domeOf(b.where) == table::FlasherId::Afterburner;
+      }
+      // Down, the rules' armour is dark; the sweep lights it anyway.
+      armourSwept = armourSwept || (game.rules().droneHits() == 0 &&
+                                    show.lampLevel(LampId::DroneArmour3) > 0.9F);
+    }
+  }
+  CHECK(hits == 5);
+  CHECK(domeFired);
+  CHECK(armourSwept);
+}
+
+void testLaddersFill() {
+  // A rank won: the rank ladder fills from the bottom, all the way up,
+  // then holds the ranks won. (A combo of 2X or more and a raised bonus
+  // multiplier fill theirs the same way.)
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  // LOOP DRILL, offered at the start: into the Mission scoop, then its
+  // three loops.
+  pinball::Rules& rules = Seam::rules(game);
+  const std::size_t rank = rules.rank();
+  CHECK(rules.briefingLit() && rules.courseOffered() == 0);
+  rules.onHole(table::kScoopHole, game.ball().id);
+  rules.onEject(table::kScoopHole);
+  CHECK(rules.courseRunning());
+  for (int i = 0; i < 3; ++i) {
+    rules.onSensor(0, 1, 1200.0F, game.ball().id);
+    rules.onSensor(2, 1, 900.0F, game.ball().id);
+  }
+  CHECK(rules.rank() == rank + 1);
+  float bottom = 0.0F;
+  float top = 0.0F;
+  for (int i = 0; i < 200; ++i) {
+    step(game, show);
+    bottom = std::max(bottom, show.lampLevel(LampId::Rank1));
+    top = std::max(top, show.lampLevel(LampId::Rank7));
+  }
+  CHECK(bottom > 0.9F);
+  CHECK(top > 0.9F);  // The whole ladder, not only the rank won.
+  CHECK(show.lampState(LampId::Rank1) == LampState::On);
+}
+
+void testCircuitSpinnersLight() {
+  // Revision 3's circuit spinners each light on their own turns, and their
+  // shot's arrow with them; the lane's stays dark.
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  const table::Spinner& left = table::kSpinners[table::kCircuitSpinnerLeft];
+  const Vec2 mid = (left.a + left.b) * 0.5F;
+  bool lit = false;
+  for (int k = 0; k < 6 && !lit; ++k) {
+    Seam::placeBall(game, game.ball().id, {mid.x, mid.y + 30.0F}, {0.0F, -1400.0F});
+    for (int i = 0; i < 30 && !lit; ++i) {
+      step(game, show);
+      lit = show.spinnerLevel(table::kCircuitSpinnerLeft) > 0.0F;
+    }
+  }
+  CHECK(lit);
+  CHECK(show.spinnerLevel(table::kLaneSpinner) == 0.0F);
+  CHECK(show.spinnerLevel(table::kCircuitSpinnerRight) == 0.0F);
+  CHECK(show.spinnerLevel(table::kSpinners.size()) == 0.0F);
+}
+
 // Progression: the higher the game, the busier and brighter the table, and
 // never a flash for it.
 void testAltitudeLights() {
@@ -921,7 +1125,8 @@ void testAltitudeLights() {
       step(game, show, flipping(static_cast<std::uint32_t>(i)));
       for (std::size_t k = 0; k < LightShow::kLampCount; ++k) {
         const LampId id = table::kLamps[k].id;
-        if (show.lampState(id) == LampState::Off && show.show() == fx::Show::None) {
+        if (show.lampState(id) == LampState::Off && show.show() == fx::Show::None &&
+            !table::lampCut(id)) {
           least = std::min(least, show.lampLevel(id));
         }
         const fx::ChaseView chase = show.chase(k);
@@ -1001,11 +1206,201 @@ void testAltitudeLights() {
     }
     CHECK(chevrons == 7);
     float floor = 1.0F;
-    for (const float level : show.lampLevels()) {
-      floor = std::min(floor, level);
+    for (std::size_t k = 0; k < LightShow::kLampCount; ++k) {
+      if (!table::lampCut(table::kLamps[k].id)) {
+        floor = std::min(floor, show.lampLevels()[k]);
+      }
     }
     CHECK(floor >= fx::kAttractFloor - 1e-6F);
   }
+}
+
+void testConceptALamps() {
+  // Concept A's lamps (G6) from the rules' public queries: the altimeter
+  // shows every level reached, a F-L-A-P-S letter its rollover, DECK the
+  // diverter, the Hangar's pips the bay doors marked; and every one of the
+  // new lamps lights in the show.
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  pinball::Rules& rules = Seam::rules(game);
+  const auto state = [&rules](LampId id) { return rules.lampState(id); };
+  CHECK(state(LampId::AltitudeFL100) == LampState::On);
+  CHECK(state(LampId::AltitudeFL200) == LampState::Off);
+  rules.setAltitudeFloor(2);
+  CHECK(state(LampId::AltitudeFL200) == LampState::On && state(LampId::AltitudeFL300) == LampState::On);
+  CHECK(state(LampId::AltitudeFL400) == LampState::Off);
+  CHECK(table::altitudeLamp(4) == LampId::AltitudeFL500 && table::flapsLamp(2) == LampId::FlapsA);
+  CHECK(state(LampId::FlapsL) == LampState::Off);
+  rules.onRollover(8);  // L.
+  CHECK(rules.flapLit(1) == (state(LampId::FlapsL) == LampState::On));
+  game.setDeckPolicy(1);
+  CHECK(state(LampId::DeckLit) == LampState::Blink);
+  game.setDeckPolicy(2);
+  CHECK(state(LampId::DeckLit) == LampState::Off);
+  // The Hangar's ladder counts the doors marked (its arrow dark until the
+  // lock is lit).
+  if (rules.lampState(LampId::ArrowHangar) == LampState::Off) {
+    CHECK(state(table::ladderLamp(2, 0)) == LampState::Off);
+    rules.onDropTarget(0);
+    CHECK(state(table::ladderLamp(2, 0)) == (rules.doorMarked(0) ? LampState::On : LampState::Off));
+  }
+  CHECK(table::ladderLamp(6, 2) == LampId::LadderCircuitRight3);
+  CHECK(table::deckLetterLamp(table::kDeckStandupA + 2) == LampId::DeckE);
+  // Every new lamp is lit now and then by the quiet table's chases.
+  std::array<float, LightShow::kLampCount> most{};
+  for (int i = 0; i < 1200; ++i) {
+    step(game, show, flipping(static_cast<std::uint32_t>(i)));
+    for (std::size_t k = 0; k < most.size(); ++k) {
+      most[k] = std::max(most[k], show.lampLevels()[k]);
+    }
+  }
+  bool allRun = true;
+  for (std::size_t k = static_cast<std::size_t>(LampId::LadderCircuitLeft1); k < most.size(); ++k) {
+    // A cut target's lamp stays dark instead.
+    allRun = allRun && (table::lampCut(table::kLamps[k].id) ? most[k] == 0.0F
+                                                             : most[k] > fx::kUnlitFloor + 0.1F);
+  }
+  CHECK(allRun);
+  CHECK(rules.lampState(LampId::Count) == LampState::Off);
+}
+
+void testLitShotPipsRun() {
+  // While a shot's arrow blinks its pips run up to it, nearest last: each
+  // is passed under three times a second.
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  int arrow = -1;
+  for (std::size_t a = 0; a < 7 && arrow < 0; ++a) {
+    const LampState st = show.lampState(static_cast<LampId>(a));
+    if (st == LampState::Blink || st == LampState::FastBlink) {
+      arrow = static_cast<int>(a);
+    }
+  }
+  CHECK(arrow >= 0);  // The Mission is lit at a new game.
+  if (arrow < 0) {
+    return;
+  }
+  const LampId far = table::ladderLamp(static_cast<std::size_t>(arrow), 2);
+  const LampId nearest = table::ladderLamp(static_cast<std::size_t>(arrow), 0);
+  std::uint64_t farPeak = 0;
+  std::uint64_t nearPeak = 0;
+  int peaks = 0;
+  float was = 0.0F;
+  for (int i = 0; i < 48; ++i) {
+    step(game, show);
+    if (show.lampLevel(far) >= 0.99F) {
+      farPeak = show.step();
+    }
+    if (show.lampLevel(nearest) >= 0.99F) {
+      nearPeak = show.step();
+    }
+  }
+  CHECK(farPeak != 0 && nearPeak != 0);
+  for (int i = 0; i < 240; ++i) {
+    step(game, show);
+    const float now = show.lampLevel(far);
+    peaks += now >= 0.99F && was < 0.99F ? 1 : 0;
+    was = now;
+  }
+  CHECK(peaks <= 6);  // Two seconds: at most 2.5 a second.
+  CHECK(show.lampState(far) == LampState::Off && !show.lampLit(far));
+}
+
+void testHintAtRest() {
+  // A ball at rest on a raised flipper for three seconds: the lights point
+  // at a shot, its chevrons run; moving again, the hint goes.
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  InputState hold;
+  hold.rightFlipper = true;
+  Seam::placeBall(game, 0, {500.0F, 800.0F}, {0.0F, 0.0F});
+  for (int i = 0; i < 900 && show.hint() < 0; ++i) {
+    step(game, show, hold);
+  }
+  CHECK(show.hint() >= 0 && show.hint() < 7);
+  if (show.hint() >= 0) {
+    CHECK(show.chase(static_cast<std::size_t>(show.hint())).active);
+    CHECK(!show.chase(static_cast<std::size_t>(show.hint())).ambient);
+  }
+  Seam::placeBall(game, 0, {356.0F, 600.0F}, {300.0F, -800.0F});
+  step(game, show);
+  step(game, show);
+  CHECK(show.hint() == -1);
+}
+
+void testClimbAndSortieShows() {
+  // The Altitude going up starts the climb (once); a sortie's start cue its
+  // ring from the Mission scoop; a multiball runs the show busier than the
+  // level alone.
+  Game game;
+  LightShow show;
+  for (int i = 0; i < 200; ++i) {
+    step(game, show);  // On the plunger: nothing else showing.
+  }
+  Seam::rules(game).setAltitudeFloor(1);
+  step(game, show);
+  CHECK(show.show() == fx::Show::Climb);
+  bool band = false;
+  for (int i = 0; i < 60; ++i) {
+    step(game, show);
+    band = band || show.sweepY() >= 0.0F;
+  }
+  CHECK(band);
+  for (int i = 0; i < 120; ++i) {
+    step(game, show);  // Past the limiter's gap after the climb's band.
+  }
+  show.startShow(fx::Show::SortieStart, table::kScoopCup);
+  bool ring = false;
+  for (int i = 0; i < 40 && show.show() == fx::Show::SortieStart; ++i) {
+    step(game, show);
+    ring = ring || (show.ringRadius() > 0.0F && show.ringCentre().x == table::kScoopCup.x);
+  }
+  CHECK(ring);
+
+  Game mb;
+  LightShow busy;
+  CHECK(pinball::stageScene(mb, pinball::Scene::Multiball));
+  for (int i = 0; i < 600; ++i) {
+    step(mb, busy);
+  }
+  CHECK(busy.energy() > pinball::progression::knobs(busy.altitude()).lightEnergy + 0.3F);
+  // Reduce motion: no climb band.
+  Game g2;
+  LightShow quiet;
+  quiet.setReduceMotion(true);
+  for (int i = 0; i < 200; ++i) {
+    step(g2, quiet);
+  }
+  Seam::rules(g2).setAltitudeFloor(1);
+  bool quietBand = false;
+  for (int i = 0; i < 200; ++i) {
+    step(g2, quiet);
+    quietBand = quietBand || quiet.sweepY() >= 0.0F;
+  }
+  CHECK(!quietBand);
+}
+
+void testDeckAndDevices() {
+  // The Flight Deck glows (eased) while a ball is on it; the Prop Wash with
+  // its spin at the level shown (dark at FL100).
+  Game game;
+  LightShow show;
+  inPlay(game, show);
+  CHECK(show.propWashLevel() == 0.0F);
+  Seam::placeBall(game, 0, table::kDeckSetDown, {0.0F, 0.0F});
+  float before = show.deckLevel();
+  step(game, show);
+  CHECK(show.deckLevel() > before && show.deckLevel() < 0.1F);  // Eased in.
+  LightShow top;
+  top.setAltitudeOverride(4);
+  Game g2;
+  for (int i = 0; i < 120; ++i) {
+    step(g2, top);
+  }
+  CHECK(top.propWashLevel() > 0.9F);
 }
 
 }  // namespace
@@ -1038,4 +1433,14 @@ void testLightShow() {
   testDomeGates();
   testDrainDipThroughTheLimiter();
   testRollCallSharesTheNestGate();
+  testRev3LampStubs();
+  testDomesWhereTheyStand();
+  testDroneHitsLightTheArmour();
+  testLaddersFill();
+  testCircuitSpinnersLight();
+  testConceptALamps();
+  testLitShotPipsRun();
+  testHintAtRest();
+  testClimbAndSortieShows();
+  testDeckAndDevices();
 }

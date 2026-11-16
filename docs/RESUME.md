@@ -37,11 +37,26 @@ taken between two steps:
   multiplier, the last bonus tally, the requests in flight, and the rules'
   random number generator. Timers are kept in steps.
 - **Game**: step count, counters, the last release step of each hole, the
-  Hangar's burst, door raise pending, the spinner (owed, cooldown, phase,
-  direction), the queue of balls asked for, auto-launch state, the game's
-  random number generator.
+  Hangar's burst, door raise pending, each of the three spinners (owed,
+  cooldown, phase, direction, count) and their total, the training drone as
+  drawn (up, knocked down, last move and hit, recoil direction, hits), the
+  queue of balls asked for, auto-launch state, the captive ball's switch
+  count, the game's random number generator.
 - **Table**: flipper angles, plunger pull and release speed, bay doors up or
-  down, kickback armed.
+  down, kickback armed, the training drone (up, knocked down, its clock, down
+  time, place).
+- **The captive ball** (format 5): its body exactly as Box2D holds it, its
+  switch (closed or not), the slot of the ball that struck it last and the
+  stroke's fastest speed so far. Its prismatic joint is made afresh at the
+  start of every step from the body alone (`PhysicsWorld::renewCaptiveJoint`):
+  Box2D keeps the impulses a joint applied in one step to start the next and
+  gives no way to read or set them, so a joint carried across steps would be
+  state the save could not hold. The body is therefore the joint's whole
+  state, and a captive ball saved in the middle of its stroke goes on exactly
+  as it would have. It collides with the playfield balls only, so at rest it
+  is in no contact a new world could lose. A ball riding the Briefing room's
+  subway needs no record of its own: it is a held ball (holder and hold
+  time), and its place under the playfield follows from the hold time.
 - **Each ball slot**: the Box2D body exactly as Box2D holds it (position in
   metres, linear velocity, rotation as cosine and sine, angular velocity),
   whether a hole or the kickback holds it and which, the per-ball latches
@@ -129,15 +144,15 @@ longer than the moment before suspension. Little-endian:
 | Bytes | Field |
 | --- | --- |
 | 8 | `MBA-SAVE` |
-| 2 | format version (`save::kFormatVersion`, now 3) |
+| 2 | format version (`save::kFormatVersion`, now 10: 3 added table revision 3's drone, 4 the three spinners, the drone's knock-down and look, 5 the captive ball, 6 concept A's deck, F-L-A-P-S and devices, 7 main's Altitude and hole cups merged in, 8 the BOGEY drop targets, 9 concept A's rules, 10 the lock's BOGEY bank and RADAR letters) |
 | 1 + n | build id: version and build number, `2.0.0+1` |
-| 32 | layout fingerprint: SHA-256 of the geometry a saved ball depends on (walls, flippers, bumpers, targets, doors, rollovers, holes and their exits, bays, sensors, kickback, plunger) |
+| 32 | layout fingerprint: SHA-256 of the geometry a saved ball depends on (walls, flippers, bumpers, targets, doors, rollovers, holes and their exits, bays, sensors, kickback, plunger, stand-ups, the drone's track, the captive ball's channel, travel, switch and spring) |
 | 14 | the count of each kind of element (balls, bumpers, slingshots, targets, doors, rollovers, holes, sensors, bays, flippers, courses, shots, features, ranks) |
 | 4 | payload size |
-| 1118 | the records, fixed size |
+| 1533 | the records, fixed size |
 | 32 | SHA-256 of everything before it |
 
-1,218 bytes in all for build `2.0.0+1`. Everything is keyed to element ids
+1,633 bytes in all for build `2.0.0+1`. Everything is keyed to element ids
 of `core/TableLayout.hpp` (a hole is its index in `kHoles`, a bay its index
 in `kLockBays`), never to a shape or a body.
 
@@ -152,7 +167,10 @@ between their stops; a ball's launch wait, stillness count and hold no
 longer than play reaches: 60 steps, 480 steps, two minutes), then the records against each other (at least one
 ball and never more than three with those waiting, one ball per bay, only
 the Hangar holds a locked ball, a held ball names a hole or the kickback,
-empty slots carry nothing, remembered steps not in the future). Anything
+empty slots carry nothing, remembered steps not in the future; the captive
+ball on its channel's line and between its ends, its switch closed if it is
+at the switch and open, with no stroke speed, if it is back at the rearm
+point). Anything
 wrong: the file is deleted and nothing is offered.
 
 **Bump `kFormatVersion` whenever a record changes**, and add the field to

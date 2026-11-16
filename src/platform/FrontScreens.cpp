@@ -171,7 +171,7 @@ Marquee marqueeFor(const HighScores* scores, bool keyboard) {
   Marquee m;
   // Not the name: the logo above says it.
   m.add(keyboard ? "PRESS ENTER" : "PRESS PLAY");
-  m.add("SIX COURSES");
+  m.add("SIX SORTIES");
   m.add("LOCK 3 BALLS");
   if (scores != nullptr && scores->size() > 0) {
     m.add("HIGH SCORES");

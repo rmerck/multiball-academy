@@ -17,8 +17,13 @@
 //          scoop-in, hangar-in, lock-in (a ball shot into the Briefing
 //          room, through the Hangar, into a lock bay; the steps count from
 //          the step that took it, so a few show it going in and about 110
-//          show it let out), lock-out (a locked ball let go; the steps
-//          count from the step that let it out),
+//          show it let out; between about 50 and 110 it rides the
+//          Briefing room's subway under the playfield), lock-out (a locked
+//          ball let go; the steps count from the step that let it out),
+//          drone-hit (a ball shot up the lane into the training drone; the
+//          steps count from the hit: a few show it thrown back), drone-down
+//          (five such hits, DRONE DOWN; the steps count from the knock-down:
+//          a few show it sinking),
 //          the front screens: title, title-intro (part-way through its
 //          animation), title-still (Reduce Motion), scores (the front
 //          page), howto, settings, settings-confirm, guide (the touch
@@ -34,6 +39,7 @@
 //          --message TEXT      shown in the message window
 //          --pressed LIST      of left,right,centre,nl,nr,pause
 //          --zones             outline the safe area, zones and hit rectangles
+//          --altitude N        concept A: altitude 0 (FL100) to 4 (FL500)
 //
 // Sizes and insets are in points. Without a scale the picture is the
 // layout's canvas, one pixel to the unit; with one it is the window at that
@@ -176,6 +182,9 @@ enum class State : std::uint8_t {
   BankDown,
   Spinning,
   ScoopIn,
+  DroneHit,
+  DroneDown,
+  Deck,
   HangarIn,
   LockIn,
   LockOut,
@@ -195,7 +204,7 @@ struct StateName {
   std::string_view name;
   State state;
 };
-constexpr std::array<StateName, 33> kStates{{
+constexpr std::array<StateName, 36> kStates{{
     {"play", State::Play},
     {"launch", State::Launch},
     {"pause", State::Pause},
@@ -216,6 +225,9 @@ constexpr std::array<StateName, 33> kStates{{
     {"bankdown", State::BankDown},
     {"spinning", State::Spinning},
     {"scoop-in", State::ScoopIn},
+    {"drone-hit", State::DroneHit},
+    {"drone-down", State::DroneDown},
+    {"deck", State::Deck},
     {"hangar-in", State::HangarIn},
     {"lock-in", State::LockIn},
     {"lock-out", State::LockOut},
@@ -243,6 +255,7 @@ struct Request {
   std::string_view message;
   pinball::TouchControls::View pressed{};
   bool zones = false;
+  int altitude = -1;  // Concept A: FL100 (0) to FL500 (4); -1 the game's own.
 };
 
 // The largest picture drawn, on either side, in canvas units and in pixels.
@@ -252,7 +265,8 @@ constexpr const char* kUsage =
     "Usage: pinball_snapshot <steps 1..1000000> <name.png> [state] [options]\n"
     "  state: play launch pause interrupted confirm about about-info licences\n"
     "         initials gameover longest table course multiball hangar graduation\n"
-    "         locked bankdown spinning scoop-in hangar-in lock-in lock-out title\n"
+    "         locked bankdown spinning scoop-in hangar-in lock-in lock-out drone-hit\n"
+    "         drone-down deck title\n"
     "         title-intro title-still scores howto settings settings-confirm guide\n"
     "         mainmenu-confirm check\n"
     "  --layout <preset | WxH[@scale][+top,bottom,left,right]>   points, 100..4096; scale 1..4,\n"
@@ -260,7 +274,7 @@ constexpr const char* kUsage =
     "  --surface WxH   --insets top,bottom,left,right\n"
     "  --idiom desktop|touch\n"
     "  --page <1..99>   --message <TEXT>   --zones\n"
-    "  --pressed <left,right,centre,nl,nr,pause>\n";
+    "  --pressed <left,right,centre,nl,nr,pause>   --altitude <0..4>\n";
 
 // "left,right,..." into the view. False if a word is unknown or repeated.
 bool parsePressed(std::string_view text, pinball::TouchControls::View& view) noexcept {
@@ -323,6 +337,7 @@ std::optional<Request> parseArguments(std::span<char* const> args) {
   bool page = false;
   bool message = false;
   bool pressed = false;
+  bool altitude = false;
   for (; next < args.size(); ++next) {
     const std::string_view option = args[next];
     if (option == "--zones") {
@@ -372,6 +387,13 @@ std::optional<Request> parseArguments(std::span<char* const> args) {
       }
       request.message = value;
       message = true;
+    } else if (option == "--altitude" && !altitude) {
+      const auto level = screen::parseSpecNumber(value, 0, 4);
+      if (!level) {
+        return std::nullopt;
+      }
+      request.altitude = static_cast<int>(*level);
+      altitude = true;
     } else if (option == "--pressed" && !pressed) {
       if (!parsePressed(value, request.pressed)) {
         return std::nullopt;
@@ -645,6 +667,9 @@ void drawScene(SDL_Renderer* r, const pinball::TableRenderer& table,
     case State::BankDown:
     case State::Spinning:
     case State::ScoopIn:
+    case State::DroneHit:
+    case State::DroneDown:
+    case State::Deck:
     case State::HangarIn:
     case State::LockIn:
     case State::LockOut:
@@ -1199,6 +1224,9 @@ int run(const Request& request) {
     }
 
     pinball::Game game;
+    if (request.altitude >= 0) {
+      game.setAltitude(request.altitude);
+    }
     std::uint32_t step = 0;
     if (request.state == State::GameOver) {
       // Lose every ball first; the steps asked for come after that.
@@ -1252,7 +1280,10 @@ int run(const Request& request) {
         Seam::rules(game).setMultiballEnabled(false);
       }
       if (request.state != State::ScoopIn) {
-        // The doors marked, as three hits would: the bank drops.
+        // The doors marked, as three hits would: the bank drops (one bank
+        // lights the lock here; concept A's rules ask for several).
+        Seam::rules(game).setBanksPerLock(1);
+        Seam::rules(game).setLockNeedsBogey(false);
         for (std::size_t door = 0; door < pinball::table::kDropTargets.size(); ++door) {
           Seam::rules(game).onDropTarget(door);
         }
@@ -1261,7 +1292,10 @@ int run(const Request& request) {
       }
       const std::size_t slot = game.ball().id;
       if (request.state == State::ScoopIn) {
-        Seam::placeBall(game, slot, {350.0F, 450.0F}, {20.0F, -900.0F});
+        // Up the Briefing room's channel (revision 3: off centre).
+        const pinball::table::Hole& room = pinball::table::kHoles[pinball::table::kScoopHole];
+        // Up and to the right, as the room takes a ball (kScoopMinRightward).
+        Seam::placeBall(game, slot, {room.center.x - 12.0F, 445.0F}, {270.0F, -900.0F});
       } else {
         Seam::placeBall(game, slot, {279.0F, 440.0F}, {0.0F, -900.0F});
       }
@@ -1285,8 +1319,58 @@ int run(const Request& request) {
         return EXIT_FAILURE;
       }
     }
+    // The drone hit from below, once or until it is knocked down, by a ball
+    // shot up the lane when the drone is over its middle; the ball is then
+    // put out of the way. The steps asked for follow.
+    const bool atDrone = request.state == State::DroneHit || request.state == State::DroneDown;
+    if (atDrone) {
+      using Seam = pinball::GameTestAccess;
+      const pinball::InputState none;
+      const std::size_t slot = game.ball().id;
+      const pinball::Vec2 away{300.0F, 560.0F};
+      bool reached = false;
+      for (int shot = 0; shot < 40 && !reached; ++shot) {
+        for (int i = 0; i < 2000 && !(game.drone().up && game.drone().sink == 0.0F &&
+                                      std::fabs(game.drone().position.x - 356.0F) < 12.0F);
+             ++i) {
+          Seam::placeBall(game, slot, away, {0.0F, 0.0F});
+          game.step(none);
+        }
+        Seam::placeBall(game, slot, {game.drone().position.x, 350.0F}, {0.0F, -900.0F});
+        Seam::putInPlay(game, slot);
+        bool hit = false;
+        for (int i = 0; i < 30 && !hit; ++i) {
+          game.step(none);
+          for (const pinball::GameEvent& e : game.gameEvents()) {
+            hit = hit || e.type == pinball::GameEvent::Type::DroneHit;
+          }
+        }
+        Seam::placeBall(game, slot, away, {0.0F, 0.0F});
+        reached = hit && (request.state == State::DroneHit || game.drone().knocked);
+        for (int i = 0; i < 30 && !reached; ++i) {
+          Seam::placeBall(game, slot, away, {0.0F, 0.0F});
+          game.step(none);
+        }
+      }
+      if (!reached) {
+        std::fputs("the scene could not be set up\n", stderr);
+        return EXIT_FAILURE;
+      }
+    }
+    // Concept A: a ball set down on the Flight Deck by the Skyway's diverter,
+    // at FL500 (the Prop Wash turning), with the pylon up.
+    const bool onDeck = request.state == State::Deck;
+    if (onDeck) {
+      using Seam = pinball::GameTestAccess;
+      game.setAltitude(request.altitude >= 0 ? request.altitude : 4);
+      game.setPylonPolicy(1);
+      const std::size_t slot = game.ball().id;
+      Seam::placeBall(game, slot, pinball::table::kDeckSetDown,
+                      pinball::table::kDeckSetDownVelocity);
+      Seam::putInPlay(game, slot);
+    }
     const bool idle = request.state == State::GameOver || request.state == State::Launch ||
-                      staged.has_value() || intoHole;
+                      staged.has_value() || intoHole || atDrone || onDeck;
     for (std::uint32_t i = 0; i < request.steps; ++i) {
       game.step(idle ? pinball::InputState{} : scriptedInput(step++));
     }
@@ -1296,6 +1380,10 @@ int run(const Request& request) {
       // through the seam the tests use: the three doors are marked, as
       // three hits would, and for the lock a ball is sent into the Hangar.
       using Seam = pinball::GameTestAccess;
+      // Concept A's rules light the lock after several banks: one is
+      // enough for the picture.
+      Seam::rules(game).setBanksPerLock(1);
+      Seam::rules(game).setLockNeedsBogey(false);
       for (std::size_t door = 0; door < pinball::table::kDropTargets.size(); ++door) {
         Seam::rules(game).onDropTarget(door);
       }
@@ -1340,7 +1428,7 @@ int run(const Request& request) {
     if (request.state == State::Check) {
       const pinball::Game fresh;
       if (game.rules().score() == fresh.rules().score() || !game.rules().ballInPlay()) {
-        std::fputs("check needs enough steps for a ball in play and a score: try 1200\n", stderr);
+        std::fputs("check needs enough steps for a ball in play and a score: try 3000\n", stderr);
         return EXIT_FAILURE;
       }
       Checker checker{surface.get(), r, *table, layout};
