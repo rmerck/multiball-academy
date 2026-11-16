@@ -123,7 +123,7 @@ def render(level, scale, worst=False, balls=True, ramps=True):
     c.drawImageRect(gimg, skia.Rect.MakeWH(L["width"], L["height"]), skia.SamplingOptions(skia.FilterMode.kLinear,
                                                                                           skia.MipmapMode.kNone), p)
     # altimeter pointer at the current level, the turntable, the deck (open when worst, or at FL500)
-    draw_frame(c, "altitude_plate", "fl%d00" % (k + 1), *F.ALT_PLATE_AT, centre=False)
+    draw_frame(c, "altitude_plate", "fl%d00" % (k + 1), *F.ALT_PLATE_AT, centre=False, mirror=F.ALT_PLATE_MIRROR)
     pw = L["propWash"]["c"]
     draw_frame(c, "propwash_blur" if top else "propwash", "blur030" if top else "rot015", *pw)
     deck_open = top or worst
@@ -142,7 +142,7 @@ def render(level, scale, worst=False, balls=True, ramps=True):
         lit = {e["name"] for e in plan}
     elif top:
         lit = {e["name"] for e in plan if e["source"] == "layout" and not e["name"].startswith(("Rank6", "Rank7", "Bonus5", "Combo4", "Combo5", "DroneArmour"))}
-        lit |= {e["name"] for e in plan if e["name"].startswith(("Altitude", "Flaps", "Bogey", "Radar", "Multiball", "DeckLit"))}
+        lit |= {e["name"] for e in plan if e["name"].startswith(("Altitude", "Flaps", "Multiball", "DeckLit"))}
         lit |= {e["name"] for e in plan if e["name"].startswith("Ladder") and e["name"][-1] in "12"}
         lit -= {"ShootAgain", "Kickback"}
     else:

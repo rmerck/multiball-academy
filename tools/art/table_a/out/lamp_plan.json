@@ -2,7 +2,7 @@
  "counts": {
   "decor": 24,
   "layout": 58,
-  "proposed": 40
+  "proposed": 34
  },
  "lamps": [
   {
@@ -976,7 +976,7 @@
   },
   {
    "c": [
-    211.0,
+    175.0,
     676.0
    ],
    "colour": "#6FB4FF",
@@ -987,7 +987,7 @@
   },
   {
    "c": [
-    211.0,
+    175.0,
     658.0
    ],
    "colour": "#F2F4FF",
@@ -998,7 +998,7 @@
   },
   {
    "c": [
-    211.0,
+    175.0,
     640.0
    ],
    "colour": "#FFB050",
@@ -1009,7 +1009,7 @@
   },
   {
    "c": [
-    211.0,
+    175.0,
     622.0
    ],
    "colour": "#FF8A5C",
@@ -1020,7 +1020,7 @@
   },
   {
    "c": [
-    211.0,
+    175.0,
     604.0
    ],
    "colour": "#9A6BFF",
@@ -1091,84 +1091,12 @@
   },
   {
    "c": [
-    188.0,
-    505.0
-   ],
-   "colour": "#FF6B1A",
-   "d": 12.0,
-   "id": 131,
-   "name": "Bogey1",
-   "shape": "round",
-   "source": "proposed"
-  },
-  {
-   "c": [
-    523.0,
-    505.0
-   ],
-   "colour": "#63E6D8",
-   "d": 12.0,
-   "id": 132,
-   "name": "Radar1",
-   "shape": "round",
-   "source": "proposed"
-  },
-  {
-   "c": [
-    190.0,
-    525.0
-   ],
-   "colour": "#FF6B1A",
-   "d": 12.0,
-   "id": 133,
-   "name": "Bogey2",
-   "shape": "round",
-   "source": "proposed"
-  },
-  {
-   "c": [
-    521.0,
-    525.0
-   ],
-   "colour": "#63E6D8",
-   "d": 12.0,
-   "id": 134,
-   "name": "Radar2",
-   "shape": "round",
-   "source": "proposed"
-  },
-  {
-   "c": [
-    192.0,
-    545.0
-   ],
-   "colour": "#FF6B1A",
-   "d": 12.0,
-   "id": 135,
-   "name": "Bogey3",
-   "shape": "round",
-   "source": "proposed"
-  },
-  {
-   "c": [
-    519.0,
-    545.0
-   ],
-   "colour": "#63E6D8",
-   "d": 12.0,
-   "id": 136,
-   "name": "Radar3",
-   "shape": "round",
-   "source": "proposed"
-  },
-  {
-   "c": [
     311.5,
     848.0
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 137,
+   "id": 131,
    "name": "Approach1Lo",
    "shape": "round",
    "source": "decor"
@@ -1180,7 +1108,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 138,
+   "id": 132,
    "name": "Approach1Li",
    "shape": "round",
    "source": "decor"
@@ -1192,7 +1120,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 139,
+   "id": 133,
    "name": "Approach1Ri",
    "shape": "round",
    "source": "decor"
@@ -1204,7 +1132,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 140,
+   "id": 134,
    "name": "Approach1Ro",
    "shape": "round",
    "source": "decor"
@@ -1216,7 +1144,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 141,
+   "id": 135,
    "name": "Approach2Lo",
    "shape": "round",
    "source": "decor"
@@ -1228,7 +1156,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 142,
+   "id": 136,
    "name": "Approach2Li",
    "shape": "round",
    "source": "decor"
@@ -1240,7 +1168,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 143,
+   "id": 137,
    "name": "Approach2Ri",
    "shape": "round",
    "source": "decor"
@@ -1252,7 +1180,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 144,
+   "id": 138,
    "name": "Approach2Ro",
    "shape": "round",
    "source": "decor"
@@ -1264,7 +1192,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 145,
+   "id": 139,
    "name": "Approach3Lo",
    "shape": "round",
    "source": "decor"
@@ -1276,7 +1204,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 146,
+   "id": 140,
    "name": "Approach3Li",
    "shape": "round",
    "source": "decor"
@@ -1288,7 +1216,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 147,
+   "id": 141,
    "name": "Approach3Ri",
    "shape": "round",
    "source": "decor"
@@ -1300,7 +1228,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 148,
+   "id": 142,
    "name": "Approach3Ro",
    "shape": "round",
    "source": "decor"
@@ -1312,7 +1240,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 149,
+   "id": 143,
    "name": "Approach4Lo",
    "shape": "round",
    "source": "decor"
@@ -1324,7 +1252,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 150,
+   "id": 144,
    "name": "Approach4Li",
    "shape": "round",
    "source": "decor"
@@ -1336,7 +1264,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 151,
+   "id": 145,
    "name": "Approach4Ri",
    "shape": "round",
    "source": "decor"
@@ -1348,7 +1276,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 152,
+   "id": 146,
    "name": "Approach4Ro",
    "shape": "round",
    "source": "decor"
@@ -1360,7 +1288,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 153,
+   "id": 147,
    "name": "Approach5Lo",
    "shape": "round",
    "source": "decor"
@@ -1372,7 +1300,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 154,
+   "id": 148,
    "name": "Approach5Li",
    "shape": "round",
    "source": "decor"
@@ -1384,7 +1312,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 155,
+   "id": 149,
    "name": "Approach5Ri",
    "shape": "round",
    "source": "decor"
@@ -1396,7 +1324,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 156,
+   "id": 150,
    "name": "Approach5Ro",
    "shape": "round",
    "source": "decor"
@@ -1408,7 +1336,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 157,
+   "id": 151,
    "name": "Approach6Lo",
    "shape": "round",
    "source": "decor"
@@ -1420,7 +1348,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 158,
+   "id": 152,
    "name": "Approach6Li",
    "shape": "round",
    "source": "decor"
@@ -1432,7 +1360,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 159,
+   "id": 153,
    "name": "Approach6Ri",
    "shape": "round",
    "source": "decor"
@@ -1444,7 +1372,7 @@
    ],
    "colour": "#FFF4D6",
    "d": 7.0,
-   "id": 160,
+   "id": 154,
    "name": "Approach6Ro",
    "shape": "round",
    "source": "decor"
@@ -1456,7 +1384,7 @@
    ],
    "colour": "#2ED16B",
    "d": 14.0,
-   "id": 161,
+   "id": 155,
    "name": "SafetyPost",
    "shape": "round",
    "source": "proposed"
@@ -1468,19 +1396,19 @@
    ],
    "colour": "#FFD23C",
    "d": 14.0,
-   "id": 162,
+   "id": 156,
    "name": "Multiball",
    "shape": "round",
    "source": "proposed"
   },
   {
    "c": [
-    540.0,
-    498.0
+    520.0,
+    575.0
    ],
    "colour": "#FF2E88",
    "d": 14.0,
-   "id": 163,
+   "id": 157,
    "name": "DeckLit",
    "shape": "round",
    "source": "proposed"

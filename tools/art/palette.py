@@ -222,6 +222,10 @@ TABLE_A_UNLIT_FLOOR = 0.34    # an insert the rules leave dark keeps its baked u
 TABLE_A_DECK_FLOOD = (0.16, 0.30)   # additive GI-coloured light over the Flight Deck's plate: closed / open
 TABLE_A_APPROACH = 0.95       # strongest approach light (the "rabbit" running up the runway), times the GI level
 TABLE_A_RETICLE = 0.85        # the drone's lock-on reticle (ring.png alpha, steady, slow turn)
-TABLE_A_ALT_PLATE = (173.0, 584.0)   # top-left of the altimeter plate (units); its pointer frames go over it
+TABLE_A_ALT_PLATE = (149.0, 584.0)   # top-left of the altimeter plate (units); its pointer frames go over it
+# The plate is drawn mirrored left to right (tape and pointer on the right): its sockets then sit 26 units from
+# its left edge, on the AltitudeFL lamps at x 175 (kLamps, G2), and the plate stays clear of the left inlane
+# guide at x 144-150. make_floor.py checks the sockets against the lamps; ship.py mirrors the shipped cells.
+TABLE_A_ALT_PLATE_MIRROR = True
 TABLE_A_GI_STRENGTH = (0.40, 0.52)   # table_a/gi.png in the Altitude GI colour, additive: FL100 / FL500
 TABLE_A_BALL_THROUGH = 0.80   # a ball under a ramp shows through its plastic: drawn again over it at this alpha

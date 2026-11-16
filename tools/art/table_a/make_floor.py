@@ -66,14 +66,26 @@ AIM = {"ArrowCircuitLeft": (118.0, 440.0), "ArrowRunway": (192.0, 425.0), "Arrow
        "ArrowBriefing": (441.0, 400.0), "ArrowTurbine": (356.0, 415.0), "ArrowSkyway": (519.0, 425.0),
        "ArrowCircuitRight": (593.0, 440.0)}
 ALT_PLATE_AT = P.TABLE_A_ALT_PLATE   # top-left of the altimeter plate (units)
+ALT_PLATE_MIRROR = P.TABLE_A_ALT_PLATE_MIRROR
 APPROACH_ROWS = (848.0, 866.0, 884.0, 902.0, 920.0, 938.0)
 APPROACH_XS = (CX - 44.0, CX - 26.0, CX + 26.0, CX + 44.0)
-MOVED_PIPS = {"LadderTurbine1": (356.0, 476.0), "LadderTurbine2": (356.0, 486.0), "LadderTurbine3": (356.0, 496.0)}
+# Every lamp of table/a-geometry's kLamps by name (LampId order: palette.py LAMPS, then PLANNED_LAMPS) at the
+# position layout_a.json gives it: the floor's pockets follow the geometry, never a position written here.
+LAMP_NAMES = [n for n, _ in P.LAMPS] + [p[0] for p in P.PLANNED_LAMPS]
+LAMP_AT = {LAMP_NAMES[l["id"]]: tuple(l["c"]) for l in L["lamps"]}
+# Lamps whose target is cut from the table (TableLayout.hpp lampCut: kBogeyOnTable and kRadarOnTable are false):
+# no pocket, no lens, nothing for the game to light.
+CUT_LAMPS = {"Bogey1", "Bogey2", "Bogey3", "Radar1", "Radar2", "Radar3"}
+
+
+def lamp_at(name):
+    x, y = LAMP_AT[name]
+    return [x, y]
 
 
 def lamp_plan():
     plan = []
-    for l in L["lamps"]:
+    for l in L["lamps"][:len(LAYOUT_LAMPS)]:
         name = LAYOUT_LAMPS[l["id"]]
         kind = l["kind"]
         e = {"id": l["id"], "name": name, "c": l["c"], "colour": COLOUR[name], "source": "layout"}
@@ -93,38 +105,29 @@ def lamp_plan():
     nid = 100
     # proposals (CONCEPT.md section 7): a 3-lamp progress ladder behind each shot arrow
     for e in [p for p in plan if p.get("shape", "").startswith("arrow")]:
-        (lx, ly), (ax, ay) = e["c"], e["aim"]
-        dx, dy = ax - lx, ay - ly
-        n = math.hypot(dx, dy)
-        dx, dy = dx / n, dy / n
         for k in range(3):
-            d = 23.0 + 13.0 * k
             name = e["name"].replace("Arrow", "Ladder") + str(k + 1)
-            # The geometry owner's decision (TABLE_A_G1.md): the Afterburner's pips move to (356, 476/486/496),
-            # clear of TurboCharge.
-            at = MOVED_PIPS.get(name, (round(lx - dx * d, 1), round(ly - dy * d, 1)))
-            plan.append({"id": nid, "name": name, "c": [at[0], at[1]], "colour": e["colour"], "shape": "pip",
+            plan.append({"id": nid, "name": name, "c": lamp_at(name), "colour": e["colour"], "shape": "pip",
                          "d": 10.0, "source": "proposed"})
             nid += 1
     # Altitude FL100..FL500: the altimeter's sockets
-    sock = META["altitude_plate"]["sockets"]
     for k, gi in enumerate(P.ALTITUDE_GI):
-        plan.append({"id": nid, "name": "AltitudeFL%d00" % (k + 1),
-                     "c": [ALT_PLATE_AT[0] + sock["centreXUnits"], ALT_PLATE_AT[1] + sock["centreYUnits"][k]],
-                     "colour": gi, "shape": "rung", "source": "proposed"})
+        name = "AltitudeFL%d00" % (k + 1)
+        plan.append({"id": nid, "name": name, "c": lamp_at(name), "colour": gi, "shape": "rung",
+                     "source": "proposed"})
         nid += 1
     # F-L-A-P-S: the letter insert round each flush rollover
-    for r, ch in zip([r for r in L["rollovers"] if r["group"] == "flaps"], "FLAPS"):
-        plan.append({"id": nid, "name": "Flaps" + ch, "c": r["c"], "colour": P.CREAM, "shape": "flaps",
+    for ch in "FLAPS":
+        plan.append({"id": nid, "name": "Flaps" + ch, "c": lamp_at("Flaps" + ch), "colour": P.CREAM, "shape": "flaps",
                      "letter": ch, "source": "proposed"})
         nid += 1
-    # BOGEY (beside the left drop bank of CONCEPT G2) and RADAR (mirror), Safety Post, Multiball, Deck lit
-    for k, (x, y) in enumerate(((188.0, 505.0), (190.0, 525.0), (192.0, 545.0))):
-        plan.append({"id": nid, "name": "Bogey%d" % (k + 1), "c": [x, y], "colour": P.ORANGE, "shape": "round",
-                     "d": 12.0, "source": "proposed"})
-        plan.append({"id": nid + 1, "name": "Radar%d" % (k + 1), "c": [round(2 * CX - x, 1), y], "colour": P.AQUA,
-                     "shape": "round", "d": 12.0, "source": "proposed"})
-        nid += 2
+    # BOGEY and RADAR: cut from the table (CUT_LAMPS), so no inserts. Then the Safety Post, Multiball, Deck lit.
+    for k in range(3):
+        for name, col in (("Bogey%d" % (k + 1), P.ORANGE), ("Radar%d" % (k + 1), P.AQUA)):
+            if name not in CUT_LAMPS:
+                plan.append({"id": nid, "name": name, "c": lamp_at(name), "colour": col, "shape": "round",
+                             "d": 12.0, "source": "proposed"})
+                nid += 1
     # Approach lights (concept A art, lower third): two pairs of rows up the runway's threshold, lit by the
     # renderer as a running "rabbit" in the Altitude GI colour; not rules lamps (source "decor").
     for k, y in enumerate(APPROACH_ROWS):
@@ -132,9 +135,8 @@ def lamp_plan():
             plan.append({"id": nid, "name": "Approach%d%s" % (k + 1, "L" if x < CX else "R") + ("o" if abs(x - CX) > 30 else "i"),
                          "c": [x, y], "colour": P.CREAM, "shape": "round", "d": 7.0, "source": "decor"})
             nid += 1
-    for name, c, col in (("SafetyPost", (CX, 904.0), P.GREEN), ("Multiball", (312.0, 530.0), P.YELLOW),
-                         ("DeckLit", (540.0, 498.0), P.PINK)):
-        plan.append({"id": nid, "name": name, "c": list(c), "colour": col, "shape": "round", "d": 14.0,
+    for name, col in (("SafetyPost", P.GREEN), ("Multiball", P.YELLOW), ("DeckLit", P.PINK)):
+        plan.append({"id": nid, "name": name, "c": lamp_at(name), "colour": col, "shape": "round", "d": 14.0,
                      "source": "proposed"})
         nid += 1
     return plan
@@ -158,7 +160,7 @@ def frame_image(sheet, label):
     return SPRITES[key]
 
 
-def draw_frame(c, sheet, label, x, y, centre=True, angle=0.0, tint=None, level=1.0):
+def draw_frame(c, sheet, label, x, y, centre=True, angle=0.0, tint=None, level=1.0, mirror=False):
     sh = META[sheet]
     img = frame_image(sheet, label)
     w, h = sh["cellUnits"]
@@ -170,6 +172,10 @@ def draw_frame(c, sheet, label, x, y, centre=True, angle=0.0, tint=None, level=1
     c.save()
     c.translate(x, y)
     c.rotate(angle)
+    if mirror:                                   # left to right, about the cell's middle
+        c.translate(w / 2 if not centre else 0.0, 0.0)
+        c.scale(-1.0, 1.0)
+        c.translate(-w / 2 if not centre else 0.0, 0.0)
     rect = skia.Rect.MakeXYWH(-w / 2, -h / 2, w, h) if centre else skia.Rect.MakeXYWH(0, 0, w, h)
     c.drawImageRect(img, rect, skia.SamplingOptions(skia.FilterMode.kLinear, skia.MipmapMode.kNone), paint)
     c.restore()
@@ -415,7 +421,28 @@ class Floor:
 
     def plates(self):
         c = self.c
-        draw_frame(c, "altitude_plate", "base", ALT_PLATE_AT[0], ALT_PLATE_AT[1], centre=False)
+        # The altimeter's sockets must hold the AltitudeFL lamps where the geometry puts them.
+        sh = META["altitude_plate"]
+        sock = sh["sockets"]
+        sx = sh["cellUnits"][0] - sock["centreXUnits"] if ALT_PLATE_MIRROR else sock["centreXUnits"]
+        for k in range(5):
+            want = (ALT_PLATE_AT[0] + sx, ALT_PLATE_AT[1] + sock["centreYUnits"][k])
+            if want != LAMP_AT["AltitudeFL%d00" % (k + 1)]:
+                sys.exit("altimeter socket %d at %s, its lamp at %s: move palette.TABLE_A_ALT_PLATE" % (
+                    k + 1, want, LAMP_AT["AltitudeFL%d00" % (k + 1)]))
+        draw_frame(c, "altitude_plate", "base", ALT_PLATE_AT[0], ALT_PLATE_AT[1], centre=False,
+                   mirror=ALT_PLATE_MIRROR)
+        if ALT_PLATE_MIRROR:
+            # The ALTITUDE title is centred on the plate, so its box mirrors onto itself: draw it again unmirrored
+            # (the plate behind it is a vertical gradient with horizontal hairlines, the same either way round).
+            ppu = sh["cellPixels"][0] / sh["cellUnits"][0]
+            x0, y0, x1, y1 = 12.0, 101.5, sh["cellUnits"][0] - 12.0, 108.75
+            src = skia.Rect.MakeLTRB(x0 * ppu, y0 * ppu, x1 * ppu, y1 * ppu)
+            dst = skia.Rect.MakeLTRB(ALT_PLATE_AT[0] + x0, ALT_PLATE_AT[1] + y0, ALT_PLATE_AT[0] + x1,
+                                     ALT_PLATE_AT[1] + y1)
+            c.drawImageRect(frame_image("altitude_plate", "base"), src, dst,
+                            skia.SamplingOptions(skia.FilterMode.kLinear, skia.MipmapMode.kNone),
+                            skia.Paint(AntiAlias=True))
         draw_frame(c, "propwash_ring", "ring", *L["propWash"]["c"])
 
     # ---- raised static parts ---------------------------------------------------------------------------
