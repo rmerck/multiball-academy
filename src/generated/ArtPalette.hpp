@@ -458,7 +458,7 @@ inline constexpr float kAReticle = 0.85F;
 inline constexpr float kABallThrough = 0.80F;
 inline constexpr float kAGiStrength = 0.40F;
 inline constexpr float kAGiStrengthTop = 0.52F;
-inline constexpr float kAAltitudePlateX = 173.0F;  // its top-left corner
+inline constexpr float kAAltitudePlateX = 149.0F;  // its top-left corner
 inline constexpr float kAAltitudePlateY = 584.0F;
 // A sprite sheet: cells left to right, top to bottom, in frame order; a cell is cellW x cellH units
 // (two pixels each); centred on its toy, or its top-left corner at (x, y).
@@ -543,7 +543,7 @@ struct AInsert {
   Rgb neon;
   float neonLevel;
 };
-inline constexpr std::array<AInsert, 122> kAInserts{{
+inline constexpr std::array<AInsert, 116> kAInserts{{
     {AShape::Arrow, AGroup::Layout, 0, 118.0F, 512.0F, 28.0F, 0.00F, {30, 235, 255}, 0.83F},  // ArrowCircuitLeft
     {AShape::Arrow, AGroup::Layout, 1, 204.0F, 470.0F, 28.0F, -14.93F, {196, 92, 255}, 1.00F},  // ArrowRunway
     {AShape::Arrow, AGroup::Layout, 2, 282.0F, 440.0F, 28.0F, -3.58F, {255, 138, 0}, 1.00F},  // ArrowHangar
@@ -623,22 +623,16 @@ inline constexpr std::array<AInsert, 122> kAInserts{{
     {AShape::Pip, AGroup::Ladder, 18, 593.0F, 535.0F, 10.0F, 0.00F, {30, 235, 255}, 0.83F},  // LadderCircuitRight1
     {AShape::Pip, AGroup::Ladder, 19, 593.0F, 548.0F, 10.0F, 0.00F, {30, 235, 255}, 0.83F},  // LadderCircuitRight2
     {AShape::Pip, AGroup::Ladder, 20, 593.0F, 561.0F, 10.0F, 0.00F, {30, 235, 255}, 0.83F},  // LadderCircuitRight3
-    {AShape::Rung, AGroup::Altitude, 0, 211.0F, 676.0F, 12.0F, 0.00F, {111, 180, 255}, 1.00F},  // AltitudeFL100
-    {AShape::Rung, AGroup::Altitude, 1, 211.0F, 658.0F, 12.0F, 0.00F, {242, 244, 255}, 0.73F},  // AltitudeFL200
-    {AShape::Rung, AGroup::Altitude, 2, 211.0F, 640.0F, 12.0F, 0.00F, {255, 176, 80}, 0.93F},  // AltitudeFL300
-    {AShape::Rung, AGroup::Altitude, 3, 211.0F, 622.0F, 12.0F, 0.00F, {255, 138, 92}, 1.00F},  // AltitudeFL400
-    {AShape::Rung, AGroup::Altitude, 4, 211.0F, 604.0F, 12.0F, 0.00F, {154, 107, 255}, 1.00F},  // AltitudeFL500
+    {AShape::Rung, AGroup::Altitude, 0, 175.0F, 676.0F, 12.0F, 0.00F, {111, 180, 255}, 1.00F},  // AltitudeFL100
+    {AShape::Rung, AGroup::Altitude, 1, 175.0F, 658.0F, 12.0F, 0.00F, {242, 244, 255}, 0.73F},  // AltitudeFL200
+    {AShape::Rung, AGroup::Altitude, 2, 175.0F, 640.0F, 12.0F, 0.00F, {255, 176, 80}, 0.93F},  // AltitudeFL300
+    {AShape::Rung, AGroup::Altitude, 3, 175.0F, 622.0F, 12.0F, 0.00F, {255, 138, 92}, 1.00F},  // AltitudeFL400
+    {AShape::Rung, AGroup::Altitude, 4, 175.0F, 604.0F, 12.0F, 0.00F, {154, 107, 255}, 1.00F},  // AltitudeFL500
     {AShape::Flaps, AGroup::Flaps, 0, 291.0F, 626.0F, 12.0F, 0.00F, {255, 242, 176}, 0.74F},  // FlapsF
     {AShape::Flaps, AGroup::Flaps, 1, 323.0F, 618.0F, 12.0F, 0.00F, {255, 242, 176}, 0.74F},  // FlapsL
     {AShape::Flaps, AGroup::Flaps, 2, 355.5F, 616.0F, 12.0F, 0.00F, {255, 242, 176}, 0.74F},  // FlapsA
     {AShape::Flaps, AGroup::Flaps, 3, 388.0F, 618.0F, 12.0F, 0.00F, {255, 242, 176}, 0.74F},  // FlapsP
     {AShape::Flaps, AGroup::Flaps, 4, 420.0F, 626.0F, 12.0F, 0.00F, {255, 242, 176}, 0.74F},  // FlapsS
-    {AShape::Round, AGroup::Bogey, 0, 188.0F, 505.0F, 12.0F, 0.00F, {255, 138, 0}, 1.00F},  // Bogey1
-    {AShape::Round, AGroup::Radar, 0, 523.0F, 505.0F, 12.0F, 0.00F, {30, 235, 255}, 0.83F},  // Radar1
-    {AShape::Round, AGroup::Bogey, 1, 190.0F, 525.0F, 12.0F, 0.00F, {255, 138, 0}, 1.00F},  // Bogey2
-    {AShape::Round, AGroup::Radar, 1, 521.0F, 525.0F, 12.0F, 0.00F, {30, 235, 255}, 0.83F},  // Radar2
-    {AShape::Round, AGroup::Bogey, 2, 192.0F, 545.0F, 12.0F, 0.00F, {255, 138, 0}, 1.00F},  // Bogey3
-    {AShape::Round, AGroup::Radar, 2, 519.0F, 545.0F, 12.0F, 0.00F, {30, 235, 255}, 0.83F},  // Radar3
     {AShape::Round, AGroup::Approach, 0, 311.5F, 848.0F, 7.0F, 0.00F, {255, 242, 176}, 0.74F},  // Approach1Lo
     {AShape::Round, AGroup::Approach, 0, 329.5F, 848.0F, 7.0F, 0.00F, {255, 242, 176}, 0.74F},  // Approach1Li
     {AShape::Round, AGroup::Approach, 0, 381.5F, 848.0F, 7.0F, 0.00F, {255, 242, 176}, 0.74F},  // Approach1Ri
@@ -665,7 +659,7 @@ inline constexpr std::array<AInsert, 122> kAInserts{{
     {AShape::Round, AGroup::Approach, 5, 399.5F, 938.0F, 7.0F, 0.00F, {255, 242, 176}, 0.74F},  // Approach6Ro
     {AShape::Round, AGroup::SafetyPost, 0, 355.5F, 904.0F, 14.0F, 0.00F, {157, 255, 30}, 0.78F},  // SafetyPost
     {AShape::Round, AGroup::Multiball, 0, 312.0F, 530.0F, 14.0F, 0.00F, {255, 234, 40}, 0.77F},  // Multiball
-    {AShape::Round, AGroup::DeckLit, 0, 540.0F, 498.0F, 14.0F, 0.00F, {255, 46, 200}, 1.00F},  // DeckLit
+    {AShape::Round, AGroup::DeckLit, 0, 520.0F, 575.0F, 14.0F, 0.00F, {255, 46, 200}, 1.00F},  // DeckLit
 }};
 
 }  // namespace pinball::art
